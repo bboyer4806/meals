@@ -101,3 +101,10 @@ test('lets the admin invite a household', async ({ page, db, context, baseURL })
 		household_id: null
 	});
 });
+
+test('shows the privacy page to anyone, linked from the sign-in page', async ({ page }) => {
+	await page.goto('/login');
+	await page.getByRole('link', { name: 'Privacy' }).click();
+	await expect(page).toHaveURL(/\/privacy$/);
+	await expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible();
+});

@@ -3,6 +3,7 @@
 	<p class="muted">Groceries, recipes and dinner plans for your household.</p>
 	<a class="button primary" href="/login/google" data-sveltekit-reload>Sign in with Google</a>
 	<p class="muted small">Meals is invite-only. Use the Google account you were invited with.</p>
+	<p class="small"><a class="link-tap" href="/privacy">Privacy</a></p>
 </main>
 
 <style>
