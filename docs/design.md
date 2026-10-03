@@ -161,7 +161,7 @@ Backups:
 | App                    | SvelteKit 3, Svelte 5, TypeScript in strict mode, adapter-node                         | One Node server renders pages and handles forms (Q12).             |
 | Database               | SQLite through better-sqlite3                                                          | One file on the server's disk. No database server to run.         |
 | Queries and migrations | Drizzle ORM and drizzle-kit                                                            | Typed queries. Migrations are SQL files kept in the repo.          |
-| Sign-in                | Google OAuth with PKCE through the `arctic` library; sessions in our own table          | Small, and no auth framework to learn (Q8).                        |
+| Sign-in                | Google OAuth with PKCE in about 60 lines of our own code; sessions in our own table     | Small, and no auth framework to learn (Q8). The `arctic` library first planned here is deprecated on npm. |
 | Form validation        | Zod                                                                                    | Form input is untrusted, so it's checked when it arrives.          |
 | Styles                 | Plain CSS with variables; fonts self-hosted through Fontsource                         | No CSS framework and no requests to other sites.                   |
 | Tests                  | Vitest and Playwright                                                                  | See section 10.                                                    |
@@ -186,9 +186,11 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
    for before switching traffic to a new version, and the nightly backup job
    (section 4.4).
 4. **Dockerfile:** a build stage (install and build) and a runtime stage (production
-   dependencies, build output, migrations and the backup script). It runs as the
-   `node` user, exposes port 3000, and sets `BODY_SIZE_LIMIT=5M` so the app accepts
-   photo uploads (adapter-node's default is 512 KB).
+   dependencies, build output, migrations and the backup script). It installs with
+   `npm ci --ignore-scripts`, since no dependency needs its install script (better-sqlite3
+   ships prebuilt binaries). It runs as the `node` user and exposes port 3000. In Phase 2 it
+   also sets `BODY_SIZE_LIMIT=5M` so the app accepts photo uploads (adapter-node's default is
+   512 KB).
 
 The placeholder `index.html` is removed. The README gains instructions for local
 development, configuration, and restoring a backup.
@@ -199,11 +201,15 @@ development, configuration, and restoring a backup.
 | ---------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------- |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | From Google Cloud Console (section 9)                                                       | GitHub secrets, via the workflow |
 | `ADMIN_EMAIL`                            | Your Google email. This account can invite new households.                                  | GitHub secret, via the workflow  |
-| `ORIGIN`                                 | `https://meals.dev.boyersoftware.com`. SvelteKit needs it to accept form posts behind Dokku's proxy. | The workflow               |
 | `DATA_DIR`                               | `/data`                                                                                     | The workflow               |
 
-The app refuses to start if any of these is missing. For local development the same
-variables go in an untracked `.env` file, with `DATA_DIR=./data`.
+The app reads these when it starts, not when it's built, so building the image needs no
+secrets. It refuses to start if any is missing or if `DATA_DIR` doesn't exist (a missing
+storage mount). For local development the same variables go in an untracked `.env` file, with
+`DATA_DIR=./data`.
+
+No `ORIGIN` setting is needed: in SvelteKit 3, adapter-node builds the app's origin from the
+`Host` header Dokku passes through, with `https`.
 
 ### 4.4 Storage and backups
 
@@ -242,8 +248,8 @@ lost, so is everything. Moving backups off the server later is a small change.
 - **Sessions** use a random token in an `httpOnly`, `Secure`, `SameSite=Lax` cookie, and
   only a SHA-256 hash of the token is stored. Sessions last 30 days and are extended when
   used. Signing out deletes the session.
-- **Forms:** SvelteKit's origin check blocks cross-site form posts (this is what
-  `ORIGIN` is for). All input is validated with Zod.
+- **Forms:** SvelteKit's origin check blocks cross-site form posts. All input is validated
+  with Zod.
 - **No raw HTML** from user input is ever rendered (no `{@html}`), and SvelteKit's
   built-in Content Security Policy is turned on.
 - **Admin** is only the `ADMIN_EMAIL` account. It sees household names and member
@@ -260,6 +266,7 @@ src/lib/                  used by browser and server; no database access
   steps.ts                find numbers in steps that won't scale
   dates.ts                "today" and weeks in a time zone
 src/lib/server/
+  config.ts               settings from the environment, checked at startup
   db/schema.ts            tables
   db/index.ts             connection, settings, migrations at startup
   auth/                   Google sign-in, sessions, invites

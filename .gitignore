@@ -1,0 +1,24 @@
+node_modules
+
+# Output
+/.svelte-kit
+/build
+
+# Local data (database, backups)
+/data
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Vite
+vite.config.ts.timestamp-*
+
+# Playwright
+/test-results
+/playwright-report
+
+# OS
+.DS_Store
+/.e2e-data

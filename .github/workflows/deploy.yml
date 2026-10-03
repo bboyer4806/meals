@@ -1,27 +1,50 @@
 name: Deploy
 
-# Builds on GitHub's runners, pushes the image to GHCR, then has Dokku on the
-# server run it. The Dokku app, its domain and its HTTPS certificate are set up
-# here too, so a new project needs no SSH session on the server: copy this
-# file, change APP and DOMAIN, add the two secrets, push.
+# Checks the code, then builds on GitHub's runners, pushes the image to GHCR,
+# and has Dokku on the server run it. The Dokku app, its domain, storage,
+# settings and HTTPS certificate are set up here too, so a new project needs
+# no SSH session on the server: copy this file, change APP and DOMAIN, add the
+# secrets, push. Pull requests only run the checks.
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
-
-# One deploy at a time. A running deploy is never cancelled; a newer push
-# replaces one still waiting to start, so the latest commit is what goes live.
-concurrency:
-  group: deploy
-  cancel-in-progress: false
 
 env:
   APP: meals
   DOMAIN: meals.dev.boyersoftware.com
 
 jobs:
-  deploy:
+  check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # No dependency needs its install script (see the Dockerfile).
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+  deploy:
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # One deploy at a time. A running deploy is never cancelled; a newer push
+    # replaces one still waiting to start, so the latest commit is what goes live.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -54,10 +77,16 @@ jobs:
           SSH_KEY: ${{ secrets.DOKKU_SSH_KEY }}
           HOST: ${{ secrets.DOKKU_HOST }}
           IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
         run: |
           set -euo pipefail
           : "${SSH_KEY:?Add the DOKKU_SSH_KEY secret under Settings > Secrets and variables > Actions}"
           : "${HOST:?Add the DOKKU_HOST secret under Settings > Secrets and variables > Actions}"
+          : "${GOOGLE_CLIENT_ID:?Add the GOOGLE_CLIENT_ID secret under Settings > Secrets and variables > Actions}"
+          : "${GOOGLE_CLIENT_SECRET:?Add the GOOGLE_CLIENT_SECRET secret under Settings > Secrets and variables > Actions}"
+          : "${ADMIN_EMAIL:?Add the ADMIN_EMAIL secret under Settings > Secrets and variables > Actions}"
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
@@ -72,6 +101,24 @@ jobs:
           # Before the first deploy, so Dokku proxies to the port the image
           # exposes rather than its default of 5000.
           dokku domains:set "$APP" "$DOMAIN"
+
+          # Persistent storage for the database at /data, owned by the image's
+          # node user (uid 1000, which Dokku calls "heroku").
+          dokku storage:ensure-directory --chown heroku "$APP"
+          MOUNT="/var/lib/dokku/data/storage/$APP:/data"
+          mounts="$(dokku storage:list "$APP")"
+          grep -qF "$MOUNT" <<<"$mounts" || dokku storage:mount "$APP" "$MOUNT"
+
+          # The app's settings, base64-encoded so every character survives SSH.
+          encode() { printf '%s' "$1" | base64 -w0; }
+          dokku config:set --encoded --no-restart "$APP" \
+            GOOGLE_CLIENT_ID="$(encode "$GOOGLE_CLIENT_ID")" \
+            GOOGLE_CLIENT_SECRET="$(encode "$GOOGLE_CLIENT_SECRET")" \
+            ADMIN_EMAIL="$(encode "$ADMIN_EMAIL")" \
+            DATA_DIR="$(encode /data)"
+
+          # The app listens on 3000.
+          dokku ports:set "$APP" http:80:3000 https:443:3000
 
           # Re-running a workflow deploys the same image again, which Dokku
           # reports as "No changes detected" with a non-zero exit. Nothing
