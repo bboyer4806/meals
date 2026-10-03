@@ -11,6 +11,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One deploy at a time, in push order. A running deploy is never cancelled; a newer push
+# replaces one still waiting to start, so the latest commit is what goes live. Pull requests
+# only run the checks, so each gets its own group.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && github.run_id || 'deploy' }}
+  cancel-in-progress: false
+
 env:
   APP: meals
   DOMAIN: meals.dev.boyersoftware.com
@@ -40,11 +47,6 @@ jobs:
     needs: check
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # One deploy at a time. A running deploy is never cancelled; a newer push
-    # replaces one still waiting to start, so the latest commit is what goes live.
-    concurrency:
-      group: deploy
-      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -125,6 +127,10 @@ jobs:
           # failed, and the certificate step below still needs to run.
           dokku git:from-image "$APP" "$IMAGE" 2>&1 | tee deploy.log \
             || grep -q "No changes detected" deploy.log
+          # Same image, so nothing restarted. Restart so new settings take effect.
+          if grep -q "No changes detected" deploy.log; then
+            dokku ps:restart "$APP"
+          fi
 
           # Needs the DNS record in place. Checked first so a deploy never
           # requests a certificate the app already has.

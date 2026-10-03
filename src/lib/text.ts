@@ -1,6 +1,11 @@
 /** Trims a name and collapses runs of spaces, so "  Paper   towels " becomes "Paper towels". */
 export function normalizeName(name: string): string {
-	return name.trim().replace(/\s+/g, ' ');
+	return name.normalize('NFC').trim().replace(/\s+/g, ' ');
+}
+
+/** Folds case for matching names, including non-ASCII letters: "Éclairs" matches "éclairs". */
+export function foldCase(text: string): string {
+	return text.normalize('NFC').toLowerCase();
 }
 
 /** Shows a quantity without trailing zeros: 2, 1.5, 0.33. */

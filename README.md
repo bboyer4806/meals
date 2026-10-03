@@ -81,8 +81,12 @@ and the nightly backup.
 ## Backups
 
 Every night at 03:00 server time, Dokku runs `node scripts/backup.js`. It copies the database to
-`/var/lib/dokku/data/storage/meals/backups/<date>/meals.db` and keeps the newest 14. The Admin
-page shows the date of the latest one.
+`/var/lib/dokku/data/storage/meals/backups/<date>/meals.db` and keeps the newest 14. A failed
+run leaves the existing backups alone.
+
+Dokku sends the job's output only to the cron email address, not to `dokku logs`. Check the
+Admin page instead: it shows the date of the newest complete backup, so a date that stops
+moving means backups are failing.
 
 The backups are on the same disk as the database, so they don't survive losing the server.
 

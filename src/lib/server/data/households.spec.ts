@@ -58,6 +58,18 @@ describe('invites', () => {
 		expect(createInvite(null, 'NEW@example.com', 0)).toEqual({ kind: 'invited-already' });
 	});
 
+	it('adds someone who signed in but never set up a household (design 6.1)', () => {
+		const { householdId } = makeHousehold();
+		const stranded = db()
+			.insert(users)
+			.values({ googleSub: 'g-dana', email: 'dana@example.com', name: 'Dana', createdAt: 0 })
+			.returning()
+			.get();
+		expect(createInvite(null, 'dana@example.com', 0)).toEqual({ kind: 'member' });
+		expect(createInvite(householdId, 'Dana@Example.com', 0)).toEqual({ kind: 'joined' });
+		expect(listMembers(householdId).map((m) => m.id)).toContain(stranded.id);
+	});
+
 	it("keeps each household's invites to itself", () => {
 		const mine = makeHousehold();
 		const theirs = makeHousehold();

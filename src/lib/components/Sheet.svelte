@@ -63,8 +63,24 @@
 		}
 	}
 
+	@media (max-width: 41.99rem) and (prefers-reduced-motion: no-preference) {
+		dialog[open] {
+			animation: slide-up 0.2s ease-out;
+		}
+	}
+
+	@keyframes slide-up {
+		from {
+			transform: translateY(100%);
+		}
+	}
+
 	.content {
 		padding: 0.75rem 1rem calc(1.25rem + env(safe-area-inset-bottom));
+	}
+
+	header button {
+		min-width: var(--tap);
 	}
 
 	header {

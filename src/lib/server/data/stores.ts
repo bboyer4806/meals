@@ -36,7 +36,7 @@ function findByName(householdId: number, name: string): Store | undefined {
 	return db()
 		.select({ id: stores.id, name: stores.name, archivedAt: stores.archivedAt })
 		.from(stores)
-		.where(and(eq(stores.householdId, householdId), sql`lower(${stores.name}) = lower(${name})`))
+		.where(and(eq(stores.householdId, householdId), sql`fold(${stores.name}) = fold(${name})`))
 		.get();
 }
 

@@ -227,8 +227,13 @@ with the same `/data` mount (Q13). It:
 1. Copies the database with SQLite's online backup, which is safe while the app runs.
 2. Hard-links every photo into the snapshot folder. Unchanged photos take no extra
    space, and a deleted or replaced photo survives in older snapshots.
-3. Deletes snapshots older than 14 days.
-4. Exits with an error if any step fails, which shows in `dokku logs`.
+3. Builds each snapshot in a temporary folder and moves it into place only when it's
+   complete, so a failed run never replaces or hides a good snapshot.
+4. Keeps the newest 14 snapshots.
+
+Dokku sends a scheduled job's output only to the cron email address, so failures don't show
+in `dokku logs`. The Admin page's "last nightly backup" date is how you notice: it counts
+only complete snapshots, so it stops advancing when backups fail.
 
 To restore, you stop the app, copy a snapshot's database and photos back into place,
 and start it. The README will have the exact commands.

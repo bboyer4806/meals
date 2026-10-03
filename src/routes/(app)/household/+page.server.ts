@@ -61,6 +61,9 @@ export const actions = {
 		if (result.kind === 'invited-already') {
 			return fail(400, { action: 'invite', error: `${email} already has an invite.` });
 		}
+		if (result.kind === 'joined') {
+			return { action: 'invite', message: `${email} already had an account and has joined.` };
+		}
 		return {
 			action: 'invite',
 			message: `Invited ${email}. Tell them to sign in with that Google account.`

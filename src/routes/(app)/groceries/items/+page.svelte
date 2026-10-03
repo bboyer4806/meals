@@ -3,20 +3,29 @@
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
 
-	let { data, form } = $props();
+	let { data } = $props();
 
 	type Item = (typeof data.items)[number];
 
 	let editing = $state<Item | null>(null);
 	let open = $state(false);
+	// Rebuilt every time the sheet opens, so edits abandoned last time don't come back.
+	let editKey = $state(0);
+	let sheetError = $state('');
 
 	function edit(item: Item) {
 		editing = item;
+		editKey += 1;
+		sheetError = '';
 		open = true;
 	}
 
-	const closeOnSuccess: SubmitFunction = () => {
+	const submitSheet: SubmitFunction = () => {
 		return async ({ result, update }) => {
+			if (result.type === 'failure') {
+				sheetError = (result.data as { error?: string } | undefined)?.error ?? 'Please try again.';
+				return;
+			}
 			await update({ reset: false });
 			if (result.type === 'success') open = false;
 		};
@@ -45,9 +54,9 @@
 
 <p>
 	{#if data.archived}
-		<a href="/groceries/items">Show active items</a>
+		<a class="link-tap" href="/groceries/items">Show active items</a>
 	{:else}
-		<a href="/groceries/items?archived=1">Show archived items</a>
+		<a class="link-tap" href="/groceries/items?archived=1">Show archived items</a>
 	{/if}
 </p>
 
@@ -76,9 +85,9 @@
 
 <Sheet bind:open title={editing?.name ?? ''}>
 	{#if editing}
-		{#key editing.id}
-			<form method="POST" action="?/update" use:enhance={closeOnSuccess}>
-				{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
+		{#key editKey}
+			<form method="POST" action="?/update" use:enhance={submitSheet}>
+				{#if sheetError}<p class="error" role="alert">{sheetError}</p>{/if}
 				<input type="hidden" name="id" value={editing.id} />
 				<div class="field">
 					<label for="item-name">Name</label>

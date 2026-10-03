@@ -16,8 +16,10 @@ import {
 	markReceived,
 	undoReceived,
 	updateLine,
+	withLineChanges,
 	type AddInput
 } from './needs.ts';
+import { createStore } from './stores.ts';
 
 const TZ = 'America/Chicago';
 // Sat 2026-10-03 12:00 in Chicago.
@@ -80,14 +82,31 @@ describe('adding', () => {
 		expect(db().select().from(items).all()).toHaveLength(1);
 	});
 
-	it('fills in the default store, and leaves it out when asked', () => {
+	it('fills in the default store, uses a picked one, and leaves it out when asked', () => {
 		add(householdId, { itemName: 'Milk' });
-		markReceived(householdId, onlyLine(householdId).id, aldi, NOON);
-		add(householdId, { itemName: 'Milk' });
-		expect(lines(householdId).find((l) => l.status === 'to_order')?.storeId).toBe(aldi);
+		add(householdId, { itemName: 'Eggs' });
+		for (const line of lines(householdId)) markReceived(householdId, line.id, aldi, NOON);
 
-		add(householdId, { itemName: 'Eggs', store: walmart });
-		expect(lines(householdId).find((l) => l.itemName === 'Eggs')?.storeId).toBe(walmart);
+		add(householdId, { itemName: 'Milk' });
+		add(householdId, { itemName: 'Eggs', store: 'none' });
+		add(householdId, { itemName: 'Bread', store: walmart });
+		const open = lines(householdId).filter((l) => l.status === 'to_order');
+		expect(open.find((l) => l.itemName === 'Milk')?.storeId).toBe(aldi);
+		expect(open.find((l) => l.itemName === 'Eggs')?.storeId).toBeNull();
+		expect(open.find((l) => l.itemName === 'Bread')?.storeId).toBe(walmart);
+	});
+
+	it('matches names ignoring case beyond A to Z', () => {
+		add(householdId, { itemName: 'Éclairs', unit: 'box' });
+		expect(add(householdId, { itemName: 'éclairs', unit: 'box' })).toMatchObject({
+			kind: 'duplicate',
+			itemName: 'Éclairs',
+			suggestedQuantity: 2
+		});
+		expect(createStore(householdId, 'SEÑOR MARKET')).toEqual({ kind: 'saved' });
+		expect(createStore(householdId, 'señor market')).toEqual({ kind: 'taken', archived: false });
+		markReceived(householdId, onlyLine(householdId).id, walmart, NOON);
+		expect(listHistory(householdId, 'éCLAIR', 10)).toHaveLength(1);
 	});
 
 	it('skips an archived default store', () => {
@@ -154,6 +173,55 @@ describe('status changes', () => {
 		expectHttpError(() => markReceived(householdId, id, undefined, NOON), 400);
 		markReceived(householdId, id, aldi, NOON);
 		expect(onlyLine(householdId)).toMatchObject({ status: 'received', storeId: aldi });
+	});
+
+	it('keeps working for a line whose store was archived (design 6.10)', () => {
+		add(householdId, { itemName: 'Bread', quantity: 2, store: aldi });
+		const id = onlyLine(householdId).id;
+		db().update(stores).set({ archivedAt: 1 }).where(eq(stores.id, aldi)).run();
+		markOrdered(householdId, id, aldi, NOON);
+		markGotFewer(householdId, id, 1, aldi, NOON);
+		expect(lines(householdId).map((l) => [l.status, l.storeId]).sort()).toEqual([
+			['received', aldi],
+			['to_order', aldi]
+		]);
+		// Moving a line to an archived store is still refused.
+		add(householdId, { itemName: 'Eggs', store: walmart });
+		const eggs = lines(householdId).find((l) => l.itemName === 'Eggs')!;
+		expectHttpError(() => markOrdered(householdId, eggs.id, aldi, NOON), 400);
+	});
+
+	it('learns the default store only when a line leaves To Order (design 6.3)', () => {
+		add(householdId, { itemName: 'Milk', store: walmart });
+		const walmartOrder = onlyLine(householdId);
+		markOrdered(householdId, walmartOrder.id, undefined, NOON);
+		add(householdId, { itemName: 'Milk', store: aldi, resolution: 'add' });
+		const aldiLine = lines(householdId).find((l) => l.status === 'to_order')!;
+		markReceived(householdId, aldiLine.id, undefined, NOON);
+		expect(defaultStoreOf(walmartOrder.itemId)).toBe(aldi);
+
+		markReceived(householdId, walmartOrder.id, undefined, NOON);
+		expect(defaultStoreOf(walmartOrder.itemId)).toBe(aldi);
+	});
+
+	it('saves sheet edits with a status change, or neither', () => {
+		add(householdId, { itemName: 'Bread', quantity: 2, store: walmart });
+		const id = onlyLine(householdId).id;
+		const edits = { quantity: 5, unit: 'loaves', storeId: walmart, note: 'whole wheat' };
+		withLineChanges(householdId, id, edits, () => markOrdered(householdId, id, undefined, NOON));
+		expect(onlyLine(householdId)).toMatchObject({ status: 'ordered', quantity: 5, unit: 'loaves' });
+
+		add(householdId, { itemName: 'Eggs', quantity: 1 });
+		const eggs = lines(householdId).find((l) => l.itemName === 'Eggs')!;
+		const noStore = { quantity: 3, unit: null, storeId: null, note: null };
+		expectHttpError(
+			() =>
+				withLineChanges(householdId, eggs.id, noStore, () =>
+					markOrdered(householdId, eggs.id, undefined, NOON)
+				),
+			400
+		);
+		expect(lines(householdId).find((l) => l.itemName === 'Eggs')?.quantity).toBe(1);
 	});
 
 	it('makes the store used the default store', () => {

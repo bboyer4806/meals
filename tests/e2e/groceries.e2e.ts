@@ -172,3 +172,135 @@ test("can't change another household's lines", async ({ page, db, person, baseUR
 	expect(await response.json()).toMatchObject({ type: 'error' });
 	expect(db.prepare('select count(*) from grocery_needs where id = ?').pluck().get(line)).toBe(1);
 });
+
+test('fills in the unit and store when the typed name matches an item', async ({
+	page,
+	db,
+	person
+}) => {
+	const aldi = addStore(db, person.householdId, 'Aldi');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Chicken breast', quantity: '2', unit: 'lb', store: 'Aldi' });
+	await group(page, 'Aldi').getByRole('button', { name: 'Mark received: Chicken breast' }).click();
+	await expect(group(page, 'Aldi').getByRole('heading', { name: 'Received today' })).toBeVisible();
+	await addAndWait(page, { name: 'Chips', quantity: '1', unit: 'bag' });
+
+	const form = addForm(page);
+	// Typing the whole name, without tapping a suggestion, is enough.
+	await form.getByRole('combobox', { name: 'Item' }).fill('chicken breast');
+	await expect(form.getByLabel('Unit')).toHaveValue('lb');
+	await expect(form.getByLabel('Store')).toHaveValue(String(aldi));
+	// Switching to another item replaces what was filled in automatically.
+	await form.getByRole('combobox', { name: 'Item' }).fill('chips');
+	await expect(form.getByLabel('Unit')).toHaveValue('bag');
+	await expect(form.getByLabel('Store')).toHaveValue('usual');
+	// A unit the person typed is kept.
+	await form.getByLabel('Unit').fill('family size');
+	await form.getByRole('combobox', { name: 'Item' }).fill('chicken breast');
+	await expect(form.getByLabel('Unit')).toHaveValue('family size');
+});
+
+test('offers to add a name that matches no item as a new item', async ({ page, person: _ }) => {
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Milk' });
+	const item = addForm(page).getByRole('combobox', { name: 'Item' });
+	// A partial name shows the matching item and the offer to add a new one.
+	await item.fill('Mil');
+	await expect(page.getByRole('listbox').getByRole('option')).toHaveText([
+		'Milk',
+		'Add “Mil” as a new item'
+	]);
+	// An exact name offers only the item.
+	await item.fill('milk');
+	await expect(page.getByRole('listbox').getByRole('option')).toHaveText(['Milk']);
+	await item.fill('Oat milk');
+	await page.getByRole('option', { name: 'Add “Oat milk” as a new item' }).click();
+	await expect(page.getByRole('listbox')).toHaveCount(0);
+	await expect(addForm(page).getByRole('combobox', { name: 'Item' })).toHaveValue('Oat milk');
+});
+
+test('shows a prompt error inside the prompt', async ({ page, person: _ }) => {
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Coffee', quantity: '1', unit: 'bag' });
+	await addItem(page, { name: 'Coffee', quantity: '1', unit: 'bag' });
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('Quantity').fill('0');
+	await dialog.getByRole('button', { name: 'Update' }).click();
+	await expect(dialog.getByRole('alert')).toHaveText('Enter a quantity above 0');
+});
+
+test('saves the sheet edits with Mark ordered, and starts fresh when reopened', async ({
+	page,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Aldi');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Bread', quantity: '2', store: 'Aldi' });
+	const aldi = group(page, 'Aldi');
+
+	// Edits abandoned with the close button don't come back.
+	await aldi.getByRole('button', { name: /^Bread/ }).click();
+	let dialog = page.getByRole('dialog');
+	await dialog.getByLabel('Quantity').fill('9');
+	await dialog.getByRole('button', { name: 'Close' }).click();
+	await aldi.getByRole('button', { name: /^Bread/ }).click();
+	dialog = page.getByRole('dialog');
+	await expect(dialog.getByLabel('Quantity')).toHaveValue('2');
+
+	await dialog.getByLabel('Quantity').fill('5');
+	await dialog.getByLabel('Unit').fill('loaves');
+	await dialog.getByLabel('Note').fill('whole wheat');
+	await dialog.getByRole('button', { name: 'Mark ordered' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(aldi.getByRole('button', { name: /^Bread\s*5 loaves\s*whole wheat/ })).toBeVisible();
+	await expect(aldi.getByRole('heading', { name: 'Ordered' })).toBeVisible();
+});
+
+test('records Got fewer when Enter is pressed in the amount', async ({ page, db, person }) => {
+	addStore(db, person.householdId, 'Walmart');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Yogurt', quantity: '3', unit: 'cups', store: 'Walmart' });
+	const walmart = group(page, 'Walmart');
+	await walmart.getByRole('button', { name: /^Yogurt/ }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'Got fewer' }).click();
+	await dialog.getByLabel('How many did you get?').fill('2');
+	await dialog.getByLabel('How many did you get?').press('Enter');
+	await expect(dialog).toHaveCount(0);
+	await expect(walmart.getByRole('heading', { name: 'Received today' })).toBeVisible();
+	await expect(walmart.getByRole('button', { name: /^Yogurt\s*1 cups/ })).toBeVisible();
+});
+
+test('keeps working for a line whose store was archived', async ({ page, db, person }) => {
+	const costco = addStore(db, person.householdId, 'Costco');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Bread', quantity: '2', store: 'Costco' });
+	db.prepare('update stores set archived_at = 1 where id = ?').run(costco);
+	await page.reload();
+
+	const group_ = group(page, 'Costco');
+	await group_.getByRole('button', { name: /^Bread/ }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Mark ordered' }).click();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(group_.getByRole('heading', { name: 'Ordered' })).toBeVisible();
+});
+
+test('shows a failed check-off next to its line and refreshes the list', async ({
+	page,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Aldi');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Milk', store: 'Aldi' });
+	// Someone else checks it off first.
+	db.prepare(
+		"update grocery_needs set status = 'received', received_at = ? where household_id = ?"
+	).run(Date.now(), person.householdId);
+
+	const aldi = group(page, 'Aldi');
+	await aldi.getByRole('button', { name: 'Mark received: Milk' }).click();
+	await expect(aldi.getByRole('alert')).toHaveText('This line was already received');
+	await expect(aldi.getByRole('button', { name: 'Undo received: Milk' })).toBeVisible();
+});

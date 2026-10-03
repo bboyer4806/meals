@@ -215,6 +215,13 @@ button:disabled {
 	border-top: none;
 }
 
+/* A text link that is still a 44px tap target. */
+.link-tap {
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--tap);
+}
+
 .visually-hidden {
 	position: absolute;
 	width: 1px;

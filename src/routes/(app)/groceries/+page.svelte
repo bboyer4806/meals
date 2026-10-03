@@ -1,14 +1,16 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
+	import { refreshAll } from '$app/navigation';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import ItemInput from '#lib/components/ItemInput.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
-	import { formatQuantity } from '#lib/text.ts';
+	import { foldCase, formatQuantity, normalizeName } from '#lib/text.ts';
 
 	let { data, form } = $props();
 
 	type Line = (typeof data.groups)[number]['toOrder'][number];
-	type PickerItem = (typeof data.items)[number];
+	type Failure = { error?: string } | undefined;
 
 	const activeStores = $derived(data.stores.filter((store) => store.archivedAt === null));
 
@@ -16,7 +18,13 @@
 		return line.unit ? `${formatQuantity(line.quantity)} ${line.unit}` : formatQuantity(line.quantity);
 	}
 
+	function failureMessage(data: unknown) {
+		return (data as Failure)?.error ?? 'Something went wrong. Please try again.';
+	}
+
 	// Add bar
+
+	type AddFields = { itemName: string; quantity: number | null; unit: string; store: string };
 
 	let itemName = $state('');
 	// A number input bound with bind:value holds a number, or null while it's empty.
@@ -25,65 +33,132 @@
 	let store = $state('usual');
 	let itemInput: HTMLElement;
 
-	function pickItem(item: PickerItem) {
-		store = item.defaultStoreId === null ? 'usual' : String(item.defaultStoreId);
-		if (unit === '' && item.lastUnit) unit = item.lastUnit;
+	// When the name matches an item, fill in the unit used last time and its store (design 6.4,
+	// Q18), but never over something the person changed since the last automatic fill.
+	const matched = $derived.by(() => {
+		const key = foldCase(normalizeName(itemName));
+		return data.items.find((item) => foldCase(item.name) === key);
+	});
+	let filledUnit = '';
+	let filledStore = 'usual';
+	$effect(() => {
+		const item = matched;
+		untrack(() => {
+			const nextUnit = item?.lastUnit ?? '';
+			const nextStore = item?.defaultStoreId == null ? 'usual' : String(item.defaultStoreId);
+			if (unit === filledUnit) unit = nextUnit;
+			if (store === filledStore) store = nextStore;
+			filledUnit = nextUnit;
+			filledStore = nextStore;
+		});
+	});
+
+	/** Clears the fields that still hold what was sent; someone may have started the next item. */
+	function clearIfUnchanged(sent: AddFields) {
+		if (itemName === sent.itemName) itemName = '';
+		if (quantity === sent.quantity) quantity = 1;
+		if (unit === sent.unit) unit = '';
+		if (store === sent.store) store = 'usual';
+		itemInput.querySelector('input')?.focus();
 	}
 
 	type Prompt = Extract<NonNullable<typeof form>, { prompt: unknown }>['prompt'];
+
+	function promptIn(data: unknown): Prompt | undefined {
+		return (data as { prompt?: Prompt } | undefined)?.prompt;
+	}
+
 	let prompt = $state<Prompt | null>(null);
 	let promptOpen = $state(false);
+	let promptError = $state('');
+	// What the add bar held when the prompt's question was first asked.
+	let promptSent: AddFields | null = null;
 
 	const submitAdd: SubmitFunction = () => {
-		// Someone may start typing the next item before this one is saved, so only clear the
-		// fields that still hold what was sent.
 		const sent = { itemName, quantity, unit, store };
 		return async ({ result, update }) => {
-			await update({ reset: false });
-			if (result.type !== 'success') return;
-			const data = result.data as { prompt?: Prompt } | undefined;
-			if (data?.prompt) {
-				prompt = data.prompt;
+			const asked = result.type === 'success' ? promptIn(result.data) : undefined;
+			if (asked) {
+				prompt = asked;
+				promptSent = sent;
+				promptError = '';
 				promptOpen = true;
 				return;
 			}
-			promptOpen = false;
-			if (itemName === sent.itemName) itemName = '';
-			if (quantity === sent.quantity) quantity = 1;
-			if (unit === sent.unit) unit = '';
-			if (store === sent.store) store = 'usual';
-			itemInput.querySelector('input')?.focus();
+			await update({ reset: false });
+			if (result.type === 'success') clearIfUnchanged(sent);
 		};
 	};
 
-	// Sheets for one line
+	// The prompt's own forms: errors show in the prompt, and success clears the add bar only
+	// where it still holds the item the prompt was about.
+	const submitPrompt: SubmitFunction = () => {
+		return async ({ result, update }) => {
+			if (result.type === 'failure') {
+				promptError = failureMessage(result.data);
+				return;
+			}
+			const next = result.type === 'success' ? promptIn(result.data) : undefined;
+			if (next) {
+				// Restoring an archived item can lead straight to the duplicate question.
+				prompt = next;
+				promptError = '';
+				return;
+			}
+			await update({ reset: false });
+			if (result.type === 'success') {
+				promptOpen = false;
+				if (promptSent) clearIfUnchanged(promptSent);
+			}
+		};
+	};
+
+	// One line's actions. Their errors show next to the line or in its sheet, not elsewhere.
+
+	type Where = number | 'sheet' | 'picker';
+	let lineError = $state<{ where: Where; message: string } | null>(null);
+
+	function lineSubmit(where: Where): SubmitFunction {
+		return () => {
+			return async ({ result, update }) => {
+				if (result.type === 'failure') {
+					lineError = { where, message: failureMessage(result.data) };
+					// Someone else may have changed the line; show the list as it is now.
+					await refreshAll();
+					return;
+				}
+				lineError = null;
+				await update({ reset: false });
+				if (result.type === 'success') {
+					editOpen = false;
+					pickOpen = false;
+				}
+			};
+		};
+	}
 
 	let editing = $state<Line | null>(null);
 	let editOpen = $state(false);
+	// Rebuilt every time the sheet opens, so edits abandoned last time don't come back.
+	let editKey = $state(0);
 	let showFewer = $state(false);
+	let fewerSave = $state<HTMLButtonElement>();
 	let picking = $state<Line | null>(null);
 	let pickOpen = $state(false);
 
 	function edit(line: Line) {
 		editing = line;
+		editKey += 1;
 		showFewer = false;
+		lineError = null;
 		editOpen = true;
 	}
 
 	function pickStore(line: Line) {
 		picking = line;
+		lineError = null;
 		pickOpen = true;
 	}
-
-	const closeOnSuccess: SubmitFunction = () => {
-		return async ({ result, update }) => {
-			await update({ reset: false });
-			if (result.type === 'success') {
-				editOpen = false;
-				pickOpen = false;
-			}
-		};
-	};
 
 	// Collapsed groups are remembered on this device only.
 
@@ -106,10 +181,6 @@
 			// Storage can be unavailable (private browsing); collapsing still works for now.
 		}
 	}
-
-	const lineCount = $derived(
-		data.groups.reduce((sum, group) => sum + group.toOrder.length + group.ordered.length, 0)
-	);
 </script>
 
 <svelte:head>
@@ -118,8 +189,8 @@
 
 <div class="title row">
 	<h1 class="grow">Groceries</h1>
-	<a href="/groceries/items">Items</a>
-	<a href="/groceries/history">History</a>
+	<a class="link-tap" href="/groceries/items">Items</a>
+	<a class="link-tap" href="/groceries/history">History</a>
 </div>
 
 <form
@@ -137,7 +208,6 @@
 			placeholder="Add an item"
 			items={data.items}
 			bind:value={itemName}
-			onpick={pickItem}
 		/>
 	</div>
 	<div class="row">
@@ -169,11 +239,11 @@
 	{#if form?.action === 'add' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
 </form>
 
-{#if form?.action !== 'add' && form?.error && !editOpen && !pickOpen}
+{#if form?.action === 'group' && form.error}
 	<p class="error" role="alert">{form.error}</p>
 {/if}
 
-{#if lineCount === 0 && data.groups.length === 0}
+{#if data.groups.length === 0}
 	<p class="empty muted">Nothing on the list. Add something above.</p>
 {/if}
 
@@ -242,7 +312,7 @@
 {#snippet row(line: Line)}
 	<li class="line" class:done={line.status === 'received'}>
 		{#if line.status === 'received'}
-			<form method="POST" action="?/undoReceive" use:enhance>
+			<form method="POST" action="?/undoReceive" use:enhance={lineSubmit(line.id)}>
 				<input type="hidden" name="id" value={line.id} />
 				<button class="check" aria-label="Undo received: {line.itemName}">
 					<span class="circle checked" aria-hidden="true">✓</span>
@@ -253,7 +323,7 @@
 				<span class="circle" aria-hidden="true"></span>
 			</button>
 		{:else}
-			<form method="POST" action="?/receive" use:enhance>
+			<form method="POST" action="?/receive" use:enhance={lineSubmit(line.id)}>
 				<input type="hidden" name="id" value={line.id} />
 				<button class="check" aria-label="Mark received: {line.itemName}">
 					<span class="circle" aria-hidden="true"></span>
@@ -264,6 +334,9 @@
 			<div class="body">{@render lineText(line)}</div>
 		{:else}
 			<button class="body" onclick={() => edit(line)}>{@render lineText(line)}</button>
+		{/if}
+		{#if lineError?.where === line.id}
+			<p class="error line-error" role="alert">{lineError.message}</p>
 		{/if}
 	</li>
 {/snippet}
@@ -276,11 +349,12 @@
 {/snippet}
 
 <Sheet bind:open={promptOpen} title={prompt?.itemName ?? ''}>
+	{#if promptError}<p class="error" role="alert">{promptError}</p>{/if}
 	{#if prompt?.kind === 'duplicate' && prompt.status === 'to_order'}
 		<p>
 			Already on the list: {amount(prompt)}{prompt.storeName ? ` at ${prompt.storeName}` : ''}.
 		</p>
-		<form method="POST" action="?/add" use:enhance={submitAdd}>
+		<form method="POST" action="?/add" use:enhance={submitPrompt}>
 			<input type="hidden" name="itemName" value={prompt.asked.itemName} />
 			<input type="hidden" name="store" value={prompt.asked.store} />
 			<input type="hidden" name="resolution" value="update" />
@@ -317,7 +391,7 @@
 		<p>
 			Already ordered: {amount(prompt)}{prompt.storeName ? ` from ${prompt.storeName}` : ''}.
 		</p>
-		<form method="POST" action="?/add" use:enhance={submitAdd}>
+		<form method="POST" action="?/add" use:enhance={submitPrompt}>
 			{@render askedFields(prompt.asked, 'add')}
 			<div class="row actions">
 				<button class="primary">Add {amount(prompt.asked)} more to order</button>
@@ -326,7 +400,7 @@
 		</form>
 	{:else if prompt?.kind === 'archived'}
 		<p>{prompt.itemName} is archived. Restore it and add it to the list?</p>
-		<form method="POST" action="?/add" use:enhance={submitAdd}>
+		<form method="POST" action="?/add" use:enhance={submitPrompt}>
 			{@render askedFields(prompt.asked, 'restore')}
 			<div class="row actions">
 				<button class="primary">Restore and add</button>
@@ -350,11 +424,11 @@
 <Sheet bind:open={pickOpen} title="Where did you get it?">
 	{#if picking}
 		<p>{picking.itemName} doesn't have a store yet.</p>
-		{#if form?.action === 'line' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
+		{#if lineError?.where === 'picker'}<p class="error" role="alert">{lineError.message}</p>{/if}
 		{#if activeStores.length === 0}
 			<p>Add your stores on the <a href="/household">Household</a> page first.</p>
 		{:else}
-			<form method="POST" action="?/receive" use:enhance={closeOnSuccess} class="stores">
+			<form method="POST" action="?/receive" use:enhance={lineSubmit('picker')} class="stores">
 				<input type="hidden" name="id" value={picking.id} />
 				{#each activeStores as option (option.id)}
 					<button name="store" value={option.id}>{option.name}</button>
@@ -366,9 +440,9 @@
 
 <Sheet bind:open={editOpen} title={editing?.itemName ?? ''}>
 	{#if editing}
-		{#key editing.id}
-			<form method="POST" action="?/update" use:enhance={closeOnSuccess}>
-				{#if form?.action === 'line' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
+		{#key editKey}
+			<form method="POST" action="?/update" use:enhance={lineSubmit('sheet')}>
+				{#if lineError?.where === 'sheet'}<p class="error" role="alert">{lineError.message}</p>{/if}
 				<input type="hidden" name="id" value={editing.id} />
 				<div class="row field">
 					<div>
@@ -431,8 +505,15 @@
 							inputmode="decimal"
 							step="any"
 							min="0"
+							onkeydown={(event) => {
+								// Enter would otherwise press the sheet's first button, Save.
+								if (event.key === 'Enter') {
+									event.preventDefault();
+									event.currentTarget.form?.requestSubmit(fewerSave);
+								}
+							}}
 						/>
-						<button formaction="?/gotFewer">Save</button>
+						<button formaction="?/gotFewer" bind:this={fewerSave}>Save</button>
 					</div>
 				{/if}
 				<div class="delete">
@@ -543,6 +624,7 @@
 
 	.line {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.25rem;
 		border-top: 1px solid var(--border);
@@ -550,6 +632,11 @@
 
 	.lines .line:first-child {
 		border-top: none;
+	}
+
+	.line-error {
+		flex-basis: 100%;
+		margin: 0 0 0.5rem;
 	}
 
 	.check {

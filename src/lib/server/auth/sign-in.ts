@@ -4,6 +4,9 @@ import { invites, users } from '../db/schema.ts';
 
 export type GoogleProfile = { sub: string; email: string; name: string };
 
+/** Carries the address an uninvited account used from the sign-in callback to /not-invited. */
+export const NOT_INVITED_COOKIE = 'not_invited_email';
+
 export type SignInResult =
 	| { kind: 'signed-in'; userId: number }
 	| { kind: 'not-invited'; email: string };

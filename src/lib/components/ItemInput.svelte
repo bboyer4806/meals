@@ -1,31 +1,36 @@
 <script lang="ts" generics="T extends { id: number; name: string; timesAdded: number }">
+	import { foldCase, normalizeName } from '../text.ts';
+
 	// A text field that suggests existing items as you type: names that start with the text
-	// first, then names that contain it, most often added first within each (design 6.4).
+	// first, then names that contain it, most often added first within each. A name that
+	// matches no item offers "Add as a new item" (design 6.4).
 	let {
 		items,
 		value = $bindable(''),
 		id,
 		name,
-		placeholder,
-		onpick
+		placeholder
 	}: {
 		items: T[];
 		value?: string;
 		id: string;
 		name: string;
 		placeholder?: string;
-		onpick: (item: T) => void;
 	} = $props();
+
+	type Option = { kind: 'item'; item: T } | { kind: 'new' };
 
 	const listId = $props.id();
 	let open = $state(false);
 	let active = $state(-1);
 
-	const matches = $derived.by(() => {
-		const query = value.trim().toLowerCase();
-		if (query === '') return [];
-		return items
-			.map((item) => ({ item, position: item.name.toLowerCase().indexOf(query) }))
+	const typed = $derived(normalizeName(value));
+
+	const options = $derived.by((): Option[] => {
+		if (typed === '') return [];
+		const query = foldCase(typed);
+		const matches = items
+			.map((item) => ({ item, position: foldCase(item.name).indexOf(query) }))
 			.filter((match) => match.position >= 0)
 			.sort(
 				(a, b) =>
@@ -34,30 +39,31 @@
 					a.item.name.localeCompare(b.item.name)
 			)
 			.slice(0, 8)
-			.map((match) => match.item);
+			.map((match): Option => ({ kind: 'item', item: match.item }));
+		const exists = items.some((item) => foldCase(item.name) === query);
+		return exists ? matches : [...matches, { kind: 'new' }];
 	});
 
-	const showList = $derived(open && matches.length > 0);
+	const showList = $derived(open && options.length > 0);
 
-	function pick(item: T) {
-		value = item.name;
+	function choose(option: Option) {
+		if (option.kind === 'item') value = option.item.name;
 		open = false;
 		active = -1;
-		onpick(item);
 	}
 
 	function onkeydown(event: KeyboardEvent) {
 		if (!showList) return;
 		if (event.key === 'ArrowDown') {
 			event.preventDefault();
-			active = (active + 1) % matches.length;
+			active = (active + 1) % options.length;
 		} else if (event.key === 'ArrowUp') {
 			event.preventDefault();
-			active = (active - 1 + matches.length) % matches.length;
+			active = (active - 1 + options.length) % options.length;
 		} else if (event.key === 'Enter' && active >= 0) {
 			event.preventDefault();
-			const item = matches[active];
-			if (item) pick(item);
+			const option = options[active];
+			if (option) choose(option);
 		} else if (event.key === 'Escape') {
 			open = false;
 		}
@@ -90,19 +96,24 @@
 	/>
 	{#if showList}
 		<ul id={listId} role="listbox">
-			{#each matches as item, i (item.id)}
+			{#each options as option, i (option.kind === 'item' ? option.item.id : 'new')}
 				<li
 					id="{listId}-{i}"
 					role="option"
 					tabindex="-1"
+					class:new={option.kind === 'new'}
 					aria-selected={i === active}
 					onmousedown={(event) => {
-						// Keep focus in the field, and pick before the field's blur closes the list.
+						// Keep focus in the field, and choose before the field's blur closes the list.
 						event.preventDefault();
-						pick(item);
+						choose(option);
 					}}
 				>
-					{item.name}
+					{#if option.kind === 'item'}
+						{option.item.name}
+					{:else}
+						Add “{typed}” as a new item
+					{/if}
 				</li>
 			{/each}
 		</ul>
@@ -130,9 +141,17 @@
 	}
 
 	li {
-		padding: 0.6rem 0.75rem;
+		display: flex;
+		align-items: center;
+		min-height: var(--tap);
+		padding: 0 0.75rem;
 		border-radius: 8px;
 		cursor: pointer;
+	}
+
+	li.new {
+		color: var(--accent);
+		font-weight: 600;
 	}
 
 	li[aria-selected='true'],

@@ -54,14 +54,29 @@ export function removeMember(householdId: number, actingUserId: number, memberId
 	if (result.changes === 0) error(404, 'Not found');
 }
 
-export type InviteResult = { kind: 'invited' } | { kind: 'member' } | { kind: 'invited-already' };
+export type InviteResult =
+	| { kind: 'invited' }
+	| { kind: 'joined' }
+	| { kind: 'member' }
+	| { kind: 'invited-already' };
 
-/** `householdId` null invites the person to create a new household (admin only). */
+/**
+ * `householdId` null invites the person to create a new household (admin only). Someone who has
+ * an account but never set up a household (they stopped at the setup page, or were removed and
+ * signed in again) joins right away, as an invited account does when it signs in (design 6.1).
+ */
 export function createInvite(householdId: number | null, email: string, now: number): InviteResult {
 	const address = email.toLowerCase();
 	return db().transaction(() => {
-		if (db().select({ id: users.id }).from(users).where(eq(users.email, address)).get()) {
-			return { kind: 'member' };
+		const account = db()
+			.select({ id: users.id, householdId: users.householdId })
+			.from(users)
+			.where(eq(users.email, address))
+			.get();
+		if (account) {
+			if (account.householdId !== null || householdId === null) return { kind: 'member' };
+			db().update(users).set({ householdId }).where(eq(users.id, account.id)).run();
+			return { kind: 'joined' };
 		}
 		if (db().select({ id: invites.id }).from(invites).where(eq(invites.email, address)).get()) {
 			return { kind: 'invited-already' };

@@ -38,7 +38,19 @@ test('rejects a sign-in callback that did not start here', async ({ page }) => {
 	await expect(page.getByText('Sign-in was cancelled or expired.')).toBeVisible();
 });
 
-test('explains the invite-only page', async ({ page }) => {
-	await page.goto('/not-invited?email=stranger%40example.com');
+test('shows the invite-only page only the address that was really used', async ({
+	page,
+	context,
+	baseURL
+}) => {
+	await context.addCookies([
+		{ name: 'not_invited_email', value: 'stranger@example.com', url: `${baseURL}/not-invited` }
+	]);
+	await page.goto('/not-invited');
 	await expect(page.getByText("stranger@example.com hasn't been invited.")).toBeVisible();
+
+	// Text in the URL is ignored, so nobody can make the page say something else.
+	await context.clearCookies();
+	await page.goto('/not-invited?email=Your%20account%20is%20locked');
+	await expect(page.getByText("This account hasn't been invited.")).toBeVisible();
 });

@@ -14,6 +14,7 @@ import {
 	markReceived,
 	undoReceived,
 	updateLine,
+	withLineChanges,
 	type GroceryLine
 } from '#lib/server/data/needs.ts';
 import { listStores } from '#lib/server/data/stores.ts';
@@ -67,7 +68,7 @@ export function load({ locals }) {
 }
 
 const storeChoice = z.union([z.literal('usual'), z.literal('none'), id]);
-// A status change may name the store it happened at; "none" means use the line's own.
+// Checking off a line may name the store it was bought at; otherwise the line's own is used.
 const statusStore = z
 	.union([z.literal(''), z.literal('none'), id])
 	.optional()
@@ -82,6 +83,7 @@ const addSchema = z.object({
 	resolution: z.enum(['none', 'restore', 'update', 'add']).default('none')
 });
 
+// The edit sheet. Its status buttons submit the same fields, so they save the edits too.
 const updateSchema = z.object({
 	id,
 	quantity,
@@ -89,6 +91,11 @@ const updateSchema = z.object({
 	store: z.union([z.literal('none'), id]),
 	note: optionalText(200)
 });
+
+function sheetChanges(data: z.output<typeof updateSchema>) {
+	const { quantity, unit, store, note } = data;
+	return { quantity, unit, storeId: store === 'none' ? null : store, note };
+}
 
 export const actions = {
 	add: async ({ locals, request }) => {
@@ -115,10 +122,14 @@ export const actions = {
 
 	order: async ({ locals, request }) => {
 		const user = requireHousehold(locals);
-		const parsed = parseForm(z.object({ id, store: statusStore }), await request.formData(), 'line');
+		const parsed = parseForm(updateSchema, await request.formData(), 'line');
 		if ('failure' in parsed) return parsed.failure;
-		const { id: needId, store } = parsed.data;
-		return attempt('line', () => markOrdered(user.householdId, needId, store, Date.now()));
+		const { id: needId } = parsed.data;
+		return attempt('line', () =>
+			withLineChanges(user.householdId, needId, sheetChanges(parsed.data), () =>
+				markOrdered(user.householdId, needId, undefined, Date.now())
+			)
+		);
 	},
 
 	orderAll: async ({ locals, request }) => {
@@ -137,19 +148,26 @@ export const actions = {
 
 	didntCome: async ({ locals, request }) => {
 		const user = requireHousehold(locals);
-		const parsed = parseForm(z.object({ id }), await request.formData(), 'line');
+		const parsed = parseForm(updateSchema, await request.formData(), 'line');
 		if ('failure' in parsed) return parsed.failure;
-		return attempt('line', () => markDidntCome(user.householdId, parsed.data.id));
+		const { id: needId } = parsed.data;
+		return attempt('line', () =>
+			withLineChanges(user.householdId, needId, sheetChanges(parsed.data), () =>
+				markDidntCome(user.householdId, needId)
+			)
+		);
 	},
 
 	gotFewer: async ({ locals, request }) => {
 		const user = requireHousehold(locals);
-		const schema = z.object({ id, receivedQuantity: quantity, store: statusStore });
+		const schema = updateSchema.extend({ receivedQuantity: quantity });
 		const parsed = parseForm(schema, await request.formData(), 'line');
 		if ('failure' in parsed) return parsed.failure;
-		const { id: needId, receivedQuantity, store } = parsed.data;
+		const { id: needId, receivedQuantity } = parsed.data;
 		return attempt('line', () =>
-			markGotFewer(user.householdId, needId, receivedQuantity, store, Date.now())
+			withLineChanges(user.householdId, needId, sheetChanges(parsed.data), () =>
+				markGotFewer(user.householdId, needId, receivedQuantity, undefined, Date.now())
+			)
 		);
 	},
 
@@ -165,12 +183,8 @@ export const actions = {
 		const user = requireHousehold(locals);
 		const parsed = parseForm(updateSchema, await request.formData(), 'line');
 		if ('failure' in parsed) return parsed.failure;
-		const { id: needId, store, ...changes } = parsed.data;
 		return attempt('line', () =>
-			updateLine(user.householdId, needId, {
-				...changes,
-				storeId: store === 'none' ? null : store
-			})
+			updateLine(user.householdId, parsed.data.id, sheetChanges(parsed.data))
 		);
 	},
 

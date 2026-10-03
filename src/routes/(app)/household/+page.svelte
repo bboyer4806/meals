@@ -11,9 +11,14 @@
 
 	let editingStore = $state<{ id: number; name: string } | null>(null);
 	let storeSheetOpen = $state(false);
+	// Rebuilt every time the sheet opens, so edits abandoned last time don't come back.
+	let storeSheetKey = $state(0);
+	let storeSheetError = $state('');
 
 	function editStore(store: { id: number; name: string }) {
 		editingStore = store;
+		storeSheetKey += 1;
+		storeSheetError = '';
 		storeSheetOpen = true;
 	}
 
@@ -155,17 +160,22 @@
 
 <Sheet bind:open={storeSheetOpen} title="Edit store">
 	{#if editingStore}
-		{#key editingStore.id}
+		{#key storeSheetKey}
 			<form
 				method="POST"
 				action="?/renameStore"
 				use:enhance={() =>
 					async ({ result, update }) => {
+						if (result.type === 'failure') {
+							storeSheetError =
+								(result.data as { error?: string } | undefined)?.error ?? 'Please try again.';
+							return;
+						}
 						await update({ reset: false });
 						if (result.type === 'success') storeSheetOpen = false;
 					}}
 			>
-				{#if messageFor('store')?.error}<p class="error" role="alert">{form?.error}</p>{/if}
+				{#if storeSheetError}<p class="error" role="alert">{storeSheetError}</p>{/if}
 				<input type="hidden" name="id" value={editingStore.id} />
 				<div class="field">
 					<label for="rename-store">Name</label>

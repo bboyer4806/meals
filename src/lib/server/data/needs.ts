@@ -83,7 +83,7 @@ export function listHistory(householdId: number, search: string, limit: number):
 			and(
 				eq(groceryNeeds.householdId, householdId),
 				eq(groceryNeeds.status, 'received'),
-				search === '' ? undefined : sql`instr(lower(${items.name}), lower(${search})) > 0`
+				search === '' ? undefined : sql`instr(fold(${items.name}), fold(${search})) > 0`
 			)
 		)
 		.orderBy(desc(groceryNeeds.receivedAt), desc(groceryNeeds.id))
@@ -205,14 +205,18 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 
 /**
  * The store a line is ordered or received from: the one picked in the request, or the line's
- * own. A line with neither can't change status; the page asks for a store first.
+ * own. A line with neither can't change status; the page asks for a store first. Only a newly
+ * picked store must be active.
  */
 function storeForStatusChange(
 	householdId: number,
 	line: GroceryLine,
 	storeId: number | undefined
 ): number {
-	if (storeId !== undefined) return requireActiveStore(householdId, storeId).id;
+	// The line's own store keeps working even if it was archived since (design 6.10).
+	if (storeId !== undefined && storeId !== line.storeId) {
+		return requireActiveStore(householdId, storeId).id;
+	}
 	if (line.storeId === null) error(400, 'Pick a store first');
 	return line.storeId;
 }
@@ -251,7 +255,7 @@ export function markReceived(
 			.set({ status: 'received', storeId: store, receivedAt: now })
 			.where(eq(groceryNeeds.id, needId))
 			.run();
-		setDefaultStore(householdId, line.itemId, store);
+		if (line.status === 'to_order') setDefaultStore(householdId, line.itemId, store);
 	});
 }
 
@@ -350,7 +354,7 @@ export function markGotFewer(
 			})
 			.where(eq(groceryNeeds.id, needId))
 			.run();
-		setDefaultStore(householdId, line.itemId, store);
+		if (line.status === 'to_order') setDefaultStore(householdId, line.itemId, store);
 	});
 }
 
@@ -372,11 +376,14 @@ export function undoReceived(
 		.run();
 }
 
-export function updateLine(
-	householdId: number,
-	needId: number,
-	changes: { quantity: number; unit: string | null; storeId: number | null; note: string | null }
-): void {
+export type LineChanges = {
+	quantity: number;
+	unit: string | null;
+	storeId: number | null;
+	note: string | null;
+};
+
+export function updateLine(householdId: number, needId: number, changes: LineChanges): void {
 	const line = getLine(householdId, needId);
 	if (line.status === 'received') error(400, 'Received lines can no longer be edited');
 	if (changes.storeId === null && line.status === 'ordered') {
@@ -386,6 +393,19 @@ export function updateLine(
 		requireActiveStore(householdId, changes.storeId);
 	}
 	db().update(groceryNeeds).set(changes).where(eq(groceryNeeds.id, needId)).run();
+}
+
+/** Saves the edit sheet's changes, then applies a status change to the line, as one change. */
+export function withLineChanges(
+	householdId: number,
+	needId: number,
+	changes: LineChanges,
+	statusChange: () => void
+): void {
+	db().transaction(() => {
+		updateLine(householdId, needId, changes);
+		statusChange();
+	});
 }
 
 export function deleteLine(householdId: number, needId: number): void {

@@ -41,7 +41,11 @@ test('screens', async ({ page, db, person }) => {
 	await page.emulateMedia({ colorScheme: 'dark' });
 	await shot('groceries-dark');
 	await page.emulateMedia({ colorScheme: 'light' });
+	await page.getByRole('combobox', { name: 'Item' }).fill('Mi');
+	await shot('suggestions');
+	await page.getByRole('combobox', { name: 'Item' }).fill('');
 	await page.getByRole('button', { name: /^Dog food/ }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Got fewer' }).click();
 	await shot('edit-sheet');
 	await page.keyboard.press('Escape');
 	await page.getByText('Menu', { exact: true }).click();

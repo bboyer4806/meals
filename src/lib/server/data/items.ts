@@ -29,12 +29,12 @@ export function getItem(householdId: number, itemId: number): Item {
 	return item;
 }
 
-/** Names are unique per household, ignoring case. */
+/** Names are unique per household, ignoring case (fold() also folds non-ASCII letters). */
 export function findItemByName(householdId: number, name: string): Item | undefined {
 	return db()
 		.select(itemFields)
 		.from(items)
-		.where(and(eq(items.householdId, householdId), sql`lower(${items.name}) = lower(${name})`))
+		.where(and(eq(items.householdId, householdId), sql`fold(${items.name}) = fold(${name})`))
 		.get();
 }
 
@@ -115,7 +115,7 @@ export function listCatalog(householdId: number, archived: boolean, search: stri
 			and(
 				eq(items.householdId, householdId),
 				archived ? isNotNull(items.archivedAt) : isNull(items.archivedAt),
-				search === '' ? undefined : sql`instr(lower(${items.name}), lower(${search})) > 0`
+				search === '' ? undefined : sql`instr(fold(${items.name}), fold(${search})) > 0`
 			)
 		)
 		.orderBy(asc(sql`lower(${items.name})`))

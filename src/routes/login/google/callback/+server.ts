@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import { exchangeCode, type GoogleClaims } from '#lib/server/auth/google.ts';
 import { createSession, setSessionCookie } from '#lib/server/auth/session.ts';
-import { signIn } from '#lib/server/auth/sign-in.ts';
+import { NOT_INVITED_COOKIE, signIn } from '#lib/server/auth/sign-in.ts';
 import { config } from '#lib/server/config.ts';
 
 export async function GET({ cookies, url }) {
@@ -31,7 +31,10 @@ export async function GET({ cookies, url }) {
 		now
 	);
 	if (result.kind === 'not-invited') {
-		redirect(303, `/not-invited?email=${encodeURIComponent(result.email)}`);
+		// In a short-lived cookie rather than the URL, so the page can only ever show the address
+		// that was really used, and the address stays out of URLs and logs.
+		cookies.set(NOT_INVITED_COOKIE, result.email, { path: '/not-invited', maxAge: 10 * 60 });
+		redirect(303, '/not-invited');
 	}
 	const session = createSession(result.userId, now);
 	setSessionCookie(cookies, session.token, session.expiresAt);

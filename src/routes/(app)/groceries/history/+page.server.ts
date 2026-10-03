@@ -9,7 +9,8 @@ export function load({ locals, url }) {
 	const user = requireHousehold(locals);
 	const { timeZone } = getHousehold(user.householdId);
 	const search = (url.searchParams.get('q') ?? '').trim();
-	const shown = Math.max(PAGE, Number(url.searchParams.get('show')) || PAGE);
+	const requested = Number(url.searchParams.get('show'));
+	const shown = Number.isSafeInteger(requested) && requested > PAGE ? requested : PAGE;
 
 	// One more than shown tells us whether there are older lines.
 	const lines = listHistory(user.householdId, search, shown + 1);
