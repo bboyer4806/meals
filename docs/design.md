@@ -1,11 +1,11 @@
 # Meals: design
 
-Draft for review, 2026-10-03. Nothing is built yet. This doc records the decisions from
-our Q&A and turns them into a data model, rules, screens and a build plan.
+Approved on 2026-10-03 with no changes. This doc records the decisions from our Q&A and
+turns them into a data model, rules, screens and a build plan.
 
-**How to review:** start with [section 2](#2-please-review-first). It lists every place
-where I changed, added or filled in something you didn't explicitly decide. Everything
-else follows from your answers, which are recorded in [section 3](#3-decisions).
+[Section 2](#2-beyond-the-qa) lists every place where the design changes, adds to or
+fills in your answers, and you approved all of them. Your answers themselves are
+recorded in [section 3](#3-decisions).
 
 ## 1. What we're building
 
@@ -24,7 +24,7 @@ A phone-first website where households manage three connected things:
 Several households use the site, and each sees only its own data. Sign-in is with
 Google and is invite-only.
 
-## 2. Please review first
+## 2. Beyond the Q&A
 
 ### 2.1 Changes from what we discussed
 
@@ -40,7 +40,7 @@ Google and is invite-only.
    numbers. Without an exception, "Bake 25 to 30 minutes at 350°F" would be flagged in
    almost every recipe, and a warning that is always on gets ignored.
 
-### 2.2 Additions I'm proposing (keep or drop each)
+### 2.2 Additions (all kept)
 
 1. **"Always have" on an item.** Items like water or salt are left off pantry
    checklists. Without this, water shows up on every checklist.
@@ -297,7 +297,7 @@ household"), `created_at` (E5).
 
 **items:** `name` (unique per household, ignoring case), `notes` (brand, size; Q25),
 `default_store_id` (the store it was last ordered or bought from; Q17), `always_have`
-(proposal 2.2.1), `archived_at`, `created_at` (Q1).
+(addition 2.2.1), `archived_at`, `created_at` (Q1).
 
 **grocery_needs** (lines on the list): `item_id`, `quantity` (more than 0), `unit`
 (optional free text such as "bags"; Q16), `store_id` (required unless the status is To
@@ -368,7 +368,7 @@ mark points at a checklist, an item and sometimes a grocery line.
 | Ordered             | Check off, or "Mark all received" for a store              | Received.                                                                                              |
 | Ordered             | Didn't come                                                | Back to To Order, keeping its store (Q20).                                                             |
 | To Order or Ordered | Got fewer (enter the amount you got)                       | A Received line for that amount, and the original is To Order with the rest (Q20). A store is required, and it becomes the item's default store. |
-| Received today      | Tap again                                                  | Back to Ordered if it had been ordered, otherwise To Order (proposal 2.2.3).                           |
+| Received today      | Tap again                                                  | Back to Ordered if it had been ordered, otherwise To Order (addition 2.2.3).                           |
 
 Lines that are To Order or Ordered can be edited (quantity, unit, store, note) or
 deleted. Received lines leave the list, apart from "received today", and are kept as
@@ -462,7 +462,7 @@ minutes" (Q34, change 2.1.3).
 - There's one line per item. Each line shows a total for each kind of amount: volume,
   weight, each custom unit, counts, and "no amount" (Q32c). Under the totals, the amount
   for each dish and day.
-- Items marked Always have are left out (proposal 2.2.1).
+- Items marked Always have are left out (addition 2.2.1).
 - Items with a To Order or Ordered line show "On list" with the status, and need no
   action.
 - Every other line has **Have** and **Need**. Need adds a grocery line right away (Q4):
@@ -485,7 +485,7 @@ minutes" (Q34, change 2.1.3).
   made, and when it was last made. The most-made groups are listed first. Typing filters
   to groups with a dish whose name matches, most recent first. Copying sets the type and
   the dishes with their roles.
-- **Move to another date** (proposal 2.2.2) swaps the two dinners if the other date has
+- **Move to another date** (addition 2.2.2) swaps the two dinners if the other date has
   one.
 
 ### 6.10 Archiving
@@ -605,8 +605,8 @@ items, the grocery list, history, backups, and the look and feel.
   the catalog.
 - Lines can be marked ordered and received one at a time or per store. Didn't come and
   Got fewer work. History shows received lines.
-- Undoing a line received today works (if 2.2.3 is kept).
-- A nightly backup appears, and Admin shows its date (if 2.2.4 is kept).
+- Undoing a line received today works.
+- A nightly backup appears, and Admin shows its date.
 - A failing check stops a deploy.
 
 ### Phase 2: Recipes
@@ -614,7 +614,7 @@ items, the grocery list, history, backups, and the look and feel.
 **Build:** recipes with every field in section 5 (sections, units, tags, nutrition, a
 photo and thumbnail), the servings control with conversion and fractions, step warnings,
 the cooking view, the print layout, archiving dishes, the pantry checklist from a single
-recipe, Always have (if 2.2.1 is kept), and the larger upload limits.
+recipe, Always have, and the larger upload limits.
 
 **Done when:**
 
@@ -630,16 +630,16 @@ recipe, Always have (if 2.2.1 is kept), and the larger upload limits.
 ### Phase 3: Menu
 
 **Build:** the week view, the dinner editor, creating dishes by name, roles, servings,
-Copy a dinner, Move to another date (if 2.2.2 is kept), links to recipes at a dinner's
-servings, and the date-range pantry checklist with combined amounts and the reminders
-for dishes with no ingredients.
+Copy a dinner, Move to another date, links to recipes at a dinner's servings, and the
+date-range pantry checklist with combined amounts and the reminders for dishes with no
+ingredients.
 
 **Done when:**
 
 - A week can be planned using all four dinner types, with dishes and roles.
 - Copy a dinner finds past dinners through the most-made list and by searching a dish
   name.
-- Move swaps two dinners (if 2.2.2 is kept).
+- Move swaps two dinners.
 - The checklist for the next 7 days combines the same ingredient across recipes, scaled
   to each dinner's servings, and lists dishes that have no ingredients.
 
