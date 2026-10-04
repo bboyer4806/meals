@@ -1,0 +1,232 @@
+/* Colors and fonts are defined once here. Every pairing below meets WCAG AA contrast. */
+:root {
+	color-scheme: light;
+	--bg: #faf5ec;
+	--surface: #fffdf8;
+	--surface-sunk: #f3ebdd;
+	--border: #e3d6c2;
+	--text: #2b2118;
+	--muted: #6b5847;
+	--accent: #b23a22;
+	--on-accent: #ffffff;
+	--received: #3e6b2e;
+	--ordered: #8a5f00;
+	--danger: #a32b1c;
+	--focus: #b23a22;
+	--shadow: 0 1px 2px rgb(43 33 24 / 0.08), 0 4px 16px rgb(43 33 24 / 0.08);
+
+	--font-body: 'Nunito Variable', system-ui, sans-serif;
+	--font-heading: 'Fraunces Variable', Georgia, serif;
+	--radius: 12px;
+	--tap: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		color-scheme: dark;
+		--bg: #1d1712;
+		--surface: #282019;
+		--surface-sunk: #221b15;
+		--border: #41352a;
+		--text: #f4ebdf;
+		--muted: #c2ae98;
+		--accent: #e2775c;
+		--on-accent: #1d1712;
+		--received: #9cc47e;
+		--ordered: #e3b55a;
+		--danger: #f08a78;
+		--focus: #e2775c;
+		--shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+	}
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+}
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font: 17px/1.5 var(--font-body);
+}
+
+h1,
+h2,
+h3 {
+	font-family: var(--font-heading);
+	font-weight: 600;
+	line-height: 1.2;
+	margin: 0 0 0.5rem;
+}
+
+h1 {
+	font-size: 1.75rem;
+}
+
+h2 {
+	font-size: 1.3rem;
+}
+
+h3 {
+	font-size: 1.1rem;
+}
+
+p {
+	margin: 0 0 0.75rem;
+}
+
+a {
+	color: var(--accent);
+}
+
+:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+}
+
+.muted {
+	color: var(--muted);
+}
+
+.error {
+	color: var(--danger);
+	font-weight: 600;
+}
+
+/* Forms */
+
+label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 0.25rem;
+}
+
+input,
+select,
+textarea {
+	font: inherit;
+	color: inherit;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	min-height: var(--tap);
+	padding: 0.5rem 0.75rem;
+	width: 100%;
+}
+
+textarea {
+	min-height: 5rem;
+	resize: vertical;
+}
+
+.field {
+	margin-bottom: 1rem;
+}
+
+.row {
+	display: flex;
+	gap: 0.5rem;
+	align-items: center;
+}
+
+.row > .grow {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Buttons */
+
+button,
+.button {
+	font: inherit;
+	font-weight: 700;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	min-height: var(--tap);
+	padding: 0.5rem 1rem;
+	border-radius: var(--radius);
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--text);
+	cursor: pointer;
+	text-decoration: none;
+}
+
+button.primary,
+.button.primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--on-accent);
+}
+
+button.quiet {
+	background: none;
+	border-color: transparent;
+	color: var(--accent);
+	padding-inline: 0.5rem;
+}
+
+button.danger {
+	color: var(--danger);
+}
+
+button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* Layout */
+
+.page {
+	max-width: 40rem;
+	margin: 0 auto;
+	padding: 1rem 1rem calc(2rem + env(safe-area-inset-bottom));
+}
+
+.card {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 1rem;
+	margin-bottom: 1rem;
+}
+
+.list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.list > li {
+	padding: 0.5rem 0;
+	border-top: 1px solid var(--border);
+}
+
+.list > li:first-child {
+	border-top: none;
+}
+
+/* A text link that is still a 44px tap target. */
+.link-tap {
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--tap);
+}
+
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}

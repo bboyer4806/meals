@@ -1,0 +1,19 @@
+{
+	"healthchecks": {
+		"web": [
+			{
+				"type": "startup",
+				"name": "web check",
+				"description": "Checking that the app answers /healthz",
+				"path": "/healthz",
+				"attempts": 5
+			}
+		]
+	},
+	"cron": [
+		{
+			"command": "node scripts/backup.js",
+			"schedule": "0 3 * * *"
+		}
+	]
+}
