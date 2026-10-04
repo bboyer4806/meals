@@ -60,23 +60,36 @@ One-time setup in [Google Cloud Console](https://console.cloud.google.com):
 
 Every push to `main` runs `.github/workflows/deploy.yml`. It runs the checks, builds the image on
 GitHub, pushes it to GHCR, and has Dokku on the server run it as the app `meals`. The same run
-creates the app if it is missing, sets its domain, mounts its storage at `/data`, sets its
-settings, maps port 3000, and requests its first HTTPS certificate. The server renews it, as
-described in the [dev repo's README](https://github.com/bboyer4806/dev#one-time-server-setup).
+creates the app if it is missing, sets its domain, and requests its first HTTPS certificate. The
+server renews it, as described in the [dev repo's README](https://github.com/bboyer4806/dev#one-time-server-setup).
 Pull requests run the checks only.
 
 The repo needs these Actions secrets (Settings > Secrets and variables > Actions):
 
-| Secret                 | Value                                                                 |
-| ---------------------- | --------------------------------------------------------------------- |
-| `DOKKU_SSH_KEY`        | the private deploy key whose public half is added to Dokku            |
-| `DOKKU_HOST`           | `15.204.120.53`                                                       |
-| `GOOGLE_CLIENT_ID`     | from Google Cloud Console                                             |
-| `GOOGLE_CLIENT_SECRET` | from Google Cloud Console                                             |
-| `ADMIN_EMAIL`          | your Google account email                                             |
+| Secret          | Value                                                      |
+| --------------- | ---------------------------------------------------------- |
+| `DOKKU_SSH_KEY` | the private deploy key whose public half is added to Dokku |
+| `DOKKU_HOST`    | `15.204.120.53`                                            |
 
 Dokku checks `/healthz` before it switches traffic to a new version. `app.json` sets that check
 and the nightly backup.
+
+### One-time server setup
+
+The deploy key can't change an app's storage, settings or ports, so these are set once on the
+server before the first deploy, as root or another account with full Dokku access:
+
+```sh
+dokku storage:ensure-directory --chown heroku meals
+dokku storage:mount meals /var/lib/dokku/data/storage/meals:/data
+dokku ports:set meals http:80:3000 https:443:3000
+dokku config:set --no-restart meals DATA_DIR=/data \
+  GOOGLE_CLIENT_ID='<client ID>' GOOGLE_CLIENT_SECRET='<client secret>' ADMIN_EMAIL='<your Google email>'
+```
+
+The storage folder belongs to uid 1000, the image's `node` user, and the app listens on port 3000.
+To change a setting later, run `dokku config:set meals NAME='value'` on the server. Dokku restarts
+the app with it.
 
 ## Backups
 
