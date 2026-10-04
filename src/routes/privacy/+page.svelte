@@ -21,8 +21,9 @@
 	<h2>What Meals stores</h2>
 	<p>
 		Your name and email address, your household's name and settings, and what your household
-		enters: stores, items, the grocery list and its history. One cookie keeps you signed in;
-		two short-lived cookies are used while you sign in.
+		enters: stores, items, the grocery list and its history. One cookie keeps you signed in, and
+		two short-lived cookies are used while you sign in. If your address hasn't been invited yet,
+		one more cookie holds it, so the page can show it, until you close your browser.
 	</p>
 
 	<h2>Who can see it</h2>
@@ -43,7 +44,7 @@
 		household, ask the person who invited your household.
 	</p>
 
-	<p><a href="/">Back to Meals</a></p>
+	<p><a class="link-tap" href="/">Back to Meals</a></p>
 </main>
 
 <style>

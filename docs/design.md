@@ -221,6 +221,10 @@ No `ORIGIN` setting is needed: in SvelteKit 3, adapter-node builds the app's ori
 /data/backups/<YYYY-MM-DD>/photos/    nightly snapshot of the photos
 ```
 
+During a deploy, Dokku runs the old and new containers on the same database for a short time.
+Every write transaction takes SQLite's write lock when it begins, so the two take turns
+instead of one failing.
+
 The nightly job (Dokku cron, 03:00 server time) runs in a one-off container of the app
 with the same `/data` mount (Q13). It:
 
@@ -379,7 +383,7 @@ mark points at a checklist, an item and sometimes a grocery line.
 | To Order            | Mark ordered (one line, or "Mark all ordered" for a store) | Ordered. A store is required, and it becomes the item's default store.                                  |
 | Ordered             | Check off, or "Mark all received" for a store              | Received.                                                                                              |
 | Ordered             | Didn't come                                                | Back to To Order, keeping its store (Q20).                                                             |
-| To Order or Ordered | Got fewer (enter the amount you got)                       | A Received line for that amount, and the original is To Order with the rest (Q20). A store is required, and it becomes the item's default store. |
+| To Order or Ordered | Got fewer (enter the amount you got)                       | A Received line for that amount, and the original is To Order with the rest (Q20). A store is required. If the line was To Order, the store becomes the item's default store (6.3). |
 | Received today      | Tap again                                                  | Back to Ordered if it had been ordered, otherwise To Order (addition 2.2.3).                           |
 
 Lines that are To Order or Ordered can be edited (quantity, unit, store, note) or

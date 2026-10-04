@@ -127,9 +127,10 @@ jobs:
           # failed, and the certificate step below still needs to run.
           dokku git:from-image "$APP" "$IMAGE" 2>&1 | tee deploy.log \
             || grep -q "No changes detected" deploy.log
-          # Same image, so nothing restarted. Restart so new settings take effect.
+          # Same image, so Dokku built nothing. Rebuild from the deploy branch,
+          # which points at this run's image, so new settings take effect.
           if grep -q "No changes detected" deploy.log; then
-            dokku ps:restart "$APP"
+            dokku ps:rebuild "$APP"
           fi
 
           # Needs the DNS record in place. Checked first so a deploy never

@@ -1,13 +1,13 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
-import { db } from '../db/index.ts';
+import { db, transaction } from '../db/index.ts';
 import { households, invites, users } from '../db/schema.ts';
 
 export type HouseholdSettings = { name: string; defaultServings: number; timeZone: string };
 
 /** Creates a household for a signed-in person who doesn't have one yet (the setup page). */
 export function createHousehold(userId: number, settings: HouseholdSettings, now: number): number {
-	return db().transaction(() => {
+	return transaction(() => {
 		const user = db()
 			.select({ householdId: users.householdId })
 			.from(users)
@@ -67,7 +67,7 @@ export type InviteResult =
  */
 export function createInvite(householdId: number | null, email: string, now: number): InviteResult {
 	const address = email.toLowerCase();
-	return db().transaction(() => {
+	return transaction(() => {
 		const account = db()
 			.select({ id: users.id, householdId: users.householdId })
 			.from(users)

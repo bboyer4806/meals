@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { enhance, type SubmitFunction } from '$app/forms';
+	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import ItemInput from '#lib/components/ItemInput.svelte';
@@ -53,12 +53,15 @@
 		});
 	});
 
-	/** Clears the fields that still hold what was sent; someone may have started the next item. */
+	/**
+	 * Clears the fields that still hold what was sent; someone may have started the next item.
+	 * A unit or store filled in for that next item is left to the effect above.
+	 */
 	function clearIfUnchanged(sent: AddFields) {
 		if (itemName === sent.itemName) itemName = '';
 		if (quantity === sent.quantity) quantity = 1;
-		if (unit === sent.unit) unit = '';
-		if (store === sent.store) store = 'usual';
+		if (unit === sent.unit && unit !== filledUnit) unit = '';
+		if (store === sent.store && store !== filledStore) store = 'usual';
 		itemInput.querySelector('input')?.focus();
 	}
 
@@ -70,23 +73,30 @@
 
 	let prompt = $state<Prompt | null>(null);
 	let promptOpen = $state(false);
+	// Rebuilt for every question, so an answer abandoned last time doesn't come back.
+	let promptKey = $state(0);
 	let promptError = $state('');
 	// What the add bar held when the prompt's question was first asked.
 	let promptSent: AddFields | null = null;
 
+	function ask(question: Prompt) {
+		prompt = question;
+		promptKey += 1;
+		promptError = '';
+		promptOpen = true;
+	}
+
 	const submitAdd: SubmitFunction = () => {
 		const sent = { itemName, quantity, unit, store };
 		return async ({ result, update }) => {
+			await update({ reset: false });
 			const asked = result.type === 'success' ? promptIn(result.data) : undefined;
 			if (asked) {
-				prompt = asked;
 				promptSent = sent;
-				promptError = '';
-				promptOpen = true;
-				return;
+				ask(asked);
+			} else if (result.type === 'success') {
+				clearIfUnchanged(sent);
 			}
-			await update({ reset: false });
-			if (result.type === 'success') clearIfUnchanged(sent);
 		};
 	};
 
@@ -98,15 +108,12 @@
 				promptError = failureMessage(result.data);
 				return;
 			}
+			await update({ reset: false });
 			const next = result.type === 'success' ? promptIn(result.data) : undefined;
 			if (next) {
 				// Restoring an archived item can lead straight to the duplicate question.
-				prompt = next;
-				promptError = '';
-				return;
-			}
-			await update({ reset: false });
-			if (result.type === 'success') {
+				ask(next);
+			} else if (result.type === 'success') {
 				promptOpen = false;
 				if (promptSent) clearIfUnchanged(promptSent);
 			}
@@ -118,11 +125,19 @@
 	type Where = number | 'sheet' | 'picker';
 	let lineError = $state<{ where: Where; message: string } | null>(null);
 
+	function lineFailure(result: ActionResult): string | null {
+		if (result.type === 'failure') return failureMessage(result.data);
+		// Someone else deleted the line.
+		if (result.type === 'error' && result.status === 404) return 'This line is no longer on the list.';
+		return null;
+	}
+
 	function lineSubmit(where: Where): SubmitFunction {
 		return () => {
 			return async ({ result, update }) => {
-				if (result.type === 'failure') {
-					lineError = { where, message: failureMessage(result.data) };
+				const message = lineFailure(result);
+				if (message !== null) {
+					lineError = { where, message };
 					// Someone else may have changed the line; show the list as it is now.
 					await refreshAll();
 					return;
@@ -239,7 +254,7 @@
 	{#if form?.action === 'add' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
 </form>
 
-{#if form?.action === 'group' && form.error}
+{#if (form?.action === 'group' || form?.action === 'line') && form.error}
 	<p class="error" role="alert">{form.error}</p>
 {/if}
 
@@ -350,64 +365,66 @@
 
 <Sheet bind:open={promptOpen} title={prompt?.itemName ?? ''}>
 	{#if promptError}<p class="error" role="alert">{promptError}</p>{/if}
-	{#if prompt?.kind === 'duplicate' && prompt.status === 'to_order'}
-		<p>
-			Already on the list: {amount(prompt)}{prompt.storeName ? ` at ${prompt.storeName}` : ''}.
-		</p>
-		<form method="POST" action="?/add" use:enhance={submitPrompt}>
-			<input type="hidden" name="itemName" value={prompt.asked.itemName} />
-			<input type="hidden" name="store" value={prompt.asked.store} />
-			<input type="hidden" name="resolution" value="update" />
-			<p><strong>Change it to</strong></p>
-			<div class="row">
-				<label class="visually-hidden" for="merge-quantity">Quantity</label>
-				<input
-					class="qty"
-					id="merge-quantity"
-					name="quantity"
-					type="number"
-					inputmode="decimal"
-					step="any"
-					min="0"
-					required
-					value={prompt.suggestedQuantity}
-				/>
-				<label class="visually-hidden" for="merge-unit">Unit</label>
-				<input
-					class="unit grow"
-					id="merge-unit"
-					name="unit"
-					maxlength="20"
-					placeholder="Unit"
-					value={prompt.asked.unit ?? ''}
-				/>
-			</div>
-			<div class="row actions">
-				<button class="primary">Update</button>
-				<button type="button" onclick={() => (promptOpen = false)}>Cancel</button>
-			</div>
-		</form>
-	{:else if prompt?.kind === 'duplicate'}
-		<p>
-			Already ordered: {amount(prompt)}{prompt.storeName ? ` from ${prompt.storeName}` : ''}.
-		</p>
-		<form method="POST" action="?/add" use:enhance={submitPrompt}>
-			{@render askedFields(prompt.asked, 'add')}
-			<div class="row actions">
-				<button class="primary">Add {amount(prompt.asked)} more to order</button>
-				<button type="button" onclick={() => (promptOpen = false)}>Cancel</button>
-			</div>
-		</form>
-	{:else if prompt?.kind === 'archived'}
-		<p>{prompt.itemName} is archived. Restore it and add it to the list?</p>
-		<form method="POST" action="?/add" use:enhance={submitPrompt}>
-			{@render askedFields(prompt.asked, 'restore')}
-			<div class="row actions">
-				<button class="primary">Restore and add</button>
-				<button type="button" onclick={() => (promptOpen = false)}>Cancel</button>
-			</div>
-		</form>
-	{/if}
+	{#key promptKey}
+		{#if prompt?.kind === 'duplicate' && prompt.status === 'to_order'}
+			<p>
+				Already on the list: {amount(prompt)}{prompt.storeName ? ` at ${prompt.storeName}` : ''}.
+			</p>
+			<form method="POST" action="?/add" use:enhance={submitPrompt}>
+				<input type="hidden" name="itemName" value={prompt.asked.itemName} />
+				<input type="hidden" name="store" value={prompt.asked.store} />
+				<input type="hidden" name="resolution" value="update" />
+				<p><strong>Change it to</strong></p>
+				<div class="row">
+					<label class="visually-hidden" for="merge-quantity">Quantity</label>
+					<input
+						class="qty"
+						id="merge-quantity"
+						name="quantity"
+						type="number"
+						inputmode="decimal"
+						step="any"
+						min="0"
+						required
+						value={prompt.suggestedQuantity}
+					/>
+					<label class="visually-hidden" for="merge-unit">Unit</label>
+					<input
+						class="unit grow"
+						id="merge-unit"
+						name="unit"
+						maxlength="20"
+						placeholder="Unit"
+						value={prompt.asked.unit ?? ''}
+					/>
+				</div>
+				<div class="row actions">
+					<button class="primary">Update</button>
+					<button type="button" onclick={() => (promptOpen = false)}>Cancel</button>
+				</div>
+			</form>
+		{:else if prompt?.kind === 'duplicate'}
+			<p>
+				Already ordered: {amount(prompt)}{prompt.storeName ? ` from ${prompt.storeName}` : ''}.
+			</p>
+			<form method="POST" action="?/add" use:enhance={submitPrompt}>
+				{@render askedFields(prompt.asked, 'add')}
+				<div class="row actions">
+					<button class="primary">Add {amount(prompt.asked)} more to order</button>
+					<button type="button" onclick={() => (promptOpen = false)}>Cancel</button>
+				</div>
+			</form>
+		{:else if prompt?.kind === 'archived'}
+			<p>{prompt.itemName} is archived. Restore it and add it to the list?</p>
+			<form method="POST" action="?/add" use:enhance={submitPrompt}>
+				{@render askedFields(prompt.asked, 'restore')}
+				<div class="row actions">
+					<button class="primary">Restore and add</button>
+					<button type="button" onclick={() => (promptOpen = false)}>Cancel</button>
+				</div>
+			</form>
+		{/if}
+	{/key}
 </Sheet>
 
 {#snippet askedFields(
@@ -426,7 +443,7 @@
 		<p>{picking.itemName} doesn't have a store yet.</p>
 		{#if lineError?.where === 'picker'}<p class="error" role="alert">{lineError.message}</p>{/if}
 		{#if activeStores.length === 0}
-			<p>Add your stores on the <a href="/household">Household</a> page first.</p>
+			<p>Add your stores on the <a class="link-tap" href="/household">Household</a> page first.</p>
 		{:else}
 			<form method="POST" action="?/receive" use:enhance={lineSubmit('picker')} class="stores">
 				<input type="hidden" name="id" value={picking.id} />

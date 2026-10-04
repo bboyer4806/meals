@@ -8,8 +8,14 @@ test('renames and archives an item, and asks before adding it again', async ({ p
 	await expect(page.getByRole('button', { name: /^Dish soap/ })).toBeVisible();
 
 	await page.goto('/groceries/items');
-	await page.getByRole('button', { name: /^Dish soap/ }).click();
 	const dialog = page.getByRole('dialog');
+	// Edits abandoned with the close button don't come back.
+	await page.getByRole('button', { name: /^Dish soap/ }).click();
+	await dialog.getByLabel('Name').fill('Something else');
+	await dialog.getByRole('button', { name: 'Close' }).click();
+	await page.getByRole('button', { name: /^Dish soap/ }).click();
+	await expect(dialog.getByLabel('Name')).toHaveValue('Dish soap');
+
 	await dialog.getByLabel('Name').fill('Dawn dish soap');
 	await dialog.getByLabel('Notes').fill('Blue, 20 oz');
 	await dialog.getByRole('button', { name: 'Save' }).click();

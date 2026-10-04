@@ -33,6 +33,15 @@ export function db(): DB {
 }
 
 /**
+ * Runs `fn` in a transaction that takes the write lock when it begins. A transaction that reads
+ * before it writes would otherwise fail at once (SQLITE_BUSY_SNAPSHOT) if another connection
+ * wrote in between, such as the next app container during a deploy. This one waits its turn.
+ */
+export function transaction<T>(fn: () => T): T {
+	return db().transaction(fn, { behavior: 'immediate' });
+}
+
+/**
  * Applies new migrations from `folder` in one transaction and checks foreign keys before it
  * commits, so a migration that breaks them rolls back instead of being recorded. Keeps the same
  * bookkeeping table as Drizzle's own migrator.

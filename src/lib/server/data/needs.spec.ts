@@ -109,6 +109,14 @@ describe('adding', () => {
 		expect(listHistory(householdId, 'éCLAIR', 10)).toHaveLength(1);
 	});
 
+	it('matches accented names whichever way they were typed', () => {
+		// Escapes, so an editor can't quietly turn the accents into single characters.
+		add(householdId, { itemName: 'Cafe\u0301 beans' });
+		expect(add(householdId, { itemName: 'CAF\u00c9 BEANS' })).toMatchObject({ kind: 'duplicate' });
+		add(householdId, { itemName: 'J\u030cicama' });
+		expect(add(householdId, { itemName: '\u01f0icama' })).toMatchObject({ kind: 'duplicate' });
+	});
+
 	it('skips an archived default store', () => {
 		add(householdId, { itemName: 'Milk' });
 		markReceived(householdId, onlyLine(householdId).id, aldi, NOON);
@@ -201,6 +209,19 @@ describe('status changes', () => {
 		expect(defaultStoreOf(walmartOrder.itemId)).toBe(aldi);
 
 		markReceived(householdId, walmartOrder.id, undefined, NOON);
+		expect(defaultStoreOf(walmartOrder.itemId)).toBe(aldi);
+	});
+
+	it('learns the default store from Got fewer only when the line was To Order (design 6.3)', () => {
+		add(householdId, { itemName: 'Milk', quantity: 2, store: walmart });
+		const walmartOrder = onlyLine(householdId);
+		markOrdered(householdId, walmartOrder.id, undefined, NOON);
+		add(householdId, { itemName: 'Milk', quantity: 2, store: aldi, resolution: 'add' });
+		const aldiLine = lines(householdId).find((l) => l.status === 'to_order')!;
+		markGotFewer(householdId, aldiLine.id, 1, undefined, NOON);
+		expect(defaultStoreOf(walmartOrder.itemId)).toBe(aldi);
+
+		markGotFewer(householdId, walmartOrder.id, 1, undefined, NOON);
 		expect(defaultStoreOf(walmartOrder.itemId)).toBe(aldi);
 	});
 

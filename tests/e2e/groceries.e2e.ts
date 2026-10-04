@@ -304,3 +304,76 @@ test('shows a failed check-off next to its line and refreshes the list', async (
 	await expect(aldi.getByRole('alert')).toHaveText('This line was already received');
 	await expect(aldi.getByRole('button', { name: 'Undo received: Milk' })).toBeVisible();
 });
+
+test('asks the duplicate question fresh each time, and clears an old add error', async ({
+	page,
+	person: _
+}) => {
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Coffee', quantity: '1', unit: 'bag' });
+	await addItem(page, { name: 'Coffee', quantity: '0', unit: 'bag' });
+	await expect(addForm(page).getByRole('alert')).toHaveText('Enter a quantity above 0');
+
+	await addForm(page).getByLabel('Quantity').fill('1');
+	await addForm(page).getByRole('button', { name: 'Add' }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByLabel('Quantity')).toHaveValue('2');
+	await dialog.getByLabel('Quantity').fill('7');
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(addForm(page).getByRole('alert')).toHaveCount(0);
+
+	// Asked again, the question shows its own suggestion, not the abandoned answer.
+	await addForm(page).getByRole('button', { name: 'Add' }).click();
+	await expect(dialog.getByLabel('Quantity')).toHaveValue('2');
+});
+
+test('says so when someone else deleted the line, and stays on the list', async ({
+	page,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Aldi');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Milk', store: 'Aldi' });
+	await addAndWait(page, { name: 'Eggs', store: 'Aldi' });
+	const aldi = group(page, 'Aldi');
+	await aldi.getByRole('button', { name: /^Milk/ }).click();
+	db.prepare(
+		"delete from grocery_needs where item_id = (select id from items where household_id = ? and name = 'Milk')"
+	).run(person.householdId);
+
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'Save' }).click();
+	await expect(dialog.getByRole('alert')).toHaveText('This line is no longer on the list.');
+	await dialog.getByRole('button', { name: 'Close' }).click();
+	await expect(aldi.getByRole('button', { name: /^Milk/ })).toHaveCount(0);
+	await expect(aldi.getByRole('button', { name: /^Eggs/ })).toBeVisible();
+});
+
+test("saves the sheet edits with Didn't come and Got fewer", async ({ page, db, person }) => {
+	addStore(db, person.householdId, 'Walmart');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Yogurt', quantity: '3', unit: 'cups', store: 'Walmart' });
+	const walmart = group(page, 'Walmart');
+	const dialog = page.getByRole('dialog');
+	await walmart.getByRole('button', { name: /^Yogurt/ }).click();
+	await dialog.getByRole('button', { name: 'Mark ordered' }).click();
+	await expect(walmart.getByRole('heading', { name: 'Ordered' })).toBeVisible();
+
+	await walmart.getByRole('button', { name: /^Yogurt/ }).click();
+	await dialog.getByLabel('Note').fill('vanilla');
+	await dialog.getByRole('button', { name: "Didn't come" }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(walmart.getByRole('heading', { name: 'Ordered' })).toHaveCount(0);
+	await expect(walmart.getByRole('button', { name: /^Yogurt\s*3 cups\s*vanilla/ })).toBeVisible();
+
+	await walmart.getByRole('button', { name: /^Yogurt/ }).click();
+	await dialog.getByLabel('Quantity').fill('5');
+	await dialog.getByRole('button', { name: 'Got fewer' }).click();
+	await dialog.getByLabel('How many did you get?').fill('1');
+	await dialog.getByRole('button', { name: 'Save' }).last().click();
+	await expect(dialog).toHaveCount(0);
+	await expect(walmart.getByRole('button', { name: /^Yogurt\s*4 cups\s*vanilla/ })).toBeVisible();
+	await expect(walmart.locator('.done')).toContainText('1 cups');
+});

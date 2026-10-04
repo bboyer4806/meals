@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { formatQuantity, normalizeName } from './text.ts';
+import { foldCase, formatQuantity, normalizeName } from './text.ts';
 
 describe('normalizeName', () => {
 	it('trims and collapses spaces', () => {
 		expect(normalizeName('  Paper   towels ')).toBe('Paper towels');
+	});
+});
+
+describe('foldCase', () => {
+	// Escapes, so an editor can't quietly turn the accents into single characters.
+	it('matches accented letters whichever way they were typed', () => {
+		expect(foldCase('CAF\u00c9')).toBe(foldCase('Cafe\u0301'));
+		expect(foldCase('J\u030cicama')).toBe(foldCase('\u01f0icama'));
 	});
 });
 

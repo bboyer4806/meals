@@ -59,7 +59,7 @@
 			active = (active + 1) % options.length;
 		} else if (event.key === 'ArrowUp') {
 			event.preventDefault();
-			active = (active - 1 + options.length) % options.length;
+			active = active <= 0 ? options.length - 1 : active - 1;
 		} else if (event.key === 'Enter' && active >= 0) {
 			event.preventDefault();
 			const option = options[active];

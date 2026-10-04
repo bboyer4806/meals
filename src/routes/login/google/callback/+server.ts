@@ -31,9 +31,10 @@ export async function GET({ cookies, url }) {
 		now
 	);
 	if (result.kind === 'not-invited') {
-		// In a short-lived cookie rather than the URL, so the page can only ever show the address
-		// that was really used, and the address stays out of URLs and logs.
-		cookies.set(NOT_INVITED_COOKIE, result.email, { path: '/not-invited', maxAge: 10 * 60 });
+		// In a cookie rather than the URL, so the page can only ever show the address that was
+		// really used, and the address stays out of URLs and logs. It lasts until the browser
+		// closes, so the address is still there after leaving to ask for an invite.
+		cookies.set(NOT_INVITED_COOKIE, result.email, { path: '/not-invited' });
 		redirect(303, '/not-invited');
 	}
 	const session = createSession(result.userId, now);

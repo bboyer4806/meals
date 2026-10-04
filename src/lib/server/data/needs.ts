@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { and, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import { dateIn } from '../../dates.ts';
 import { normalizeName } from '../../text.ts';
-import { db } from '../db/index.ts';
+import { db, transaction } from '../db/index.ts';
 import { groceryNeeds, items, stores, type NeedStatus } from '../db/schema.ts';
 import { createItem, findItemByName, setDefaultStore, type Item } from './items.ts';
 import { getStore, requireActiveStore } from './stores.ts';
@@ -133,7 +133,7 @@ function storeForNewLine(householdId: number, item: Item, store: StoreChoice): n
 
 /** Adds an item to the list, creating the item if the name is new (Q1, Q18, Q22). */
 export function addNeed(householdId: number, input: AddInput, now: number): AddResult {
-	return db().transaction(() => {
+	return transaction(() => {
 		const name = normalizeName(input.itemName);
 		let item = findItemByName(householdId, name);
 		if (item && item.archivedAt !== null) {
@@ -227,7 +227,7 @@ export function markOrdered(
 	storeId: number | undefined,
 	now: number
 ): void {
-	db().transaction(() => {
+	transaction(() => {
 		const line = getLine(householdId, needId);
 		if (line.status !== 'to_order') error(400, 'Only lines to order can be marked ordered');
 		const store = storeForStatusChange(householdId, line, storeId);
@@ -246,7 +246,7 @@ export function markReceived(
 	storeId: number | undefined,
 	now: number
 ): void {
-	db().transaction(() => {
+	transaction(() => {
 		const line = getLine(householdId, needId);
 		if (line.status === 'received') error(400, 'This line was already received');
 		const store = storeForStatusChange(householdId, line, storeId);
@@ -261,7 +261,7 @@ export function markReceived(
 
 /** Marks every To Order line at a store as Ordered. Returns how many changed. */
 export function markAllOrdered(householdId: number, storeId: number, now: number): number {
-	return db().transaction(() => {
+	return transaction(() => {
 		getStore(householdId, storeId);
 		const lines = db()
 			.update(groceryNeeds)
@@ -282,7 +282,7 @@ export function markAllOrdered(householdId: number, storeId: number, now: number
 
 /** Marks every Ordered line at a store as Received. Returns how many changed. */
 export function markAllReceived(householdId: number, storeId: number, now: number): number {
-	return db().transaction(() => {
+	return transaction(() => {
 		getStore(householdId, storeId);
 		const lines = db()
 			.update(groceryNeeds)
@@ -322,7 +322,7 @@ export function markGotFewer(
 	storeId: number | undefined,
 	now: number
 ): void {
-	db().transaction(() => {
+	transaction(() => {
 		const line = getLine(householdId, needId);
 		if (line.status === 'received') error(400, 'This line was already received');
 		if (!(receivedQuantity > 0 && receivedQuantity < line.quantity)) {
@@ -402,7 +402,7 @@ export function withLineChanges(
 	changes: LineChanges,
 	statusChange: () => void
 ): void {
-	db().transaction(() => {
+	transaction(() => {
 		updateLine(householdId, needId, changes);
 		statusChange();
 	});

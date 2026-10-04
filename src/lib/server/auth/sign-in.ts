@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { db } from '../db/index.ts';
+import { db, transaction } from '../db/index.ts';
 import { invites, users } from '../db/schema.ts';
 
 export type GoogleProfile = { sub: string; email: string; name: string };
@@ -18,17 +18,17 @@ export type SignInResult =
  */
 export function signIn(profile: GoogleProfile, adminEmail: string, now: number): SignInResult {
 	const email = profile.email.toLowerCase();
-	return db().transaction((tx) => {
-		const existing = tx.select().from(users).where(eq(users.googleSub, profile.sub)).get();
+	return transaction(() => {
+		const existing = db().select().from(users).where(eq(users.googleSub, profile.sub)).get();
 		if (existing) {
-			tx.update(users).set({ email, name: profile.name }).where(eq(users.id, existing.id)).run();
+			db().update(users).set({ email, name: profile.name }).where(eq(users.id, existing.id)).run();
 			return { kind: 'signed-in', userId: existing.id };
 		}
 
-		const invite = tx.select().from(invites).where(eq(invites.email, email)).get();
+		const invite = db().select().from(invites).where(eq(invites.email, email)).get();
 		if (!invite && email !== adminEmail) return { kind: 'not-invited', email };
 
-		const user = tx
+		const user = db()
 			.insert(users)
 			.values({
 				householdId: invite?.householdId ?? null,
@@ -39,7 +39,7 @@ export function signIn(profile: GoogleProfile, adminEmail: string, now: number):
 			})
 			.returning({ id: users.id })
 			.get();
-		if (invite) tx.delete(invites).where(eq(invites.id, invite.id)).run();
+		if (invite) db().delete(invites).where(eq(invites.id, invite.id)).run();
 		return { kind: 'signed-in', userId: user.id };
 	});
 }

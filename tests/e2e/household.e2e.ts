@@ -42,8 +42,14 @@ test('manages stores and invites', async ({ page, person: _ }) => {
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('You already have a store called costco.');
 
-	await page.getByRole('button', { name: 'Edit' }).click();
 	const dialog = page.getByRole('dialog');
+	// Edits abandoned with the close button don't come back.
+	await page.getByRole('button', { name: 'Edit' }).click();
+	await dialog.getByLabel('Name').fill('Sams Club');
+	await dialog.getByRole('button', { name: 'Close' }).click();
+	await page.getByRole('button', { name: 'Edit' }).click();
+	await expect(dialog.getByLabel('Name')).toHaveValue('Costco');
+
 	await dialog.getByLabel('Name').fill('Costco Wholesale');
 	await dialog.getByRole('button', { name: 'Save' }).click();
 	await expect(page.getByText('Costco Wholesale', { exact: true })).toBeVisible();

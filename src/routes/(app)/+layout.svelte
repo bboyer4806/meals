@@ -11,7 +11,7 @@
 
 <header>
 	<div class="bar">
-		<a class="brand" href="/groceries">Meals</a>
+		<a class="brand link-tap" href="/groceries">Meals</a>
 		<span class="household">{data.householdName}</span>
 		<details class="menu" bind:open={menuOpen}>
 			<summary>Menu</summary>
