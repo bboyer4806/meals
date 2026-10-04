@@ -626,10 +626,13 @@ items, the grocery list, history, backups, and the look and feel.
 
 ### Phase 2: Recipes
 
+**One-time setup you do first:** on the server, raise nginx's upload limit with
+`dokku nginx:set meals client-max-body-size 5m`, then `dokku proxy:build-config meals`.
+
 **Build:** recipes with every field in section 5 (sections, units, tags, nutrition, a
 photo and thumbnail), the servings control with conversion and fractions, step warnings,
 the cooking view, the print layout, archiving dishes, the pantry checklist from a single
-recipe, Always have, and the larger upload limits.
+recipe, Always have, and the app's larger upload limit (`BODY_SIZE_LIMIT`).
 
 **Done when:**
 

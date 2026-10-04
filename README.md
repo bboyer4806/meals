@@ -76,18 +76,29 @@ and the nightly backup.
 
 ### One-time server setup
 
-The deploy key can't change an app's storage, settings or ports, so these are set once on the
-server before the first deploy, as root or another account with full Dokku access:
+The server limits which Dokku commands the deploy key may run, so the app's storage, settings
+and ports are set once on the server, as root or another account with full Dokku access. On a
+new server, first run `dokku apps:create meals` and
+`dokku domains:set meals meals.dev.boyersoftware.com`: the commands below need the app, and
+`domains:set` must come before `ports:set`.
 
 ```sh
 dokku storage:ensure-directory --chown heroku meals
 dokku storage:mount meals /var/lib/dokku/data/storage/meals:/data
-dokku ports:set meals http:80:3000 https:443:3000
 dokku config:set --no-restart meals DATA_DIR=/data \
   GOOGLE_CLIENT_ID='<client ID>' GOOGLE_CLIENT_SECRET='<client secret>' ADMIN_EMAIL='<your Google email>'
+dokku ports:set meals http:80:3000 https:443:3000
 ```
 
 The storage folder belongs to uid 1000, the image's `node` user, and the app listens on port 3000.
+`ports:set` points the site at port 3000 straight away, so run it just before a deploy: the site
+shows an error until the deploy finishes.
+
+If a deploy fails, its log shows the app's error. "Invalid environment variables" means a setting
+is missing, "DATA_DIR /data does not exist" means the mount is missing, and "unable to open
+database file" means the storage folder isn't owned by uid 1000. Fix it on the server, then
+deploy again.
+
 To change a setting later, run `dokku config:set meals NAME='value'` on the server. Dokku restarts
 the app with it.
 

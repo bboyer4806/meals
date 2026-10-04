@@ -2,9 +2,10 @@ name: Deploy
 
 # Checks the code, then builds on GitHub's runners, pushes the image to GHCR,
 # and has Dokku on the server run it. The Dokku app, its domain and its HTTPS
-# certificate are set up here too. The deploy key can't change storage,
-# settings or ports, so those are set once on the server (README, "One-time
-# server setup"). Pull requests only run the checks.
+# certificate are set up here too. The server limits which Dokku commands the
+# deploy key may run, so the app's storage, settings and ports are set once on
+# the server instead (README, "One-time server setup"). Pull requests only run
+# the checks.
 on:
   push:
     branches: [main]
@@ -92,7 +93,7 @@ jobs:
 
           # Dokku runs exactly one command per SSH call. The server limits
           # which commands this key may run (the projects-key-scope plugin in
-          # bboyer4806/dev); the ones below are allowed.
+          # bboyer4806/dev); these are the ones the placeholder deploy ran.
           dokku() { ssh -i ~/.ssh/id_ed25519 "dokku@$HOST" "$@"; }
 
           dokku apps:exists "$APP" || dokku apps:create "$APP"
@@ -103,9 +104,18 @@ jobs:
           # failed, and the certificate step below still needs to run.
           dokku git:from-image "$APP" "$IMAGE" 2>&1 | tee deploy.log \
             || grep -q "No changes detected" deploy.log
+          # Dokku also says this when a deploy of this image was interrupted,
+          # and this key can't rebuild, so say what to do.
+          if grep -q "No changes detected" deploy.log; then
+            echo "::warning::Dokku already had this image, so nothing was redeployed. If the site isn't running it, run 'dokku ps:rebuild $APP' on the server."
+          fi
 
           # Needs the DNS record in place. Checked first so a deploy never
           # requests a certificate the app already has.
           if [ "$(dokku letsencrypt:active "$APP")" != "true" ]; then
             dokku letsencrypt:enable "$APP"
           fi
+
+          # The site must answer over HTTPS. A missing port map or a broken
+          # proxy can leave a deploy that otherwise looks fine.
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "https://$DOMAIN/healthz"
