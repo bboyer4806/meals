@@ -67,7 +67,10 @@
 		{#each data.items as item (item.id)}
 			<li>
 				<button class="item" onclick={() => edit(item)}>
-					<span class="name">{item.name}</span>
+					<span class="heading">
+						<span class="name">{item.name}</span>
+						{#if item.alwaysHave}<span class="always">Always have</span>{/if}
+					</span>
 					{#if item.notes}<span class="muted small">{item.notes}</span>{/if}
 					<span class="muted small">
 						{item.defaultStoreName ?? 'No store yet'}
@@ -102,6 +105,20 @@
 						placeholder="Brand, size"
 						value={editing.notes ?? ''}
 					/>
+				</div>
+				<div class="field">
+					<label class="checkbox">
+						<input
+							type="checkbox"
+							name="alwaysHave"
+							checked={editing.alwaysHave}
+							aria-describedby="always-have-help"
+						/>
+						Always have
+					</label>
+					<p class="muted small help" id="always-have-help">
+						Left off pantry checks, like water or salt.
+					</p>
 				</div>
 				<div class="row">
 					<button class="primary">Save</button>
@@ -142,11 +159,49 @@
 		font-weight: 400;
 	}
 
+	.heading {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
 	.name {
 		font-weight: 700;
 	}
 
+	.always {
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: var(--received);
+		border: 1px solid currentColor;
+		border-radius: 999px;
+		padding: 0 0.5rem;
+	}
+
 	.small {
 		font-size: 0.9rem;
+	}
+
+	.checkbox {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		min-height: var(--tap);
+		margin: 0;
+	}
+
+	.checkbox input {
+		flex: none;
+		width: 1.4rem;
+		height: 1.4rem;
+		min-height: 0;
+		margin: 0;
+		padding: 0;
+		accent-color: var(--accent);
+	}
+
+	.help {
+		margin: 0;
 	}
 </style>

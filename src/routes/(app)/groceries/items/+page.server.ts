@@ -11,7 +11,16 @@ export function load({ locals, url }) {
 	return { archived, search, items: listCatalog(user.householdId, archived, search) };
 }
 
-const updateSchema = z.object({ id, name: nameField(80, 'a name'), notes: optionalText(200) });
+const updateSchema = z.object({
+	id,
+	name: nameField(80, 'a name'),
+	notes: optionalText(200),
+	// A checkbox is only sent when it's checked.
+	alwaysHave: z
+		.literal('on')
+		.optional()
+		.transform((value) => value === 'on')
+});
 
 export const actions = {
 	update: async ({ locals, request }) => {

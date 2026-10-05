@@ -79,6 +79,7 @@ export type CatalogItem = {
 	id: number;
 	name: string;
 	notes: string | null;
+	alwaysHave: boolean;
 	archivedAt: number | null;
 	defaultStoreName: string | null;
 	lastBoughtAt: number | null;
@@ -102,6 +103,7 @@ export function listCatalog(householdId: number, archived: boolean, search: stri
 			id: items.id,
 			name: items.name,
 			notes: items.notes,
+			alwaysHave: items.alwaysHave,
 			archivedAt: items.archivedAt,
 			defaultStoreName: sql<string | null>`(select ${stores.name} from ${stores} where ${stores.id} = ${items.defaultStoreId})`,
 			lastBoughtAt: lastBought.receivedAt,
@@ -127,7 +129,7 @@ export type ItemNameResult = { kind: 'saved' } | { kind: 'taken'; archived: bool
 export function updateItem(
 	householdId: number,
 	itemId: number,
-	changes: { name: string; notes: string | null }
+	changes: { name: string; notes: string | null; alwaysHave: boolean }
 ): ItemNameResult {
 	getItem(householdId, itemId);
 	const existing = findItemByName(householdId, changes.name);
