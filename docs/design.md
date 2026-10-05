@@ -175,8 +175,8 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
 1. **Checks before deploying.** A new check job runs the type check, unit tests and
    end-to-end tests on pull requests and on pushes to `main`. The deploy job needs it,
    so code that fails never deploys.
-2. **Server setup in the workflow.** Each step is safe to repeat, so there's still no
-   manual SSH step:
+2. **One-time server setup.** The server limits which commands the deploy key can run, so
+   these are done once on the server by hand (README, "One-time server setup"):
    - create a storage directory owned by uid 1000 (the image's `node` user) and mount
      it at `/data`
    - set the app's configuration (section 4.3)
@@ -199,9 +199,9 @@ development, configuration, and restoring a backup.
 
 | Variable                                 | Value                                                                                       | Set by                     |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------- |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | From Google Cloud Console (section 9)                                                       | GitHub secrets, via the workflow |
-| `ADMIN_EMAIL`                            | Your Google email. This account can invite new households.                                  | GitHub secret, via the workflow  |
-| `DATA_DIR`                               | `/data`                                                                                     | The workflow               |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | From Google Cloud Console (section 9)                                                       | Once on the server |
+| `ADMIN_EMAIL`                            | Your Google email. This account can invite new households.                                  | Once on the server |
+| `DATA_DIR`                               | `/data`                                                                                     | Once on the server |
 
 The app reads these when it starts, not when it's built, so building the image needs no
 secrets. It refuses to start if any is missing or if `DATA_DIR` doesn't exist (a missing
@@ -602,8 +602,7 @@ There are three phases (Q38). Each is its own pull request and goes live when me
    - create an OAuth client ID of type "Web application" with these redirect URIs:
      - `https://meals.dev.boyersoftware.com/login/google/callback`
      - `http://localhost:5173/login/google/callback`
-2. In GitHub (Settings > Secrets and variables > Actions), add `GOOGLE_CLIENT_ID`,
-   `GOOGLE_CLIENT_SECRET` and `ADMIN_EMAIL`.
+2. On the server, run the one-time setup in the README: storage, settings and ports.
 
 **Build:** project setup, Dockerfile, deploy workflow changes, `app.json`, database and
 migrations, sign-in, invites, household setup, the Household and Admin pages, stores,
@@ -627,10 +626,13 @@ items, the grocery list, history, backups, and the look and feel.
 
 ### Phase 2: Recipes
 
+**One-time setup you do first:** on the server, raise nginx's upload limit with
+`dokku nginx:set meals client-max-body-size 5m`, then `dokku proxy:build-config meals`.
+
 **Build:** recipes with every field in section 5 (sections, units, tags, nutrition, a
 photo and thumbnail), the servings control with conversion and fractions, step warnings,
 the cooking view, the print layout, archiving dishes, the pantry checklist from a single
-recipe, Always have, and the larger upload limits.
+recipe, Always have, and the app's larger upload limit (`BODY_SIZE_LIMIT`).
 
 **Done when:**
 

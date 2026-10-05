@@ -1,10 +1,11 @@
 name: Deploy
 
 # Checks the code, then builds on GitHub's runners, pushes the image to GHCR,
-# and has Dokku on the server run it. The Dokku app, its domain, storage,
-# settings and HTTPS certificate are set up here too, so a new project needs
-# no SSH session on the server: copy this file, change APP and DOMAIN, add the
-# secrets, push. Pull requests only run the checks.
+# and has Dokku on the server run it. The Dokku app, its domain and its HTTPS
+# certificate are set up here too. The server limits which Dokku commands the
+# deploy key may run, so the app's storage, settings and ports are set once on
+# the server instead (README, "One-time server setup"). Pull requests only run
+# the checks.
 on:
   push:
     branches: [main]
@@ -79,16 +80,10 @@ jobs:
           SSH_KEY: ${{ secrets.DOKKU_SSH_KEY }}
           HOST: ${{ secrets.DOKKU_HOST }}
           IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
         run: |
           set -euo pipefail
           : "${SSH_KEY:?Add the DOKKU_SSH_KEY secret under Settings > Secrets and variables > Actions}"
           : "${HOST:?Add the DOKKU_HOST secret under Settings > Secrets and variables > Actions}"
-          : "${GOOGLE_CLIENT_ID:?Add the GOOGLE_CLIENT_ID secret under Settings > Secrets and variables > Actions}"
-          : "${GOOGLE_CLIENT_SECRET:?Add the GOOGLE_CLIENT_SECRET secret under Settings > Secrets and variables > Actions}"
-          : "${ADMIN_EMAIL:?Add the ADMIN_EMAIL secret under Settings > Secrets and variables > Actions}"
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
@@ -96,41 +91,23 @@ jobs:
           # server presents now.
           ssh-keyscan -t ed25519 "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-          # Dokku runs exactly one command per SSH call.
+          # Dokku runs exactly one command per SSH call. The server limits
+          # which commands this key may run (the projects-key-scope plugin in
+          # bboyer4806/dev); these are the ones the placeholder deploy ran.
           dokku() { ssh -i ~/.ssh/id_ed25519 "dokku@$HOST" "$@"; }
 
           dokku apps:exists "$APP" || dokku apps:create "$APP"
-          # Before the first deploy, so Dokku proxies to the port the image
-          # exposes rather than its default of 5000.
           dokku domains:set "$APP" "$DOMAIN"
-
-          # Persistent storage for the database at /data, owned by the image's
-          # node user (uid 1000, which Dokku calls "heroku").
-          dokku storage:ensure-directory --chown heroku "$APP"
-          MOUNT="/var/lib/dokku/data/storage/$APP:/data"
-          mounts="$(dokku storage:list "$APP")"
-          grep -qF "$MOUNT" <<<"$mounts" || dokku storage:mount "$APP" "$MOUNT"
-
-          # The app's settings, base64-encoded so every character survives SSH.
-          encode() { printf '%s' "$1" | base64 -w0; }
-          dokku config:set --encoded --no-restart "$APP" \
-            GOOGLE_CLIENT_ID="$(encode "$GOOGLE_CLIENT_ID")" \
-            GOOGLE_CLIENT_SECRET="$(encode "$GOOGLE_CLIENT_SECRET")" \
-            ADMIN_EMAIL="$(encode "$ADMIN_EMAIL")" \
-            DATA_DIR="$(encode /data)"
-
-          # The app listens on 3000.
-          dokku ports:set "$APP" http:80:3000 https:443:3000
 
           # Re-running a workflow deploys the same image again, which Dokku
           # reports as "No changes detected" with a non-zero exit. Nothing
           # failed, and the certificate step below still needs to run.
           dokku git:from-image "$APP" "$IMAGE" 2>&1 | tee deploy.log \
             || grep -q "No changes detected" deploy.log
-          # Same image, so Dokku built nothing. Rebuild from the deploy branch,
-          # which points at this run's image, so new settings take effect.
+          # Dokku also says this when a deploy of this image was interrupted,
+          # and this key can't rebuild, so say what to do.
           if grep -q "No changes detected" deploy.log; then
-            dokku ps:rebuild "$APP"
+            echo "::warning::Dokku already had this image, so nothing was redeployed. If the site isn't running it, run 'dokku ps:rebuild $APP' on the server."
           fi
 
           # Needs the DNS record in place. Checked first so a deploy never
@@ -138,3 +115,7 @@ jobs:
           if [ "$(dokku letsencrypt:active "$APP")" != "true" ]; then
             dokku letsencrypt:enable "$APP"
           fi
+
+          # The site must answer over HTTPS. A missing port map or a broken
+          # proxy can leave a deploy that otherwise looks fine.
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "https://$DOMAIN/healthz"
