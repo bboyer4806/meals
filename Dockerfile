@@ -15,6 +15,10 @@ RUN npm run build && npm prune --omit=dev
 FROM node:24-slim
 WORKDIR /app
 ENV NODE_ENV=production
+# Saving a recipe with a photo sends up to about 3.5 MB, and adapter-node refuses request bodies
+# over 512K by default. nginx has its own limit, raised once on the server with
+# `dokku nginx:set meals client-max-body-size 5m` (README, "One-time server setup").
+ENV BODY_SIZE_LIMIT=5M
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/build ./build

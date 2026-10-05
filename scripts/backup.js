@@ -1,6 +1,7 @@
 // Nightly backup, run by Dokku cron (see app.json). Copies the database into
-// $DATA_DIR/backups/<YYYY-MM-DD>/ and keeps the newest 14 of those folders.
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
+// $DATA_DIR/backups/<YYYY-MM-DD>/, hard-links the photos into its photos/ folder, and keeps the
+// newest 14 of those folders.
+import { existsSync, linkSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 
@@ -29,6 +30,26 @@ const db = new Database(database, { fileMustExist: true });
 await db.backup(join(partial, 'meals.db'));
 db.close();
 
+// A hard link is the same file under a second name, so a photo that hasn't changed takes no extra
+// space. The app never changes a photo file (a new photo gets a new key), so a replaced or deleted
+// photo stays in the older backups. The folder is made even with no photos yet, so every backup
+// restores the same way (README).
+const photos = join(dataDir, 'photos');
+mkdirSync(join(partial, 'photos'));
+let linked = 0;
+if (existsSync(photos)) {
+	for (const entry of readdirSync(photos, { withFileTypes: true })) {
+		if (!entry.isFile()) continue;
+		try {
+			linkSync(join(photos, entry.name), join(partial, 'photos', entry.name));
+			linked += 1;
+		} catch (error) {
+			// Deleted since the folder was read. Skipped, so it doesn't fail the whole backup.
+			if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error;
+		}
+	}
+}
+
 rmSync(target, { recursive: true, force: true });
 renameSync(partial, target);
 
@@ -39,4 +60,4 @@ for (const old of dated.slice(0, -KEEP)) {
 	rmSync(join(backups, old), { recursive: true, force: true });
 }
 
-console.log(`Backed up ${database} to ${target}`);
+console.log(`Backed up ${database} and ${linked} photo files to ${target}`);

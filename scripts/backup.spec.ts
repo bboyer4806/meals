@@ -1,5 +1,15 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -50,6 +60,60 @@ describe('backup script', () => {
 
 		expect(existsSync(join(dataDir, 'backups', today, 'meals.db'))).toBe(true);
 		expect(latestBackupDate(dataDir)).toBe(today);
+	});
+
+	it('links the photos into the backup instead of copying them', () => {
+		const dataDir = mkdtempSync(join(tmpdir(), 'meals-backup-'));
+		openDb(join(dataDir, 'meals.db'));
+		const photos = join(dataDir, 'photos');
+		mkdirSync(photos);
+		writeFileSync(join(photos, 'a.jpg'), 'photo');
+		writeFileSync(join(photos, 'a-thumb.jpg'), 'thumbnail');
+		mkdirSync(join(photos, 'not-a-photo'));
+
+		runBackup(dataDir);
+
+		const today = new Date().toISOString().slice(0, 10);
+		const backedUp = join(dataDir, 'backups', today, 'photos');
+		expect(readdirSync(backedUp).sort()).toEqual(['a-thumb.jpg', 'a.jpg']);
+		for (const name of ['a.jpg', 'a-thumb.jpg']) {
+			// The same file under a second name, so it takes no extra space.
+			expect(statSync(join(backedUp, name)).ino).toBe(statSync(join(photos, name)).ino);
+		}
+	});
+
+	it('keeps a replaced photo in the older backup', () => {
+		const dataDir = mkdtempSync(join(tmpdir(), 'meals-backup-'));
+		openDb(join(dataDir, 'meals.db'));
+		const photos = join(dataDir, 'photos');
+		mkdirSync(photos);
+		writeFileSync(join(photos, 'old.jpg'), 'old photo');
+		runBackup(dataDir);
+		// That backup becomes an older one.
+		const today = new Date().toISOString().slice(0, 10);
+		renameSync(join(dataDir, 'backups', today), join(dataDir, 'backups', '2020-01-01'));
+
+		// The app replaces a photo by saving the new one under a new key and deleting the old one.
+		writeFileSync(join(photos, 'new.jpg'), 'new photo');
+		rmSync(join(photos, 'old.jpg'));
+		runBackup(dataDir);
+
+		expect(readFileSync(join(dataDir, 'backups', '2020-01-01', 'photos', 'old.jpg'), 'utf8')).toBe(
+			'old photo'
+		);
+		expect(readdirSync(join(dataDir, 'backups', today, 'photos'))).toEqual(['new.jpg']);
+	});
+
+	it('works before there are any photos, and still makes the photos folder', () => {
+		const dataDir = mkdtempSync(join(tmpdir(), 'meals-backup-'));
+		openDb(join(dataDir, 'meals.db'));
+
+		runBackup(dataDir);
+
+		const today = new Date().toISOString().slice(0, 10);
+		expect(existsSync(join(dataDir, 'backups', today, 'meals.db'))).toBe(true);
+		expect(readdirSync(join(dataDir, 'backups', today, 'photos'))).toEqual([]);
+		expect(existsSync(join(dataDir, 'photos'))).toBe(false);
 	});
 
 	it('only reports complete backups', () => {
