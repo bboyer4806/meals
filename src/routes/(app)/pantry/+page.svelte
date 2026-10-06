@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
@@ -56,10 +57,12 @@
 	}
 
 	function itemSubmit(itemId: number): SubmitFunction {
-		return ({ cancel }) => {
+		return ({ cancel, formElement }) => {
 			// Two taps can land before the buttons are disabled.
 			if (busy.has(itemId)) return cancel();
 			busy.add(itemId);
+			// Have, Need and Undo replace each other, so focus would drop to the top of the page.
+			const hadFocus = formElement.contains(document.activeElement);
 			return async ({ result, update }) => {
 				try {
 					const message = itemFailure(result);
@@ -73,6 +76,10 @@
 					await update({ reset: false });
 				} finally {
 					busy.delete(itemId);
+				}
+				if (hadFocus) {
+					await tick();
+					formElement.querySelector('button')?.focus();
 				}
 			};
 		};
@@ -171,7 +178,7 @@
 						<span class="mark have">✓ Have</span>
 					{:else}
 						<span class="mark">
-							On the list
+							{state.status === 'received' ? 'Bought' : 'On the list'}
 							<span class="status {state.status}">{STATUS[state.status]}</span>
 						</span>
 					{/if}

@@ -1,4 +1,4 @@
-import { redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 import { combineAmounts, needNote } from '#lib/checklist.ts';
 import { MAX_SERVINGS } from '#lib/recipe-view.ts';
@@ -42,7 +42,12 @@ const startSchema = z.object({
 		.number()
 		.int('Enter a whole number of servings')
 		.min(1, 'Enter at least 1 serving')
-		.max(MAX_SERVINGS, `Enter ${MAX_SERVINGS} servings or fewer`)
+		.max(MAX_SERVINGS, `Enter ${MAX_SERVINGS} servings or fewer`),
+	// Sent when the recipe page asked before replacing a check with checked items.
+	replaceChecked: z
+		.literal('1')
+		.optional()
+		.transform((value) => value === '1')
 });
 
 const itemSchema = z.object({ itemId: id });
@@ -53,8 +58,23 @@ export const actions = {
 		const user = requireHousehold(locals);
 		const parsed = parseForm(startSchema, await request.formData(), 'start');
 		if ('failure' in parsed) return parsed.failure;
-		const { dishId, servings } = parsed.data;
-		startRecipeChecklist(user.householdId, dishId, servings, Date.now());
+		const { dishId, servings, replaceChecked } = parsed.data;
+		const started = startRecipeChecklist(
+			user.householdId,
+			dishId,
+			servings,
+			replaceChecked,
+			Date.now()
+		);
+		if (started === 'checked') {
+			// Someone checked items after the recipe page loaded, so it didn't ask. This page shows
+			// their check under the message.
+			return fail(400, {
+				action: 'start',
+				error:
+					'Someone has checked items on this pantry check since you opened the recipe. To replace it, go back to the recipe and tap Check pantry again.'
+			});
+		}
 		redirect(303, '/pantry');
 	},
 

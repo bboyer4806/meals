@@ -229,6 +229,91 @@ test('asks before a new check replaces one with checked items', async ({ page, d
 	await expect(row(page, 'Sugar').locator('.amount')).toHaveText('1/2 cup');
 });
 
+test("doesn't replace a check someone marked after the recipe page loaded", async ({
+	page,
+	db,
+	person
+}) => {
+	const cakeId = addRecipe(db, person.householdId, {
+		name: 'Pound cake',
+		ingredients: [{ item: 'Flour', amount: 2, unit: 'cup' }]
+	});
+	const barsId = addRecipe(db, person.householdId, {
+		name: 'Lemon bars',
+		ingredients: [{ item: 'Lemons', amount: 3 }]
+	});
+	await page.goto(`/recipes/${barsId}`);
+	await expect(page.getByRole('button', { name: 'Check pantry' })).toBeVisible();
+
+	// Meanwhile another member starts a check and marks Flour.
+	const checklist = db
+		.prepare(
+			'insert into pantry_checklists (household_id, dish_id, servings, created_at) values (?, ?, 4, ?)'
+		)
+		.run(person.householdId, cakeId, Date.now()).lastInsertRowid;
+	db.prepare(
+		"insert into pantry_marks (household_id, checklist_id, item_id, state) values (?, ?, ?, 'have')"
+	).run(person.householdId, checklist, addItem(db, person.householdId, 'Flour'));
+
+	// The page didn't know to ask, so the server refuses and shows their check.
+	await page.getByRole('button', { name: 'Check pantry' }).click();
+	await expect(page).toHaveURL(/\/pantry$/);
+	await expect(page.getByRole('alert')).toHaveText(
+		'Someone has checked items on this pantry check since you opened the recipe. To replace it, go back to the recipe and tap Check pantry again.'
+	);
+	await expect(page.getByRole('link', { name: 'Pound cake, 4 servings' })).toBeVisible();
+	await expect(row(page, 'Flour')).toContainText('✓ Have');
+
+	// Back on the recipe, it asks.
+	await page.goBack();
+	await page.getByRole('button', { name: 'Check pantry' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Start new check' }).click();
+	await expect(page.getByRole('link', { name: 'Lemon bars, 4 servings' })).toBeVisible();
+});
+
+test('keeps focus on the item after Have, Need and Undo', async ({ page, db, person }) => {
+	const dishId = addRecipe(db, person.householdId, {
+		name: 'Omelet',
+		servings: 1,
+		ingredients: [{ item: 'Eggs', amount: 3 }, { item: 'Butter' }]
+	});
+	await page.goto(`/recipes/${dishId}`);
+	await page.getByRole('button', { name: 'Check pantry' }).click();
+	await page.getByRole('button', { name: 'Have Eggs' }).press('Enter');
+	await expect(page.getByRole('button', { name: 'Undo Have for Eggs' })).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('button', { name: 'Have Eggs' })).toBeFocused();
+	await page.getByRole('button', { name: 'Need Butter' }).press('Enter');
+	await expect(page.getByRole('button', { name: 'Undo Need for Butter' })).toBeFocused();
+});
+
+test('says an item Need added has been bought once its line is received', async ({
+	page,
+	db,
+	person
+}) => {
+	const aldi = addStore(db, person.householdId, 'Aldi');
+	addItem(db, person.householdId, 'Eggs', { defaultStoreId: aldi });
+	const dishId = addRecipe(db, person.householdId, {
+		name: 'Omelet',
+		servings: 1,
+		ingredients: [{ item: 'Eggs', amount: 3 }]
+	});
+	await page.goto(`/recipes/${dishId}`);
+	await page.getByRole('button', { name: 'Check pantry' }).click();
+	await page.getByRole('button', { name: 'Need Eggs' }).click();
+	await expect(row(page, 'Eggs')).toContainText('On the list');
+
+	const now = Date.now();
+	db.prepare(
+		"update grocery_needs set status = 'received', ordered_at = ?, received_at = ? where household_id = ?"
+	).run(now, now, person.householdId);
+	await page.reload();
+	await expect(row(page, 'Eggs')).toContainText('Bought');
+	await expect(row(page, 'Eggs')).toContainText('Received');
+	await expect(row(page, 'Eggs')).not.toContainText('On the list');
+});
+
 test('lists a recipe with steps but no ingredients at the bottom', async ({ page, db, person }) => {
 	const dishId = addRecipe(db, person.householdId, { name: 'Toast', steps: 'Toast the bread.' });
 	await page.goto(`/recipes/${dishId}`);

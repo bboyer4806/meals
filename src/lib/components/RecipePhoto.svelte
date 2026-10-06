@@ -19,6 +19,7 @@
 	}: { savedKey: string | null; choice?: PhotoChoice; busy?: boolean } = $props();
 
 	let input: HTMLInputElement;
+	let pickButton: HTMLButtonElement;
 	let problem = $state('');
 	// Only the latest pick counts, if someone picks again while one is still being resized.
 	let picks = 0;
@@ -55,6 +56,12 @@
 		busy = false;
 		problem = '';
 		choice = savedKey === null ? { kind: 'keep' } : { kind: 'remove' };
+		pickButton.focus();
+	}
+
+	function keep() {
+		choice = { kind: 'keep' };
+		pickButton.focus();
 	}
 </script>
 
@@ -76,13 +83,13 @@
 			aria-hidden="true"
 			onchange={picked}
 		/>
-		<button type="button" onclick={() => input.click()}>
+		<button type="button" bind:this={pickButton} onclick={() => input.click()}>
 			{shown ? 'Change photo' : 'Add photo'}
 		</button>
 		{#if shown || busy}
 			<button type="button" class="quiet" onclick={remove}>Remove photo</button>
 		{:else if choice.kind === 'remove'}
-			<button type="button" class="quiet" onclick={() => (choice = { kind: 'keep' })}>
+			<button type="button" class="quiet" onclick={keep}>
 				Keep the old photo
 			</button>
 		{/if}

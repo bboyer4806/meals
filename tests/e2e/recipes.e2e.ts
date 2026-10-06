@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import type { Locator, Page } from '@playwright/test';
+import type { Dialog, Locator, Page } from '@playwright/test';
 import {
 	addItem,
 	addPerson,
@@ -335,6 +335,11 @@ test('keeps everything typed when the name is taken, and offers to restore an ar
 	await page.getByLabel('Name', { exact: true }).fill('Banana Bread');
 	await page.getByRole('button', { name: 'Save' }).click();
 	await expect(problem).toHaveText('An archived recipe is called Banana Bread.');
+	// What was typed here is dropped, so it asks first.
+	page.once('dialog', (dialog) => {
+		expect(dialog.message()).toBe('Leave without saving? What you typed will be lost.');
+		void dialog.accept();
+	});
 	await page.getByRole('button', { name: 'Restore it' }).click();
 	await expect(page).toHaveURL(new RegExp(`/recipes/${bananaId}$`));
 	await expect(page.getByRole('heading', { name: 'Banana bread', level: 1 })).toBeVisible();
@@ -343,6 +348,71 @@ test('keeps everything typed when the name is taken, and offers to restore an ar
 	expect(db.prepare('select name from dishes where id = ?').pluck().get(lemonId)).toBe(
 		'Lemon squares'
 	);
+});
+
+test('asks before leaving the editor with changes, and leaves it behind once saved', async ({
+	page,
+	person: _
+}) => {
+	const name = page.getByLabel('Name', { exact: true });
+	const tab = (label: string) => page.getByRole('navigation', { name: 'Main' }).getByText(label);
+	await page.goto('/recipes');
+	await page.getByRole('link', { name: 'New recipe' }).click();
+	await expect(name).toBeVisible();
+	// Nothing typed yet, so nothing to ask.
+	await tab('Groceries').click();
+	await expect(page).toHaveURL(/\/groceries$/);
+	await page.goBack();
+	await expect(name).toHaveValue('');
+
+	await name.fill('Ricotta toast');
+	await page.getByLabel('Steps').fill('Toast the bread.\nSpread the ricotta.');
+	const questions: string[] = [];
+	const stay = (dialog: Dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	};
+	page.on('dialog', stay);
+	await tab('Groceries').click();
+	await expect.poll(() => questions).toEqual(['Leave without saving? What you typed will be lost.']);
+	await page.getByRole('link', { name: 'Cancel' }).click();
+	await expect.poll(() => questions).toHaveLength(2);
+	await expect(page).toHaveURL(/\/recipes\/new$/);
+	await expect(name).toHaveValue('Ricotta toast');
+	await expect(page.getByLabel('Steps')).toHaveValue('Toast the bread.\nSpread the ricotta.');
+	page.off('dialog', stay);
+
+	// Saving doesn't ask, and Back from the new recipe goes to the list, not the editor.
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('heading', { name: 'Ricotta toast', level: 1 })).toBeVisible();
+	expect(questions).toHaveLength(2);
+	await page.goBack();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(page.getByRole('heading', { name: 'Recipes', level: 1 })).toBeVisible();
+});
+
+test('shows item suggestions above the tab bar', async ({ page, db, person }) => {
+	addItem(db, person.householdId, 'Sugar');
+	await page.goto('/recipes/new');
+	const item = ingredientRow(page, 1).getByRole('combobox', { name: 'Item' });
+	// Scrolled so the field sits just above the tab bar, where its suggestions open over it.
+	const tabBarTop = await page
+		.getByRole('navigation', { name: 'Main' })
+		.evaluate((bar) => bar.getBoundingClientRect().top);
+	await item.evaluate((field, top) => {
+		window.scrollBy(0, field.getBoundingClientRect().bottom - top + 2);
+	}, tabBarTop);
+	await item.fill('S');
+	const option = page.getByRole('option', { name: 'Sugar' });
+	await expect(option).toBeVisible();
+	const box = (await option.boundingBox())!;
+	expect(box.y).toBeLessThan(tabBarTop);
+	expect(box.y + box.height).toBeGreaterThan(tabBarTop);
+	const shown = await page.evaluate(
+		({ x, y }) => document.elementFromPoint(x, y)?.closest('[role=option]')?.textContent?.trim(),
+		{ x: box.x + box.width / 2, y: tabBarTop + 2 }
+	);
+	expect(shown).toBe('Sugar');
 });
 
 test('replaces and removes a photo', async ({ page, db, person }) => {
@@ -381,9 +451,12 @@ test('replaces and removes a photo', async ({ page, db, person }) => {
 	await page.getByRole('link', { name: 'Edit' }).click();
 	await page.getByRole('button', { name: 'Remove photo' }).click();
 	await expect(page.getByText('The photo is removed when you save.')).toBeVisible();
+	// The button that was pressed is gone, so focus moves to the one beside it.
+	await expect(page.getByRole('button', { name: 'Add photo' })).toBeFocused();
 	// Changing one's mind brings it back.
 	await page.getByRole('button', { name: 'Keep the old photo' }).click();
 	await expect(editorPhoto).toHaveAttribute('src', `/photos/${secondKey}-thumb.jpg`);
+	await expect(page.getByRole('button', { name: 'Change photo' })).toBeFocused();
 	await page.getByRole('button', { name: 'Remove photo' }).click();
 	await expect(page.getByRole('button', { name: 'Add photo' })).toBeVisible();
 	await page.getByRole('button', { name: 'Save' }).click();
@@ -510,6 +583,20 @@ test('leaves the recipe in one step back after changing the servings', async ({
 	await page.goBack();
 	await expect(page).toHaveURL(/\/recipes$/);
 	await expect(page.getByRole('heading', { name: 'Recipes', level: 1 })).toBeVisible();
+});
+
+test('keeps focus on the servings control at its limits', async ({ page, db, person }) => {
+	const dishId = addRecipe(db, person.householdId, scaled);
+	await page.goto(`/recipes/${dishId}`);
+	await page.getByRole('button', { name: 'Fewer servings' }).press('Enter');
+	await expect(page.getByRole('status')).toHaveText('1 serving');
+	await expect(page.getByRole('button', { name: 'Fewer servings' })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'More servings' })).toBeFocused();
+
+	await page.goto(`/recipes/${dishId}?servings=99`);
+	await page.getByRole('button', { name: 'More servings' }).press('Enter');
+	await expect(page.getByRole('status')).toHaveText('100 servings');
+	await expect(page.getByRole('button', { name: 'Fewer servings' })).toBeFocused();
 });
 
 test('prints the recipe at the servings shown, without navigation or buttons', async ({

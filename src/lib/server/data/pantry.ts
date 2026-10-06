@@ -178,23 +178,32 @@ function buildChecklist(householdId: number): { id: number; checklist: PantryChe
 	};
 }
 
-/** Replaces the household's checklist and its marks. Lines that Need added stay on the list. */
+/**
+ * Replaces the household's checklist and its marks. Lines that Need added stay on the list. A
+ * checklist with checked items is only replaced when the person was asked (`replaceChecked`);
+ * otherwise nothing changes and it says 'checked' (6.8).
+ */
 export function startRecipeChecklist(
 	householdId: number,
 	dishId: number,
 	servings: number,
+	replaceChecked: boolean,
 	now: number
-): void {
-	transaction(() => {
+): 'started' | 'checked' {
+	return transaction(() => {
 		const dish = db()
 			.select({ id: dishes.id })
 			.from(dishes)
 			.where(and(eq(dishes.id, dishId), eq(dishes.householdId, householdId)))
 			.get();
 		if (!dish) error(404, 'Not found');
+		if (!replaceChecked && (getChecklistSummary(householdId)?.markedCount ?? 0) > 0) {
+			return 'checked';
+		}
 		// Its marks go with it (on delete cascade).
 		db().delete(pantryChecklists).where(eq(pantryChecklists.householdId, householdId)).run();
 		db().insert(pantryChecklists).values({ householdId, dishId, servings, createdAt: now }).run();
+		return 'started';
 	});
 }
 

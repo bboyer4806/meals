@@ -25,7 +25,12 @@ for (const name of readdirSync(backups)) {
 }
 mkdirSync(partial);
 
-// SQLite's online backup is consistent even while the app is writing.
+// A second connection holds the write lock from before the copy until the photos are linked. The
+// app deletes a photo's files only after a commit that stops naming them, so every photo the copy
+// names is still there to link. App writes wait meanwhile (busy_timeout); it takes well under a
+// second. (The online backup reads, so it isn't blocked by the lock.)
+const lock = new Database(database, { fileMustExist: true });
+lock.exec('BEGIN IMMEDIATE');
 const db = new Database(database, { fileMustExist: true });
 await db.backup(join(partial, 'meals.db'));
 db.close();
@@ -49,6 +54,8 @@ if (existsSync(photos)) {
 		}
 	}
 }
+lock.exec('ROLLBACK');
+lock.close();
 
 rmSync(target, { recursive: true, force: true });
 renameSync(partial, target);

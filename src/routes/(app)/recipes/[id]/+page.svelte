@@ -33,8 +33,14 @@
 	let servings = $derived(targetServings(address.searchParams.get('servings'), dish.servings));
 	const factor = $derived(scaleFactor(servings, dish.servings));
 
+	let fewerButton = $state<HTMLButtonElement>();
+	let moreButton = $state<HTMLButtonElement>();
+
 	function setServings(next: number) {
 		servings = next;
+		// The button that reached its limit is disabled, which would drop focus to the page.
+		if (next <= 1) moreButton?.focus();
+		else if (next >= MAX_SERVINGS) fewerButton?.focus();
 		const url = new URL(address.href);
 		url.searchParams.set('servings', String(next));
 		// Replacing the history entry means Back still leaves the recipe in one step.
@@ -95,6 +101,7 @@
 			type="button"
 			class="adjust"
 			aria-label="Fewer servings"
+			bind:this={fewerButton}
 			disabled={servings <= 1}
 			onclick={() => setServings(servings - 1)}>−</button
 		>
@@ -103,6 +110,7 @@
 			type="button"
 			class="adjust"
 			aria-label="More servings"
+			bind:this={moreButton}
 			disabled={servings >= MAX_SERVINGS}
 			onclick={() => setServings(servings + 1)}>+</button
 		>
@@ -118,6 +126,7 @@
 			<input type="hidden" name="dishId" value={dish.id} />
 			<input type="hidden" name="servings" value={servings} />
 			{#if data.pantryMarked > 0}
+				<input type="hidden" name="replaceChecked" value="1" />
 				<ConfirmButton
 					label="Check pantry"
 					message={pantryQuestion}

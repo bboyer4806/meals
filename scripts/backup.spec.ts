@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import {
 	existsSync,
 	mkdirSync,
@@ -12,6 +12,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { promisify } from 'node:util';
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { latestBackupDate } from '../src/lib/server/backups.ts';
@@ -102,6 +104,38 @@ describe('backup script', () => {
 			'old photo'
 		);
 		expect(readdirSync(join(dataDir, 'backups', today, 'photos'))).toEqual(['new.jpg']);
+	});
+
+	it('waits for a save in progress, so the photos it links match the database it copied', async () => {
+		const dataDir = mkdtempSync(join(tmpdir(), 'meals-backup-'));
+		openDb(join(dataDir, 'meals.db'));
+		const app = new Database(join(dataDir, 'meals.db'));
+		// A save that has begun: the app writes a photo's files, then commits the key, then deletes
+		// the old photo's files.
+		app.exec('BEGIN IMMEDIATE');
+		const run = promisify(execFile)('node', ['scripts/backup.js'], {
+			env: { ...process.env, DATA_DIR: dataDir }
+		});
+		// The script makes this folder just before it takes the lock.
+		const backups = join(dataDir, 'backups');
+		const started = () => readdirSync(backups).some((name) => name.startsWith('partial-'));
+		while (!existsSync(backups) || !started()) {
+			await sleep(10);
+		}
+		await sleep(300);
+		app
+			.prepare(
+				"insert into households (name, default_servings, time_zone, created_at) values ('Saved', 2, 'UTC', 0)"
+			)
+			.run();
+		app.exec('COMMIT');
+		app.close();
+		await run;
+
+		const today = new Date().toISOString().slice(0, 10);
+		const copy = new Database(join(dataDir, 'backups', today, 'meals.db'), { readonly: true });
+		expect(copy.prepare('select name from households').pluck().all()).toEqual(['Saved']);
+		copy.close();
 	});
 
 	it('works before there are any photos, and still makes the photos folder', () => {

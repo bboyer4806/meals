@@ -432,6 +432,9 @@ describe('ingredient rows', () => {
 			rows('[{"kind":"ingredient","amount":1,"unit":"","item":"Flour","prepNote":""}]')
 		).toBe(message);
 		expect(rows('[{"kind":"section"}]')).toBe(message);
+		const blank = { kind: 'ingredient', amount: '', unit: '', item: '', prepNote: '' };
+		expect(rows(JSON.stringify(Array.from({ length: 1001 }, () => blank)))).toBe(message);
+		expect(rows(JSON.stringify(Array(2_000_000).fill(1)))).toBe(message);
 	});
 });
 

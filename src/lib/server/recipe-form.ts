@@ -209,6 +209,7 @@ const rowsSchema = z.array(
 );
 
 // Only a broken page or a hand-made request sends rows that don't fit rowsSchema.
+const MAX_ROWS = 1000;
 const UNREADABLE = "The ingredients couldn't be read. Reload the page and try again.";
 
 // Two amounts joined like a range: "2-3", "2 to 3", "½ or 1", or with an en or em dash.
@@ -222,6 +223,9 @@ function readIngredients(json: string): IngredientInput[] | string {
 	} catch {
 		return UNREADABLE;
 	}
+	// Checked first: Zod notes a problem for every bad row, which for millions of rows in a 5 MB
+	// request takes seconds and a gigabyte. The editor never sends close to this many.
+	if (!Array.isArray(raw) || raw.length > MAX_ROWS) return UNREADABLE;
 	const rows = rowsSchema.safeParse(raw);
 	if (!rows.success) return UNREADABLE;
 

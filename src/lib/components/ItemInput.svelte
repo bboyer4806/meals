@@ -130,7 +130,8 @@
 
 	ul {
 		position: absolute;
-		z-index: 10;
+		/* Above the sticky header and the tab bar. */
+		z-index: 30;
 		left: 0;
 		right: 0;
 		top: calc(100% + 4px);

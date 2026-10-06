@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import type { RecipeFailure, RecipeFormValues } from '../server/recipe-form.ts';
 	import RecipeIngredients, { blankIngredient, type EditorRow } from './RecipeIngredients.svelte';
 	import RecipePhoto, { type PhotoChoice } from './RecipePhoto.svelte';
@@ -44,6 +45,23 @@
 	);
 	let photo = $state<PhotoChoice>({ kind: 'keep' });
 	let preparingPhoto = $state(false);
+
+	// What saving would keep, to ask before leaving with it unsaved. Number fields hold numbers
+	// once typed in, so everything is compared as text.
+	function typed(): string {
+		const text = Object.values(fields).map((value) => String(value ?? ''));
+		const rowsTyped = rows.map(({ key: _, ...row }) => row);
+		return JSON.stringify([text, tagText, rowsTyped, photo.kind]);
+	}
+	const typedAtStart = typed();
+	let saved = false;
+
+	beforeNavigate(({ type, cancel }) => {
+		if (saved || typed() === typedAtStart) return;
+		// Closing the tab or leaving the site: the browser asks.
+		if (type === 'leave') return cancel();
+		if (!confirm('Leave without saving? What you typed will be lost.')) cancel();
+	});
 
 	let saving = $state(false);
 	let problem = $state<RecipeFailure | null>(untrack(() => failure));
@@ -94,8 +112,11 @@
 					action: 'recipe',
 					error: "You've been signed out. Sign in again in another tab, then save."
 				});
+			} else if (result.type === 'redirect') {
+				// Saved: on to the recipe, in place of the editor, so Back doesn't open it again.
+				saved = true;
+				await goto(result.location, { replace: true, refreshAll: true });
 			} else {
-				// Saved: on to the recipe.
 				await update({ reset: false });
 			}
 		};

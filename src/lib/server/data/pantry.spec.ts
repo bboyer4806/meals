@@ -115,7 +115,7 @@ describe('starting a checklist', () => {
 	it('lists each item once, in recipe order, scaled to the servings', () => {
 		expect(getChecklist(householdId)).toBeNull();
 		expect(getChecklistSummary(householdId)).toBeNull();
-		startRecipeChecklist(householdId, cake, 8, NOW);
+		startRecipeChecklist(householdId, cake, 8, false, NOW);
 		const item = (name: string, ...entries: [number | null, string | null][]) => ({
 			itemId: itemId(name),
 			itemName: name,
@@ -138,27 +138,27 @@ describe('starting a checklist', () => {
 	});
 
 	it("scales by exactly 1 at the recipe's own servings", () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		const factors = checklist().items.flatMap((item) => item.entries.map((entry) => entry.factor));
 		expect(factors).toEqual([1, 1, 1, 1, 1]);
-		startRecipeChecklist(householdId, cake, 3, NOW);
+		startRecipeChecklist(householdId, cake, 3, false, NOW);
 		expect(checklist().items[0]?.entries[0]?.factor).toBe(0.75);
 	});
 
 	it("shows each item's notes", () => {
 		updateItem(householdId, itemId('Butter'), { name: 'Butter', notes: 'Unsalted', alwaysHave: false });
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		expect(checklist().items[0]).toMatchObject({ itemName: 'Butter', itemNotes: 'Unsalted' });
 	});
 
 	it("lists a recipe with no ingredients so it isn't forgotten", () => {
 		const rolls = makeDish(householdId, recipe('Rolls'));
-		startRecipeChecklist(householdId, rolls, 4, NOW);
+		startRecipeChecklist(householdId, rolls, 4, false, NOW);
 		expect(checklist()).toMatchObject({ items: [], noIngredients: ['Rolls'], markedCount: 0 });
 	});
 
 	it('works out the lines from the recipe as it is now (design 6.8)', () => {
-		startRecipeChecklist(householdId, cake, 8, NOW);
+		startRecipeChecklist(householdId, cake, 8, false, NOW);
 		markHave(householdId, itemId('Sugar'));
 		const changed = recipe('Pound cake', {
 			servings: 8,
@@ -175,19 +175,19 @@ describe('starting a checklist', () => {
 
 	it('works from an archived recipe', () => {
 		setDishArchived(householdId, cake, true, NOW);
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		expect(checklist().items).toHaveLength(4);
 	});
 
 	it('replaces the checklist and its marks, but not the lines Need added', () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markHave(householdId, itemId('Sugar'));
 		markNeed(householdId, itemId('Eggs'), NOTE, NOW);
 		const pie = makeDish(
 			householdId,
 			recipe('Apple pie', { ingredients: [ingredient('Sugar', 1, 'cup'), ingredient('Apples', 6)] })
 		);
-		startRecipeChecklist(householdId, pie, 8, NOW);
+		expect(startRecipeChecklist(householdId, pie, 8, true, NOW)).toBe('started');
 		expect(checklist()).toMatchObject({
 			source: { kind: 'recipe', dishId: pie, dishName: 'Apple pie', servings: 8 },
 			markedCount: 0
@@ -198,11 +198,24 @@ describe('starting a checklist', () => {
 		expect(lines().map((line) => line.itemName)).toEqual(['Eggs']);
 	});
 
+	it('only replaces a checklist with checked items when the person was asked (6.8)', () => {
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
+		// Nothing is checked yet, so there was nothing to ask.
+		expect(startRecipeChecklist(householdId, cake, 8, false, NOW)).toBe('started');
+		markHave(householdId, itemId('Sugar'));
+		const pie = makeDish(householdId, recipe('Apple pie', { ingredients: [ingredient('Apples')] }));
+		expect(startRecipeChecklist(householdId, pie, 4, false, NOW)).toBe('checked');
+		expect(checklist()).toMatchObject({ source: { dishId: cake, servings: 8 }, markedCount: 1 });
+		expect(stateOf('Sugar')).toEqual({ kind: 'have' });
+	});
+
 	it('keeps the current checklist and its marks when a new one fails to start', () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markHave(householdId, itemId('Sugar'));
 		// Servings below 1 break a database rule after the old checklist is deleted.
-		expect(() => startRecipeChecklist(householdId, cake, 0, NOW)).toThrow(/CHECK constraint failed/);
+		expect(() => startRecipeChecklist(householdId, cake, 0, true, NOW)).toThrow(
+			/CHECK constraint failed/
+		);
 		expect(checklist()).toMatchObject({ source: { servings: 4 }, markedCount: 1 });
 		expect(stateOf('Sugar')).toEqual({ kind: 'have' });
 	});
@@ -217,7 +230,7 @@ describe('Always have (addition 2.2.1)', () => {
 			['Salt', true],
 			['Sugar', false]
 		]);
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		expect(checklist().items.map((item) => item.itemName)).toEqual(['Butter', 'Sugar', 'Eggs']);
 		expectHttpError(() => markHave(householdId, itemId('Salt')), 400);
 		expectHttpError(() => markNeed(householdId, itemId('Salt'), NOTE, NOW), 400);
@@ -227,7 +240,7 @@ describe('Always have (addition 2.2.1)', () => {
 	});
 
 	it("doesn't count a mark on an item that became Always have", () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markHave(householdId, itemId('Salt'));
 		expect(getChecklistSummary(householdId)).toEqual({ markedCount: 1 });
 		setAlwaysHave('Salt', true);
@@ -239,14 +252,14 @@ describe('Always have (addition 2.2.1)', () => {
 	it('still counts a recipe of only Always have items as having ingredients', () => {
 		const ice = makeDish(householdId, recipe('Ice', { ingredients: [ingredient('Water', 2, 'cup')] }));
 		setAlwaysHave('Water', true);
-		startRecipeChecklist(householdId, ice, 4, NOW);
+		startRecipeChecklist(householdId, ice, 4, false, NOW);
 		expect(checklist()).toMatchObject({ items: [], noIngredients: [] });
 	});
 });
 
 describe('Have and Need', () => {
 	it('marks an item Have, and undoes it', () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markHave(householdId, itemId('Sugar'));
 		expect(stateOf('Sugar')).toEqual({ kind: 'have' });
 		expect(getChecklistSummary(householdId)).toEqual({ markedCount: 1 });
@@ -259,7 +272,7 @@ describe('Have and Need', () => {
 	it('puts a Need on the list with quantity 1, the usual store and the note (Q4)', () => {
 		const walmart = makeStore(householdId, 'Walmart');
 		setDefaultStore(householdId, itemId('Butter'), walmart);
-		startRecipeChecklist(householdId, cake, 8, NOW);
+		startRecipeChecklist(householdId, cake, 8, false, NOW);
 		markNeed(householdId, itemId('Butter'), '2 1/4 cups for Pound cake', NOW);
 		expect(lines()).toHaveLength(1);
 		const line = lineFor('Butter');
@@ -280,7 +293,7 @@ describe('Have and Need', () => {
 		const aldi = makeStore(householdId, 'Aldi');
 		setDefaultStore(householdId, itemId('Sugar'), aldi);
 		setStoreArchived(householdId, aldi, true, NOW);
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markNeed(householdId, itemId('Sugar'), NOTE, NOW);
 		markNeed(householdId, itemId('Eggs'), NOTE, NOW);
 		expect(lineFor('Sugar').storeId).toBeNull();
@@ -289,7 +302,7 @@ describe('Have and Need', () => {
 
 	it("follows the line's status, and undoing Need deletes only a line still To Order", () => {
 		const walmart = makeStore(householdId, 'Walmart');
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		for (const name of ['Butter', 'Sugar', 'Eggs']) markNeed(householdId, itemId(name), NOTE, NOW);
 		markOrdered(householdId, lineFor('Sugar').id, walmart, NOW);
 		markReceived(householdId, lineFor('Eggs').id, walmart, NOW);
@@ -313,7 +326,7 @@ describe('Have and Need', () => {
 	});
 
 	it('clears the mark when the line Need added is deleted', () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markNeed(householdId, itemId('Butter'), NOTE, NOW);
 		deleteLine(householdId, lineFor('Butter').id);
 		expect(db().select().from(pantryMarks).all()).toHaveLength(0);
@@ -327,7 +340,7 @@ describe('Have and Need', () => {
 		markOrdered(householdId, lineFor('Sugar').id, undefined, NOW);
 		addToList('Eggs', { store: walmart });
 		markReceived(householdId, lineFor('Eggs').id, undefined, NOW);
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		expect(stateOf('Butter')).toEqual({ kind: 'onList', status: 'to_order' });
 		expect(stateOf('Sugar')).toEqual({ kind: 'onList', status: 'ordered' });
 		// A received line isn't on the list anymore.
@@ -343,19 +356,19 @@ describe('Have and Need', () => {
 		addToList('Sugar', { store: walmart });
 		markOrdered(householdId, lineFor('Sugar').id, undefined, NOW);
 		addToList('Sugar', { resolution: 'add' });
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		expect(stateOf('Sugar')).toEqual({ kind: 'onList', status: 'to_order' });
 	});
 
 	it('lets a mark win over a line added later', () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markHave(householdId, itemId('Butter'));
 		addToList('Butter');
 		expect(stateOf('Butter')).toEqual({ kind: 'have' });
 	});
 
 	it('refuses to mark an item twice', () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markHave(householdId, itemId('Sugar'));
 		markNeed(householdId, itemId('Eggs'), NOTE, NOW);
 		expectHttpError(() => markHave(householdId, itemId('Sugar')), 400);
@@ -374,7 +387,7 @@ describe('Have and Need', () => {
 		expect(refusal(() => undoMark(householdId, itemId('Sugar')))).toBe('Start a pantry check first');
 		expect(refusal(() => startOver(householdId))).toBe('Start a pantry check first');
 
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		const milk = createItem(householdId, 'Milk', NOW).id;
 		expect(refusal(() => markHave(householdId, milk))).toBe("Milk isn't in this pantry check");
 		expect(refusal(() => undoMark(householdId, itemId('Sugar')))).toBe("Sugar isn't checked");
@@ -388,7 +401,7 @@ describe('Have and Need', () => {
 	});
 
 	it('starts over by clearing every mark, keeping the lines on the list', () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markHave(householdId, itemId('Sugar'));
 		markNeed(householdId, itemId('Eggs'), NOTE, NOW);
 		startOver(householdId);
@@ -402,18 +415,18 @@ describe('Have and Need', () => {
 
 describe('households', () => {
 	it("keeps each household's checklist to itself", () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markHave(householdId, itemId('Sugar'));
 		const other = makeHousehold(TZ);
 		expect(getChecklist(other.householdId)).toBeNull();
 		expect(getChecklistSummary(other.householdId)).toBeNull();
-		expectHttpError(() => startRecipeChecklist(other.householdId, cake, 4, NOW), 404);
+		expectHttpError(() => startRecipeChecklist(other.householdId, cake, 4, false, NOW), 404);
 
 		const theirs = makeDish(
 			other.householdId,
 			recipe('Pound cake', { ingredients: [ingredient('Butter', 1, 'cup')] })
 		);
-		startRecipeChecklist(other.householdId, theirs, 2, NOW);
+		startRecipeChecklist(other.householdId, theirs, 2, false, NOW);
 		// This household's items aren't theirs to mark, even ones with the same name.
 		expectHttpError(() => markHave(other.householdId, itemId('Butter')), 404);
 		expectHttpError(() => markNeed(other.householdId, itemId('Butter'), NOTE, NOW), 404);
@@ -428,7 +441,7 @@ describe('households', () => {
 	});
 
 	it('rejects checklists and marks that point at another household in the database itself', () => {
-		startRecipeChecklist(householdId, cake, 4, NOW);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		const mine = db().select().from(pantryChecklists).get()!;
 		const other = makeHousehold(TZ);
 		const apples = createItem(other.householdId, 'Apples', NOW).id;
