@@ -1,6 +1,6 @@
 import { fail, isHttpError, type ActionFailure } from '@sveltejs/kit';
 import { z } from 'zod';
-import { formatExact, parseAmount } from '../amounts.ts';
+import { exactAmount, parseAmount } from '../amounts.ts';
 import { foldCase, normalizeName } from '../text.ts';
 import { normalizeUnit } from '../units.ts';
 import {
@@ -83,6 +83,15 @@ export function newRecipeValues(servings: number): RecipeFormValues {
 }
 
 /**
+ * An amount as the editor shows it: as entered (formatExact) when that reads back as the same
+ * number, otherwise in full, so saving again doesn't change it (1/6 or 0.0004, say).
+ */
+function amountText(amount: number): string {
+	const shown = exactAmount(amount);
+	return Math.abs(shown.value - amount) <= 1e-9 ? shown.text : String(amount);
+}
+
+/**
  * A saved recipe as the editor shows it. Amounts show as entered (formatExact), and a heading
  * row starts each run of ingredients in the same section, so the form reads back as the same
  * recipe.
@@ -98,7 +107,7 @@ export function recipeValues(recipe: DishInput): RecipeFormValues {
 		}
 		rows.push({
 			kind: 'ingredient',
-			amount: ingredient.amount === null ? '' : formatExact(ingredient.amount),
+			amount: ingredient.amount === null ? '' : amountText(ingredient.amount),
 			unit: ingredient.unit ?? '',
 			item: ingredient.itemName,
 			prepNote: ingredient.prepNote ?? ''

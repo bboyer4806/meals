@@ -59,9 +59,9 @@ describe('normalizeUnit', () => {
 			tbsp: ['tbsp', 'tbsps', 'tbsp.', 'tbs', 'tbl', 'tablespoon', 'tablespoons'],
 			'fl oz': ['fl oz', 'fl. oz.', 'fl.oz.', 'floz', 'fluid ounce', 'fluid ounces'],
 			cup: ['c', 'c.', 'cup', 'cups'],
-			pint: ['pt', 'pt.', 'pint', 'pints'],
-			quart: ['qt', 'qt.', 'quart', 'quarts'],
-			gallon: ['gal', 'gal.', 'gallon', 'gallons'],
+			pint: ['pt', 'pt.', 'pts', 'pint', 'pints'],
+			quart: ['qt', 'qt.', 'qts', 'quart', 'quarts'],
+			gallon: ['gal', 'gal.', 'gals', 'gallon', 'gallons'],
 			oz: ['oz', 'oz.', 'ounce', 'ounces'],
 			lb: ['lb', 'lb.', 'lbs', 'lbs.', 'pound', 'pounds']
 		};

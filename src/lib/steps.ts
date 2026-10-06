@@ -29,8 +29,8 @@ const RANGE_JOIN = String.raw`\s*[-\u2013\u2014]\s*|\s+(?:to|or|and)\s+`;
 const RANGE = `(?:\\b|(?=[${GLYPHS}]))(?:${NUMBER})(?:(?:${RANGE_JOIN})(?:${NUMBER}))?`;
 // What makes a number a time or a temperature: the degree sign (or the look-alikes º and ˚
 // that people type for it), or one of these words. F is for "350F". C for Celsius is left
-// out, because it also means cups.
-const TIME_WORDS = 'degrees?|minutes?|mins?|hours?|hrs?|seconds?|secs?|days?|F';
+// out, because it also means cups. "2 day-old baguettes" is an amount, not a time.
+const TIME_WORDS = 'degrees?|minutes?|mins?|hours?|hrs?|seconds?|secs?|days?(?!-)|F';
 // Times and temperatures don't scale and aren't amounts (change 2.1.3): "350°F",
 // "350 degrees", "25 to 30 minutes", "a 10-minute rest", "5 more minutes".
 const TIME_OR_TEMPERATURE = new RegExp(

@@ -160,6 +160,18 @@ describe('saving', () => {
 		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBeNull();
 	});
 
+	it('leaves an item archived when a recipe that already used it is saved again (6.10)', () => {
+		const soup = recipe('Soup', { ingredients: [ingredient('Salt'), ingredient('Pepper')] });
+		const id = makeDish(householdId, soup);
+		const salt = findItemByName(householdId, 'Salt')!.id;
+		setItemArchived(householdId, salt, true, NOW);
+		expect(updateDish(householdId, id, { ...soup, servings: 6 }, LATER)).toEqual({
+			kind: 'saved',
+			id
+		});
+		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBe(NOW);
+	});
+
 	it('keeps each tag once, ignoring case, with its first spelling', () => {
 		const id = makeDish(
 			householdId,
@@ -424,7 +436,10 @@ describe('listing', () => {
 		makeDish(householdId, recipe('Toast', { steps: ' \n\t\r\n ', notes: 'Notes are not a recipe.' }));
 		makeDish(householdId, recipe('Salad', { ingredients: [ingredient('Lettuce')] }));
 		makeDish(householdId, recipe('Tea', { steps: 'Steep 3 minutes.' }));
+		// Only typed step numbers and bullets, which the recipe page doesn't show as steps.
+		makeDish(householdId, recipe('Buns', { steps: '1.\n-' }));
 		expect(list().map((dish) => [dish.name, dish.hasRecipe])).toEqual([
+			['Buns', false],
 			['Rolls', false],
 			['Salad', true],
 			['Tea', true],

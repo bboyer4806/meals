@@ -555,6 +555,17 @@ describe('the values the editor starts with', () => {
 		expect(parse(recipeValues(recipe('Toast'))).data).toEqual(recipe('Toast'));
 	});
 
+	it('show amounts in full that a fraction or 3 decimals would change', () => {
+		const tea = recipe('Tea', {
+			ingredients: [ingredient('Sugar', 1 / 6, 'cup'), ingredient('Saffron', 0.0004, 'oz')]
+		});
+		expect(recipeValues(tea).rows).toEqual([
+			row(String(1 / 6), 'cup', 'Sugar'),
+			row('0.0004', 'oz', 'Saffron')
+		]);
+		expect(parse(recipeValues(tea)).data).toEqual(tea);
+	});
+
 	describe('with a saved recipe', () => {
 		let householdId: number;
 

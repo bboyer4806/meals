@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { splitSteps } from '../../steps.ts';
 import { foldCase, normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
 import { dishes, dishIngredients, dishTags, items } from '../db/schema.ts';
@@ -115,13 +116,24 @@ function findDishByName(householdId: number, name: string) {
 		.get();
 }
 
-/** The catalog item an ingredient names (Q1): an existing one, or a new one for a new name. */
-function ingredientItem(householdId: number, itemName: string, now: number): number {
+/**
+ * The catalog item an ingredient names (Q1): an existing one, or a new one for a new name.
+ * `usedBefore` is the items the dish used before this save.
+ */
+function ingredientItem(
+	householdId: number,
+	itemName: string,
+	usedBefore: Set<number>,
+	now: number
+): number {
 	const name = normalizeName(itemName);
 	const item = findItemByName(householdId, name);
 	if (!item) return createItem(householdId, name, now).id;
-	// A recipe that uses an archived item brings it back, as adding it to the list does.
-	if (item.archivedAt !== null) setItemArchived(householdId, item.id, false, now);
+	// Adding an archived item to a recipe brings it back, as adding it to the list does. One
+	// the recipe already used stays archived (6.10).
+	if (item.archivedAt !== null && !usedBefore.has(item.id)) {
+		setItemArchived(householdId, item.id, false, now);
+	}
 	return item.id;
 }
 
@@ -153,6 +165,7 @@ function save(
 	};
 
 	let id: number;
+	const usedBefore = new Set<number>();
 	if (dishId === null) {
 		id = db()
 			.insert(dishes)
@@ -167,7 +180,12 @@ function save(
 			.where(eq(dishes.id, id))
 			.run();
 		db().delete(dishTags).where(eq(dishTags.dishId, id)).run();
-		db().delete(dishIngredients).where(eq(dishIngredients.dishId, id)).run();
+		const previous = db()
+			.delete(dishIngredients)
+			.where(eq(dishIngredients.dishId, id))
+			.returning({ itemId: dishIngredients.itemId })
+			.all();
+		for (const { itemId } of previous) usedBefore.add(itemId);
 	}
 
 	// The database allows each tag once per dish, ignoring case. The first spelling wins.
@@ -185,7 +203,7 @@ function save(
 		section: ingredient.section,
 		amount: ingredient.amount,
 		unit: ingredient.unit,
-		itemId: ingredientItem(householdId, ingredient.itemName, now),
+		itemId: ingredientItem(householdId, ingredient.itemName, usedBefore, now),
 		prepNote: ingredient.prepNote
 	}));
 	if (ingredientRows.length > 0) db().insert(dishIngredients).values(ingredientRows).run();
@@ -319,9 +337,8 @@ export function listDishes(
 			prepMinutes: dishes.prepMinutes,
 			cookMinutes: dishes.cookMinutes,
 			archivedAt: dishes.archivedAt,
-			// Steps of only spaces and line breaks don't count.
-			hasRecipe: sql<boolean>`${ingredientCounts.count} is not null
-				or trim(coalesce(${dishes.steps}, ''), ' ' || char(9, 10, 13)) != ''`.mapWith(Boolean)
+			steps: dishes.steps,
+			ingredientCount: ingredientCounts.count
 		})
 		.from(dishes)
 		.leftJoin(ingredientCounts, eq(ingredientCounts.dishId, dishes.id))
@@ -339,7 +356,12 @@ export function listDishes(
 			)
 		)
 		.all()
-		.map((dish) => ({ ...dish, tags: tags.get(dish.id) ?? [] }))
+		.map(({ steps, ingredientCount, ...dish }) => ({
+			...dish,
+			tags: tags.get(dish.id) ?? [],
+			// The same test as the recipe page.
+			hasRecipe: ingredientCount !== null || splitSteps(steps).length > 0
+		}))
 		// Sorted here rather than in SQL, so "Éclairs" sorts with the E's.
 		.sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -49,9 +49,9 @@ const SPELLINGS: Record<KnownUnitCode, string[]> = {
 	tbsp: ['tbsp', 'tbsps', 'tbs', 'tbl', 'tablespoon', 'tablespoons'],
 	'fl oz': ['fl oz', 'fluid ounce', 'fluid ounces'],
 	cup: ['c', 'cup', 'cups'],
-	pint: ['pt', 'pint', 'pints'],
-	quart: ['qt', 'quart', 'quarts'],
-	gallon: ['gal', 'gallon', 'gallons'],
+	pint: ['pt', 'pts', 'pint', 'pints'],
+	quart: ['qt', 'qts', 'quart', 'quarts'],
+	gallon: ['gal', 'gals', 'gallon', 'gallons'],
 	oz: ['oz', 'ounce', 'ounces'],
 	lb: ['lb', 'lbs', 'pound', 'pounds']
 };

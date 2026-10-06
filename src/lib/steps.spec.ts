@@ -123,6 +123,7 @@ describe('stepHasUnscaledAmount', () => {
 		expect(stepHasUnscaledAmount('Add 3 secret spices.')).toBe(true);
 		expect(stepHasUnscaledAmount('Add 2 fl oz of cream.')).toBe(true);
 		expect(stepHasUnscaledAmount('Add 2 to the bowl.')).toBe(true);
+		expect(stepHasUnscaledAmount('Tear 2 day-old baguettes into cubes.')).toBe(true);
 	});
 
 	it('ignores a step number people typed', () => {
