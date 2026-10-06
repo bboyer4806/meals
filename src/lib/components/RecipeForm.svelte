@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onDestroy, tick, untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
-	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
+	import { afterNavigate, beforeNavigate, goto, refreshAll } from '$app/navigation';
 	import type { RecipeFailure, RecipeFormValues } from '../server/recipe-form.ts';
 	import RecipeIngredients, { blankIngredient, type EditorRow } from './RecipeIngredients.svelte';
 	import RecipePhoto, { type PhotoChoice } from './RecipePhoto.svelte';
@@ -69,24 +69,31 @@
 	let done = false;
 	const LEAVE = 'Leave without saving? What you typed will be lost.';
 
-	beforeNavigate(({ type, cancel }) => {
-		if (done || typed() === typedAtStart) return;
-		// Closing the tab or leaving the site: the browser asks.
-		if (type === 'leave') return cancel();
-		const question = saving
-			? "The recipe is still saving. Leave anyway? If it doesn't save, what you typed will be lost."
-			: LEAVE;
-		if (!confirm(question)) cancel();
+	// The navigation the person chose while the recipe was saving. The save then leaves them
+	// where they went.
+	let leftWhileSaving: Promise<void> | null = null;
+
+	beforeNavigate((navigation) => {
+		if (done) return;
+		if (typed() !== typedAtStart) {
+			// Closing the tab or leaving the site: the browser asks.
+			if (navigation.type === 'leave') return navigation.cancel();
+			const question = saving
+				? "The recipe is still saving. Leave anyway? If it doesn't save, what you typed will be lost."
+				: LEAVE;
+			if (!confirm(question)) return navigation.cancel();
+		}
+		if (saving) leftWhileSaving = navigation.complete;
 	});
 
-	// The page the editor was opened from, so saving can go back to it.
+	// The page before the editor in history, so saving can go back to it. Not when the editor
+	// was reached with Back, since the page it came from is then the one after it.
 	let openedFrom: string | null | undefined;
-	afterNavigate(({ from }) => {
-		if (openedFrom === undefined) openedFrom = from?.url.pathname ?? null;
+	afterNavigate((navigation) => {
+		if (openedFrom !== undefined) return;
+		const back = navigation.type === 'popstate' && navigation.delta < 0;
+		openedFrom = back ? null : (navigation.from?.url.pathname ?? null);
 	});
-	// A save that finishes after the person left doesn't take them anywhere.
-	let left = false;
-	onDestroy(() => (left = true));
 
 	// Restoring the other recipe drops this one, so it asks before anything changes.
 	const restore: SubmitFunction = ({ cancel }) => {
@@ -145,7 +152,12 @@
 				});
 			} else if (result.type === 'redirect') {
 				done = true;
-				if (left) return;
+				if (leftWhileSaving) {
+					// Once they're there, it shows what was saved.
+					await leftWhileSaving.catch(() => {});
+					await refreshAll();
+					return;
+				}
 				// Saved: on to the recipe, so that Back from it doesn't open the editor again. Opened
 				// from that recipe's page, it goes back to that page; otherwise the recipe takes the
 				// editor's place.

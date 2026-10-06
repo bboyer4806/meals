@@ -419,41 +419,89 @@ test('goes back to the recipe after saving an edit, so Back leaves it in one ste
 	await expect(page.getByRole('link', { name: /^Cheese omelet/ })).toBeVisible();
 });
 
+/** Makes requests that match take a while, as on a slow phone connection. */
+async function slow(page: Page, matches: (url: URL) => boolean, ms: number) {
+	await page.route(matches, async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, ms));
+		await route.continue();
+	});
+}
+
+const STILL_SAVING =
+	"The recipe is still saving. Leave anyway? If it doesn't save, what you typed will be lost.";
+
 test('lets someone leave while a save is on its way, and stays where they went', async ({
 	page,
 	db,
 	person
 }) => {
-	// The save takes a while, as on a slow phone connection.
-	await page.route(
-		(url) => url.pathname === '/recipes/new' && url.search === '?/save',
-		async (route) => {
-			await new Promise((resolve) => setTimeout(resolve, 1000));
-			await route.continue();
-		}
-	);
+	await slow(page, (url) => url.pathname === '/recipes/new' && url.search === '?/save', 800);
+	// The page they go to is still loading when the save finishes.
+	await slow(page, (url) => url.pathname === '/groceries/__data.json', 2000);
 	await page.goto('/recipes/new');
 	await page.getByLabel('Name', { exact: true }).fill('Ricotta toast');
 	await page.getByRole('button', { name: 'Save' }).click();
 	await expect(page.getByRole('button', { name: 'Saving…' })).toBeVisible();
-	const saved = page.waitForResponse((response) => response.url().endsWith('/recipes/new?/save'));
 	page.once('dialog', (dialog) => {
-		expect(dialog.message()).toBe(
-			"The recipe is still saving. Leave anyway? If it doesn't save, what you typed will be lost."
-		);
+		expect(dialog.message()).toBe(STILL_SAVING);
 		void dialog.accept();
 	});
 	await page.getByRole('navigation', { name: 'Main' }).getByText('Groceries').click();
-	await expect(page).toHaveURL(/\/groceries$/);
-	await saved;
 	await expect
 		.poll(() =>
 			db.prepare('select name from dishes where household_id = ?').pluck().all(person.householdId)
 		)
 		.toEqual(['Ricotta toast']);
-	// The finished save doesn't pull them back to the recipe.
+	await expect(page).toHaveURL(/\/groceries$/);
+	// The finished save doesn't take them anywhere else.
 	await page.waitForTimeout(500);
 	await expect(page).toHaveURL(/\/groceries$/);
+});
+
+test('shows the saved recipe after going back to it while it saved', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', steps: 'Whisk.' });
+	await page.goto('/recipes');
+	await page.getByRole('link', { name: /^Omelet/ }).click();
+	await page.getByRole('link', { name: 'Edit' }).click();
+	await page.getByLabel('Name', { exact: true }).fill('Cheese omelet');
+	await slow(page, (url) => url.pathname === `/recipes/${dishId}/edit` && url.search === '?/save', 500);
+	// The recipe page is still loading when the save finishes.
+	await slow(page, (url) => url.pathname === `/recipes/${dishId}/__data.json`, 1500);
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('button', { name: 'Saving…' })).toBeVisible();
+	page.once('dialog', (dialog) => {
+		expect(dialog.message()).toBe(STILL_SAVING);
+		void dialog.accept();
+	});
+	// The phone's Back gesture.
+	await page.evaluate(() => history.back());
+	await expect(page.getByRole('heading', { name: 'Cheese omelet', level: 1 })).toBeVisible({
+		timeout: 10_000
+	});
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}$`));
+	await page.waitForTimeout(500);
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}$`));
+});
+
+test('goes to the recipe after saving an editor that was reached with Back', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', steps: 'Whisk.' });
+	await page.goto(`/recipes/${dishId}/edit`);
+	await page.getByRole('link', { name: 'Cancel' }).click();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}$`));
+	await page.goBack();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}/edit$`));
+	await page.getByLabel('Name', { exact: true }).fill('Cheese omelet');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('heading', { name: 'Cheese omelet', level: 1 })).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}$`));
 });
 
 test('shows item suggestions above the tab bar', async ({ page, db, person }) => {
