@@ -46,6 +46,7 @@
 		letter-spacing: 0.06em;
 		color: var(--muted);
 		margin: 0.75rem 0 0.25rem;
+		overflow-wrap: anywhere;
 	}
 
 	ul {
