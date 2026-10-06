@@ -3,19 +3,22 @@
 
 	// A text field that suggests existing items as you type: names that start with the text
 	// first, then names that contain it, most often added first within each. A name that
-	// matches no item offers "Add as a new item" (design 6.4).
+	// matches no item offers "Add as a new item" (design 6.4). The recipe editor turns off
+	// `required`, since a blank ingredient row is left out rather than refused.
 	let {
 		items,
 		value = $bindable(''),
 		id,
 		name,
-		placeholder
+		placeholder,
+		required = true
 	}: {
 		items: T[];
 		value?: string;
 		id: string;
 		name: string;
 		placeholder?: string;
+		required?: boolean;
 	} = $props();
 
 	type Option = { kind: 'item'; item: T } | { kind: 'new' };
@@ -80,7 +83,7 @@
 		autocomplete="off"
 		autocapitalize="sentences"
 		maxlength="80"
-		required
+		{required}
 		role="combobox"
 		aria-autocomplete="list"
 		aria-expanded={showList}
