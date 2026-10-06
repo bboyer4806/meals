@@ -70,14 +70,15 @@
 						itemError = { itemId, message };
 						// Someone else may have checked it or started a new check; show it as it is now.
 						await refreshAll();
-						return;
+					} else {
+						itemError = null;
+						await update({ reset: false });
 					}
-					itemError = null;
-					await update({ reset: false });
 				} finally {
 					busy.delete(itemId);
 				}
-				if (hadFocus) {
+				// Gone when the item left the check or is on the list now.
+				if (hadFocus && formElement.isConnected) {
 					await tick();
 					formElement.querySelector('button')?.focus();
 				}

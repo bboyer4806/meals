@@ -285,6 +285,22 @@ test('keeps focus on the item after Have, Need and Undo', async ({ page, db, per
 	await expect(page.getByRole('button', { name: 'Have Eggs' })).toBeFocused();
 	await page.getByRole('button', { name: 'Need Butter' }).press('Enter');
 	await expect(page.getByRole('button', { name: 'Undo Need for Butter' })).toBeFocused();
+
+	// Someone else marks Eggs first. Need is refused, and focus stays on the item.
+	const checklist = db
+		.prepare('select id from pantry_checklists where household_id = ?')
+		.pluck()
+		.get(person.householdId);
+	const eggs = db
+		.prepare("select id from items where household_id = ? and name = 'Eggs'")
+		.pluck()
+		.get(person.householdId);
+	db.prepare(
+		"insert into pantry_marks (household_id, checklist_id, item_id, state) values (?, ?, ?, 'have')"
+	).run(person.householdId, checklist, eggs);
+	await page.getByRole('button', { name: 'Need Eggs' }).press('Enter');
+	await expect(row(page, 'Eggs').getByRole('alert')).toHaveText('Eggs is already checked');
+	await expect(page.getByRole('button', { name: 'Undo Have for Eggs' })).toBeFocused();
 });
 
 test('says an item Need added has been bought once its line is received', async ({

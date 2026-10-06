@@ -116,6 +116,9 @@ describe('stepHasUnscaledAmount', () => {
 		expect(stepHasUnscaledAmount('Bake at 350ºF.')).toBe(false);
 		expect(stepHasUnscaledAmount('Bake at 350˚F.')).toBe(false);
 		expect(stepHasUnscaledAmount('Marinate 2 days.')).toBe(false);
+		// An age or a length joined by a hyphen.
+		expect(stepHasUnscaledAmount('Use a 3-day-old loaf.')).toBe(false);
+		expect(stepHasUnscaledAmount('Rest the dough for a 2-day rise.')).toBe(false);
 	});
 
 	it('only skips whole time words', () => {

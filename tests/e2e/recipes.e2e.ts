@@ -335,11 +335,18 @@ test('keeps everything typed when the name is taken, and offers to restore an ar
 	await page.getByLabel('Name', { exact: true }).fill('Banana Bread');
 	await page.getByRole('button', { name: 'Save' }).click();
 	await expect(problem).toHaveText('An archived recipe is called Banana Bread.');
-	// What was typed here is dropped, so it asks first.
+	// What was typed here is dropped, so it asks first, and staying restores nothing.
 	page.once('dialog', (dialog) => {
 		expect(dialog.message()).toBe('Leave without saving? What you typed will be lost.');
-		void dialog.accept();
+		void dialog.dismiss();
 	});
+	await page.getByRole('button', { name: 'Restore it' }).click();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${lemonId}/edit$`));
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Banana Bread');
+	expect(
+		db.prepare('select archived_at from dishes where id = ?').pluck().get(bananaId)
+	).not.toBeNull();
+	page.once('dialog', (dialog) => void dialog.accept());
 	await page.getByRole('button', { name: 'Restore it' }).click();
 	await expect(page).toHaveURL(new RegExp(`/recipes/${bananaId}$`));
 	await expect(page.getByRole('heading', { name: 'Banana bread', level: 1 })).toBeVisible();
@@ -359,7 +366,9 @@ test('asks before leaving the editor with changes, and leaves it behind once sav
 	await page.goto('/recipes');
 	await page.getByRole('link', { name: 'New recipe' }).click();
 	await expect(name).toBeVisible();
-	// Nothing typed yet, so nothing to ask.
+	// Nothing typed yet, so nothing to ask. Blank rows and an empty heading aren't typing.
+	await page.getByRole('button', { name: 'Add ingredient' }).click();
+	await page.getByRole('button', { name: 'Add section' }).click();
 	await tab('Groceries').click();
 	await expect(page).toHaveURL(/\/groceries$/);
 	await page.goBack();
@@ -389,6 +398,62 @@ test('asks before leaving the editor with changes, and leaves it behind once sav
 	await page.goBack();
 	await expect(page).toHaveURL(/\/recipes$/);
 	await expect(page.getByRole('heading', { name: 'Recipes', level: 1 })).toBeVisible();
+});
+
+test('goes back to the recipe after saving an edit, so Back leaves it in one step', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', steps: 'Whisk.' });
+	await page.goto('/recipes');
+	await page.getByRole('link', { name: /^Omelet/ }).click();
+	await page.getByRole('button', { name: 'More servings' }).click();
+	await page.getByRole('link', { name: 'Edit' }).click();
+	await page.getByLabel('Name', { exact: true }).fill('Cheese omelet');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('heading', { name: 'Cheese omelet', level: 1 })).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}\\?servings=5$`));
+	await page.goBack();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(page.getByRole('link', { name: /^Cheese omelet/ })).toBeVisible();
+});
+
+test('lets someone leave while a save is on its way, and stays where they went', async ({
+	page,
+	db,
+	person
+}) => {
+	// The save takes a while, as on a slow phone connection.
+	await page.route(
+		(url) => url.pathname === '/recipes/new' && url.search === '?/save',
+		async (route) => {
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+			await route.continue();
+		}
+	);
+	await page.goto('/recipes/new');
+	await page.getByLabel('Name', { exact: true }).fill('Ricotta toast');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('button', { name: 'Saving…' })).toBeVisible();
+	const saved = page.waitForResponse((response) => response.url().endsWith('/recipes/new?/save'));
+	page.once('dialog', (dialog) => {
+		expect(dialog.message()).toBe(
+			"The recipe is still saving. Leave anyway? If it doesn't save, what you typed will be lost."
+		);
+		void dialog.accept();
+	});
+	await page.getByRole('navigation', { name: 'Main' }).getByText('Groceries').click();
+	await expect(page).toHaveURL(/\/groceries$/);
+	await saved;
+	await expect
+		.poll(() =>
+			db.prepare('select name from dishes where household_id = ?').pluck().all(person.householdId)
+		)
+		.toEqual(['Ricotta toast']);
+	// The finished save doesn't pull them back to the recipe.
+	await page.waitForTimeout(500);
+	await expect(page).toHaveURL(/\/groceries$/);
 });
 
 test('shows item suggestions above the tab bar', async ({ page, db, person }) => {

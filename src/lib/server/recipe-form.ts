@@ -210,6 +210,8 @@ const rowsSchema = z.array(
 
 // Only a broken page or a hand-made request sends rows that don't fit rowsSchema.
 const MAX_ROWS = 1000;
+// 1000 rows with every field at its longest come to about 250,000 characters.
+const MAX_LENGTH = 300_000;
 const UNREADABLE = "The ingredients couldn't be read. Reload the page and try again.";
 
 // Two amounts joined like a range: "2-3", "2 to 3", "½ or 1", or with an en or em dash.
@@ -217,14 +219,15 @@ const RANGE = /[\d¼½¾⅓⅔⅛⅜⅝⅞]\s*(?:-|\u2013|\u2014|to|or)\s*[\d.¼
 
 /** The ingredient rows as ingredients, in order, or the first problem with them. */
 function readIngredients(json: string): IngredientInput[] | string {
+	// Both limits are checked before the rows are read: JSON.parse of 5 MB of nested brackets,
+	// and Zod noting a problem for each of millions of bad rows, each take seconds.
+	if (json.length > MAX_LENGTH) return UNREADABLE;
 	let raw: unknown;
 	try {
 		raw = JSON.parse(json);
 	} catch {
 		return UNREADABLE;
 	}
-	// Checked first: Zod notes a problem for every bad row, which for millions of rows in a 5 MB
-	// request takes seconds and a gigabyte. The editor never sends close to this many.
 	if (!Array.isArray(raw) || raw.length > MAX_ROWS) return UNREADABLE;
 	const rows = rowsSchema.safeParse(raw);
 	if (!rows.success) return UNREADABLE;
@@ -279,6 +282,8 @@ function readIngredient(
 				: `${label}: enter an amount like 1 1/2`;
 		}
 		if (amount > 10_000) return `${label}: enter a smaller amount`;
+		// The smallest amount a recipe shows (amounts.ts).
+		if (amount < 0.001) return `${label}: enter a larger amount`;
 	}
 	if (unit !== null && unit.length > 20) return `${label}: keep the unit under 20 characters`;
 	// A unit alone can't be scaled or shown (design 5).

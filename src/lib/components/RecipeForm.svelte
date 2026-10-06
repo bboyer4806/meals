@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
-	import { beforeNavigate, goto } from '$app/navigation';
+	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
 	import type { RecipeFailure, RecipeFormValues } from '../server/recipe-form.ts';
 	import RecipeIngredients, { blankIngredient, type EditorRow } from './RecipeIngredients.svelte';
 	import RecipePhoto, { type PhotoChoice } from './RecipePhoto.svelte';
@@ -47,21 +47,52 @@
 	let preparingPhoto = $state(false);
 
 	// What saving would keep, to ask before leaving with it unsaved. Number fields hold numbers
-	// once typed in, so everything is compared as text.
+	// once typed in, so everything is compared as text. As on the server, blank ingredient rows
+	// are left out and each ingredient carries the heading above it, so a blank row or an empty
+	// heading alone changes nothing.
 	function typed(): string {
 		const text = Object.values(fields).map((value) => String(value ?? ''));
-		const rowsTyped = rows.map(({ key: _, ...row }) => row);
-		return JSON.stringify([text, tagText, rowsTyped, photo.kind]);
+		const ingredients: string[][] = [];
+		let section = '';
+		for (const row of rows) {
+			if (row.kind === 'section') {
+				section = row.heading.trim();
+				continue;
+			}
+			const cells = [row.amount, row.unit, row.item, row.prepNote].map((cell) => cell.trim());
+			if (cells.some((cell) => cell !== '')) ingredients.push([section, ...cells]);
+		}
+		return JSON.stringify([text, tagText, ingredients, photo.kind]);
 	}
 	const typedAtStart = typed();
-	let saved = false;
+	// Set once the recipe is saved or the person agreed to drop it, so leaving doesn't ask.
+	let done = false;
+	const LEAVE = 'Leave without saving? What you typed will be lost.';
 
 	beforeNavigate(({ type, cancel }) => {
-		if (saved || typed() === typedAtStart) return;
+		if (done || typed() === typedAtStart) return;
 		// Closing the tab or leaving the site: the browser asks.
 		if (type === 'leave') return cancel();
-		if (!confirm('Leave without saving? What you typed will be lost.')) cancel();
+		const question = saving
+			? "The recipe is still saving. Leave anyway? If it doesn't save, what you typed will be lost."
+			: LEAVE;
+		if (!confirm(question)) cancel();
 	});
+
+	// The page the editor was opened from, so saving can go back to it.
+	let openedFrom: string | null | undefined;
+	afterNavigate(({ from }) => {
+		if (openedFrom === undefined) openedFrom = from?.url.pathname ?? null;
+	});
+	// A save that finishes after the person left doesn't take them anywhere.
+	let left = false;
+	onDestroy(() => (left = true));
+
+	// Restoring the other recipe drops this one, so it asks before anything changes.
+	const restore: SubmitFunction = ({ cancel }) => {
+		if (typed() !== typedAtStart && !confirm(LEAVE)) return cancel();
+		done = true;
+	};
 
 	let saving = $state(false);
 	let problem = $state<RecipeFailure | null>(untrack(() => failure));
@@ -113,9 +144,14 @@
 					error: "You've been signed out. Sign in again in another tab, then save."
 				});
 			} else if (result.type === 'redirect') {
-				// Saved: on to the recipe, in place of the editor, so Back doesn't open it again.
-				saved = true;
-				await goto(result.location, { replace: true, refreshAll: true });
+				done = true;
+				if (left) return;
+				// Saved: on to the recipe, so that Back from it doesn't open the editor again. Opened
+				// from that recipe's page, it goes back to that page; otherwise the recipe takes the
+				// editor's place.
+				const recipe = new URL(result.location, location.href);
+				if (recipe.pathname === openedFrom) history.back();
+				else await goto(recipe, { replace: true, refreshAll: true });
 			} else {
 				await update({ reset: false });
 			}
@@ -142,7 +178,7 @@
 	<div class="problem card">
 		<p class="error" role="alert" tabindex="-1" bind:this={problemElement}>{problem.error}</p>
 		{#if problem.archivedId}
-			<form method="POST" action="/recipes/{problem.archivedId}?/restore" use:enhance>
+			<form method="POST" action="/recipes/{problem.archivedId}?/restore" use:enhance={restore}>
 				<button>Restore it</button>
 			</form>
 		{/if}

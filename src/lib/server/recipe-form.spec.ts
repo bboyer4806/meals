@@ -389,6 +389,11 @@ describe('ingredient rows', () => {
 	it('allows amounts up to 10000', () => {
 		expect(ingredients(row('10000', 'g', 'Flour'))[0]?.amount).toBe(10_000);
 		expect(rowProblem(row('10001', 'g', 'Flour'))).toBe('Ingredient 1: enter a smaller amount');
+		// Below the smallest amount a recipe shows.
+		expect(rowProblem(row('0.0009', 'oz', 'Saffron'))).toBe('Ingredient 1: enter a larger amount');
+		expect(ingredients(row('0.001', 'oz', 'Saffron'))).toEqual([
+			ingredient('Saffron', 0.001, 'oz')
+		]);
 	});
 
 	it('takes a unit only with an amount', () => {
@@ -435,6 +440,9 @@ describe('ingredient rows', () => {
 		const blank = { kind: 'ingredient', amount: '', unit: '', item: '', prepNote: '' };
 		expect(rows(JSON.stringify(Array.from({ length: 1001 }, () => blank)))).toBe(message);
 		expect(rows(JSON.stringify(Array(2_000_000).fill(1)))).toBe(message);
+		expect(rows('['.repeat(2_000_000) + ']'.repeat(2_000_000))).toBe(message);
+		// Longer than the editor can send, so it isn't read at all.
+		expect(rows(JSON.stringify([{ ...blank, item: 'i'.repeat(300_000) }]))).toBe(message);
 	});
 });
 
@@ -560,11 +568,11 @@ describe('the values the editor starts with', () => {
 
 	it('show amounts in full that a fraction or 3 decimals would change', () => {
 		const tea = recipe('Tea', {
-			ingredients: [ingredient('Sugar', 1 / 6, 'cup'), ingredient('Saffron', 0.0004, 'oz')]
+			ingredients: [ingredient('Sugar', 1 / 6, 'cup'), ingredient('Saffron', 0.0015, 'oz')]
 		});
 		expect(recipeValues(tea).rows).toEqual([
 			row(String(1 / 6), 'cup', 'Sugar'),
-			row('0.0004', 'oz', 'Saffron')
+			row('0.0015', 'oz', 'Saffron')
 		]);
 		expect(parse(recipeValues(tea)).data).toEqual(tea);
 	});
