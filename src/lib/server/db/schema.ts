@@ -245,6 +245,64 @@ export const dishIngredients = sqliteTable(
 	]
 );
 
+export const DINNER_TYPES = ['cook', 'eat_out', 'going', 'leftovers'] as const;
+export type DinnerType = (typeof DINNER_TYPES)[number];
+
+// One dinner per date (Q26). A date with no row isn't planned.
+export const dinners = sqliteTable(
+	'dinners',
+	{
+		id: integer('id').primaryKey(),
+		householdId: integer('household_id')
+			.notNull()
+			.references(() => households.id),
+		// YYYY-MM-DD in the household's time zone.
+		date: text('date').notNull(),
+		type: text('type', { enum: DINNER_TYPES }).notNull(),
+		note: text('note'),
+		// Starts at the household's usual servings (Q28).
+		servings: integer('servings').notNull(),
+		createdAt: integer('created_at').notNull(),
+		updatedAt: integer('updated_at').notNull()
+	},
+	(t) => [
+		unique('dinners_household_id').on(t.householdId, t.id),
+		uniqueIndex('dinners_household_date').on(t.householdId, t.date),
+		check('dinners_type', sql`${t.type} in ('cook', 'eat_out', 'going', 'leftovers')`),
+		check('dinners_servings', sql`${t.servings} >= 1`)
+	]
+);
+
+export const DISH_ROLES = ['main', 'side', 'dessert', 'other'] as const;
+export type DishRole = (typeof DISH_ROLES)[number];
+
+// Only Cooking at home and Going somewhere dinners have dishes (Q26); the data layer keeps it so.
+export const dinnerDishes = sqliteTable(
+	'dinner_dishes',
+	{
+		id: integer('id').primaryKey(),
+		householdId: integer('household_id')
+			.notNull()
+			.references(() => households.id),
+		dinnerId: integer('dinner_id').notNull(),
+		dishId: integer('dish_id').notNull(),
+		role: text('role', { enum: DISH_ROLES }).notNull()
+	},
+	(t) => [
+		foreignKey({
+			columns: [t.householdId, t.dinnerId],
+			foreignColumns: [dinners.householdId, dinners.id]
+		}).onDelete('cascade'),
+		foreignKey({
+			columns: [t.householdId, t.dishId],
+			foreignColumns: [dishes.householdId, dishes.id]
+		}),
+		uniqueIndex('dinner_dishes_dinner_dish').on(t.dinnerId, t.dishId),
+		index('dinner_dishes_dish').on(t.dishId),
+		check('dinner_dishes_role', sql`${t.role} in ('main', 'side', 'dessert', 'other')`)
+	]
+);
+
 // At most one per household, shared by its members (Q35). It comes from one recipe at some
 // servings, or from a range of menu dates.
 export const pantryChecklists = sqliteTable(
