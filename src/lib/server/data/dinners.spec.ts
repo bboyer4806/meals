@@ -128,8 +128,8 @@ describe('saving a dinner', () => {
 		expect(dishCount()).toBe(4);
 	});
 
-	it('takes 1 to 100 whole servings and a note up to 500 characters', () => {
-		saveDinner(householdId, TODAY, { type: 'cook', note: 'x'.repeat(500), servings: 100 }, NOW);
+	it('takes 1 to 100 whole servings and a note up to 2500 characters', () => {
+		saveDinner(householdId, TODAY, { type: 'cook', note: 'x'.repeat(2500), servings: 100 }, NOW);
 		saveDinner(householdId, TOMORROW, { type: 'cook', note: null, servings: 1 }, NOW);
 		expect(getDinner(householdId, TODAY)?.servings).toBe(100);
 		expect(getDinner(householdId, TOMORROW)?.servings).toBe(1);
@@ -142,14 +142,14 @@ describe('saving a dinner', () => {
 		expectHttpError(save({ servings: 101 }), 400);
 		expectHttpError(save({ servings: 2.5 }), 400);
 		expectHttpError(save({ servings: Number.NaN }), 400);
-		expectHttpError(save({ note: 'x'.repeat(501) }), 400);
+		expectHttpError(save({ note: 'x'.repeat(2501) }), 400);
 		expectHttpError(save({}, '2026-02-30'), 400);
 		expectHttpError(save({}, 'today'), 400);
 		expect(db().select().from(dinners).all()).toEqual([]);
 		expect(refusal(save({ servings: 0 }))).toBe('Enter at least 1 serving');
 		expect(refusal(save({ servings: 101 }))).toBe('Enter 100 servings or fewer');
 		expect(refusal(save({ servings: 2.5 }))).toBe('Enter a whole number of servings');
-		expect(refusal(save({ note: 'x'.repeat(501) }))).toBe('Keep the note under 500 characters');
+		expect(refusal(save({ note: 'x'.repeat(2501) }))).toBe('Keep the note under 2500 characters');
 	});
 
 	it("keeps each household's dinners apart", () => {

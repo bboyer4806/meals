@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import {
+	DINNER_NOTE_MAX,
 	DINNER_TYPES,
 	DISH_ROLES,
 	hasDishes,
@@ -17,7 +18,6 @@ import { getHousehold } from './households.ts';
 // The menu: one dinner per date, its dishes and their roles, Copy a dinner and Move to another
 // date (design 6.9). A date with no dinner isn't planned.
 
-const MAX_NOTE = 500;
 // The recipe editor's limit for a dish name.
 const MAX_DISH_NAME = 80;
 const NO_DISHES = 'Switch to Cooking at home or Going somewhere to add dishes';
@@ -147,8 +147,8 @@ export function saveDinner(
 		if (!Number.isInteger(fields.servings)) error(400, 'Enter a whole number of servings');
 		if (fields.servings < 1) error(400, 'Enter at least 1 serving');
 		if (fields.servings > MAX_SERVINGS) error(400, `Enter ${MAX_SERVINGS} servings or fewer`);
-		if (fields.note !== null && fields.note.length > MAX_NOTE) {
-			error(400, `Keep the note under ${MAX_NOTE} characters`);
+		if (fields.note !== null && fields.note.length > DINNER_NOTE_MAX) {
+			error(400, `Keep the note under ${DINNER_NOTE_MAX} characters`);
 		}
 		// Listed one by one, so nothing else in `fields` is ever written.
 		const values = { type: fields.type, note: fields.note, servings: fields.servings };
