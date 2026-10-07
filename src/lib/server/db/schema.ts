@@ -10,6 +10,7 @@ import {
 	unique,
 	uniqueIndex
 } from 'drizzle-orm/sqlite-core';
+import { DINNER_TYPES, DISH_ROLES } from '../../menu.ts';
 
 // Timestamps are milliseconds since 1970 (UTC). Household-owned tables that other tables point
 // at have a unique key on (household_id, id), and references to them are composite foreign keys,
@@ -245,9 +246,6 @@ export const dishIngredients = sqliteTable(
 	]
 );
 
-export const DINNER_TYPES = ['cook', 'eat_out', 'going', 'leftovers'] as const;
-export type DinnerType = (typeof DINNER_TYPES)[number];
-
 // One dinner per date (Q26). A date with no row isn't planned.
 export const dinners = sqliteTable(
 	'dinners',
@@ -272,9 +270,6 @@ export const dinners = sqliteTable(
 		check('dinners_servings', sql`${t.servings} >= 1`)
 	]
 );
-
-export const DISH_ROLES = ['main', 'side', 'dessert', 'other'] as const;
-export type DishRole = (typeof DISH_ROLES)[number];
 
 // Only Cooking at home and Going somewhere dinners have dishes (Q26); the data layer keeps it so.
 export const dinnerDishes = sqliteTable(
