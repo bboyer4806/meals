@@ -28,6 +28,9 @@ export const DISH_ROLE_LABELS: Record<DishRole, string> = {
 	other: 'Other'
 };
 
+/** A dinner's note can hold a long plan, such as a whole evening's notes. */
+export const DINNER_NOTE_MAX = 2500;
+
 /** A pantry check from the menu covers the next 7 days unless changed (Q5), and at most 14. */
 export const DEFAULT_CHECK_DAYS = 7;
 export const MAX_CHECK_DAYS = 14;
