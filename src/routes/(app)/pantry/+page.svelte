@@ -3,6 +3,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
+	import { rangeLabel } from '#lib/checklist.ts';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import { servingsLabel } from '#lib/recipe-view.ts';
 
@@ -106,9 +107,16 @@
 {:else}
 	{@const { source } = checklist}
 	<p class="source">
-		<a class="link-tap" href="/recipes/{source.dishId}?servings={source.servings}">
-			{source.dishName}, {servingsLabel(source.servings)}
-		</a>
+		{#if source.kind === 'recipe'}
+			<a class="link-tap" href="/recipes/{source.dishId}?servings={source.servings}">
+				{source.dishName}, {servingsLabel(source.servings)}
+			</a>
+		{:else}
+			<!-- The week the check starts in. -->
+			<a class="link-tap" href="/menu?week={source.startDate}">
+				{rangeLabel(source.startDate, source.endDate)}
+			</a>
+		{/if}
 	</p>
 	{#if toCheck > 0}
 		<p class="count muted" role="status">{checklist.markedCount} of {toCheck} checked</p>
@@ -120,6 +128,12 @@
 				{@render row(item)}
 			{/each}
 		</ul>
+	{:else if checklist.dishCount === 0 && source.kind === 'range'}
+		<p class="muted">
+			Nothing planned with dishes
+			{source.startDate === source.endDate ? 'on' : 'from'}
+			{rangeLabel(source.startDate, source.endDate)}.
+		</p>
 	{:else if checklist.noIngredients.length === 0}
 		<p class="muted">Nothing to check. Every ingredient is marked Always have.</p>
 	{/if}
@@ -141,7 +155,8 @@
 		<div class="text">
 			<span class="name">{item.itemName}</span>
 			<span class="amount">{totals(item.amounts)}</span>
-			{#if item.amounts.breakdown.length > 1}
+			<!-- A recipe's one use says nothing new, but from the menu it names the dish and day. -->
+			{#if item.amounts.breakdown.length > 1 || checklist?.source.kind === 'range'}
 				<ul class="breakdown">
 					{#each item.amounts.breakdown as entry, index (index)}
 						<li>{entry.amount ?? 'Some'} for {entry.source}</li>
