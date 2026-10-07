@@ -504,6 +504,90 @@ test('goes to the recipe after saving an editor that was reached with Back', asy
 	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}$`));
 });
 
+test("opens each recipe's own values when history jumps from one editor to another", async ({
+	page,
+	db,
+	person
+}) => {
+	const waffles = addRecipe(db, person.householdId, { name: 'Waffles', steps: 'Mix.\nBake.' });
+	const pancakes = addRecipe(db, person.householdId, { name: 'Pancakes', steps: 'Mix.\nFry.' });
+	await page.goto(`/recipes/${waffles}`);
+	await page.getByRole('link', { name: 'Edit' }).click();
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Waffles');
+	await page.getByRole('navigation', { name: 'Main' }).getByText('Recipes').click();
+	await page.getByRole('link', { name: /^Pancakes/ }).click();
+	await page.getByRole('link', { name: 'Edit' }).click();
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Pancakes');
+	// Long-pressing Back on a phone lists the history to jump to.
+	await page.evaluate(() => history.go(-3));
+	await expect(page).toHaveURL(new RegExp(`/recipes/${waffles}/edit$`));
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Waffles');
+	await expect(page.getByLabel('Steps')).toHaveValue('Mix.\nBake.');
+	await page.getByLabel('Name', { exact: true }).fill('Belgian waffles');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('heading', { name: 'Belgian waffles', level: 1 })).toBeVisible();
+	const steps = db.prepare('select name, steps from dishes where id = ?');
+	expect(steps.get(waffles)).toEqual({ name: 'Belgian waffles', steps: 'Mix.\nBake.' });
+	expect(steps.get(pancakes)).toEqual({ name: 'Pancakes', steps: 'Mix.\nFry.' });
+});
+
+test('keeps Save busy until the saved recipe opens', async ({ page, db, person }) => {
+	await page.goto('/recipes/new');
+	await page.getByLabel('Name', { exact: true }).fill('Toast');
+	// The recipe page loads slowly after the save has gone through.
+	await slow(page, (url) => /^\/recipes\/\d+\/__data\.json$/.test(url.pathname), 2000);
+	const saved = page.waitForResponse((response) => response.url().endsWith('/recipes/new?/save'));
+	await page.getByRole('button', { name: 'Save' }).click();
+	await saved;
+	await expect(page.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+	await expect(page.getByRole('heading', { name: 'Toast', level: 1 })).toBeVisible();
+	expect(
+		db.prepare('select name from dishes where household_id = ?').pluck().all(person.householdId)
+	).toEqual(['Toast']);
+});
+
+test('restores once, and leaves someone where they went if they leave meanwhile', async ({
+	page,
+	db,
+	person
+}) => {
+	const bananaId = addRecipe(db, person.householdId, { name: 'Banana bread', archived: true });
+	await slow(page, (url) => url.pathname === `/recipes/${bananaId}` && url.search === '?/restore', 1500);
+	await page.goto('/recipes/new');
+	await page.getByLabel('Name', { exact: true }).fill('banana bread');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('alert')).toHaveText('An archived recipe is called banana bread.');
+	const questions: string[] = [];
+	page.on('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.accept();
+	});
+	await page.getByRole('button', { name: 'Restore it' }).click();
+	await expect(page.getByRole('button', { name: 'Restoring…' })).toBeDisabled();
+	// They agreed to drop what they typed, so leaving doesn't ask again.
+	await page.getByRole('navigation', { name: 'Main' }).getByText('Groceries').click();
+	await expect(page).toHaveURL(/\/groceries$/);
+	await expect
+		.poll(() => db.prepare('select archived_at from dishes where id = ?').pluck().get(bananaId))
+		.toBeNull();
+	await page.waitForTimeout(500);
+	await expect(page).toHaveURL(/\/groceries$/);
+	expect(questions).toEqual(['Leave without saving? What you typed will be lost.']);
+});
+
+test("doesn't let Save be tapped before the page's script has started", async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', servings: 2 });
+	// The page's script arrives slowly, as on a weak phone connection.
+	await slow(page, (url) => url.pathname.startsWith('/_app/'), 1500);
+	await page.goto(`/recipes/${dishId}/edit`, { waitUntil: 'commit' });
+	await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled({ timeout: 15_000 });
+});
+
 test('shows item suggestions above the tab bar', async ({ page, db, person }) => {
 	addItem(db, person.householdId, 'Sugar');
 	await page.goto('/recipes/new');

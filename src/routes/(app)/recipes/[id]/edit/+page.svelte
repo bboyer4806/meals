@@ -10,11 +10,14 @@
 
 <h1>Edit recipe</h1>
 
-<RecipeForm
-	values={data.values}
-	photoKey={data.dish.photoKey}
-	tags={data.tags}
-	items={data.items}
-	cancelHref="/recipes/{data.dish.id}"
-	failure={form}
-/>
+<!-- A fresh form for each recipe, even when history goes straight from one editor to another. -->
+{#key data.dish.id}
+	<RecipeForm
+		values={data.values}
+		photoKey={data.dish.photoKey}
+		tags={data.tags}
+		items={data.items}
+		cancelHref="/recipes/{data.dish.id}"
+		failure={form}
+	/>
+{/key}

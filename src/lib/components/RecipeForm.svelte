@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import { afterNavigate, beforeNavigate, goto, refreshAll } from '$app/navigation';
 	import type { RecipeFailure, RecipeFormValues } from '../server/recipe-form.ts';
@@ -69,13 +69,22 @@
 	let done = false;
 	const LEAVE = 'Leave without saving? What you typed will be lost.';
 
-	// The navigation the person chose while the recipe was saving. The save then leaves them
-	// where they went.
-	let leftWhileSaving: Promise<void> | null = null;
+	// Saving needs the page's script (the rows are sent as one field), so Save waits for it.
+	let ready = $state(false);
+	onMount(() => (ready = true));
+
+	// A save or a restore on its way. Each stays busy until its recipe opens, so it can't be sent
+	// twice.
+	let saving = $state(false);
+	let restoring = $state(false);
+	// The navigation the person chose meanwhile. The save or restore then leaves them there.
+	let leftWhileBusy: Promise<void> | null = null;
+	// Set for the editor's own navigation to the recipe.
+	let finishing = false;
 
 	beforeNavigate((navigation) => {
-		if (done) return;
-		if (typed() !== typedAtStart) {
+		if (finishing) return;
+		if (!done && typed() !== typedAtStart) {
 			// Closing the tab or leaving the site: the browser asks.
 			if (navigation.type === 'leave') return navigation.cancel();
 			const question = saving
@@ -83,7 +92,7 @@
 				: LEAVE;
 			if (!confirm(question)) return navigation.cancel();
 		}
-		if (saving) leftWhileSaving = navigation.complete;
+		if (saving || restoring) leftWhileBusy = navigation.complete;
 	});
 
 	// The page before the editor in history, so saving can go back to it. Not when the editor
@@ -95,13 +104,36 @@
 		openedFrom = back ? null : (navigation.from?.url.pathname ?? null);
 	});
 
+	/** After a save or a restore went through: on to the recipe, unless the person left. */
+	async function finish(to: string) {
+		done = true;
+		if (leftWhileBusy) {
+			// Once they're there, it shows what changed.
+			await leftWhileBusy.catch(() => {});
+			await refreshAll();
+			return;
+		}
+		finishing = true;
+		// So that Back from the recipe doesn't open the editor again: opened from that recipe's
+		// page, it goes back to that page; otherwise the recipe takes the editor's place.
+		const recipe = new URL(to, location.href);
+		if (recipe.pathname === openedFrom) history.back();
+		else await goto(recipe, { replace: true, refreshAll: true });
+	}
+
 	// Restoring the other recipe drops this one, so it asks before anything changes.
 	const restore: SubmitFunction = ({ cancel }) => {
+		if (restoring) return cancel();
 		if (typed() !== typedAtStart && !confirm(LEAVE)) return cancel();
 		done = true;
+		restoring = true;
+		return async ({ result, update }) => {
+			if (result.type === 'redirect') return finish(result.location);
+			restoring = false;
+			await update();
+		};
 	};
 
-	let saving = $state(false);
 	let problem = $state<RecipeFailure | null>(untrack(() => failure));
 	let problemElement = $state<HTMLElement>();
 
@@ -130,6 +162,10 @@
 		problem = null;
 
 		return async ({ result, update }) => {
+			const signedOut =
+				result.type === 'redirect' &&
+				new URL(result.location, location.href).pathname === '/login';
+			if (result.type === 'redirect' && !signedOut) return finish(result.location);
 			saving = false;
 			// Nothing here clears or reloads the form, so everything typed and the picked photo
 			// stay for another try.
@@ -142,28 +178,11 @@
 						? 'That photo is too large. Try another one.'
 						: "The recipe couldn't be saved. Check your connection and try again.";
 				await show({ action: 'recipe', error });
-			} else if (
-				result.type === 'redirect' &&
-				new URL(result.location, location.href).pathname === '/login'
-			) {
+			} else if (signedOut) {
 				await show({
 					action: 'recipe',
 					error: "You've been signed out. Sign in again in another tab, then save."
 				});
-			} else if (result.type === 'redirect') {
-				done = true;
-				if (leftWhileSaving) {
-					// Once they're there, it shows what was saved.
-					await leftWhileSaving.catch(() => {});
-					await refreshAll();
-					return;
-				}
-				// Saved: on to the recipe, so that Back from it doesn't open the editor again. Opened
-				// from that recipe's page, it goes back to that page; otherwise the recipe takes the
-				// editor's place.
-				const recipe = new URL(result.location, location.href);
-				if (recipe.pathname === openedFrom) history.back();
-				else await goto(recipe, { replace: true, refreshAll: true });
 			} else {
 				await update({ reset: false });
 			}
@@ -191,7 +210,7 @@
 		<p class="error" role="alert" tabindex="-1" bind:this={problemElement}>{problem.error}</p>
 		{#if problem.archivedId}
 			<form method="POST" action="/recipes/{problem.archivedId}?/restore" use:enhance={restore}>
-				<button>Restore it</button>
+				<button disabled={restoring}>{restoring ? 'Restoring…' : 'Restore it'}</button>
 			</form>
 		{/if}
 	</div>
@@ -321,7 +340,7 @@
 	</section>
 
 	<div class="actions">
-		<button class="primary" disabled={saving || preparingPhoto}>
+		<button class="primary" disabled={!ready || saving || preparingPhoto}>
 			{saving ? 'Saving…' : 'Save'}
 		</button>
 		<a class="button" href={cancelHref}>Cancel</a>
