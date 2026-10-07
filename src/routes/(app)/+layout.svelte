@@ -42,7 +42,7 @@
 	{@render children()}
 </main>
 
-<!-- Phone-style tabs at the bottom (design 7). Menu joins them in Phase 3. -->
+<!-- Phone-style tabs at the bottom (design 7). -->
 <nav class="tabs no-print" aria-label="Main">
 	<a href="/groceries" aria-current={current('/groceries')}>
 		<svg viewBox="0 0 24 24" aria-hidden="true">
@@ -51,6 +51,13 @@
 			<path d="M9.5 14v3M14.5 14v3" />
 		</svg>
 		Groceries
+	</a>
+	<a href="/menu" aria-current={current('/menu')}>
+		<svg viewBox="0 0 24 24" aria-hidden="true">
+			<rect x="3" y="5" width="18" height="16" rx="2" />
+			<path d="M3 10h18M8 3v4M16 3v4" />
+		</svg>
+		Menu
 	</a>
 	<a href="/recipes" aria-current={current('/recipes')}>
 		<svg viewBox="0 0 24 24" aria-hidden="true">
