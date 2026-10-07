@@ -230,3 +230,152 @@ button:disabled {
 	clip-path: inset(50%);
 	white-space: nowrap;
 }
+
+/* A small label, such as "No recipe" or "Archived". */
+.badge {
+	display: inline-block;
+	font-size: 0.8rem;
+	font-weight: 700;
+	color: var(--muted);
+	border: 1px solid currentColor;
+	border-radius: 999px;
+	padding: 0 0.5rem;
+	white-space: nowrap;
+}
+
+/* Tags as links. The current one, when filtering by it, is filled in. */
+.chips {
+	list-style: none;
+	margin: 0 0 0.75rem;
+	padding: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.chip {
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--tap);
+	padding: 0 1rem;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--text);
+	font-weight: 600;
+	text-decoration: none;
+	overflow-wrap: anywhere;
+}
+
+.chip[aria-current='true'] {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--on-accent);
+}
+
+/* A line in the cooking view that's checked off with a tap: a round checkbox, then the text. */
+.check-off {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.75rem;
+	min-height: var(--tap);
+	padding: 0.5rem 0;
+	margin: 0;
+	font-weight: inherit;
+	cursor: pointer;
+}
+
+.check-off input {
+	appearance: none;
+	flex: none;
+	display: grid;
+	place-items: center;
+	width: 1.75rem;
+	height: 1.75rem;
+	min-height: 0;
+	margin: 0;
+	padding: 0;
+	border: 2px solid var(--muted);
+	border-radius: 50%;
+	background: none;
+	cursor: pointer;
+}
+
+.check-off input:checked {
+	background: var(--received);
+	border-color: var(--received);
+}
+
+.check-off input:checked::after {
+	content: '✓';
+	color: var(--surface);
+	font-size: 1rem;
+	line-height: 1;
+}
+
+/* Only the text, so the line doesn't cross out the check mark. */
+.check-off.done > :last-child {
+	color: var(--muted);
+	text-decoration: line-through;
+}
+
+.print-only {
+	display: none;
+}
+
+/* Printing a recipe: black on white whatever the phone's theme, without navigation or buttons. */
+@media print {
+	:root {
+		color-scheme: light;
+		--bg: #ffffff;
+		--surface: #ffffff;
+		--surface-sunk: #ffffff;
+		--border: #bbbbbb;
+		--text: #000000;
+		--muted: #444444;
+		--accent: #000000;
+		--received: #000000;
+		--ordered: #000000;
+		--danger: #000000;
+		--shadow: none;
+	}
+
+	body {
+		font-size: 11pt;
+	}
+
+	/* Stronger than a page's own display rules. */
+	.no-print {
+		display: none !important;
+	}
+
+	.print-only {
+		display: revert;
+	}
+
+	.card {
+		border: none;
+		padding: 0;
+	}
+
+	a {
+		text-decoration: none;
+	}
+
+	.chip {
+		min-height: 0;
+		padding: 0;
+		border: none;
+		font-weight: inherit;
+	}
+
+	h1,
+	h2,
+	h3 {
+		break-after: avoid;
+	}
+
+	li {
+		break-inside: avoid;
+	}
+}

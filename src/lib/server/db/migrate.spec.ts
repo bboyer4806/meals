@@ -22,12 +22,15 @@ function applied(sqlite: Database.Database): number {
 	return sqlite.prepare('select count(*) from "__drizzle_migrations"').pluck().get() as number;
 }
 
+/** How many migrations the repo has. */
+const MIGRATIONS = JSON.parse(readFileSync('drizzle/meta/_journal.json', 'utf8')).entries.length;
+
 describe('migrate', () => {
 	it('applies pending migrations once', () => {
 		const sqlite = new Database(':memory:');
 		migrate(sqlite, 'drizzle');
 		migrate(sqlite, 'drizzle');
-		expect(applied(sqlite)).toBe(1);
+		expect(applied(sqlite)).toBe(MIGRATIONS);
 		expect(sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
 	});
 
@@ -43,7 +46,7 @@ describe('migrate', () => {
 			"insert into items (household_id, name, default_store_id, created_at) values (1, 'Ghost', 99, 0);"
 		);
 		expect(() => migrate(sqlite, broken)).toThrow(/Foreign key violations/);
-		expect(applied(sqlite)).toBe(1);
+		expect(applied(sqlite)).toBe(MIGRATIONS);
 		expect(sqlite.prepare('select count(*) from items').pluck().get()).toBe(0);
 	});
 });

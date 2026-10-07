@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { afterNavigate } from '$app/navigation';
+	import { page } from '$app/state';
 
 	let { data, children } = $props();
 	let menuOpen = $state(false);
@@ -7,16 +8,22 @@
 	afterNavigate(() => {
 		menuOpen = false;
 	});
+
+	// A tab stays current on the pages under it, such as Items under Groceries.
+	function current(path: string): 'page' | undefined {
+		const { pathname } = page.url;
+		return pathname === path || pathname.startsWith(`${path}/`) ? 'page' : undefined;
+	}
 </script>
 
-<header>
+<header class="no-print">
 	<div class="bar">
 		<a class="brand link-tap" href="/groceries">Meals</a>
 		<span class="household">{data.householdName}</span>
 		<details class="menu" bind:open={menuOpen}>
 			<summary>Menu</summary>
-			<nav aria-label="Main">
-				<a href="/groceries">Groceries</a>
+			<nav aria-label="Menu">
+				<a href="/pantry">Pantry check</a>
 				<a href="/groceries/items">Items</a>
 				<a href="/groceries/history">History</a>
 				<a href="/household">Household</a>
@@ -34,6 +41,25 @@
 <main class="page">
 	{@render children()}
 </main>
+
+<!-- Phone-style tabs at the bottom (design 7). Menu joins them in Phase 3. -->
+<nav class="tabs no-print" aria-label="Main">
+	<a href="/groceries" aria-current={current('/groceries')}>
+		<svg viewBox="0 0 24 24" aria-hidden="true">
+			<path d="M7 10a5 5 0 0 1 10 0" />
+			<path d="M3 10h18l-2 10H5z" />
+			<path d="M9.5 14v3M14.5 14v3" />
+		</svg>
+		Groceries
+	</a>
+	<a href="/recipes" aria-current={current('/recipes')}>
+		<svg viewBox="0 0 24 24" aria-hidden="true">
+			<path d="M3 5h6a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H3z" />
+			<path d="M21 5h-6a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h7z" />
+		</svg>
+		Recipes
+	</a>
+</nav>
 
 <style>
 	header {
@@ -93,7 +119,7 @@
 		display: none;
 	}
 
-	nav {
+	.menu nav {
 		position: absolute;
 		right: 0;
 		top: calc(100% + 6px);
@@ -107,8 +133,8 @@
 		box-shadow: var(--shadow);
 	}
 
-	nav a,
-	nav button {
+	.menu a,
+	.menu button {
 		display: flex;
 		align-items: center;
 		min-height: var(--tap);
@@ -119,13 +145,71 @@
 		font-weight: 600;
 	}
 
-	nav button {
+	.menu button {
 		width: 100%;
 		justify-content: flex-start;
 		color: var(--accent);
 	}
 
-	nav a:hover {
+	.menu a:hover {
 		background: var(--surface-sunk);
+	}
+
+	main,
+	.tabs {
+		--tabs-height: 3.5rem;
+	}
+
+	/* Room for the tab bar, so it never covers the end of a page. */
+	main {
+		padding-bottom: calc(var(--tabs-height) + 2rem + env(safe-area-inset-bottom));
+	}
+
+	.tabs {
+		position: fixed;
+		inset: auto 0 0;
+		z-index: 20;
+		display: flex;
+		justify-content: center;
+		background: var(--surface);
+		border-top: 1px solid var(--border);
+		padding-bottom: env(safe-area-inset-bottom);
+	}
+
+	.tabs a {
+		flex: 1;
+		max-width: 10rem;
+		min-height: var(--tabs-height);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.125rem;
+		color: var(--muted);
+		font-size: 0.85rem;
+		font-weight: 700;
+		text-decoration: none;
+	}
+
+	/* Color plus a bar along the top, so the current tab doesn't rely on color alone. */
+	.tabs a[aria-current='page'] {
+		color: var(--accent);
+		box-shadow: inset 0 3px 0 var(--accent);
+	}
+
+	.tabs svg {
+		width: 24px;
+		height: 24px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	@media print {
+		main {
+			padding: 0;
+		}
 	}
 </style>

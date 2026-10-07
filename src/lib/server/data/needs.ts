@@ -4,7 +4,7 @@ import { dateIn } from '../../dates.ts';
 import { normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
 import { groceryNeeds, items, stores, type NeedStatus } from '../db/schema.ts';
-import { createItem, findItemByName, setDefaultStore, type Item } from './items.ts';
+import { createItem, findItemByName, getItem, setDefaultStore, type Item } from './items.ts';
 import { getStore, requireActiveStore } from './stores.ts';
 
 // The rules in this file are design sections 6.2 to 6.4.
@@ -201,6 +201,51 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 			.run();
 		return { kind: 'added' };
 	});
+}
+
+/**
+ * Adds a To Order line at the item's usual store, unless that store is archived (6.3). Unlike
+ * addNeed, it doesn't check for a line already on the list: the pantry check's Need only offers
+ * items that aren't on it. Returns the new line's id.
+ */
+export function addToOrderLine(
+	householdId: number,
+	itemId: number,
+	line: { quantity: number; unit: string | null; note: string | null },
+	now: number
+): number {
+	const item = getItem(householdId, itemId);
+	return db()
+		.insert(groceryNeeds)
+		.values({
+			householdId,
+			itemId: item.id,
+			quantity: line.quantity,
+			unit: line.unit,
+			storeId: storeForNewLine(householdId, item, 'usual'),
+			status: 'to_order',
+			note: line.note,
+			createdAt: now
+		})
+		.returning({ id: groceryNeeds.id })
+		.get().id;
+}
+
+/**
+ * Deletes a line only while it's To Order: undoing a pantry Need keeps a line already ordered or
+ * bought.
+ */
+export function deleteLineIfToOrder(householdId: number, needId: number): void {
+	db()
+		.delete(groceryNeeds)
+		.where(
+			and(
+				eq(groceryNeeds.id, needId),
+				eq(groceryNeeds.householdId, householdId),
+				eq(groceryNeeds.status, 'to_order')
+			)
+		)
+		.run();
 }
 
 /**

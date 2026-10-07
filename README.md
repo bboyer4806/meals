@@ -76,9 +76,9 @@ and the nightly backup.
 
 ### One-time server setup
 
-The server limits which Dokku commands the deploy key may run, so the app's storage, settings
-and ports are set once on the server, as root or another account with full Dokku access. On a
-new server, first run `dokku apps:create meals` and
+The server limits which Dokku commands the deploy key may run, so the app's storage, settings,
+upload limit and ports are set once on the server, as root or another account with full Dokku
+access. On a new server, first run `dokku apps:create meals` and
 `dokku domains:set meals meals.dev.boyersoftware.com`: the commands below need the app, and
 `domains:set` must come before `ports:set`.
 
@@ -87,12 +87,17 @@ dokku storage:ensure-directory --chown heroku meals
 dokku storage:mount meals /var/lib/dokku/data/storage/meals:/data
 dokku config:set --no-restart meals DATA_DIR=/data \
   GOOGLE_CLIENT_ID='<client ID>' GOOGLE_CLIENT_SECRET='<client secret>' ADMIN_EMAIL='<your Google email>'
+dokku nginx:set meals client-max-body-size 5m
 dokku ports:set meals http:80:3000 https:443:3000
 ```
 
 The storage folder belongs to uid 1000, the image's `node` user, and the app listens on port 3000.
 `ports:set` points the site at port 3000 straight away, so run it just before a deploy: the site
 shows an error until the deploy finishes.
+
+`nginx:set` raises nginx's upload limit from 1 MB to 5 MB, so recipe photos get through. The
+app's own limit is `BODY_SIZE_LIMIT` in the Dockerfile. On an app that's already deployed, also
+run `dokku proxy:build-config meals` so nginx uses the new limit.
 
 If a deploy fails, its log shows the app's error. "Invalid environment variables" means a setting
 is missing, "DATA_DIR /data does not exist" means the mount is missing, and "unable to open
@@ -105,8 +110,13 @@ the app with it.
 ## Backups
 
 Every night at 03:00 server time, Dokku runs `node scripts/backup.js`. It copies the database to
-`/var/lib/dokku/data/storage/meals/backups/<date>/meals.db` and keeps the newest 14. A failed
-run leaves the existing backups alone.
+`/var/lib/dokku/data/storage/meals/backups/<date>/meals.db`, hard-links the recipe photos into
+`backups/<date>/photos/`, and keeps the newest 14 backups. A failed run leaves the existing
+backups alone.
+
+A hard link is the same file under a second name, so a photo that hasn't changed takes no extra
+space, however many backups have it. The app never changes a photo file (a new photo gets a new
+name), so a replaced or deleted photo stays in the older backups.
 
 Dokku sends the job's output only to the cron email address, not to `dokku logs`. Check the
 Admin page instead: it shows the date of the newest complete backup, so a date that stops
@@ -122,9 +132,16 @@ cd /var/lib/dokku/data/storage/meals
 # Remove the old write-ahead files first, or SQLite would apply them to the restored copy.
 rm -f meals.db-wal meals.db-shm
 cp backups/2026-10-03/meals.db meals.db
+# Photos still in place are the backup's own files (hard links), and cp won't copy a file onto
+# itself, so it removes each one first.
+cp -a --remove-destination backups/2026-10-03/photos/. photos/
 chown 1000:1000 meals.db
+chown -R 1000:1000 photos
 dokku ps:start meals
 ```
+
+Photos added since that backup stay in `photos/`, and nothing uses them. Backups made before
+recipes had photos have no `photos` folder, so skip the two photos lines for those.
 
 ## Changing the database
 

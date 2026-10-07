@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures.ts';
+import { addItem, expect, test } from './fixtures.ts';
 
 test('renames and archives an item, and asks before adding it again', async ({ page, person: _ }) => {
 	await page.goto('/groceries');
@@ -36,6 +36,38 @@ test('renames and archives an item, and asks before adding it again', async ({ p
 	await prompt.getByRole('button', { name: 'Restore and add' }).click();
 	// Restored, it's already on the list, so the duplicate question follows.
 	await expect(page.getByRole('dialog')).toContainText('Already on the list: 1');
+});
+
+test('marks an item Always have, and clears it again', async ({ page, db, person }) => {
+	const salt = addItem(db, person.householdId, 'Salt');
+	addItem(db, person.householdId, 'Pepper');
+	const alwaysHave = () =>
+		db.prepare('select always_have from items where id = ?').pluck().get(salt);
+	await page.goto('/groceries/items');
+	const row = page.getByRole('button', { name: /^Salt/ });
+	await expect(row).not.toContainText('Always have');
+
+	await row.click();
+	const dialog = page.getByRole('dialog');
+	const box = dialog.getByLabel('Always have');
+	await expect(box).not.toBeChecked();
+	await expect(box).toHaveAccessibleDescription('Left off pantry checks, like water or salt.');
+	await box.check();
+	await dialog.getByRole('button', { name: 'Save' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(row).toContainText('Always have');
+	await expect(page.getByRole('button', { name: /^Pepper/ })).not.toContainText('Always have');
+	expect(alwaysHave()).toBe(1);
+
+	// Saved, so it's still set after a reload, and it can be cleared.
+	await page.reload();
+	await row.click();
+	await expect(box).toBeChecked();
+	await box.uncheck();
+	await dialog.getByRole('button', { name: 'Save' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(row).not.toContainText('Always have');
+	expect(alwaysHave()).toBe(0);
 });
 
 test('rejects a sign-in callback that did not start here', async ({ page }) => {
