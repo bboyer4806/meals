@@ -43,7 +43,7 @@ test('checks the pantry for a recipe at the servings shown', async ({ page, db, 
 		.click();
 	await expect(page).toHaveURL(/\/pantry$/);
 	await expect(
-		page.getByText('No pantry check yet. Open a recipe and tap Check pantry.')
+		page.getByText('No pantry check yet. Open the menu or a recipe and tap Check pantry.')
 	).toBeVisible();
 
 	// Salt is set to Always have on the Items page, so the check leaves it out.

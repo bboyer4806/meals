@@ -103,7 +103,7 @@
 {#if lostError}<p class="error" role="alert">{lostError}</p>{/if}
 
 {#if !checklist}
-	<p class="empty muted">No pantry check yet. Open a recipe and tap Check pantry.</p>
+	<p class="empty muted">No pantry check yet. Open the menu or a recipe and tap Check pantry.</p>
 {:else}
 	{@const { source } = checklist}
 	<p class="source">
