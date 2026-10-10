@@ -16,11 +16,44 @@
 		weekStart,
 		type DinnerType
 	} from '#lib/menu.ts';
+	import { MAX_SERVINGS } from '#lib/recipe-view.ts';
 
 	let { data, form } = $props();
 
 	const dinner = $derived(data.dinner);
 	const dishCount = $derived(dinner?.dishes.length ?? 0);
+
+	// The servings field's value, saved or not, so a dish opens at what the person sees (design 7).
+	// One that can't be saved opens it at the saved servings.
+	let shownServings = $state<number | null>(null);
+	const linkServings = $derived(
+		shownServings !== null &&
+			Number.isInteger(shownServings) &&
+			shownServings >= 1 &&
+			shownServings <= MAX_SERVINGS
+			? shownServings
+			: dinner?.servings
+	);
+	let details = $state<ReturnType<typeof DinnerDetails>>();
+
+	// A failure whose part of the page went with the reload after it, such as adding a dish
+	// just as someone switched the dinner to Eating out. It shows here, for this date, until the
+	// next change.
+	let notice = $state<{ date: string; message: string } | null>(null);
+	let noticeElement = $state<HTMLElement>();
+	const problem = $derived(
+		notice?.date === data.date
+			? notice.message
+			: form && 'error' in form && form.error
+				? form.error
+				: null
+	);
+
+	async function showNotice(message: string) {
+		notice = { date: data.date, message };
+		await tick();
+		noticeElement?.focus();
+	}
 
 	/** "Tuesday, Oct 7", with the year when it isn't this year's. */
 	function dayHeading(date: string, today: string): string {
@@ -108,6 +141,9 @@
 	<title>{formatDateLabel(data.date)} · Meals</title>
 </svelte:head>
 
+<!-- Any form sent, as the person goes on, takes the last failure's notice away. -->
+<svelte:document onsubmit={() => (notice = null)} />
+
 <!-- Rebuilt for each date, so nothing typed for one date shows up on another. -->
 {#key data.date}
 	<a class="link-tap week" href="/menu?week={weekStart(data.date)}">‹ Week of {weekLabel(data.date)}</a>
@@ -117,7 +153,9 @@
 		{#if data.date === data.today}<span class="badge today">Today</span>{/if}
 	</div>
 
-	{#if form && 'error' in form && form.error}<p class="error" role="alert">{form.error}</p>{/if}
+	{#if problem}
+		<p class="error notice" role="alert" tabindex="-1" bind:this={noticeElement}>{problem}</p>
+	{/if}
 
 	{#if !dinner}
 		<p class="muted unplanned" tabindex="-1" bind:this={unplanned}>
@@ -150,16 +188,27 @@
 	{#if typeError}<p class="error" role="alert">{typeError}</p>{/if}
 
 	{#if !dinner || hasDishes(dinner.type)}
-		<DinnerDishes {dinner} suggestions={data.dishes} />
+		<DinnerDishes
+			{dinner}
+			suggestions={data.dishes}
+			servings={linkServings}
+			onlost={showNotice}
+		/>
 	{/if}
 
 	{#if dinner}
-		<DinnerDetails {dinner} />
+		<DinnerDetails {dinner} bind:servings={shownServings} bind:this={details} />
 	{/if}
 
 	<div class="actions">
 		<CopyDinner groups={data.copyGroups} {dishCount} today={data.today} />
-		{#if dinner}<MoveDinner date={data.date} />{/if}
+		{#if dinner}
+			<MoveDinner
+				date={data.date}
+				canLeave={() => details?.confirmLeave() ?? true}
+				onlost={showNotice}
+			/>
+		{/if}
 	</div>
 
 	{#if dinner}
@@ -209,6 +258,11 @@
 
 	.today {
 		color: var(--accent);
+	}
+
+	/* It can name a dish, and a long name without spaces still wraps. */
+	.notice {
+		overflow-wrap: anywhere;
 	}
 
 	.unplanned {

@@ -1,13 +1,23 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
-	import { refreshAll } from '$app/navigation';
+	import { beforeNavigate } from '$app/navigation';
 	import { DINNER_NOTE_MAX, hasDishes, type DinnerType } from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
 
 	// A dinner's servings (types with dishes; Q28) and note (all types; Q26), saved together.
-	let { dinner }: { dinner: Dinner } = $props();
+	let {
+		dinner,
+		servings = $bindable(null)
+	}: {
+		dinner: Dinner;
+		/**
+		 * The servings on screen, saved or not, which the dish links use. A number field bound
+		 * with bind:value holds a number, or null while it's empty.
+		 */
+		servings?: number | null;
+	} = $props();
 
 	const uid = $props.id();
 	const withServings = $derived(hasDishes(dinner.type));
@@ -22,8 +32,7 @@
 	// Copied from the saved dinner, and kept in step with it while unchanged here, so a reload
 	// shows someone else's change (Q11) without dropping what's being typed.
 	let note = $state(untrack(() => dinner.note ?? ''));
-	// A number field bound with bind:value holds a number, or null while it's empty.
-	let servings = $state<number | null>(untrack(() => dinner.servings));
+	servings = untrack(() => dinner.servings);
 	let savedNote = untrack(() => dinner.note ?? '');
 	let savedServings = untrack(() => dinner.servings);
 	$effect(() => {
@@ -35,6 +44,41 @@
 			savedNote = nextNote;
 			savedServings = nextServings;
 		});
+	});
+
+	// What saving would change, or null when nothing would: the note as it's stored, and the
+	// servings while they show. An emptied servings field has nothing to keep.
+	function unsaved(): string | null {
+		const typedNote = note.replace(/\r\n?/g, '\n').trim();
+		const typedServings = withServings && servings !== null ? servings : savedServings;
+		if (typedNote === savedNote && typedServings === savedServings) return null;
+		return JSON.stringify([typedNote, typedServings]);
+	}
+
+	const LEAVE = 'Leave without saving? What you typed will be lost.';
+	// What the person agreed to lose, so going on with it doesn't ask again.
+	let dropped: string | null = null;
+
+	/**
+	 * Asks before something drops what's typed here, as moving the dinner does. True when nothing
+	 * is lost or the person agreed.
+	 */
+	export function confirmLeave(): boolean {
+		const typed = unsaved();
+		if (typed === null || typed === dropped) return true;
+		if (!confirm(LEAVE)) return false;
+		dropped = typed;
+		return true;
+	}
+
+	beforeNavigate((navigation) => {
+		if (navigation.type !== 'leave') {
+			if (!confirmLeave()) navigation.cancel();
+			return;
+		}
+		// Closing the tab or leaving the site: the browser asks.
+		const typed = unsaved();
+		if (typed !== null && typed !== dropped) navigation.cancel();
 	});
 
 	let busy = $state(false);
@@ -64,12 +108,12 @@
 		const focused = formElement.contains(document.activeElement) ? document.activeElement : null;
 		return async ({ result, update }) => {
 			try {
+				// Only servings or a note that can't be saved fail, so what was typed stays here for
+				// another try.
 				if (result.type === 'failure') {
 					problem =
 						(result.data as { error?: string } | undefined)?.error ??
 						'Something went wrong. Please try again.';
-					// Someone may have cleared the dinner or changed its type.
-					await refreshAll();
 					return;
 				}
 				await update({ reset: false });

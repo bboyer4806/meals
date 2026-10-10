@@ -109,7 +109,8 @@
 			</div>
 		</form>
 	{:else if groups.length === 0}
-		<p class="muted">No past dinners with dishes yet.</p>
+		<!-- This dinner's own group isn't offered, so it can be the only past dinner. -->
+		<p class="muted">No past dinners to copy yet.</p>
 	{:else}
 		<label class="visually-hidden" for="{uid}-search">Search by dish</label>
 		<input

@@ -138,6 +138,21 @@ describe('loading a date', () => {
 		});
 	});
 
+	it('leaves out the past dinners whose latest is this one, since copying it changes nothing', () => {
+		makeDinner(householdId, '2026-10-01', { dishes: [[tacos, 'main']] });
+		const latest = makeDinner(householdId, YESTERDAY, { dishes: [[tacos, 'main']] });
+		const soup = makeDinner(householdId, '2026-10-03', { dishes: [[rice, 'main']] });
+		const groups = (date: string) =>
+			(loadPage(date) as { copyGroups: { dinnerId: number }[] }).copyGroups.map(
+				(group) => group.dinnerId
+			);
+
+		expect(groups(YESTERDAY)).toEqual([soup]);
+		// An older dinner with the same dishes copies the latest one's type and roles.
+		expect(groups('2026-10-01')).toEqual([latest, soup]);
+		expect(groups(TOMORROW)).toEqual([latest, soup]);
+	});
+
 	it('gives no dinner for a date that is not planned', () => {
 		expect(loadPage('2027-01-01')).toMatchObject({ date: '2027-01-01', dinner: null });
 	});
@@ -259,11 +274,33 @@ describe('saving servings and the note', () => {
 		expect(getDinner(householdId, TOMORROW)).toMatchObject({ servings: 100 });
 	});
 
-	it('says so when the dinner was cleared meanwhile', async () => {
+	it('plans the date as Cooking at home with what was sent when the dinner was cleared meanwhile (6.11)', async () => {
+		expect(await post('details', { servings: '6', note: ' Hello ' })).toBeUndefined();
+		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+			type: 'cook',
+			note: 'Hello',
+			servings: 6,
+			dishes: []
+		});
+	});
+
+	it('starts a dinner planned that way at the usual servings when none were sent (Q28)', async () => {
+		// The page of an Eating out dinner sends only the note.
+		await post('details', { note: 'Thai place' });
+		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+			type: 'cook',
+			note: 'Thai place',
+			servings: 3
+		});
+		await post('details', { servings: '5' }, { date: TODAY });
+		expect(getDinner(householdId, TODAY)).toMatchObject({ type: 'cook', note: null, servings: 5 });
+	});
+
+	it('plans nothing when what was sent is not valid', async () => {
 		expectFailure(
-			await post('details', { servings: '4', note: 'Hello' }),
+			await post('details', { servings: '0', note: 'Hello' }),
 			'details',
-			'This dinner has been cleared. Pick a type to plan it again.'
+			'Enter at least 1 serving'
 		);
 		expect(getDinner(householdId, TOMORROW)).toBeNull();
 	});

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy, tick } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import { formatDateLabel } from '../dates.ts';
@@ -8,13 +9,30 @@
 	// Move to another date (design 2.2.2): "we didn't make Tuesday's dinner, let's do it
 	// Wednesday", so the next day is filled in. A dinner already on that date swaps places with
 	// this one. The page then opens the new date.
-	let { date }: { date: string } = $props();
+	let {
+		date,
+		canLeave,
+		onlost
+	}: {
+		date: string;
+		/** Asks about anything unsaved that opening the new date would drop; false to stay. */
+		canLeave: () => boolean;
+		/**
+		 * Shows a failure on the page instead, when the reload after it took Move off the page
+		 * (someone cleared the dinner meanwhile).
+		 */
+		onlost: (message: string) => void;
+	} = $props();
 
 	const uid = $props.id();
 	let open = $state(false);
 	let to = $state('');
 	let busy = $state(false);
 	let problem = $state('');
+
+	// Set once Move is off the page.
+	let removed = false;
+	onDestroy(() => (removed = true));
 
 	function show() {
 		to = addDays(date, 1);
@@ -23,7 +41,8 @@
 	}
 
 	const submit: SubmitFunction = ({ cancel }) => {
-		if (busy) return cancel();
+		// Moving opens the new date, so anything unsaved is asked about before the dinner moves.
+		if (busy || !canLeave()) return cancel();
 		busy = true;
 		problem = '';
 		return async ({ result, update }) => {
@@ -37,6 +56,8 @@
 				if (result.type === 'error' && result.status === 404) {
 					problem = 'This dinner is no longer on the menu.';
 					await refreshAll();
+					await tick();
+					if (removed) onlost(problem);
 					return;
 				}
 				if (result.type === 'redirect') open = false;

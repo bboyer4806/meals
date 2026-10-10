@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import { DISH_ROLES, DISH_ROLE_LABELS, type DishRole } from '../menu.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
+	import { normalizeName } from '../text.ts';
 	import ItemInput from './ItemInput.svelte';
 	import Sheet from './Sheet.svelte';
 
@@ -14,11 +15,20 @@
 	// Cooking at home. The forms post to the dinner page's actions.
 	let {
 		dinner,
-		suggestions
+		suggestions,
+		servings,
+		onlost
 	}: {
 		dinner: Dinner | null;
 		/** Active dishes, most used first. */
 		suggestions: { id: number; name: string; timesAdded: number }[];
+		/** The servings on screen, saved or not, which each recipe opens at. */
+		servings: number | undefined;
+		/**
+		 * Shows a failure on the page instead, when the reload after it took these dishes off the
+		 * page (someone switched the dinner to a type without dishes meanwhile).
+		 */
+		onlost: (message: string) => void;
 	} = $props();
 
 	type Failure = { error?: string } | undefined;
@@ -34,6 +44,25 @@
 		// Someone else took the dish off, or cleared or moved the dinner.
 		if (result.type === 'error' && result.status === 404) return gone;
 		return null;
+	}
+
+	// Set once these dishes are off the page.
+	let removed = false;
+	onDestroy(() => (removed = true));
+
+	/**
+	 * After a failure, shows the dinner as it is now. When that takes these dishes off the page,
+	 * the message would go with them, so the page shows it. True while they're still here.
+	 */
+	async function reload(message: string): Promise<boolean> {
+		await refreshAll();
+		await tick();
+		if (removed) onlost(message);
+		return !removed;
+	}
+
+	function roleId(dishId: number) {
+		return `${uid}-role-${dishId}`;
 	}
 
 	function removeId(dishId: number) {
@@ -53,21 +82,41 @@
 			: null
 	);
 
-	/** Sends the change, then shows the dinner as it is now, even when it didn't go through. */
-	async function finishRow(dishId: number, result: ActionResult, update: () => Promise<void>) {
+	/**
+	 * Sends the change, then shows the dinner as it is now, even when it didn't go through. True
+	 * while the dishes are still on the page.
+	 */
+	async function finishRow(
+		dishId: number,
+		result: ActionResult,
+		update: () => Promise<void>
+	): Promise<boolean> {
 		try {
 			const message = failureIn(result, GONE);
 			if (message !== null) {
 				rowError = { dishId, message };
-				await refreshAll();
-			} else {
-				rowError = null;
-				await update();
+				return await reload(message);
 			}
+			rowError = null;
+			await update();
 		} finally {
 			busy.delete(dishId);
 		}
 		await tick();
+		return true;
+	}
+
+	/**
+	 * Gives focus back to a dish's role or Remove after a change to it. When someone else took
+	 * the dish off meanwhile, the dish now in its place takes it, or the one before, or the dish
+	 * field.
+	 */
+	function focusRow(dishId: number, index: number, control: 'role' | 'remove') {
+		const still = dishes.find((dish) => dish.dishId === dishId);
+		const next = still ?? dishes[Math.min(index, dishes.length - 1)];
+		const id = next && (control === 'role' ? roleId(next.dishId) : removeId(next.dishId));
+		const target = id ? document.getElementById(id) : nameInput();
+		target?.focus();
 	}
 
 	function roleSubmit(dishId: number): SubmitFunction {
@@ -76,14 +125,14 @@
 			busy.add(dishId);
 			const select = formElement.querySelector('select');
 			const hadFocus = select !== null && select === document.activeElement;
+			const index = dishes.findIndex((dish) => dish.dishId === dishId);
 			return async ({ result, update }) => {
-				await finishRow(dishId, result, () => update({ reset: false }));
+				if (!(await finishRow(dishId, result, () => update({ reset: false })))) return;
 				const dish = dishes.find((candidate) => candidate.dishId === dishId);
-				if (!select || !dish) return;
 				// The saved role, also when the change didn't go through.
-				select.value = dish.role;
+				if (select && dish) select.value = dish.role;
 				// The list is in role order, and moving the row can drop focus.
-				if (hadFocus) select.focus();
+				if (hadFocus) focusRow(dishId, index, 'role');
 			};
 		};
 	}
@@ -95,14 +144,8 @@
 			const hadFocus = formElement.contains(document.activeElement);
 			const index = dishes.findIndex((dish) => dish.dishId === dishId);
 			return async ({ result, update }) => {
-				await finishRow(dishId, result, () => update({ reset: false }));
-				if (!hadFocus) return;
-				// The dish's own button when it's still here; otherwise the one now in its place,
-				// the one before, or the dish field.
-				const still = dishes.find((dish) => dish.dishId === dishId);
-				const next = still ?? dishes[Math.min(index, dishes.length - 1)];
-				const target = next ? document.getElementById(removeId(next.dishId)) : nameInput();
-				target?.focus();
+				if (!(await finishRow(dishId, result, () => update({ reset: false })))) return;
+				if (hadFocus) focusRow(dishId, index, 'remove');
 			};
 		};
 	}
@@ -110,8 +153,14 @@
 	// Adding a dish
 
 	let name = $state('');
-	// Main for the first dish and Side after (6.9), until the person picks another.
-	let role = $derived<DishRole>(dishes.length === 0 ? 'main' : 'side');
+	// Main for the first dish and Side after (6.9). The person's pick stays, also when the page
+	// reloads, until a dish is added or the number of dishes changes.
+	const defaultRole = (count: number): DishRole => (count === 0 ? 'main' : 'side');
+	const dishCount = $derived(dishes.length);
+	let role = $state<DishRole>(untrack(() => defaultRole(dishCount)));
+	$effect(() => {
+		role = defaultRole(dishCount);
+	});
 	let adding = $state(false);
 	let addError = $state('');
 	let nameField: HTMLElement;
@@ -120,10 +169,21 @@
 		return nameField.querySelector('input');
 	}
 
-	/** Clears the field if it still holds what was added; someone may have started the next one. */
-	function addedName(sent: string) {
+	/**
+	 * After a dish is added, the next one's role starts over, and the field is cleared if it still
+	 * holds what was added; someone may have started the next one.
+	 */
+	function added(sent: string) {
+		role = defaultRole(dishes.length);
 		if (name === sent) name = '';
 		nameInput()?.focus();
+	}
+
+	/** "Garlic bread wasn't added. Switch to ...", shown on the page once the field is gone. */
+	function notAdded(dishName: string, message: string): string {
+		const named = normalizeName(dishName);
+		const reason = /[.!?]$/.test(message) ? message : `${message}.`;
+		return named === '' ? reason : `${named} wasn't added. ${reason}`;
 	}
 
 	let archived = $state<Archived | null>(null);
@@ -147,7 +207,7 @@
 				if (message !== null) {
 					addError = message;
 					// Someone may have switched the type or added the dish meanwhile.
-					await refreshAll();
+					await reload(notAdded(sent, message));
 					return;
 				}
 				const offer = result.type === 'success' ? archivedIn(result.data) : null;
@@ -161,7 +221,7 @@
 					return;
 				}
 				await update({ reset: false });
-				if (result.type === 'success') addedName(sent);
+				if (result.type === 'success') added(sent);
 			} finally {
 				adding = false;
 			}
@@ -172,12 +232,13 @@
 		if (restoring) return cancel();
 		restoring = true;
 		restoreError = '';
+		const sentName = archived?.name ?? '';
 		return async ({ result, update }) => {
 			try {
 				const message = failureIn(result, 'That dish is no longer in your recipes.');
 				if (message !== null) {
 					restoreError = message;
-					await refreshAll();
+					await reload(notAdded(sentName, message));
 					return;
 				}
 				await update({ reset: false });
@@ -185,7 +246,7 @@
 					restoreOpen = false;
 					// Once the sheet has closed and given focus back.
 					await tick();
-					addedName(restoreSent);
+					added(restoreSent);
 				}
 			} finally {
 				restoring = false;
@@ -203,18 +264,18 @@
 			{#each dishes as dish (dish.dishId)}
 				<li class="dish">
 					<span class="name">
-						<a class="link-tap" href="/recipes/{dish.dishId}?servings={dinner?.servings}">
+						<a class="link-tap" href="/recipes/{dish.dishId}?servings={servings}">
 							{dish.name}
 						</a>
 						{#if dish.archived}<span class="badge">Archived</span>{/if}
 					</span>
 					<form method="POST" action="?/role" use:enhance={roleSubmit(dish.dishId)}>
 						<input type="hidden" name="dishId" value={dish.dishId} />
-						<label class="visually-hidden" for="{uid}-role-{dish.dishId}">
+						<label class="visually-hidden" for={roleId(dish.dishId)}>
 							Role for {dish.name}
 						</label>
 						<select
-							id="{uid}-role-{dish.dishId}"
+							id={roleId(dish.dishId)}
 							name="role"
 							value={dish.role}
 							onchange={(event) => event.currentTarget.form?.requestSubmit()}
@@ -281,6 +342,12 @@
 </Sheet>
 
 <style>
+	/* A long dish name without spaces wraps, in the list and in messages such as "<name> is
+	   already on this dinner", rather than widening the page past the screen. */
+	section {
+		overflow-wrap: anywhere;
+	}
+
 	h2 {
 		margin-bottom: 0.25rem;
 	}
@@ -308,7 +375,11 @@
 		align-items: center;
 		column-gap: 0.5rem;
 		font-weight: 700;
-		overflow-wrap: anywhere;
+	}
+
+	/* A short name, such as "Pie", is still a full-size tap target. */
+	.name a {
+		min-width: var(--tap);
 	}
 
 	select {
