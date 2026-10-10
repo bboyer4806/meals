@@ -13,7 +13,7 @@ CREATE TABLE `dinner_dishes` (
 CREATE UNIQUE INDEX `dinner_dishes_dinner_dish` ON `dinner_dishes` (`dinner_id`,`dish_id`);--> statement-breakpoint
 CREATE INDEX `dinner_dishes_dish` ON `dinner_dishes` (`dish_id`);--> statement-breakpoint
 CREATE TABLE `dinners` (
-	`id` integer PRIMARY KEY NOT NULL,
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`household_id` integer NOT NULL,
 	`date` text NOT NULL,
 	`type` text NOT NULL,

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d3905959-9eab-40b5-8926-2f19243a768c",
+  "id": "53e7f66c-054a-4837-8466-024700c9dcee",
   "prevId": "2aa310d5-ba27-413e-871e-9ef4106b3620",
   "tables": {
     "dinner_dishes": {
@@ -122,7 +122,7 @@
           "type": "integer",
           "primaryKey": true,
           "notNull": true,
-          "autoincrement": false
+          "autoincrement": true
         },
         "household_id": {
           "name": "household_id",

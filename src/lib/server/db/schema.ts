@@ -250,7 +250,9 @@ export const dishIngredients = sqliteTable(
 export const dinners = sqliteTable(
 	'dinners',
 	{
-		id: integer('id').primaryKey(),
+		// Never reused after a dinner is cleared, so a page that still shows a cleared dinner's id
+		// can't reach a newer dinner (Copy a dinner posts the id it showed).
+		id: integer('id').primaryKey({ autoIncrement: true }),
 		householdId: integer('household_id')
 			.notNull()
 			.references(() => households.id),
