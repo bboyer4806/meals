@@ -34,11 +34,11 @@ test('checks the pantry for a recipe at the servings shown', async ({ page, db, 
 		]
 	});
 
-	// The header menu leads to it.
+	// The header's More menu leads to it.
 	await page.goto('/groceries');
-	await page.getByText('Menu', { exact: true }).click();
+	await page.getByText('More', { exact: true }).click();
 	await page
-		.getByRole('navigation', { name: 'Menu' })
+		.getByRole('navigation', { name: 'More' })
 		.getByRole('link', { name: 'Pantry check' })
 		.click();
 	await expect(page).toHaveURL(/\/pantry$/);

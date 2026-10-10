@@ -21,8 +21,9 @@
 		<a class="brand link-tap" href="/groceries">Meals</a>
 		<span class="household">{data.householdName}</span>
 		<details class="menu" bind:open={menuOpen}>
-			<summary>Menu</summary>
-			<nav aria-label="Menu">
+			<!-- Not "Menu", which is the menu of dinners in the tab bar. -->
+			<summary>More</summary>
+			<nav aria-label="More">
 				<a href="/pantry">Pantry check</a>
 				<a href="/groceries/items">Items</a>
 				<a href="/groceries/history">History</a>

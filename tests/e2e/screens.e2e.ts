@@ -48,8 +48,8 @@ test('screens', async ({ page, db, person }) => {
 	await page.getByRole('dialog').getByRole('button', { name: 'Got fewer' }).click();
 	await shot('edit-sheet');
 	await page.keyboard.press('Escape');
-	await page.getByText('Menu', { exact: true }).click();
-	await shot('menu');
+	await page.getByText('More', { exact: true }).click();
+	await shot('more');
 	await page.goto('/groceries/items');
 	await shot('items');
 	await page.goto('/groceries/history');
