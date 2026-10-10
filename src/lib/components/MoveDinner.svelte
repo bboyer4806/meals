@@ -11,11 +11,14 @@
 	// this one. The page then opens the new date.
 	let {
 		date,
+		dinnerId,
 		canLeave,
 		keepAsking,
 		onlost
 	}: {
 		date: string;
+		/** The dinner the page shows, so the move doesn't take another one. */
+		dinnerId: number;
 		/** Asks about anything unsaved that opening the new date would drop; false to stay. */
 		canLeave: () => boolean;
 		/** Says the move didn't happen, so leaving later asks about it again. */
@@ -50,14 +53,13 @@
 		problem = '';
 		return async ({ result, update }) => {
 			try {
-				if (result.type === 'failure') {
+				if (result.type === 'failure' || (result.type === 'error' && result.status === 404)) {
 					problem =
-						(result.data as { error?: string } | undefined)?.error ??
-						'Something went wrong. Please try again.';
-					return;
-				}
-				if (result.type === 'error' && result.status === 404) {
-					problem = 'This dinner is no longer on the menu.';
+						result.type === 'failure'
+							? ((result.data as { error?: string } | undefined)?.error ??
+								'Something went wrong. Please try again.')
+							: 'This dinner is no longer on the menu.';
+					// Shows the date as it is now, such as another dinner someone moved onto it.
 					await refreshAll();
 					await tick();
 					if (removed) onlost(problem);
@@ -78,6 +80,7 @@
 
 <Sheet bind:open title="Move to another date">
 	<form method="POST" action="?/move" use:enhance={submit}>
+		<input type="hidden" name="dinnerId" value={dinnerId} />
 		<div class="field">
 			<label for="{uid}-to">New date</label>
 			<input id="{uid}-to" name="to" type="date" required bind:value={to} />

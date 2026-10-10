@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, refreshAll } from '$app/navigation';
 	import { DINNER_NOTE_MAX, hasDishes, type DinnerType } from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
@@ -76,14 +76,19 @@
 		dropped = null;
 	}
 
+	/** Whether something typed here would be lost, and the person hasn't agreed to lose it. */
+	export function hasUnsaved(): boolean {
+		const typed = unsaved();
+		return typed !== null && typed !== dropped;
+	}
+
 	beforeNavigate((navigation) => {
 		if (navigation.type !== 'leave') {
 			if (!confirmLeave()) navigation.cancel();
 			return;
 		}
 		// Closing the tab or leaving the site: the browser asks.
-		const typed = unsaved();
-		if (typed !== null && typed !== dropped) navigation.cancel();
+		if (hasUnsaved()) navigation.cancel();
 	});
 
 	let busy = $state(false);
@@ -113,12 +118,14 @@
 		const focused = formElement.contains(document.activeElement) ? document.activeElement : null;
 		return async ({ result, update }) => {
 			try {
-				// Only servings or a note that can't be saved fail, so what was typed stays here for
-				// another try.
+				// Servings or a note that can't be saved fail, and so does a save meant for another
+				// dinner than the one now on the date. What was typed stays here for another try, with
+				// the dinner as it is now.
 				if (result.type === 'failure') {
 					problem =
 						(result.data as { error?: string } | undefined)?.error ??
 						'Something went wrong. Please try again.';
+					await refreshAll();
 					return;
 				}
 				await update({ reset: false });
@@ -138,6 +145,7 @@
 </script>
 
 <form class="card" method="POST" action="?/details" use:enhance={submit}>
+	<input type="hidden" name="dinnerId" value={dinner.id} />
 	<input type="hidden" name="type" value={dinner.type} />
 	{#if withServings}
 		<div class="field">

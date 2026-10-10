@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
@@ -34,11 +34,11 @@
 			? shownServings
 			: dinner?.servings
 	);
-	let details = $state<ReturnType<typeof DinnerDetails>>();
 
-	// A failure whose part of the page went with the reload after it, such as adding a dish
-	// just as someone switched the dinner to Eating out. It shows here, for this date, until the
-	// next change.
+	// What a reload took off the page: a failure whose part of the page went with the reload
+	// after it, such as adding a dish just as someone switched the dinner to Eating out, or what
+	// happened to something typed when someone else changed the dinner. It shows here, for this
+	// date, until the next change.
 	let notice = $state<{ date: string; message: string } | null>(null);
 	let noticeElement = $state<HTMLElement>();
 	const problem = $derived(
@@ -55,16 +55,54 @@
 		noticeElement?.focus();
 	}
 
-	/** "Tuesday, Oct 7", with the year when it isn't this year's. */
-	function dayHeading(date: string, today: string): string {
-		return new Intl.DateTimeFormat('en-US', {
-			timeZone: 'UTC',
-			weekday: 'long',
-			month: 'short',
-			day: 'numeric',
-			year: date.slice(0, 4) === today.slice(0, 4) ? undefined : 'numeric'
-		}).format(new Date(`${date}T00:00:00Z`));
+	type Dinner = NonNullable<typeof data.dinner>;
+
+	/** Whether the page has the dish section: no dinner yet, or one of a type with dishes. */
+	function withDishes(shown: Dinner | null): boolean {
+		return shown === null || hasDishes(shown.type);
 	}
+
+	// The dinner the details form is for: the one on this date, except when a reload finds it
+	// cleared or moved away while something typed in the form isn't saved. The form then keeps the
+	// dinner it had, since such a reload, as on coming back to the app (Q11), would otherwise drop
+	// what was typed without a word, and saving plans the date again with it (6.11).
+	let editing = $state(untrack(() => data.dinner));
+	let details = $state<ReturnType<typeof DinnerDetails>>();
+	let dishEditor = $state<ReturnType<typeof DinnerDishes>>();
+
+	// Set while this page's own Clear or type switch reloads it. The person asked for those, so
+	// what they take off the page goes without a word.
+	let ownChange = false;
+
+	// After each load and before the page updates, while the editors about to go still hold what
+	// was typed in them.
+	let loaded = untrack(() => ({ date: data.date, dinner: data.dinner }));
+	$effect.pre(() => {
+		const now = { date: data.date, dinner: data.dinner };
+		untrack(() => {
+			const was = loaded;
+			loaded = now;
+			if (now.date !== was.date || ownChange) {
+				editing = now.dinner;
+				return;
+			}
+			// Someone switched the dinner to a type without dishes, which takes the dish field away.
+			if (withDishes(was.dinner) && !withDishes(now.dinner)) {
+				const lost = dishEditor?.nameLost();
+				if (lost) void showNotice(lost);
+			}
+			if (now.dinner === null && editing !== null && details?.hasUnsaved()) {
+				// Said once, when the dinner goes; later reloads find it still gone.
+				if (was.dinner !== null) {
+					void showNotice(
+						'Someone cleared or moved this dinner. Save to plan it again with what you typed.'
+					);
+				}
+				return;
+			}
+			editing = now.dinner;
+		});
+	});
 
 	/** "Oct 4": the Sunday that starts the week (Q27b). */
 	function weekLabel(date: string): string {
@@ -109,12 +147,15 @@
 					typeError =
 						(result.data as { error?: string } | undefined)?.error ??
 						'Something went wrong. Please try again.';
-					// Shows any dishes someone added, so the next tap asks.
+					// Shows any dishes someone added, so the next tap asks, or the dinner someone
+					// put on this date.
 					await refreshAll();
 				} else {
+					ownChange = result.type === 'success';
 					await update({ reset: false });
 				}
 			} finally {
+				ownChange = false;
 				typeBusy = false;
 			}
 			// SvelteKit moves focus to the top of the page after a form succeeds, and the sheet
@@ -129,7 +170,14 @@
 	let unplanned = $state<HTMLElement>();
 	const submitClear: SubmitFunction = () => {
 		return async ({ result, update }) => {
-			await update({ reset: false });
+			ownChange = result.type === 'success';
+			try {
+				// When someone put another dinner on this date meanwhile, it isn't cleared, and the
+				// page shows it under the message.
+				await update({ reset: false, refreshAll: true });
+			} finally {
+				ownChange = false;
+			}
 			if (result.type !== 'success') return;
 			await tick();
 			unplanned?.focus();
@@ -141,15 +189,25 @@
 	<title>{formatDateLabel(data.date)} · Meals</title>
 </svelte:head>
 
-<!-- Any form sent, as the person goes on, takes the last failure's notice away. -->
-<svelte:document onsubmit={() => (notice = null)} />
+<!-- Which dinner the page shows, so a change meant for it isn't made to another one. -->
+{#snippet shownDinner()}
+	{#if dinner}<input type="hidden" name="dinnerId" value={dinner.id} />{/if}
+{/snippet}
+
+<!-- Any form sent, as the person goes on, takes the last failure's messages away. -->
+<svelte:document
+	onsubmit={() => {
+		notice = null;
+		typeError = '';
+	}}
+/>
 
 <!-- Rebuilt for each date, so nothing typed for one date shows up on another. -->
 {#key data.date}
 	<a class="link-tap week" href="/menu?week={weekStart(data.date)}">‹ Week of {weekLabel(data.date)}</a>
 
 	<div class="title">
-		<h1>{dayHeading(data.date, data.today)}</h1>
+		<h1>{formatDateLabel(data.date, { today: data.today, weekday: 'long' })}</h1>
 		{#if data.date === data.today}<span class="badge today">Today</span>{/if}
 	</div>
 
@@ -171,6 +229,7 @@
 		aria-label="Type"
 		bind:this={typesForm}
 	>
+		{@render shownDinner()}
 		{#each DINNER_TYPES as type (type)}
 			<button
 				name="type"
@@ -187,24 +246,26 @@
 	</form>
 	{#if typeError}<p class="error" role="alert">{typeError}</p>{/if}
 
-	{#if !dinner || hasDishes(dinner.type)}
+	{#if withDishes(dinner)}
 		<DinnerDishes
 			{dinner}
 			suggestions={data.dishes}
 			servings={linkServings}
 			onlost={showNotice}
+			bind:this={dishEditor}
 		/>
 	{/if}
 
-	{#if dinner}
-		<DinnerDetails {dinner} bind:servings={shownServings} bind:this={details} />
+	{#if editing}
+		<DinnerDetails dinner={editing} bind:servings={shownServings} bind:this={details} />
 	{/if}
 
 	<div class="actions">
-		<CopyDinner groups={data.copyGroups} {dishCount} today={data.today} />
+		<CopyDinner groups={data.copyGroups} dinnerId={dinner?.id} {dishCount} today={data.today} />
 		{#if dinner}
 			<MoveDinner
 				date={data.date}
+				dinnerId={dinner.id}
 				canLeave={() => details?.confirmLeave() ?? true}
 				keepAsking={() => details?.keepAsking()}
 				onlost={showNotice}
@@ -214,6 +275,7 @@
 
 	{#if dinner}
 		<form class="clear" method="POST" action="?/clear" use:enhance={submitClear}>
+			{@render shownDinner()}
 			<ConfirmButton
 				label="Clear"
 				message="Clear this dinner? The date goes back to not planned. Its dishes stay in your recipes."
@@ -230,6 +292,7 @@
 			recipes.
 		</p>
 		<form method="POST" action="?/type" use:enhance={submitType}>
+			{@render shownDinner()}
 			<input type="hidden" name="type" value={switchTo} />
 			<input type="hidden" name="removeDishes" value="1" />
 			<div class="row">

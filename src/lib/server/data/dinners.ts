@@ -6,6 +6,7 @@ import {
 	DISH_ROLES,
 	hasDishes,
 	isDate,
+	NO_DISHES,
 	type DinnerType,
 	type DishRole
 } from '../../menu.ts';
@@ -20,7 +21,6 @@ import { getHousehold } from './households.ts';
 
 // The recipe editor's limit for a dish name.
 const MAX_DISH_NAME = 80;
-const NO_DISHES = 'Switch to Cooking at home or Going somewhere to add dishes';
 
 export type DinnerDish = { dishId: number; name: string; role: DishRole; archived: boolean };
 

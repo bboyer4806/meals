@@ -12,10 +12,13 @@
 	// type and dishes and keeps its note and servings (2.3), so it asks before replacing dishes.
 	let {
 		groups,
+		dinnerId,
 		dishCount,
 		today
 	}: {
 		groups: CopyGroup[];
+		/** The dinner the page shows, if any, so a copy doesn't land on another one. */
+		dinnerId: number | undefined;
 		/** How many dishes this dinner has now. */
 		dishCount: number;
 		today: string;
@@ -53,7 +56,7 @@
 	}
 
 	function made(group: CopyGroup): string {
-		const last = group.lastMade === today ? 'today' : formatDateLabel(group.lastMade);
+		const last = group.lastMade === today ? 'today' : formatDateLabel(group.lastMade, { today });
 		return group.timesMade === 1 ? `Made ${last}` : `Made ${group.timesMade} times, last ${last}`;
 	}
 
@@ -91,6 +94,10 @@
 	};
 </script>
 
+{#snippet shownDinner()}
+	{#if dinnerId !== undefined}<input type="hidden" name="dinnerId" value={dinnerId} />{/if}
+{/snippet}
+
 <button type="button" onclick={show} bind:this={opener}>Copy a dinner</button>
 
 <Sheet bind:open title="Copy a dinner">
@@ -101,7 +108,8 @@
 			{names(confirming)}?
 		</p>
 		<form method="POST" action="?/copy" use:enhance={submit}>
-			<input type="hidden" name="dinnerId" value={confirming.dinnerId} />
+			<input type="hidden" name="sourceId" value={confirming.dinnerId} />
+			{@render shownDinner()}
 			<input type="hidden" name="replaceDishes" value="1" />
 			<div class="row">
 				<button class="primary" bind:this={replaceButton}>Replace dishes</button>
@@ -123,13 +131,14 @@
 		/>
 		{#if shown.length > 0}
 			<form method="POST" action="?/copy" use:enhance={submit}>
+				{@render shownDinner()}
 				<ul class="groups">
 					{#each shown as group (group.dinnerId)}
 						<li>
 							<!-- With dishes to replace, it asks first; otherwise it copies right away. -->
 							<button
 								class="group"
-								name="dinnerId"
+								name="sourceId"
 								value={group.dinnerId}
 								onclick={(event) => {
 									if (dishCount === 0) return;

@@ -17,6 +17,9 @@ export function hasDishes(type: DinnerType): boolean {
 	return type === 'cook' || type === 'going';
 }
 
+/** Why a dish can't go on a dinner of the other types. */
+export const NO_DISHES = 'Switch to Cooking at home or Going somewhere to add dishes';
+
 /** In the order a dinner lists its dishes (6.9). */
 export const DISH_ROLES = ['main', 'side', 'dessert', 'other'] as const;
 export type DishRole = (typeof DISH_ROLES)[number];

@@ -3,7 +3,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
-	import { DISH_ROLES, DISH_ROLE_LABELS, type DishRole } from '../menu.ts';
+	import { DISH_ROLES, DISH_ROLE_LABELS, NO_DISHES, type DishRole } from '../menu.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
 	import { normalizeName } from '../text.ts';
 	import ItemInput from './ItemInput.svelte';
@@ -184,6 +184,14 @@
 		const named = normalizeName(dishName);
 		const reason = /[.!?]$/.test(message) ? message : `${message}.`;
 		return named === '' ? reason : `${named} wasn't added. ${reason}`;
+	}
+
+	/**
+	 * What the page says when someone else switched the dinner to a type without dishes and these
+	 * dishes go off the page with a name still in the field; null when the field is empty.
+	 */
+	export function nameLost(): string | null {
+		return normalizeName(name) === '' ? null : notAdded(name, NO_DISHES);
 	}
 
 	let archived = $state<Archived | null>(null);

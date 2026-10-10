@@ -12,6 +12,7 @@ import {
 	today,
 	weekday
 } from './fixtures.ts';
+import type Database from 'better-sqlite3';
 
 // The menu (design 6.9 and 7, Menu and Dinner). Dates are worked out from today in the test
 // household's time zone, so the tests pass on any day of the week.
@@ -70,7 +71,13 @@ async function addDish(
 	await addButton(page).click();
 }
 
-function dinnerRow(db: import('better-sqlite3').Database, householdId: number, date: string) {
+/** "Tue, Oct 7", with the year when it isn't this year's, as Copy a dinner says when one was made. */
+function madeOn(date: string): string {
+	const year = date.slice(0, 4);
+	return year === today().slice(0, 4) ? dayLabel(date) : `${dayLabel(date)}, ${year}`;
+}
+
+function dinnerRow(db: Database.Database, householdId: number, date: string) {
 	return db
 		.prepare('select id, type, note, servings from dinners where household_id = ? and date = ?')
 		.get(householdId, date) as
@@ -78,7 +85,7 @@ function dinnerRow(db: import('better-sqlite3').Database, householdId: number, d
 		| undefined;
 }
 
-function dinnerDishes(db: import('better-sqlite3').Database, dinnerId: number) {
+function dinnerDishes(db: Database.Database, dinnerId: number) {
 	return db
 		.prepare(
 			'select dishes.name, dinner_dishes.role from dinner_dishes join dishes on dishes.id = dinner_dishes.dish_id where dinner_id = ? order by dinner_dishes.id'
@@ -86,7 +93,37 @@ function dinnerDishes(db: import('better-sqlite3').Database, dinnerId: number) {
 		.all(dinnerId);
 }
 
+/**
+ * Someone else in the household moves one dinner onto the other's date, so the two swap, as
+ * Move to another date does.
+ */
+function swap(db: Database.Database, dinnerId: number, otherId: number) {
+	const dateOf = (id: number) =>
+		db.prepare('select date from dinners where id = ?').pluck().get(id) as string;
+	const [date, otherDate] = [dateOf(dinnerId), dateOf(otherId)];
+	db.transaction(() => {
+		db.prepare("update dinners set date = 'moving' where id = ?").run(dinnerId);
+		db.prepare('update dinners set date = ? where id = ?').run(date, otherId);
+		db.prepare('update dinners set date = ? where id = ?').run(otherDate, dinnerId);
+	})();
+}
+
+/** Coming back to the app, which reloads the page's data (Q11). */
+async function comeBack(page: Page) {
+	const reloaded = page.waitForResponse((response) => response.url().includes('/__data.json'));
+	await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+	await reloaded;
+}
+
+/** How far the page scrolls sideways, which on a phone means it doesn't fit the screen. */
+function sideways(page: Page) {
+	return page.evaluate(
+		() => document.documentElement.scrollWidth - document.documentElement.clientWidth
+	);
+}
+
 const LEAVE = 'Leave without saving? What you typed will be lost.';
+const CHANGED = 'Someone changed this dinner since you opened it.';
 
 test('plans a week with all four dinner types, with dishes and roles', async ({
 	page,
@@ -610,10 +647,10 @@ test('copies a past dinner from the most-made list or by searching a dish name',
 		'Fried rice'
 	]);
 	await expect(groups.locator('.made')).toHaveText([
-		`Made 3 times, last ${dayLabel(ago(6))}`,
-		`Made 2 times, last ${dayLabel(ago(2))}`,
+		`Made 3 times, last ${madeOn(ago(6))}`,
+		`Made 2 times, last ${madeOn(ago(2))}`,
 		'Made today',
-		`Made ${dayLabel(ago(1))}`
+		`Made ${madeOn(ago(1))}`
 	]);
 
 	// Searching by a dish name lists the most recent first.
@@ -809,7 +846,10 @@ test("can't see or change another household's dinners", async ({ page, db, baseU
 	});
 	addDinner(db, other.householdId, addDays(today(), -1), { dishes: [[stew, 'main']] });
 	const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
-	addDinner(db, person.householdId, date, { note: 'Our plans', dishes: [[tacos, 'main']] });
+	const ourPlans = addDinner(db, person.householdId, date, {
+		note: 'Our plans',
+		dishes: [[tacos, 'main']]
+	});
 
 	// The page shows this household's dinner on that date, or none.
 	await page.goto(`/menu/${date}`);
@@ -843,7 +883,7 @@ test("can't see or change another household's dinners", async ({ page, db, baseU
 	expect(await post(`/menu/${date}?/restoreDish`, { dishId: String(stew), role: 'side' })).toBe(
 		404
 	);
-	expect(await post(`/menu/${later}?/copy`, { dinnerId: String(theirs) })).toBe(404);
+	expect(await post(`/menu/${later}?/copy`, { sourceId: String(theirs) })).toBe(404);
 	expect(await post(`/menu/${later}?/move`, { to: addDays(today(), 5) })).toBe(404);
 	// Their dish's name is free in this household, so it's a new dish here, not theirs.
 	expect(await post(`/menu/${later}?/addDish`, { name: 'Secret stew', role: 'main' })).toBe(200);
@@ -858,8 +898,8 @@ test("can't see or change another household's dinners", async ({ page, db, baseU
 		db.prepare('select household_id, name from dishes where id = ?').get(ourStew)
 	).toEqual({ household_id: person.householdId, name: 'Secret stew' });
 	// Clearing a date clears only this household's dinner.
-	expect(await post(`/menu/${later}?/clear`, {})).toBe(200);
-	expect(await post(`/menu/${date}?/clear`, {})).toBe(200);
+	expect(await post(`/menu/${later}?/clear`, { dinnerId: String(ours?.id) })).toBe(200);
+	expect(await post(`/menu/${date}?/clear`, { dinnerId: String(ourPlans) })).toBe(200);
 	expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
 
 	expect(dinnerRow(db, other.householdId, date)).toEqual({
@@ -881,4 +921,290 @@ test("can't see or change another household's dinners", async ({ page, db, baseU
 			.pluck()
 			.get(person.householdId)
 	).toBe(0);
+});
+
+test("says the year a past dinner was last made when it isn't this year", async ({
+	page,
+	db,
+	person
+}) => {
+	const soup = addRecipe(db, person.householdId, { name: 'Soup' });
+	const stew = addRecipe(db, person.householdId, { name: 'Stew' });
+	const now = today();
+	// More than a year ago, so in an earlier year whatever the date today.
+	const longAgo = addDays(now, -400);
+	addDinner(db, person.householdId, longAgo, { dishes: [[soup, 'main']] });
+	addDinner(db, person.householdId, addDays(longAgo, -30), { dishes: [[stew, 'main']] });
+	addDinner(db, person.householdId, addDays(now, -3), { dishes: [[stew, 'main']] });
+
+	await page.goto(`/menu/${addDays(now, 1)}`);
+	await page.getByRole('button', { name: 'Copy a dinner' }).click();
+	const groups = page.getByRole('dialog', { name: 'Copy a dinner' }).getByRole('listitem');
+	await expect(groups.locator('.names')).toHaveText(['Stew', 'Soup']);
+	await expect(groups.locator('.made')).toHaveText([
+		`Made 2 times, last ${madeOn(addDays(now, -3))}`,
+		`Made ${dayLabel(longAgo)}, ${longAgo.slice(0, 4)}`
+	]);
+
+	// As that dinner's own page says.
+	await page.goto(`/menu/${longAgo}`);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+		new RegExp(`^[A-Z][a-z]+day, ${monthDay(longAgo)}, ${longAgo.slice(0, 4)}$`)
+	);
+});
+
+test('fits long dish and item names from a menu pantry check on the grocery list', async ({
+	page,
+	db,
+	person
+}) => {
+	// As long as the recipe editor allows, in single words that can't wrap at a space.
+	const longDish = 'N'.repeat(80);
+	const longItem = 'Z'.repeat(80);
+	const chicken = addRecipe(db, person.householdId, {
+		name: longDish,
+		ingredients: [{ item: 'Chicken', amount: 1, unit: 'lb' }]
+	});
+	const salad = addRecipe(db, person.householdId, {
+		name: 'Salad',
+		ingredients: [{ item: longItem, amount: 1 }]
+	});
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, {
+		dishes: [
+			[chicken, 'main'],
+			[salad, 'side']
+		]
+	});
+
+	await page.goto('/menu');
+	await page.getByRole('button', { name: 'Check pantry' }).click();
+	await page
+		.getByRole('dialog', { name: 'Check pantry' })
+		.getByRole('button', { name: 'Start check' })
+		.click();
+	await expect(page).toHaveURL(/\/pantry$/);
+	for (const item of ['Chicken', longItem]) {
+		await page.getByRole('button', { name: `Need ${item}`, exact: true }).click();
+		await expect(
+			page.getByRole('button', { name: `Undo Need for ${item}`, exact: true })
+		).toBeVisible();
+	}
+	expect(await sideways(page), '/pantry').toBe(0);
+
+	// The note names the dish, and the other line is the long item.
+	await page.goto('/groceries');
+	await expect(page.getByText(`1 lb for ${longDish} (${weekday(date)})`)).toBeVisible();
+	await expect(page.getByText(longItem, { exact: true })).toBeVisible();
+	await expect(page.getByText(`1 for Salad (${weekday(date)})`)).toBeVisible();
+	expect(await sideways(page), '/groceries').toBe(0);
+});
+
+test('refuses to clear or move a dinner someone moved onto the date after the page opened', async ({
+	page,
+	db,
+	person
+}) => {
+	const salad = addRecipe(db, person.householdId, { name: 'Salad' });
+	const roast = addRecipe(db, person.householdId, { name: 'Roast' });
+	const date = addDays(today(), 1);
+	const later = addDays(today(), 2);
+	const saladId = addDinner(db, person.householdId, date, { dishes: [[salad, 'main']] });
+	const roastId = addDinner(db, person.householdId, later, {
+		note: "Grandma's birthday",
+		servings: 6,
+		dishes: [[roast, 'main']]
+	});
+	const note = page.getByLabel('Note', { exact: true });
+	const onDate = () => dinnerRow(db, person.householdId, date)?.id;
+
+	// Clear, after someone moved the birthday dinner onto this date.
+	await page.goto(`/menu/${date}`);
+	await expect(dishLinks(page)).toHaveText(['Salad']);
+	swap(db, roastId, saladId);
+	await page.getByRole('button', { name: 'Clear' }).click();
+	await page.getByRole('dialog', { name: 'Clear' }).getByRole('button', { name: 'Clear' }).click();
+	await expect(page.getByRole('alert')).toHaveText(CHANGED);
+	// The page shows the dinner that's there now.
+	await expect(dishLinks(page)).toHaveText(['Roast']);
+	await expect(note).toHaveValue("Grandma's birthday");
+	await expect(page.getByLabel('Servings', { exact: true })).toHaveValue('6');
+	expect(onDate()).toBe(roastId);
+	expect(dinnerRow(db, person.householdId, later)?.id).toBe(saladId);
+
+	// Move, after someone moved the salad back.
+	swap(db, saladId, roastId);
+	const away = addDays(today(), 5);
+	await page.getByRole('button', { name: 'Move to another date' }).click();
+	const sheet = page.getByRole('dialog', { name: 'Move to another date' });
+	await sheet.getByLabel('New date').fill(away);
+	await sheet.getByRole('button', { name: `Move to ${dayLabel(away)}` }).click();
+	await expect(sheet.getByRole('alert')).toHaveText(CHANGED);
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	await sheet.getByRole('button', { name: 'Cancel' }).click();
+	await expect(dishLinks(page)).toHaveText(['Salad']);
+	await expect(note).toHaveValue('');
+	expect(onDate()).toBe(saladId);
+	expect(dinnerRow(db, person.householdId, away)).toBeUndefined();
+
+	// Now that the page shows the dinner on the date, Clear clears it.
+	await page.getByRole('button', { name: 'Clear' }).click();
+	await page.getByRole('dialog', { name: 'Clear' }).getByRole('button', { name: 'Clear' }).click();
+	await expect(page.getByText('Not planned yet.', { exact: false })).toBeFocused();
+	expect(onDate()).toBeUndefined();
+	expect(dinnerRow(db, person.householdId, later)?.id).toBe(roastId);
+});
+
+test("refuses to switch, copy onto or save a dinner the page didn't show", async ({
+	page,
+	db,
+	person
+}) => {
+	const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+	const salad = addRecipe(db, person.householdId, { name: 'Salad' });
+	const roast = addRecipe(db, person.householdId, { name: 'Roast' });
+	addDinner(db, person.householdId, addDays(today(), -1), { dishes: [[tacos, 'main']] });
+	const date = addDays(today(), 1);
+	const later = addDays(today(), 2);
+	const empty = addDays(today(), 3);
+	const saladId = addDinner(db, person.householdId, date, { dishes: [[salad, 'main']] });
+	const roastId = addDinner(db, person.householdId, later, {
+		note: "Grandma's birthday",
+		servings: 6,
+		dishes: [[roast, 'main']]
+	});
+	const note = page.getByLabel('Note', { exact: true });
+
+	// A type picked on a page showing the date as not planned, after someone planned it.
+	await page.goto(`/menu/${empty}`);
+	await expect(page.getByText('Not planned yet.', { exact: false })).toBeVisible();
+	addDinner(db, person.householdId, empty, { type: 'eat_out', note: 'Pizza' });
+	await typeButton(page, 'Going somewhere').click();
+	await expect(page.getByRole('alert')).toHaveText(CHANGED);
+	await expect(typeButton(page, 'Eating out')).toHaveAttribute('aria-pressed', 'true');
+	await expect(note).toHaveValue('Pizza');
+	expect(dinnerRow(db, person.householdId, empty)).toMatchObject({ type: 'eat_out' });
+
+	// Switching to Eating out, after someone moved the birthday dinner onto this date.
+	await page.goto(`/menu/${date}`);
+	await expect(dishLinks(page)).toHaveText(['Salad']);
+	swap(db, roastId, saladId);
+	await typeButton(page, 'Eating out').click();
+	await page
+		.getByRole('dialog', { name: 'Switch to Eating out?' })
+		.getByRole('button', { name: 'Switch to Eating out' })
+		.click();
+	await expect(page.getByRole('alert')).toHaveText(CHANGED);
+	await expect(dishLinks(page)).toHaveText(['Roast']);
+	await expect(typeButton(page, 'Cooking at home')).toHaveAttribute('aria-pressed', 'true');
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({ id: roastId, type: 'cook' });
+	expect(dinnerDishes(db, roastId)).toEqual([{ name: 'Roast', role: 'main' }]);
+
+	// Copying over its dishes, after someone moved the salad back.
+	swap(db, saladId, roastId);
+	await page.getByRole('button', { name: 'Copy a dinner' }).click();
+	const sheet = page.getByRole('dialog', { name: 'Copy a dinner' });
+	await sheet.getByRole('button', { name: /^Chicken tacos/ }).click();
+	await expect(sheet).toContainText('Replace the dish on this dinner with Chicken tacos?');
+	await sheet.getByRole('button', { name: 'Replace dishes' }).click();
+	await expect(sheet.getByRole('alert')).toHaveText(CHANGED);
+	await sheet.getByRole('button', { name: 'Close' }).click();
+	await expect(dishLinks(page)).toHaveText(['Salad']);
+	expect(dinnerDishes(db, saladId)).toEqual([{ name: 'Salad', role: 'main' }]);
+	expect(dinnerDishes(db, roastId)).toEqual([{ name: 'Roast', role: 'main' }]);
+
+	// Saving a note, after someone moved the birthday dinner on again. What was typed stays.
+	swap(db, roastId, saladId);
+	await note.fill('Bring candles');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('alert')).toHaveText(CHANGED);
+	await expect(dishLinks(page)).toHaveText(['Roast']);
+	await expect(note).toHaveValue('Bring candles');
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+		id: roastId,
+		note: "Grandma's birthday"
+	});
+	expect(dinnerRow(db, person.householdId, later)).toMatchObject({ id: saladId, note: null });
+	// Saved again, it goes to the dinner the page shows now.
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('status')).toHaveText('Saved');
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+		id: roastId,
+		note: 'Bring candles',
+		servings: 6
+	});
+});
+
+test('keeps what was typed when coming back to the app finds the dinner cleared or switched', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	const dinnerId = addDinner(db, person.householdId, date, { type: 'going', servings: 5 });
+	const note = page.getByLabel('Note', { exact: true });
+
+	// Someone else clears the dinner while a note is half typed and the app is in the background.
+	await page.goto(`/menu/${date}`);
+	await note.fill("Grandma's house, bring dessert");
+	db.prepare('delete from dinners where id = ?').run(dinnerId);
+	await comeBack(page);
+	await expect(
+		page.getByText('Not planned yet. Pick a type, add a dish or copy a dinner.')
+	).toBeVisible();
+	await expect(page.getByRole('alert')).toHaveText(
+		'Someone cleared or moved this dinner. Save to plan it again with what you typed.'
+	);
+	await expect(note).toHaveValue("Grandma's house, bring dessert");
+	await expect(page.getByLabel('Servings', { exact: true })).toHaveValue('5');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('status')).toHaveText(
+		'Someone had cleared or moved this dinner, so it was planned again with what you saved.'
+	);
+	await expect(typeButton(page, 'Going somewhere')).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+		type: 'going',
+		note: "Grandma's house, bring dessert",
+		servings: 5
+	});
+
+	// Someone else switches it to Eating out while a dish name is half typed.
+	await dishField(page).fill('Grilled corn with lime butter');
+	db.prepare("update dinners set type = 'eat_out' where household_id = ? and date = ?").run(
+		person.householdId,
+		date
+	);
+	await comeBack(page);
+	await expect(typeButton(page, 'Eating out')).toHaveAttribute('aria-pressed', 'true');
+	await expect(dishSection(page)).toHaveCount(0);
+	await expect(page.getByRole('alert')).toHaveText(
+		"Grilled corn with lime butter wasn't added. Switch to Cooking at home or Going somewhere to add dishes."
+	);
+});
+
+test("lets what was typed go after the page's own Clear or switch to Eating out", async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { note: 'Taco night' });
+	const note = page.getByLabel('Note', { exact: true });
+
+	await page.goto(`/menu/${date}`);
+	await note.fill('Taco night with the neighbors');
+	await page.getByRole('button', { name: 'Clear' }).click();
+	await page.getByRole('dialog', { name: 'Clear' }).getByRole('button', { name: 'Clear' }).click();
+	await expect(page.getByText('Not planned yet.', { exact: false })).toBeFocused();
+	await expect(note).toHaveCount(0);
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
+
+	await dishField(page).fill('Grilled corn');
+	await typeButton(page, 'Eating out').click();
+	await expect(typeButton(page, 'Eating out')).toHaveAttribute('aria-pressed', 'true');
+	await expect(dishSection(page)).toHaveCount(0);
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({ type: 'eat_out', note: null });
 });
