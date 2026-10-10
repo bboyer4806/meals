@@ -12,11 +12,14 @@
 	let {
 		date,
 		canLeave,
+		keepAsking,
 		onlost
 	}: {
 		date: string;
 		/** Asks about anything unsaved that opening the new date would drop; false to stay. */
 		canLeave: () => boolean;
+		/** Says the move didn't happen, so leaving later asks about it again. */
+		keepAsking: () => void;
 		/**
 		 * Shows a failure on the page instead, when the reload after it took Move off the page
 		 * (someone cleared the dinner meanwhile).
@@ -64,6 +67,8 @@
 				await update();
 			} finally {
 				busy = false;
+				// The dinner didn't move, so what's typed on the page is still worth asking about.
+				if (result.type !== 'redirect') keepAsking();
 			}
 		};
 	};

@@ -71,6 +71,11 @@
 		return true;
 	}
 
+	/** Takes back confirmLeave's agreement when what it was for didn't happen. */
+	export function keepAsking(): void {
+		dropped = null;
+	}
+
 	beforeNavigate((navigation) => {
 		if (navigation.type !== 'leave') {
 			if (!confirmLeave()) navigation.cancel();
@@ -121,7 +126,9 @@
 				// Shows what was saved (the note trimmed), unless more was typed meanwhile.
 				if (note === sent.note) note = dinner.note ?? '';
 				if (servings === sent.servings) servings = dinner.servings;
-				status = 'Saved';
+				status = (result.data as { replanned?: boolean } | undefined)?.replanned
+					? 'Someone had cleared or moved this dinner, so it was planned again with what you saved.'
+					: 'Saved';
 				if (focused instanceof HTMLElement && focused.isConnected) focused.focus();
 			} finally {
 				busy = false;
@@ -131,6 +138,7 @@
 </script>
 
 <form class="card" method="POST" action="?/details" use:enhance={submit}>
+	<input type="hidden" name="type" value={dinner.type} />
 	{#if withServings}
 		<div class="field">
 			<label for="{uid}-servings">Servings</label>

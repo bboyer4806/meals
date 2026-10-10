@@ -66,8 +66,10 @@ const typeSchema = z.object({
 	removeDishes: confirmed
 });
 
-// Eating out and Leftovers show no servings, so a missing field keeps what's saved.
+// Eating out and Leftovers show no servings, so a missing field keeps what's saved. The type is
+// the one the page shows, used only if the dinner is gone by the time this is saved.
 const detailsSchema = z.object({
+	type: z.enum(DINNER_TYPES, { error: 'Pick a type' }).optional(),
 	servings: z.coerce
 		.number()
 		.int('Enter a whole number of servings')
@@ -123,10 +125,11 @@ export const actions = {
 		const date = dinnerDate(params);
 		const parsed = parseForm(detailsSchema, await request.formData(), 'details');
 		if ('failure' in parsed) return parsed.failure;
-		const { servings, note } = parsed.data;
+		const { type, servings, note } = parsed.data;
 		const dinner = getDinner(user.householdId, date);
-		// Someone cleared or moved the dinner since the page opened. Saving plans the date again as
-		// Cooking at home with what was sent, so nothing typed is lost; the last save wins (6.11).
+		// Someone cleared or moved the dinner since the page opened. Saving plans the date again,
+		// as the type the page showed, with what was sent, so nothing typed is lost; the last save
+		// wins (6.11). The page says so.
 		const fields = dinner
 			? {
 					type: dinner.type,
@@ -134,11 +137,14 @@ export const actions = {
 					servings: servings ?? dinner.servings
 				}
 			: {
-					type: 'cook' as const,
+					type: type ?? 'cook',
 					note: note ?? null,
 					servings: servings ?? getHousehold(user.householdId).defaultServings
 				};
-		return attempt('details', () => saveDinner(user.householdId, date, fields, Date.now()));
+		return attempt('details', () => {
+			saveDinner(user.householdId, date, fields, Date.now());
+			return { action: 'details', replanned: dinner === null };
+		});
 	},
 
 	addDish: async ({ locals, params, request }) => {

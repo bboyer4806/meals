@@ -206,6 +206,7 @@
 			<MoveDinner
 				date={data.date}
 				canLeave={() => details?.confirmLeave() ?? true}
+				keepAsking={() => details?.keepAsking()}
 				onlost={showNotice}
 			/>
 		{/if}

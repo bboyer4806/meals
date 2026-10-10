@@ -230,7 +230,7 @@ describe('saving servings and the note', () => {
 		makeDinner(householdId, TOMORROW, { note: 'Old', servings: 4 });
 		expect(
 			await post('details', { servings: '8', note: '  Cousins visit\r\nBring chairs\n ' })
-		).toBeUndefined();
+		).toEqual({ action: 'details', replanned: false });
 		expect(getDinner(householdId, TOMORROW)).toMatchObject({
 			type: 'cook',
 			note: 'Cousins visit\nBring chairs',
@@ -274,14 +274,33 @@ describe('saving servings and the note', () => {
 		expect(getDinner(householdId, TOMORROW)).toMatchObject({ servings: 100 });
 	});
 
-	it('plans the date as Cooking at home with what was sent when the dinner was cleared meanwhile (6.11)', async () => {
-		expect(await post('details', { servings: '6', note: ' Hello ' })).toBeUndefined();
+	it('plans the date again with what was sent when the dinner was cleared meanwhile (6.11)', async () => {
+		expect(await post('details', { type: 'going', servings: '6', note: ' Hello ' })).toEqual({
+			action: 'details',
+			replanned: true
+		});
 		expect(getDinner(householdId, TOMORROW)).toMatchObject({
-			type: 'cook',
+			type: 'going',
 			note: 'Hello',
 			servings: 6,
 			dishes: []
 		});
+		// Saved again, it's an ordinary save.
+		expect(await post('details', { type: 'going', note: 'Bring rolls' })).toEqual({
+			action: 'details',
+			replanned: false
+		});
+	});
+
+	it('keeps an Eating out dinner Eating out when it was cleared meanwhile', async () => {
+		await post('details', { type: 'eat_out', note: 'Thai place' });
+		expect(getDinner(householdId, TOMORROW)).toMatchObject({ type: 'eat_out', note: 'Thai place' });
+	});
+
+	it("uses the dinner's own type, not the one sent, while it's still there", async () => {
+		makeDinner(householdId, TOMORROW, { type: 'leftovers' });
+		await post('details', { type: 'cook', note: 'Soup' });
+		expect(getDinner(householdId, TOMORROW)).toMatchObject({ type: 'leftovers', note: 'Soup' });
 	});
 
 	it('starts a dinner planned that way at the usual servings when none were sent (Q28)', async () => {
