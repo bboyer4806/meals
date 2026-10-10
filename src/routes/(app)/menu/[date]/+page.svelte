@@ -67,6 +67,7 @@
 	// dinner it had, since such a reload, as on coming back to the app (Q11), would otherwise drop
 	// what was typed without a word, and saving plans the date again with it (6.11).
 	let editing = $state(untrack(() => data.dinner));
+	const HELD = 'Someone cleared or moved this dinner. Save to plan it again with what you typed.';
 	let details = $state<ReturnType<typeof DinnerDetails>>();
 	let dishEditor = $state<ReturnType<typeof DinnerDishes>>();
 
@@ -93,13 +94,33 @@
 			}
 			if (now.dinner === null && editing !== null && details?.hasUnsaved()) {
 				// Said once, when the dinner goes; later reloads find it still gone.
-				if (was.dinner !== null) {
-					void showNotice(
-						'Someone cleared or moved this dinner. Save to plan it again with what you typed.'
-					);
-				}
+				if (was.dinner !== null) void showNotice(HELD);
 				return;
 			}
+			// Someone put another dinner on this date (a swap, or planned it again after a clear)
+			// while something typed isn't saved. The form shows that dinner, so its note isn't
+			// replaced unseen, and what was typed goes in the notice to copy. A dinner that already
+			// has what was typed is this page's own save planning the date again.
+			const replaced =
+				editing !== null &&
+				now.dinner !== null &&
+				now.dinner.id !== editing.id &&
+				details?.hasUnsaved() &&
+				!details.matches(now.dinner);
+			if (replaced && details) {
+				const typed = details.typedNote();
+				editing = now.dinner;
+				const form = details;
+				void tick().then(() => form.reset());
+				void showNotice(
+					typed === ''
+						? "Someone put another dinner on this date, so your changes weren't saved."
+						: `Someone put another dinner on this date, so your note wasn't saved: "${typed}"`
+				);
+				return;
+			}
+			// The form held for a cleared dinner has nothing left to save, so its notice goes too.
+			if (notice?.message === HELD) notice = null;
 			editing = now.dinner;
 		});
 	});

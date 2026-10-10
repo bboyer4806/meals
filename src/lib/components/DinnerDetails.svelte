@@ -76,6 +76,28 @@
 		dropped = null;
 	}
 
+	/** The note as typed, as it would be stored. */
+	export function typedNote(): string {
+		return note.replace(/\r\n?/g, '\n').trim();
+	}
+
+	/** Whether what's typed here is what another dinner already has saved. */
+	export function matches(other: Dinner): boolean {
+		const typedServings = withServings && servings !== null ? servings : other.servings;
+		return typedNote() === (other.note ?? '') && typedServings === other.servings;
+	}
+
+	/** Shows the saved dinner again, dropping what was typed. */
+	export function reset(): void {
+		note = dinner.note ?? '';
+		servings = dinner.servings;
+		savedNote = note;
+		savedServings = dinner.servings;
+		dropped = null;
+		problem = '';
+		status = '';
+	}
+
 	/** Whether something typed here would be lost, and the person hasn't agreed to lose it. */
 	export function hasUnsaved(): boolean {
 		const typed = unsaved();
