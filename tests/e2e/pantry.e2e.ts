@@ -757,3 +757,28 @@ test('names each dish by its date in a check longer than 7 days', async ({ page,
 		`3 cups for Chili (${monthDay(addDays(now, 1))}), Chili (${monthDay(addDays(now, 8))})`
 	]);
 });
+
+test("keeps the More menu open when it's tapped before the page's script starts", async ({
+	page,
+	person: _
+}) => {
+	// On a slow connection the page shows before its script runs.
+	await page.route(
+		(url) => url.pathname.startsWith('/_app/'),
+		async (route) => {
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+			await route.continue();
+		}
+	);
+	await page.goto('/groceries', { waitUntil: 'commit' });
+	await page.getByText('More', { exact: true }).click();
+	await page.waitForLoadState('networkidle');
+	const pantry = page
+		.getByRole('navigation', { name: 'More' })
+		.getByRole('link', { name: 'Pantry check' });
+	await expect(pantry).toBeVisible();
+	// Following one of its links still closes it.
+	await pantry.click();
+	await expect(page).toHaveURL(/\/pantry$/);
+	await expect(pantry).toBeHidden();
+});

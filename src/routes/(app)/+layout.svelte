@@ -3,10 +3,12 @@
 	import { page } from '$app/state';
 
 	let { data, children } = $props();
-	let menuOpen = $state(false);
+	let menu = $state<HTMLDetailsElement>();
 
-	afterNavigate(() => {
-		menuOpen = false;
+	// Following a link in the More menu closes it. Not when the page first loads: More tapped
+	// before the page's script started is already open, and stays so.
+	afterNavigate(({ type }) => {
+		if (type !== 'enter' && menu) menu.open = false;
 	});
 
 	// A tab stays current on the pages under it, such as Items under Groceries.
@@ -20,7 +22,7 @@
 	<div class="bar">
 		<a class="brand link-tap" href="/groceries">Meals</a>
 		<span class="household">{data.householdName}</span>
-		<details class="menu" bind:open={menuOpen}>
+		<details class="menu" bind:this={menu}>
 			<!-- Not "Menu", which is the menu of dinners in the tab bar. -->
 			<summary>More</summary>
 			<nav aria-label="More">
