@@ -170,6 +170,86 @@ export function addRecipe(db: Database.Database, householdId: number, recipe: Re
 	return dishId;
 }
 
+// The menu's dates. Test households are in Chicago (addPerson), so "today" is the date there.
+// Worked out here rather than with the app's own date code, so the tests check it.
+
+/** Today's date in the test households' time zone, as YYYY-MM-DD. */
+export function today(): string {
+	return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(Date.now());
+}
+
+/** The date some days later, or earlier for a negative number. */
+export function addDays(date: string, days: number): string {
+	const day = new Date(`${date}T00:00:00Z`);
+	day.setUTCDate(day.getUTCDate() + days);
+	return day.toISOString().slice(0, 10);
+}
+
+/** The Sunday that starts the date's week. */
+export function sundayOf(date: string): string {
+	return addDays(date, -new Date(`${date}T00:00:00Z`).getUTCDay());
+}
+
+function formatDate(date: string, options: Intl.DateTimeFormatOptions): string {
+	return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...options }).format(
+		new Date(`${date}T00:00:00Z`)
+	);
+}
+
+/** "Tue, Oct 7", as the menu and the pantry check show a date. */
+export function dayLabel(date: string): string {
+	return formatDate(date, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+/** "Tue". */
+export function weekday(date: string): string {
+	return formatDate(date, { weekday: 'short' });
+}
+
+/** "Oct 7". */
+export function monthDay(date: string): string {
+	return formatDate(date, { month: 'short', day: 'numeric' });
+}
+
+export type DinnerSeed = {
+	type?: 'cook' | 'eat_out' | 'going' | 'leftovers';
+	note?: string | null;
+	servings?: number;
+	/** In the order they were added. */
+	dishes?: [dishId: number, role: 'main' | 'side' | 'dessert' | 'other'][];
+};
+
+/** Writes a dinner straight into the database, and returns its id. */
+export function addDinner(
+	db: Database.Database,
+	householdId: number,
+	date: string,
+	dinner: DinnerSeed = {}
+): number {
+	const now = Date.now();
+	const dinnerId = Number(
+		db
+			.prepare(
+				'insert into dinners (household_id, date, type, note, servings, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)'
+			)
+			.run(
+				householdId,
+				date,
+				dinner.type ?? 'cook',
+				dinner.note ?? null,
+				dinner.servings ?? 4,
+				now,
+				now
+			).lastInsertRowid
+	);
+	const addDish = db.prepare(
+		'insert into dinner_dishes (household_id, dinner_id, dish_id, role) values (?, ?, ?, ?)'
+	);
+	for (const [dishId, role] of dinner.dishes ?? [])
+		addDish.run(householdId, dinnerId, dishId, role);
+	return dinnerId;
+}
+
 /**
  * A real JPEG, drawn on a canvas in the browser: a warm background with a plate on it. Works on
  * any page, including about:blank.

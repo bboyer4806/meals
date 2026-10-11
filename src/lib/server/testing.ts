@@ -1,9 +1,10 @@
 // Helpers for data tests. Only test files import this.
 import { isHttpError } from '@sveltejs/kit';
 import { expect } from 'vitest';
+import type { DinnerType, DishRole } from '../menu.ts';
 import { createDish, type DishInput, type IngredientInput } from './data/dishes.ts';
 import { db, openDb } from './db/index.ts';
-import { households, stores, users } from './db/schema.ts';
+import { dinnerDishes, dinners, households, stores, users } from './db/schema.ts';
 
 export function freshDb(): void {
 	openDb(':memory:');
@@ -71,6 +72,40 @@ export function makeDish(householdId: number, input: DishInput, now = 0): number
 	const result = createDish(householdId, input, now);
 	if (result.kind !== 'saved') throw new Error(`A dish is already called ${input.name}`);
 	return result.id;
+}
+
+/**
+ * A dinner written straight to the database, so a test can set up any menu (past dates,
+ * archived dishes). Dishes are [dishId, role] in the order they were added. Returns its id.
+ */
+export function makeDinner(
+	householdId: number,
+	date: string,
+	fields: {
+		type?: DinnerType;
+		note?: string | null;
+		servings?: number;
+		dishes?: [dishId: number, role: DishRole][];
+	} = {},
+	now = 0
+): number {
+	const dinnerId = db()
+		.insert(dinners)
+		.values({
+			householdId,
+			date,
+			type: fields.type ?? 'cook',
+			note: fields.note ?? null,
+			servings: fields.servings ?? 4,
+			createdAt: now,
+			updatedAt: now
+		})
+		.returning({ id: dinners.id })
+		.get().id;
+	for (const [dishId, role] of fields.dishes ?? []) {
+		db().insert(dinnerDishes).values({ householdId, dinnerId, dishId, role }).run();
+	}
+	return dinnerId;
 }
 
 export function expectHttpError(run: () => unknown, status: number): void {

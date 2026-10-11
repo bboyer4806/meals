@@ -75,8 +75,11 @@
 		}
 	}
 
+	/* A long name without spaces, such as a dish's, wraps rather than widening the sheet past
+	   the screen. The title inherits it. */
 	.content {
 		padding: 0.75rem 1rem calc(1.25rem + env(safe-area-inset-bottom));
+		overflow-wrap: anywhere;
 	}
 
 	header button {

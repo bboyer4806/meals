@@ -1,7 +1,10 @@
 import { isHttpError } from '@sveltejs/kit';
+import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { combineAmounts, needNote } from '../../checklist.ts';
+import type { DinnerType, DishRole } from '../../menu.ts';
 import { db } from '../db/index.ts';
-import { pantryChecklists, pantryMarks } from '../db/schema.ts';
+import { dinnerDishes, dinners, pantryChecklists, pantryMarks } from '../db/schema.ts';
 import {
 	expectHttpError,
 	freshDb,
@@ -26,9 +29,11 @@ import {
 	getChecklistSummary,
 	markHave,
 	markNeed,
+	startMenuChecklist,
 	startOver,
 	startRecipeChecklist,
-	undoMark
+	undoMark,
+	type PantryEntry
 } from './pantry.ts';
 import { setStoreArchived } from './stores.ts';
 
@@ -100,6 +105,36 @@ function setAlwaysHave(name: string, alwaysHave: boolean) {
 	});
 }
 
+/**
+ * Puts a dinner and its dishes on the menu straight into the database, the way the dinner page
+ * would (dinners.ts). Returns the dinner's id.
+ */
+function planDinner(
+	date: string,
+	type: DinnerType,
+	dishList: [dishId: number, role: DishRole][] = [],
+	servings = 4,
+	household = householdId
+): number {
+	const { id } = db()
+		.insert(dinners)
+		.values({
+			householdId: household,
+			date,
+			type,
+			note: null,
+			servings,
+			createdAt: NOW,
+			updatedAt: NOW
+		})
+		.returning({ id: dinners.id })
+		.get();
+	for (const [dishId, role] of dishList) {
+		db().insert(dinnerDishes).values({ householdId: household, dinnerId: id, dishId, role }).run();
+	}
+	return id;
+}
+
 /** The message a person sees when a change is refused. */
 function refusal(run: () => unknown): string {
 	try {
@@ -132,6 +167,7 @@ describe('starting a checklist', () => {
 				item('Salt', [null, null])
 			],
 			noIngredients: [],
+			dishCount: 1,
 			markedCount: 0
 		});
 		expect(getChecklistSummary(householdId)).toEqual({ markedCount: 0 });
@@ -154,7 +190,12 @@ describe('starting a checklist', () => {
 	it("lists a recipe with no ingredients so it isn't forgotten", () => {
 		const rolls = makeDish(householdId, recipe('Rolls'));
 		startRecipeChecklist(householdId, rolls, 4, false, NOW);
-		expect(checklist()).toMatchObject({ items: [], noIngredients: ['Rolls'], markedCount: 0 });
+		expect(checklist()).toMatchObject({
+			items: [],
+			noIngredients: ['Rolls'],
+			dishCount: 1,
+			markedCount: 0
+		});
 	});
 
 	it('works out the lines from the recipe as it is now (design 6.8)', () => {
@@ -253,7 +294,7 @@ describe('Always have (addition 2.2.1)', () => {
 		const ice = makeDish(householdId, recipe('Ice', { ingredients: [ingredient('Water', 2, 'cup')] }));
 		setAlwaysHave('Water', true);
 		startRecipeChecklist(householdId, ice, 4, false, NOW);
-		expect(checklist()).toMatchObject({ items: [], noIngredients: [] });
+		expect(checklist()).toMatchObject({ items: [], noIngredients: [], dishCount: 1 });
 	});
 });
 
@@ -413,7 +454,430 @@ describe('Have and Need', () => {
 	});
 });
 
+// The week of Sun Oct 4 to Sat Oct 10, 2026.
+const SUN = '2026-10-04';
+const MON = '2026-10-05';
+const TUE = '2026-10-06';
+const WED = '2026-10-07';
+const THU = '2026-10-08';
+const FRI = '2026-10-09';
+const SAT = '2026-10-10';
+
+describe('a pantry check from the menu', () => {
+	// Serves 2.
+	let sauce: number;
+
+	beforeEach(() => {
+		sauce = makeDish(
+			householdId,
+			recipe('Pan sauce', {
+				servings: 2,
+				ingredients: [ingredient('Shallots', 1), ingredient('Butter', 2, 'tbsp')]
+			})
+		);
+	});
+
+	function startWeek(replaceChecked = false) {
+		return startMenuChecklist(householdId, SUN, SAT, replaceChecked, NOW);
+	}
+
+	function entry(amount: number | null, unit: string | null, factor: number, source: string) {
+		return { amount, unit, factor, source };
+	}
+
+	function entriesOf(name: string): PantryEntry[] {
+		const item = checklist().items.find((candidate) => candidate.itemName === name);
+		if (!item) throw new Error(`${name} isn't on the check`);
+		return item.entries;
+	}
+
+	function names() {
+		return checklist().items.map((item) => item.itemName);
+	}
+
+	it("combines each item across the dinners, scaled to each dinner's servings (Q28)", () => {
+		expect(getChecklist(householdId)).toBeNull();
+		// Pound cake serves 4 and Pan sauce 2.
+		planDinner(TUE, 'cook', [[cake, 'dessert']], 8);
+		planDinner(THU, 'going', [[sauce, 'main']], 3);
+		expect(startWeek()).toBe('started');
+		const item = (name: string, ...entries: PantryEntry[]) => ({
+			itemId: itemId(name),
+			itemName: name,
+			itemNotes: null,
+			entries,
+			state: { kind: 'open' }
+		});
+		expect(getChecklist(householdId)).toEqual({
+			source: { kind: 'range', startDate: SUN, endDate: SAT },
+			items: [
+				item(
+					'Butter',
+					entry(1, 'cup', 2, 'Pound cake (Tue)'),
+					entry(2, 'tbsp', 2, 'Pound cake (Tue)'),
+					entry(2, 'tbsp', 1.5, 'Pan sauce (Thu)')
+				),
+				item('Sugar', entry(2, 'cup', 2, 'Pound cake (Tue)')),
+				item('Eggs', entry(4, null, 2, 'Pound cake (Tue)')),
+				item('Salt', entry(null, null, 2, 'Pound cake (Tue)')),
+				item('Shallots', entry(1, null, 1.5, 'Pan sauce (Thu)'))
+			],
+			noIngredients: [],
+			dishCount: 2,
+			markedCount: 0
+		});
+		expect(getChecklistSummary(householdId)).toEqual({ markedCount: 0 });
+
+		// 2 cups and 4 tbsp of butter for the cake, and 3 tbsp for the sauce.
+		const butter = combineAmounts(entriesOf('Butter'));
+		expect(butter.totals).toEqual(['2 1/2 cups']);
+		expect(butter.breakdown).toEqual([
+			{ source: 'Pound cake (Tue)', amount: '2 cups' },
+			{ source: 'Pound cake (Tue)', amount: '1/4 cup' },
+			{ source: 'Pan sauce (Thu)', amount: '3 tbsp' }
+		]);
+	});
+
+	it('lists a dish once for each dinner it is on', () => {
+		planDinner(TUE, 'cook', [[cake, 'main']]);
+		planDinner(FRI, 'cook', [[cake, 'main']], 2);
+		startWeek();
+		expect(entriesOf('Sugar')).toEqual([
+			entry(2, 'cup', 1, 'Pound cake (Tue)'),
+			entry(2, 'cup', 0.5, 'Pound cake (Fri)')
+		]);
+		expect(checklist().dishCount).toBe(2);
+		expect(needNote(combineAmounts(entriesOf('Sugar')))).toBe(
+			'3 cups for Pound cake (Tue), Pound cake (Fri)'
+		);
+	});
+
+	it('lists items as they first come up: dinners by date, dishes by role, then as added', () => {
+		// Made in this order so that neither dish ids nor names give the order on the dinner.
+		const corn = makeDish(
+			householdId,
+			recipe('Corn', { ingredients: [ingredient('Corn', 4), ingredient('Butter', 1, 'tbsp')] })
+		);
+		const salad = makeDish(
+			householdId,
+			recipe('Salad', { ingredients: [ingredient('Lettuce', 1), ingredient('Oil', 2, 'tbsp')] })
+		);
+		const steak = makeDish(
+			householdId,
+			recipe('Steak', { ingredients: [ingredient('Beef', 2, 'lb')] })
+		);
+		const brownies = makeDish(
+			householdId,
+			recipe('Brownies', {
+				ingredients: [ingredient('Chocolate', 8, 'oz'), ingredient('Sugar', 1, 'cup')]
+			})
+		);
+		const lemonade = makeDish(
+			householdId,
+			recipe('Lemonade', { ingredients: [ingredient('Lemons', 6), ingredient('Sugar', 1, 'cup')] })
+		);
+		const chips = makeDish(
+			householdId,
+			recipe('Chips', { ingredients: [ingredient('Potatoes', 3), ingredient('Oil', 1, 'cup')] })
+		);
+		// Friday's dinner is planned before Wednesday's.
+		planDinner(FRI, 'cook', [
+			[salad, 'side'],
+			[brownies, 'dessert'],
+			[steak, 'main'],
+			[corn, 'side']
+		]);
+		planDinner(WED, 'going', [
+			[chips, 'other'],
+			[lemonade, 'side']
+		]);
+		startWeek();
+		expect(names()).toEqual([
+			// Wednesday: Lemonade (side), then Chips (other).
+			'Lemons',
+			'Sugar',
+			'Potatoes',
+			'Oil',
+			// Friday: Steak (main), Salad and Corn (sides, as added), then Brownies (dessert).
+			'Beef',
+			'Lettuce',
+			'Corn',
+			'Butter',
+			'Chocolate'
+		]);
+		expect(entriesOf('Oil').map((use) => use.source)).toEqual(['Chips (Wed)', 'Salad (Fri)']);
+		expect(entriesOf('Sugar').map((use) => use.source)).toEqual([
+			'Lemonade (Wed)',
+			'Brownies (Fri)'
+		]);
+		expect(checklist().dishCount).toBe(6);
+	});
+
+	it('covers the dates from start to end, both included, and only dinners with dishes (6.8)', () => {
+		const salad = makeDish(
+			householdId,
+			recipe('Salad', { ingredients: [ingredient('Lettuce', 1)] })
+		);
+		const soup = makeDish(householdId, recipe('Soup', { ingredients: [ingredient('Leeks', 2)] }));
+		const pie = makeDish(householdId, recipe('Pie', { ingredients: [ingredient('Apples', 6)] }));
+		// The days before and after the check.
+		planDinner('2026-10-03', 'cook', [[cake, 'main']]);
+		planDinner('2026-10-11', 'cook', [[sauce, 'main']]);
+		// Its first and last days.
+		planDinner(SUN, 'cook', [[salad, 'main']]);
+		planDinner(SAT, 'going', [[soup, 'main']]);
+		// The data layer never keeps dishes on these types, but they wouldn't count if it did.
+		planDinner(MON, 'eat_out', [[pie, 'main']]);
+		planDinner(TUE, 'leftovers', [[cake, 'main']]);
+		planDinner(WED, 'eat_out');
+		startWeek();
+		expect(names()).toEqual(['Lettuce', 'Leeks']);
+		expect(checklist()).toMatchObject({ noIngredients: [], dishCount: 2 });
+	});
+
+	it('counts archived dishes that are still on a dinner (6.10)', () => {
+		planDinner(TUE, 'cook', [[cake, 'main']]);
+		setDishArchived(householdId, cake, true, NOW);
+		startWeek();
+		expect(names()).toEqual(['Butter', 'Sugar', 'Eggs', 'Salt']);
+	});
+
+	it("lists dishes with no ingredients with their day, so they aren't forgotten (6.8)", () => {
+		const rolls = makeDish(householdId, recipe('Rolls'));
+		const bread = makeDish(householdId, recipe('Garlic bread'));
+		// Only Always have items, so there's nothing to check but it has ingredients.
+		const ice = makeDish(
+			householdId,
+			recipe('Ice', { ingredients: [ingredient('Water', 2, 'cup')] })
+		);
+		setAlwaysHave('Water', true);
+		planDinner(TUE, 'cook', [
+			[rolls, 'side'],
+			[cake, 'main'],
+			[ice, 'other']
+		]);
+		planDinner(MON, 'going', [[bread, 'other']]);
+		planDinner(THU, 'cook', [[rolls, 'main']]);
+		startWeek();
+		expect(checklist()).toMatchObject({
+			noIngredients: ['Garlic bread (Mon)', 'Rolls (Tue)', 'Rolls (Thu)'],
+			dishCount: 5
+		});
+		expect(names()).toEqual(['Butter', 'Sugar', 'Eggs', 'Salt']);
+	});
+
+	it('leaves out Always have items (addition 2.2.1)', () => {
+		setAlwaysHave('Salt', true);
+		setAlwaysHave('Shallots', true);
+		planDinner(TUE, 'cook', [[cake, 'main']]);
+		planDinner(THU, 'cook', [[sauce, 'main']]);
+		startWeek();
+		expect(names()).toEqual(['Butter', 'Sugar', 'Eggs']);
+		expect(checklist().noIngredients).toEqual([]);
+	});
+
+	it('names the date instead of the weekday in a check longer than a week (assumption 4)', () => {
+		const rolls = makeDish(householdId, recipe('Rolls'));
+		planDinner(TUE, 'cook', [[cake, 'main']]);
+		planDinner('2026-10-13', 'cook', [
+			[sauce, 'main'],
+			[rolls, 'side']
+		]);
+		expect(startMenuChecklist(householdId, SUN, '2026-10-17', false, NOW)).toBe('started');
+		expect(checklist().source).toEqual({ kind: 'range', startDate: SUN, endDate: '2026-10-17' });
+		expect(entriesOf('Butter').map((use) => use.source)).toEqual([
+			'Pound cake (Oct 6)',
+			'Pound cake (Oct 6)',
+			'Pan sauce (Oct 13)'
+		]);
+		expect(checklist().noIngredients).toEqual(['Rolls (Oct 13)']);
+	});
+
+	it('says when nothing with dishes is planned', () => {
+		planDinner(MON, 'eat_out');
+		planDinner(TUE, 'leftovers');
+		// A dinner with no dishes yet.
+		planDinner(WED, 'cook');
+		planDinner('2026-10-11', 'cook', [[cake, 'main']]);
+		expect(startWeek()).toBe('started');
+		expect(getChecklist(householdId)).toEqual({
+			source: { kind: 'range', startDate: SUN, endDate: SAT },
+			items: [],
+			noIngredients: [],
+			dishCount: 0,
+			markedCount: 0
+		});
+	});
+
+	it('works out the lines from the menu as it is now, keeping marks per item (6.8)', () => {
+		const tuesday = planDinner(TUE, 'cook', [[cake, 'main']]);
+		startWeek();
+		markHave(householdId, itemId('Sugar'));
+		markNeed(householdId, itemId('Eggs'), NOTE, NOW);
+
+		// A dinner planned after the check started shows up.
+		planDinner(THU, 'cook', [[sauce, 'main']]);
+		expect(names()).toEqual(['Butter', 'Sugar', 'Eggs', 'Salt', 'Shallots']);
+		// So do new servings.
+		db().update(dinners).set({ servings: 2 }).where(eq(dinners.id, tuesday)).run();
+		expect(entriesOf('Sugar')).toEqual([entry(2, 'cup', 0.5, 'Pound cake (Tue)')]);
+		// Taking the cake off leaves its items out, but their marks stay for when they're back.
+		db().delete(dinnerDishes).where(eq(dinnerDishes.dinnerId, tuesday)).run();
+		expect(names()).toEqual(['Shallots', 'Butter']);
+		expect(getChecklistSummary(householdId)).toEqual({ markedCount: 0 });
+		db()
+			.insert(dinnerDishes)
+			.values({ householdId, dinnerId: tuesday, dishId: cake, role: 'main' })
+			.run();
+		expect(stateOf('Sugar')).toEqual({ kind: 'have' });
+		expect(stateOf('Eggs')).toMatchObject({ kind: 'need', status: 'to_order' });
+		expect(getChecklistSummary(householdId)).toEqual({ markedCount: 2 });
+		// A dinner that becomes Eating out adds nothing.
+		db().update(dinners).set({ type: 'eat_out' }).where(eq(dinners.id, tuesday)).run();
+		expect(names()).toEqual(['Shallots', 'Butter']);
+	});
+
+	it('marks Have and Need, with a note that names each dish and day (6.8)', () => {
+		const walmart = makeStore(householdId, 'Walmart');
+		setDefaultStore(householdId, itemId('Butter'), walmart);
+		planDinner(TUE, 'cook', [[cake, 'main']]);
+		planDinner(THU, 'cook', [[sauce, 'main']], 2);
+		startWeek();
+		markHave(householdId, itemId('Sugar'));
+		const note = needNote(combineAmounts(entriesOf('Butter')));
+		// 1 cup and 2 tbsp for the cake, and 2 tbsp for the sauce.
+		expect(note).toBe('1 1/4 cups for Pound cake (Tue), Pan sauce (Thu)');
+		markNeed(householdId, itemId('Butter'), note, NOW);
+		expect(lineFor('Butter')).toMatchObject({
+			quantity: 1,
+			unit: null,
+			storeId: walmart,
+			status: 'to_order',
+			note
+		});
+		expect(stateOf('Sugar')).toEqual({ kind: 'have' });
+		expect(stateOf('Butter')).toEqual({
+			kind: 'need',
+			needId: lineFor('Butter').id,
+			status: 'to_order'
+		});
+		expect(getChecklistSummary(householdId)).toEqual({ markedCount: 2 });
+
+		undoMark(householdId, itemId('Butter'));
+		expect(lines()).toHaveLength(0);
+		const lemons = createItem(householdId, 'Lemons', NOW).id;
+		expect(refusal(() => markHave(householdId, lemons))).toBe("Lemons isn't in this pantry check");
+		startOver(householdId);
+		expect(getChecklistSummary(householdId)).toEqual({ markedCount: 0 });
+	});
+
+	it('replaces a check from a recipe or the menu by the same rule (6.8)', () => {
+		planDinner(TUE, 'cook', [[sauce, 'main']]);
+		startRecipeChecklist(householdId, cake, 4, false, NOW);
+		markHave(householdId, itemId('Sugar'));
+		markNeed(householdId, itemId('Eggs'), NOTE, NOW);
+
+		// Checked items are only replaced when the person was asked.
+		expect(startWeek()).toBe('checked');
+		expect(checklist()).toMatchObject({ source: { kind: 'recipe', dishId: cake }, markedCount: 2 });
+		expect(startWeek(true)).toBe('started');
+		expect(checklist()).toMatchObject({
+			source: { kind: 'range', startDate: SUN, endDate: SAT },
+			markedCount: 0
+		});
+		expect(db().select().from(pantryChecklists).all()).toHaveLength(1);
+		expect(db().select().from(pantryMarks).all()).toHaveLength(0);
+		// The line Need added stays.
+		expect(lines().map((line) => line.itemName)).toEqual(['Eggs']);
+
+		// Nothing is checked, so a new range starts without asking.
+		expect(startMenuChecklist(householdId, MON, FRI, false, NOW)).toBe('started');
+		expect(checklist().source).toEqual({ kind: 'range', startDate: MON, endDate: FRI });
+		markHave(householdId, itemId('Butter'));
+		expect(startMenuChecklist(householdId, SUN, SAT, false, NOW)).toBe('checked');
+		expect(startRecipeChecklist(householdId, cake, 4, false, NOW)).toBe('checked');
+		expect(checklist()).toMatchObject({ source: { startDate: MON, endDate: FRI }, markedCount: 1 });
+		expect(startRecipeChecklist(householdId, cake, 4, true, NOW)).toBe('started');
+		expect(checklist()).toMatchObject({ source: { kind: 'recipe', dishId: cake }, markedCount: 0 });
+	});
+
+	it('covers 1 to 14 days, and says why it refuses other ranges', () => {
+		planDinner(TUE, 'cook', [[cake, 'main']]);
+		expect(startMenuChecklist(householdId, TUE, TUE, false, NOW)).toBe('started');
+		expect(names()).toEqual(['Butter', 'Sugar', 'Eggs', 'Salt']);
+		expect(checklist().source).toEqual({ kind: 'range', startDate: TUE, endDate: TUE });
+		expect(startMenuChecklist(householdId, SUN, '2026-10-17', false, NOW)).toBe('started');
+		markHave(householdId, itemId('Sugar'));
+
+		const refused = (start: string, end: string) =>
+			refusal(() => startMenuChecklist(householdId, start, end, true, NOW));
+		expect(refused(TUE, MON)).toBe('Pick an end date on or after the start date');
+		expect(refused(SUN, '2026-10-18')).toBe('Pick 14 days or fewer');
+		expect(refused('2026-12-25', '2027-01-08')).toBe('Pick 14 days or fewer');
+		expect(refused('', SAT)).toBe('Pick a start date');
+		expect(refused('2026-02-29', SAT)).toBe('Pick a start date');
+		expect(refused(SUN, '2026-10-7')).toBe('Pick an end date');
+		// The current check and its marks are kept.
+		expect(checklist()).toMatchObject({
+			source: { kind: 'range', startDate: SUN, endDate: '2026-10-17' },
+			markedCount: 1
+		});
+	});
+
+	it('keeps the current checklist and its marks when a new one fails to start', () => {
+		planDinner(TUE, 'cook', [[cake, 'main']]);
+		startWeek();
+		markHave(householdId, itemId('Sugar'));
+		// Servings below 1 break a database rule after the old checklist is deleted.
+		expect(() => startRecipeChecklist(householdId, cake, 0, true, NOW)).toThrow(
+			/CHECK constraint failed/
+		);
+		expect(checklist()).toMatchObject({ source: { kind: 'range' }, markedCount: 1 });
+	});
+});
+
 describe('households', () => {
+	it("keeps each household's menu to itself", () => {
+		const other = makeHousehold(TZ);
+		const theirs = makeDish(
+			other.householdId,
+			recipe('Tacos', {
+				ingredients: [ingredient('Tortillas', 8), ingredient('Butter', 1, 'tbsp')]
+			})
+		);
+		planDinner(TUE, 'cook', [[cake, 'main']]);
+		planDinner(TUE, 'cook', [[theirs, 'main']], 4, other.householdId);
+		planDinner(THU, 'cook', [[theirs, 'main']], 4, other.householdId);
+
+		startMenuChecklist(householdId, SUN, SAT, false, NOW);
+		expect(checklist()).toMatchObject({ dishCount: 1 });
+		expect(checklist().items.map((item) => item.itemName)).toEqual([
+			'Butter',
+			'Sugar',
+			'Eggs',
+			'Salt'
+		]);
+		expect(getChecklist(other.householdId)).toBeNull();
+
+		startMenuChecklist(other.householdId, SUN, SAT, false, NOW);
+		expect(getChecklist(other.householdId)).toMatchObject({
+			dishCount: 2,
+			items: [
+				{ itemName: 'Tortillas', itemId: itemId('Tortillas', other.householdId) },
+				{ itemName: 'Butter', itemId: itemId('Butter', other.householdId) }
+			]
+		});
+		// Their dishes can't go on this household's dinners.
+		const mine = db().select().from(dinners).where(eq(dinners.householdId, householdId)).get()!;
+		expect(() =>
+			db()
+				.insert(dinnerDishes)
+				.values({ householdId, dinnerId: mine.id, dishId: theirs, role: 'side' })
+				.run()
+		).toThrow(/FOREIGN KEY/);
+		expect(checklist()).toMatchObject({ dishCount: 1 });
+	});
+
 	it("keeps each household's checklist to itself", () => {
 		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		markHave(householdId, itemId('Sugar'));

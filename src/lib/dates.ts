@@ -14,13 +14,21 @@ export function dateIn(ms: number, timeZone: string): string {
 	return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
-/** A YYYY-MM-DD date as a short label, such as "Sat, Oct 3". */
-export function formatDateLabel(date: string): string {
+/**
+ * A YYYY-MM-DD date as a short label, such as "Sat, Oct 3". Given today's date, it adds the year
+ * when the date is in another one ("Fri, Oct 3, 2025"), so a date from last year doesn't read as
+ * one still to come. A long weekday spells the day out ("Saturday, Oct 3").
+ */
+export function formatDateLabel(
+	date: string,
+	{ today, weekday = 'short' }: { today?: string; weekday?: 'short' | 'long' } = {}
+): string {
 	return new Intl.DateTimeFormat('en-US', {
 		timeZone: 'UTC',
-		weekday: 'short',
+		weekday,
 		month: 'short',
-		day: 'numeric'
+		day: 'numeric',
+		year: today === undefined || date.slice(0, 4) === today.slice(0, 4) ? undefined : 'numeric'
 	}).format(new Date(`${date}T00:00:00Z`));
 }
 

@@ -682,9 +682,12 @@
 		color: var(--surface);
 	}
 
+	/* A long name or note without spaces, such as a dish name a pantry check put in the note,
+	   wraps rather than widening the list past the screen. */
 	.body {
 		flex: 1;
 		min-width: 0;
+		overflow-wrap: anywhere;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;

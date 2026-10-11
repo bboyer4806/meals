@@ -1,4 +1,6 @@
 import { formatKitchen } from './amounts.ts';
+import { formatDateLabel } from './dates.ts';
+import { daysBetween } from './menu.ts';
 import { showAmount, showInBestUnit } from './scaling.ts';
 import { foldCase } from './text.ts';
 import { knownUnit, toBase, type UnitKind } from './units.ts';
@@ -91,4 +93,34 @@ export function needNote(combined: CombinedAmounts): string {
 	const last = note.charCodeAt(end - 1);
 	if (last >= 0xd800 && last <= 0xdbff) end -= 1;
 	return `${note.slice(0, end).trimEnd()}...`;
+}
+
+// A pantry check from the menu names each dish with its day (6.8).
+
+const WEEKDAY = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short' });
+const MONTH_DAY = new Intl.DateTimeFormat('en-US', {
+	timeZone: 'UTC',
+	month: 'short',
+	day: 'numeric'
+});
+
+/**
+ * Names a dish on a dinner in a pantry check from the menu, with its day: "Pound cake (Tue)".
+ * Within a week each weekday is one date; a longer check uses the date instead, such as
+ * "Pound cake (Oct 14)".
+ */
+export function menuSource(
+	dishName: string,
+	date: string,
+	startDate: string,
+	endDate: string
+): string {
+	const day = daysBetween(startDate, endDate) + 1 <= 7 ? WEEKDAY : MONTH_DAY;
+	return `${dishName} (${day.format(new Date(`${date}T00:00:00Z`))})`;
+}
+
+/** The dates of a pantry check from the menu: "Tue, Oct 7 to Mon, Oct 13", or just the one. */
+export function rangeLabel(startDate: string, endDate: string): string {
+	const start = formatDateLabel(startDate);
+	return startDate === endDate ? start : `${start} to ${formatDateLabel(endDate)}`;
 }

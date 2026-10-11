@@ -4,14 +4,16 @@
 	// A text field that suggests existing items as you type: names that start with the text
 	// first, then names that contain it, most often added first within each. A name that
 	// matches no item offers "Add as a new item" (design 6.4). The recipe editor turns off
-	// `required`, since a blank ingredient row is left out rather than refused.
+	// `required`, since a blank ingredient row is left out rather than refused. The dinner
+	// editor suggests dishes, so its new option says "new dish".
 	let {
 		items,
 		value = $bindable(''),
 		id,
 		name,
 		placeholder,
-		required = true
+		required = true,
+		noun = 'item'
 	}: {
 		items: T[];
 		value?: string;
@@ -19,6 +21,8 @@
 		name: string;
 		placeholder?: string;
 		required?: boolean;
+		/** What a name that matches nothing would be added as. */
+		noun?: string;
 	} = $props();
 
 	type Option = { kind: 'item'; item: T } | { kind: 'new' };
@@ -115,7 +119,7 @@
 					{#if option.kind === 'item'}
 						{option.item.name}
 					{:else}
-						Add “{typed}” as a new item
+						Add “{typed}” as a new {noun}
 					{/if}
 				</li>
 			{/each}
