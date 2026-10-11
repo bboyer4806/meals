@@ -3,10 +3,12 @@
 	import { page } from '$app/state';
 
 	let { data, children } = $props();
-	let menuOpen = $state(false);
+	let menu = $state<HTMLDetailsElement>();
 
-	afterNavigate(() => {
-		menuOpen = false;
+	// Following a link in the More menu closes it. Not when the page first loads: More tapped
+	// before the page's script started is already open, and stays so.
+	afterNavigate(({ type }) => {
+		if (type !== 'enter' && menu) menu.open = false;
 	});
 
 	// A tab stays current on the pages under it, such as Items under Groceries.
@@ -20,9 +22,10 @@
 	<div class="bar">
 		<a class="brand link-tap" href="/groceries">Meals</a>
 		<span class="household">{data.householdName}</span>
-		<details class="menu" bind:open={menuOpen}>
-			<summary>Menu</summary>
-			<nav aria-label="Menu">
+		<details class="menu" bind:this={menu}>
+			<!-- Not "Menu", which is the menu of dinners in the tab bar. -->
+			<summary>More</summary>
+			<nav aria-label="More">
 				<a href="/pantry">Pantry check</a>
 				<a href="/groceries/items">Items</a>
 				<a href="/groceries/history">History</a>
@@ -42,7 +45,7 @@
 	{@render children()}
 </main>
 
-<!-- Phone-style tabs at the bottom (design 7). Menu joins them in Phase 3. -->
+<!-- Phone-style tabs at the bottom (design 7). -->
 <nav class="tabs no-print" aria-label="Main">
 	<a href="/groceries" aria-current={current('/groceries')}>
 		<svg viewBox="0 0 24 24" aria-hidden="true">
@@ -51,6 +54,13 @@
 			<path d="M9.5 14v3M14.5 14v3" />
 		</svg>
 		Groceries
+	</a>
+	<a href="/menu" aria-current={current('/menu')}>
+		<svg viewBox="0 0 24 24" aria-hidden="true">
+			<rect x="3" y="5" width="18" height="16" rx="2" />
+			<path d="M3 10h18M8 3v4M16 3v4" />
+		</svg>
+		Menu
 	</a>
 	<a href="/recipes" aria-current={current('/recipes')}>
 		<svg viewBox="0 0 24 24" aria-hidden="true">

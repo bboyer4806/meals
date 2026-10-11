@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { combineAmounts, needNote, type ChecklistEntry } from './checklist.ts';
+import {
+	combineAmounts,
+	menuSource,
+	needNote,
+	rangeLabel,
+	type ChecklistEntry
+} from './checklist.ts';
 
 function entry(
 	amount: number | null,
@@ -187,5 +193,42 @@ describe('needNote', () => {
 		expect(needNote(combineAmounts([entry(null, null, `x${'🍰'.repeat(100)}`)]))).toBe(
 			`For x${'🍰'.repeat(96)}...`
 		);
+	});
+});
+
+// Oct 4, 2026 is a Sunday.
+describe('menuSource', () => {
+	it('names the dish with its weekday in a check of a week or less (assumption 4)', () => {
+		expect(menuSource('Pound cake', '2026-10-06', '2026-10-04', '2026-10-10')).toBe(
+			'Pound cake (Tue)'
+		);
+		expect(menuSource('Pan sauce', '2026-10-08', '2026-10-04', '2026-10-10')).toBe(
+			'Pan sauce (Thu)'
+		);
+		// Across a month and a year.
+		expect(menuSource('Soup', '2027-01-01', '2026-12-29', '2027-01-04')).toBe('Soup (Fri)');
+		expect(menuSource('Soup', '2026-10-07', '2026-10-07', '2026-10-07')).toBe('Soup (Wed)');
+	});
+
+	it('names the date instead in a longer check, where a weekday comes up twice', () => {
+		// 8 days: Sunday to the next Sunday.
+		expect(menuSource('Pound cake', '2026-10-04', '2026-10-04', '2026-10-11')).toBe(
+			'Pound cake (Oct 4)'
+		);
+		expect(menuSource('Pound cake', '2026-10-11', '2026-10-04', '2026-10-11')).toBe(
+			'Pound cake (Oct 11)'
+		);
+		expect(menuSource('Soup', '2027-01-02', '2026-12-27', '2027-01-09')).toBe('Soup (Jan 2)');
+	});
+});
+
+describe('rangeLabel', () => {
+	it('gives the first and last dates', () => {
+		expect(rangeLabel('2026-10-07', '2026-10-13')).toBe('Wed, Oct 7 to Tue, Oct 13');
+		expect(rangeLabel('2026-12-27', '2027-01-09')).toBe('Sun, Dec 27 to Sat, Jan 9');
+	});
+
+	it('gives one date for a one-day check', () => {
+		expect(rangeLabel('2026-10-07', '2026-10-07')).toBe('Wed, Oct 7');
 	});
 });

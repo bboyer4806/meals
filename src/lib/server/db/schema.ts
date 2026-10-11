@@ -10,6 +10,7 @@ import {
 	unique,
 	uniqueIndex
 } from 'drizzle-orm/sqlite-core';
+import { DINNER_TYPES, DISH_ROLES } from '../../menu.ts';
 
 // Timestamps are milliseconds since 1970 (UTC). Household-owned tables that other tables point
 // at have a unique key on (household_id, id), and references to them are composite foreign keys,
@@ -242,6 +243,60 @@ export const dishIngredients = sqliteTable(
 		index('dish_ingredients_item').on(t.itemId),
 		check('dish_ingredients_amount', sql`${t.amount} > 0`),
 		check('dish_ingredients_unit', sql`${t.unit} is null or ${t.amount} is not null`)
+	]
+);
+
+// One dinner per date (Q26). A date with no row isn't planned.
+export const dinners = sqliteTable(
+	'dinners',
+	{
+		// Never reused after a dinner is cleared, so a page that still shows a cleared dinner's id
+		// can't reach a newer dinner (Copy a dinner posts the id it showed).
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		householdId: integer('household_id')
+			.notNull()
+			.references(() => households.id),
+		// YYYY-MM-DD in the household's time zone.
+		date: text('date').notNull(),
+		type: text('type', { enum: DINNER_TYPES }).notNull(),
+		note: text('note'),
+		// Starts at the household's usual servings (Q28).
+		servings: integer('servings').notNull(),
+		createdAt: integer('created_at').notNull(),
+		updatedAt: integer('updated_at').notNull()
+	},
+	(t) => [
+		unique('dinners_household_id').on(t.householdId, t.id),
+		uniqueIndex('dinners_household_date').on(t.householdId, t.date),
+		check('dinners_type', sql`${t.type} in ('cook', 'eat_out', 'going', 'leftovers')`),
+		check('dinners_servings', sql`${t.servings} >= 1`)
+	]
+);
+
+// Only Cooking at home and Going somewhere dinners have dishes (Q26); the data layer keeps it so.
+export const dinnerDishes = sqliteTable(
+	'dinner_dishes',
+	{
+		id: integer('id').primaryKey(),
+		householdId: integer('household_id')
+			.notNull()
+			.references(() => households.id),
+		dinnerId: integer('dinner_id').notNull(),
+		dishId: integer('dish_id').notNull(),
+		role: text('role', { enum: DISH_ROLES }).notNull()
+	},
+	(t) => [
+		foreignKey({
+			columns: [t.householdId, t.dinnerId],
+			foreignColumns: [dinners.householdId, dinners.id]
+		}).onDelete('cascade'),
+		foreignKey({
+			columns: [t.householdId, t.dishId],
+			foreignColumns: [dishes.householdId, dishes.id]
+		}),
+		uniqueIndex('dinner_dishes_dinner_dish').on(t.dinnerId, t.dishId),
+		index('dinner_dishes_dish').on(t.dishId),
+		check('dinner_dishes_role', sql`${t.role} in ('main', 'side', 'dessert', 'other')`)
 	]
 );
 
