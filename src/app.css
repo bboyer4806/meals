@@ -1,10 +1,12 @@
-/* Colors and fonts are defined once here. Every pairing below meets WCAG AA contrast. */
+/* Colors and fonts are defined once here. Every pairing below meets WCAG AA contrast: text 4.5:1
+   and field borders 3:1 (design 8). */
 :root {
 	color-scheme: light;
 	--bg: #faf5ec;
 	--surface: #fffdf8;
 	--surface-sunk: #f3ebdd;
 	--border: #e3d6c2;
+	--field-border: #958169;
 	--text: #2b2118;
 	--muted: #6b5847;
 	--accent: #b23a22;
@@ -28,6 +30,7 @@
 		--surface: #282019;
 		--surface-sunk: #221b15;
 		--border: #41352a;
+		--field-border: #806c58;
 		--text: #f4ebdf;
 		--muted: #c2ae98;
 		--accent: #e2775c;
@@ -114,11 +117,16 @@ textarea {
 	font: inherit;
 	color: inherit;
 	background: var(--surface);
-	border: 1px solid var(--border);
+	border: 1px solid var(--field-border);
 	border-radius: var(--radius);
 	min-height: var(--tap);
 	padding: 0.5rem 0.75rem;
 	width: 100%;
+}
+
+::placeholder {
+	color: var(--muted);
+	opacity: 1;
 }
 
 textarea {
