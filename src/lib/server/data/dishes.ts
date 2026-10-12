@@ -33,10 +33,15 @@ export type DishInput = {
 	ingredients: IngredientInput[];
 };
 
-/** `taken` names the dish that already has the name, so the page can offer to restore it. */
+/**
+ * `taken` names the dish that already has the name, so the page can offer to restore it.
+ * `archived` names the archived items the recipe would start using, so the page can ask before
+ * restoring them (6.10).
+ */
 export type DishSaveResult =
 	| { kind: 'saved'; id: number }
-	| { kind: 'taken'; archived: boolean; id: number };
+	| { kind: 'taken'; archived: boolean; id: number }
+	| { kind: 'archived'; items: string[] };
 
 export type DishIngredient = {
 	id: number;
@@ -116,38 +121,63 @@ function findDishByName(householdId: number, name: string) {
 		.get();
 }
 
-/**
- * The catalog item an ingredient names (Q1): an existing one, or a new one for a new name.
- * `usedBefore` is the items the dish used before this save.
- */
-function ingredientItem(
-	householdId: number,
-	itemName: string,
-	usedBefore: Set<number>,
-	now: number
-): number {
+/** The catalog item an ingredient names (Q1): an existing one, or a new one for a new name. */
+function ingredientItem(householdId: number, itemName: string, now: number): number {
 	const name = normalizeName(itemName);
-	const item = findItemByName(householdId, name);
-	if (!item) return createItem(householdId, name, now).id;
-	// Adding an archived item to a recipe brings it back, as adding it to the list does. One
-	// the recipe already used stays archived (6.10).
-	if (item.archivedAt !== null && !usedBefore.has(item.id)) {
-		setItemArchived(householdId, item.id, false, now);
-	}
-	return item.id;
+	return (findItemByName(householdId, name) ?? createItem(householdId, name, now)).id;
 }
 
-/** Writes the dish and replaces its tags and ingredients. Callers run it in a transaction. */
+/**
+ * The archived items the ingredients name that the dish didn't use before this save, by id, each
+ * once in the order of the ingredients. One the recipe already used stays archived (6.10).
+ */
+function newlyUsedArchivedItems(
+	householdId: number,
+	dishId: number | null,
+	ingredients: IngredientInput[]
+): Map<number, string> {
+	const usedBefore = new Set<number>();
+	if (dishId !== null) {
+		const rows = db()
+			.select({ itemId: dishIngredients.itemId })
+			.from(dishIngredients)
+			.where(eq(dishIngredients.dishId, dishId))
+			.all();
+		for (const { itemId } of rows) usedBefore.add(itemId);
+	}
+	const archived = new Map<number, string>();
+	for (const ingredient of ingredients) {
+		const item = findItemByName(householdId, normalizeName(ingredient.itemName));
+		if (item && item.archivedAt !== null && !usedBefore.has(item.id)) {
+			archived.set(item.id, item.name);
+		}
+	}
+	return archived;
+}
+
+/**
+ * Writes the dish and replaces its tags and ingredients, unless it would start using archived
+ * items and `restoreItems` is false. Callers run it in a transaction.
+ */
 function save(
 	householdId: number,
 	dishId: number | null,
 	input: DishInput,
+	restoreItems: boolean,
 	now: number
 ): DishSaveResult {
 	const taken = findDishByName(householdId, input.name);
 	if (taken && taken.id !== dishId) {
 		return { kind: 'taken', archived: taken.archivedAt !== null, id: taken.id };
 	}
+
+	// Using an archived item in a recipe brings it back, as adding it to the list does, so it
+	// asks first (6.10).
+	const archived = newlyUsedArchivedItems(householdId, dishId, input.ingredients);
+	if (archived.size > 0 && !restoreItems) {
+		return { kind: 'archived', items: [...archived.values()] };
+	}
+	for (const itemId of archived.keys()) setItemArchived(householdId, itemId, false, now);
 
 	// Listed one by one, so nothing else in the input (a photo key, say) is ever written.
 	const fields = {
@@ -165,7 +195,6 @@ function save(
 	};
 
 	let id: number;
-	const usedBefore = new Set<number>();
 	if (dishId === null) {
 		id = db()
 			.insert(dishes)
@@ -180,12 +209,7 @@ function save(
 			.where(eq(dishes.id, id))
 			.run();
 		db().delete(dishTags).where(eq(dishTags.dishId, id)).run();
-		const previous = db()
-			.delete(dishIngredients)
-			.where(eq(dishIngredients.dishId, id))
-			.returning({ itemId: dishIngredients.itemId })
-			.all();
-		for (const { itemId } of previous) usedBefore.add(itemId);
+		db().delete(dishIngredients).where(eq(dishIngredients.dishId, id)).run();
 	}
 
 	// The database allows each tag once per dish, ignoring case. The first spelling wins.
@@ -203,7 +227,7 @@ function save(
 		section: ingredient.section,
 		amount: ingredient.amount,
 		unit: ingredient.unit,
-		itemId: ingredientItem(householdId, ingredient.itemName, usedBefore, now),
+		itemId: ingredientItem(householdId, ingredient.itemName, now),
 		prepNote: ingredient.prepNote
 	}));
 	if (ingredientRows.length > 0) db().insert(dishIngredients).values(ingredientRows).run();
@@ -211,19 +235,27 @@ function save(
 	return { kind: 'saved', id };
 }
 
-export function createDish(householdId: number, input: DishInput, now: number): DishSaveResult {
-	return transaction(() => save(householdId, null, input, now));
+/** `restoreItems` allows restoring the archived items the recipe would start using (6.10). */
+export function createDish(
+	householdId: number,
+	input: DishInput,
+	restoreItems: boolean,
+	now: number
+): DishSaveResult {
+	return transaction(() => save(householdId, null, input, restoreItems, now));
 }
 
+/** `restoreItems` allows restoring the archived items the recipe would start using (6.10). */
 export function updateDish(
 	householdId: number,
 	dishId: number,
 	input: DishInput,
+	restoreItems: boolean,
 	now: number
 ): DishSaveResult {
 	return transaction(() => {
 		findDish(householdId, dishId);
-		return save(householdId, dishId, input, now);
+		return save(householdId, dishId, input, restoreItems, now);
 	});
 }
 

@@ -205,7 +205,7 @@ describe('starting a checklist', () => {
 			servings: 8,
 			ingredients: [ingredient('Flour', 3, 'cup'), ingredient('Sugar', 2, 'cup')]
 		});
-		expect(updateDish(householdId, cake, changed, NOW)).toMatchObject({ kind: 'saved' });
+		expect(updateDish(householdId, cake, changed, false, NOW)).toMatchObject({ kind: 'saved' });
 		expect(checklist().items.map((item) => [item.itemName, item.entries[0]?.factor])).toEqual([
 			['Flour', 1],
 			['Sugar', 1]

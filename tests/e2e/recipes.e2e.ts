@@ -357,6 +357,62 @@ test('keeps everything typed when the name is taken, and offers to restore an ar
 	);
 });
 
+test('asks before restoring an archived item a recipe names, keeping everything typed', async ({
+	page,
+	db,
+	person
+}) => {
+	const cardamom = addItem(db, person.householdId, 'Cardamom');
+	db.prepare('update items set archived_at = ? where id = ?').run(Date.now(), cardamom);
+	const archivedAt = () =>
+		db.prepare('select archived_at from items where id = ?').pluck().get(cardamom);
+	const jpeg = await makeJpeg(page, { width: 800, height: 600, hue: 30 });
+
+	await page.goto('/recipes/new');
+	await page.getByLabel('Name', { exact: true }).fill('Chai');
+	await photoInput(page).setInputFiles({ name: 'chai.jpg', mimeType: 'image/jpeg', buffer: jpeg });
+	await expectPreview(page);
+	await page.getByLabel('Servings').fill('2');
+	await fillIngredient(ingredientRow(page, 1), { amount: '4', item: 'cardamom', prepNote: 'crushed' });
+	await page.getByRole('button', { name: 'Add ingredient' }).click();
+	await fillIngredient(ingredientRow(page, 2), { amount: '2', unit: 'cups', item: 'Milk' });
+	await page.getByLabel('Steps').fill('Simmer.\nStrain.');
+
+	// Saving names the item, and changes nothing until it's restored.
+	await page.getByRole('button', { name: 'Save' }).click();
+	const problem = page.getByRole('alert');
+	await expect(problem).toHaveText('Cardamom is archived. Restore it and save the recipe?');
+	await expect(problem).toBeFocused();
+	await expect(page).toHaveURL(/\/recipes\/new$/);
+	expect(archivedAt()).not.toBeNull();
+	expect(
+		db.prepare('select count(*) from dishes where household_id = ?').pluck().get(person.householdId)
+	).toBe(0);
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Chai');
+	await expect(ingredientRow(page, 1).getByRole('combobox', { name: 'Item' })).toHaveValue(
+		'cardamom'
+	);
+	await expect(page.getByRole('group', { name: 'Photo' }).locator('img')).toHaveAttribute(
+		'src',
+		/^data:image\/jpeg/
+	);
+
+	await page.getByRole('button', { name: 'Restore and save' }).click();
+	await expect(page).toHaveURL(/\/recipes\/\d+$/);
+	await expect(page.getByRole('heading', { name: 'Chai', level: 1 })).toBeVisible();
+	await expect(page.getByRole('status')).toHaveText('2 servings');
+	await expect(ingredients(page)).toHaveText(['4 Cardamom, crushed', '2 cups Milk']);
+	await expect(steps(page)).toHaveText(['Simmer.', 'Strain.']);
+	expect(await loadedWidth(page.locator('img.photo'))).toBe(800);
+	expect(archivedAt()).toBeNull();
+
+	// Restored, the add bar suggests it again.
+	await page.goto('/groceries');
+	const add = page.getByRole('form', { name: 'Add to the list' });
+	await add.getByRole('combobox', { name: 'Item' }).fill('carda');
+	await expect(page.getByRole('option', { name: 'Cardamom' })).toBeVisible();
+});
+
 test('asks before leaving the editor with changes, and leaves it behind once saved', async ({
 	page,
 	person: _

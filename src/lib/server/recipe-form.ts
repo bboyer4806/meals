@@ -52,10 +52,16 @@ export type RecipeSubmission = {
 	photo: PhotoUpload | null;
 	/** Whether to clear the current photo. Never true with a new photo, which replaces it anyway. */
 	removePhoto: boolean;
+	/** Whether to restore archived items the recipe would start using (design 6.10). */
+	restoreItems: boolean;
 };
 
-/** archivedId is an archived recipe that has the name, which the page offers to restore. */
-export type RecipeFailure = FormFailure & { archivedId?: number };
+/**
+ * archivedId is an archived recipe that has the name, which the page offers to restore.
+ * archivedItems are archived items the recipe would start using, which the page offers to restore
+ * by saving again.
+ */
+export type RecipeFailure = FormFailure & { archivedId?: number; archivedItems?: string[] };
 
 const ACTION = 'recipe';
 
@@ -357,7 +363,8 @@ function upload(value: FormDataEntryValue | null): File | null | undefined {
  * problem, in the order of the form.
  *
  * A new photo comes as two files, `photo` and `thumb`. `removePhoto` set to '1' asks to clear the
- * current photo.
+ * current photo. `restoreItems` set to '1', sent by the editor's "Restore and save" button, allows
+ * restoring archived items.
  */
 export function parseRecipeForm(
 	formData: FormData
@@ -374,7 +381,8 @@ export function parseRecipeForm(
 	return {
 		data,
 		photo: photo && thumb ? { photo, thumb } : null,
-		removePhoto: photo === null && formData.get('removePhoto') === '1'
+		removePhoto: photo === null && formData.get('removePhoto') === '1',
+		restoreItems: formData.get('restoreItems') === '1'
 	};
 }
 
@@ -391,6 +399,20 @@ export function nameTakenFailure(
 		return fail(400, { action: ACTION, error, archivedId: taken.id });
 	}
 	return failure(`A recipe is already called ${name}.`);
+}
+
+/**
+ * The failure for a recipe that would start using archived items (createDish and updateDish
+ * return `archived`). Saving again with `restoreItems` restores them (design 6.10).
+ */
+export function archivedItemsFailure(items: string[]): ActionFailure<RecipeFailure> {
+	const one = items.length === 1;
+	// "Salt", "Salt and Pepper", or "Salt, Pepper and Cumin".
+	const names = one ? items[0] : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
+	const error = one
+		? `${names} is archived. Restore it and save the recipe?`
+		: `${names} are archived. Restore them and save the recipe?`;
+	return fail(400, { action: ACTION, error, archivedItems: items });
 }
 
 /**
@@ -421,7 +443,7 @@ export async function saveRecipe(
 ): Promise<{ id: number } | { failure: ActionFailure<RecipeFailure> }> {
 	const parsed = parseRecipeForm(formData);
 	if ('failure' in parsed) return parsed;
-	const { data, photo, removePhoto } = parsed;
+	const { data, photo, removePhoto, restoreItems } = parsed;
 
 	let photoKey: string | null = null;
 	if (photo) {
@@ -439,8 +461,8 @@ export async function saveRecipe(
 	try {
 		saved =
 			dishId === null
-				? createDish(householdId, data, now)
-				: updateDish(householdId, dishId, data, now);
+				? createDish(householdId, data, restoreItems, now)
+				: updateDish(householdId, dishId, data, restoreItems, now);
 		if (saved.kind === 'saved' && (photoKey !== null || removePhoto)) {
 			previousKey = setDishPhoto(householdId, saved.id, photoKey, now);
 		}
@@ -453,6 +475,10 @@ export async function saveRecipe(
 	if (saved.kind === 'taken') {
 		if (photoKey !== null) discardPhoto(photoKey);
 		return { failure: nameTakenFailure(data.name, saved) };
+	}
+	if (saved.kind === 'archived') {
+		if (photoKey !== null) discardPhoto(photoKey);
+		return { failure: archivedItemsFailure(saved.items) };
 	}
 	if (previousKey !== null) discardPhoto(previousKey);
 	return { id: saved.id };

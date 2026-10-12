@@ -213,12 +213,27 @@
 				<button disabled={restoring}>{restoring ? 'Restoring…' : 'Restore it'}</button>
 			</form>
 		{/if}
+		{#if problem.archivedItems}
+			<!-- Saves the recipe form again through submit, so what's typed and the chosen photo go
+			with it, adding restoreItems=1 to restore the archived items (design 6.10). -->
+			<div class="restore">
+				<button
+					form="recipe-form"
+					name="restoreItems"
+					value="1"
+					disabled={!ready || saving || preparingPhoto}
+				>
+					Restore and save
+				</button>
+			</div>
+		{/if}
 	</div>
 {/if}
 
 <!-- The keydown handler only watches Enter in the form's own fields (nextOnEnter). -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <form
+	id="recipe-form"
 	method="POST"
 	action="?/save"
 	enctype="multipart/form-data"
@@ -374,7 +389,8 @@
 		scroll-margin-top: 6rem;
 	}
 
-	.problem form {
+	.problem form,
+	.restore {
 		margin-top: 0.75rem;
 	}
 

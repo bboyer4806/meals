@@ -67,10 +67,10 @@ export function ingredient(
 	return { section: null, amount, unit, itemName, prepNote: null, ...fields };
 }
 
-/** Saves a recipe and returns its id. */
+/** Saves a recipe, without restoring archived items, and returns its id. */
 export function makeDish(householdId: number, input: DishInput, now = 0): number {
-	const result = createDish(householdId, input, now);
-	if (result.kind !== 'saved') throw new Error(`A dish is already called ${input.name}`);
+	const result = createDish(householdId, input, false, now);
+	if (result.kind !== 'saved') throw new Error(`Couldn't save ${input.name}: ${result.kind}`);
 	return result.id;
 }
 

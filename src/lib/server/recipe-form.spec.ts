@@ -13,8 +13,10 @@ import {
 	updateDish,
 	type DishInput
 } from './data/dishes.ts';
+import { createItem, findItemByName, setItemArchived } from './data/items.ts';
 import { deletePhoto, PHOTO_MAX_BYTES, photoPath, THUMB_MAX_BYTES } from './photos.ts';
 import {
+	archivedItemsFailure,
 	nameTakenFailure,
 	newRecipeValues,
 	parseRecipeForm,
@@ -586,12 +588,12 @@ describe('the values the editor starts with', () => {
 		});
 
 		it('show it as it was entered, and save it unchanged', () => {
-			const created = createDish(householdId, parse(recipeValues(poundCake)).data, 0);
+			const created = createDish(householdId, parse(recipeValues(poundCake)).data, false, 0);
 			if (created.kind !== 'saved') throw new Error('Expected it to save');
 			const shown = recipeValues(getDish(householdId, created.id));
 			expect(shown).toEqual(recipeValues(poundCake));
 
-			expect(updateDish(householdId, created.id, parse(shown).data, 1)).toEqual(created);
+			expect(updateDish(householdId, created.id, parse(shown).data, false, 1)).toEqual(created);
 			expect(recipeValues(getDish(householdId, created.id))).toEqual(shown);
 		});
 	});
@@ -615,6 +617,29 @@ describe('nameTakenFailure', () => {
 			error: 'An archived recipe is called Pound cake.',
 			archivedId: 7
 		});
+	});
+});
+
+describe('archived items', () => {
+	it('are restored only when the form asks to', () => {
+		expect(parse().restoreItems).toBe(false);
+		expect(parse({}, { restoreItems: '1' }).restoreItems).toBe(true);
+	});
+
+	it('are named in a failure that offers to restore them (design 6.10)', () => {
+		const failure = archivedItemsFailure(['Salt']);
+		expect(failure.status).toBe(400);
+		expect(failure.data).toEqual({
+			action: 'recipe',
+			error: 'Salt is archived. Restore it and save the recipe?',
+			archivedItems: ['Salt']
+		});
+		expect(archivedItemsFailure(['Salt', 'Pepper']).data.error).toBe(
+			'Salt and Pepper are archived. Restore them and save the recipe?'
+		);
+		expect(archivedItemsFailure(['Salt', 'Pepper', 'Cumin']).data.error).toBe(
+			'Salt, Pepper and Cumin are archived. Restore them and save the recipe?'
+		);
 	});
 });
 
@@ -733,6 +758,46 @@ describe('saveRecipe', () => {
 			error: 'An archived recipe is called Pound cake.',
 			archivedId: archived
 		});
+	});
+
+	it('asks before restoring archived items, changing nothing and keeping no photo', async () => {
+		const salt = createItem(householdId, 'Salt', 0).id;
+		setItemArchived(householdId, salt, true, 0);
+		const rows = [row('1', 'tsp', 'salt')];
+		expect(await refused(null, { rows }, newPhoto())).toEqual({
+			action: 'recipe',
+			error: 'Salt is archived. Restore it and save the recipe?',
+			archivedItems: ['Salt']
+		});
+		expect(listDishes(householdId, { search: '', tag: null, archived: false })).toEqual([]);
+		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBe(0);
+		expect(storedFiles()).toEqual([]);
+
+		// The restore button sends the form again with restoreItems.
+		const id = await save(null, { rows }, { ...newPhoto(), restoreItems: '1' });
+		const dish = getDish(householdId, id);
+		expect(dish.ingredients).toMatchObject([{ amount: 1, unit: 'tsp', itemId: salt }]);
+		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBeNull();
+		expect(dish.photoKey).not.toBeNull();
+		if (dish.photoKey === null) return;
+		expect(storedFiles()).toEqual(filesFor(dish.photoKey));
+
+		// Saving over a recipe asks too.
+		setItemArchived(householdId, salt, true, 0);
+		setItemArchived(householdId, createItem(householdId, 'Pepper', 0).id, true, 0);
+		const toast = makeDish(householdId, recipe('Toast'));
+		const seasoned = { name: 'Toast', rows: [row('', '', 'Pepper'), row('', '', 'Salt')] };
+		expect(await refused(toast, seasoned)).toMatchObject({
+			error: 'Pepper and Salt are archived. Restore them and save the recipe?',
+			archivedItems: ['Pepper', 'Salt']
+		});
+		expect(getDish(householdId, toast).ingredients).toEqual([]);
+		expect(await save(toast, seasoned, { restoreItems: '1' })).toBe(toast);
+		expect(getDish(householdId, toast).ingredients.map((i) => i.itemName)).toEqual([
+			'Pepper',
+			'Salt'
+		]);
+		expect(findItemByName(householdId, 'Pepper')?.archivedAt).toBeNull();
 	});
 
 	it('checks the form before storing anything', async () => {
