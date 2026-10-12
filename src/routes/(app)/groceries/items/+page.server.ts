@@ -1,14 +1,23 @@
 import { fail } from '@sveltejs/kit';
 import { z } from 'zod';
+import { dateIn } from '#lib/dates.ts';
 import { requireHousehold } from '#lib/server/auth/guards.ts';
+import { getHousehold } from '#lib/server/data/households.ts';
 import { listCatalog, setItemArchived, updateItem } from '#lib/server/data/items.ts';
 import { id, nameField, optionalText, parseForm } from '#lib/server/forms.ts';
 
 export function load({ locals, url }) {
 	const user = requireHousehold(locals);
+	const { timeZone } = getHousehold(user.householdId);
 	const archived = url.searchParams.get('archived') === '1';
 	const search = (url.searchParams.get('q') ?? '').trim();
-	return { archived, search, items: listCatalog(user.householdId, archived, search) };
+	// The household's time zone decides the date (design 11), not the server's or the phone's.
+	const catalog = listCatalog(user.householdId, archived, search);
+	const items = catalog.map(({ lastBoughtAt, ...item }) => ({
+		...item,
+		lastBoughtDate: lastBoughtAt === null ? null : dateIn(lastBoughtAt, timeZone)
+	}));
+	return { archived, search, items, today: dateIn(Date.now(), timeZone) };
 }
 
 const updateSchema = z.object({
