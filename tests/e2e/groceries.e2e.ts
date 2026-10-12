@@ -377,3 +377,37 @@ test("saves the sheet edits with Didn't come and Got fewer", async ({ page, db, 
 	await expect(walmart.getByRole('button', { name: /^Yogurt\s*4 cups\s*vanilla/ })).toBeVisible();
 	await expect(walmart.locator('.done')).toContainText('1 cups');
 });
+
+// Every page reloads its data when opened (design 6.11), so Back never shows a stored copy.
+test('shows the current list after going Back from a page outside the app', async ({
+	page,
+	db,
+	person
+}) => {
+	await page.goto('/groceries');
+	await expect(page.getByText('Nothing on the list. Add something above.')).toBeVisible();
+	await page.goto('/privacy');
+
+	// Meanwhile another member adds a line.
+	const item = db
+		.prepare("insert into items (household_id, name, created_at) values (?, 'Bread', 0)")
+		.run(person.householdId).lastInsertRowid;
+	db.prepare(
+		"insert into grocery_needs (household_id, item_id, quantity, status, created_at) values (?, ?, 1, 'to_order', 0)"
+	).run(person.householdId, item);
+
+	await page.goBack();
+	await expect(page).toHaveURL(/\/groceries$/);
+	await expect(group(page, 'No store').getByRole('button', { name: /^Bread/ })).toBeVisible();
+});
+
+test('shows the sign-in page after going Back from signing out', async ({ page, person: _ }) => {
+	await page.goto('/groceries');
+	await page.getByText('More', { exact: true }).click();
+	await page.getByRole('button', { name: 'Sign out' }).click();
+	await expect(page).toHaveURL(/\/login$/);
+
+	await page.goBack();
+	await expect(page).toHaveURL(/\/login$/);
+	await expect(page.getByRole('link', { name: 'Sign in with Google' })).toBeVisible();
+});

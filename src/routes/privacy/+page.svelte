@@ -4,11 +4,11 @@
 
 <main class="page">
 	<h1>Privacy</h1>
-	<p class="muted">Last updated October 3, 2026</p>
+	<p class="muted">Last updated October 12, 2026</p>
 
 	<p>
-		Meals is a private, invite-only website where a household keeps a shared grocery list. This
-		page explains what it stores and why.
+		Meals is a private, invite-only website where a household keeps a shared grocery list,
+		recipes and a dinner menu. This page explains what it stores and why.
 	</p>
 
 	<h2>What Meals receives from Google</h2>
@@ -21,21 +21,24 @@
 	<h2>What Meals stores</h2>
 	<p>
 		Your name and email address, your household's name and settings, and what your household
-		enters: stores, items, the grocery list and its history. One cookie keeps you signed in, and
-		two short-lived cookies are used while you sign in. If your address hasn't been invited yet,
-		one more cookie holds it, so the page can show it, until you close your browser.
+		enters: stores, items, the grocery list and its history, recipes and their photos, the dinner
+		menu and pantry checks, and the email addresses of people you invite until they join. One
+		cookie keeps you signed in, and two short-lived cookies are used while you sign in. If your
+		address hasn't been invited yet, one more cookie holds it, so the page can show it, until you
+		close your browser.
 	</p>
 
 	<h2>Who can see it</h2>
 	<p>
 		Your household's information is visible to the members of your household. The site admin can
-		see household names and members' email addresses, but not your lists. Meals has no ads and
-		no tracking, and your information is never sold or shared.
+		see household names and members' email addresses, but not your lists, recipes or menu. Meals
+		has no ads and no tracking, and your information is never sold or shared.
 	</p>
 
 	<h2>Where it's kept</h2>
 	<p>
-		On a server run by the site owner, with nightly backups that are kept for 14 days.
+		On a server run by the site owner, with nightly backups, photos included, that are kept for
+		14 days.
 	</p>
 
 	<h2>Removing your information</h2>

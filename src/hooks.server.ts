@@ -30,5 +30,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 			deleteSessionCookie(event.cookies);
 		}
 	}
-	return resolve(event);
+	const response = await resolve(event);
+	// Back must not show a stored copy of a page (6.11). Photos set their own cache and keep it.
+	if (!response.headers.has('cache-control')) response.headers.set('cache-control', 'no-store');
+	return response;
 };

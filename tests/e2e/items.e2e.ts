@@ -1,4 +1,4 @@
-import { addItem, expect, test } from './fixtures.ts';
+import { addItem, addStore, expect, test } from './fixtures.ts';
 
 test('renames and archives an item, and asks before adding it again', async ({ page, person: _ }) => {
 	await page.goto('/groceries');
@@ -68,6 +68,33 @@ test('marks an item Always have, and clears it again', async ({ page, db, person
 	await expect(dialog).toHaveCount(0);
 	await expect(row).not.toContainText('Always have');
 	expect(alwaysHave()).toBe(0);
+});
+
+test.describe('on a phone in another time zone', () => {
+	test.use({ timezoneId: 'Asia/Tokyo' });
+
+	test("shows the last-bought date in the household's time zone", async ({
+		page,
+		db,
+		person
+	}) => {
+		const aldi = addStore(db, person.householdId, 'Aldi');
+		const milk = addItem(db, person.householdId, 'Milk', { defaultStoreId: aldi });
+		// 9 pm on Fri, Mar 14 in Chicago, where the household is, is already Mar 15 in UTC and Tokyo.
+		const received = Date.UTC(2025, 2, 15, 2, 0);
+		db.prepare(
+			"insert into grocery_needs (household_id, item_id, quantity, store_id, status, created_at, ordered_at, received_at) values (?, ?, 1, ?, 'received', ?, ?, ?)"
+		).run(person.householdId, milk, aldi, received, received, received);
+
+		// As the server shows it, and as the phone shows it after going there within the app.
+		await page.goto('/groceries/items');
+		const row = page.getByRole('button', { name: /^Milk/ });
+		await expect(row).toContainText('Aldi · last bought Fri, Mar 14, 2025 at Aldi');
+		await page.goto('/groceries');
+		await page.getByRole('link', { name: 'Items', exact: true }).click();
+		await expect(page).toHaveURL(/\/groceries\/items$/);
+		await expect(row).toContainText('Aldi · last bought Fri, Mar 14, 2025 at Aldi');
+	});
 });
 
 test('rejects a sign-in callback that did not start here', async ({ page }) => {

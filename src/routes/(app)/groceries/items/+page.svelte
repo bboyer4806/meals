@@ -2,6 +2,7 @@
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
+	import { formatDateLabel } from '#lib/dates.ts';
 
 	let { data } = $props();
 
@@ -30,9 +31,6 @@
 			if (result.type === 'success') open = false;
 		};
 	};
-
-	const date = (ms: number) =>
-		new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 </script>
 
 <svelte:head>
@@ -74,8 +72,10 @@
 					{#if item.notes}<span class="muted small">{item.notes}</span>{/if}
 					<span class="muted small">
 						{item.defaultStoreName ?? 'No store yet'}
-						{#if item.lastBoughtAt}
-							· last bought {date(item.lastBoughtAt)}{item.lastBoughtStoreName
+						{#if item.lastBoughtDate}
+							· last bought {formatDateLabel(item.lastBoughtDate, {
+								today: data.today
+							})}{item.lastBoughtStoreName
 								? ` at ${item.lastBoughtStoreName}`
 								: ''}
 						{/if}

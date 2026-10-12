@@ -8,8 +8,9 @@ export const SESSION_COOKIE = 'session';
 
 const DAY = 24 * 60 * 60 * 1000;
 const LIFETIME = 30 * DAY;
-// A session used within this long of expiring is extended to a full lifetime again.
-const RENEW_WITHIN = 15 * DAY;
+// Sessions last 30 days from the last visit (design 4.5). To write at most once a day, a
+// session is extended to a full lifetime again only when it was last extended a day or more ago.
+const RENEW_AFTER = DAY;
 
 export type SessionUser = {
 	id: number;
@@ -56,7 +57,7 @@ export function validateSession(
 		return null;
 	}
 
-	const renewed = row.expiresAt - now < RENEW_WITHIN;
+	const renewed = row.expiresAt - now <= LIFETIME - RENEW_AFTER;
 	const expiresAt = renewed ? now + LIFETIME : row.expiresAt;
 	if (renewed) db().update(sessions).set({ expiresAt }).where(eq(sessions.id, id)).run();
 

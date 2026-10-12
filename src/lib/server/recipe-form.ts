@@ -11,7 +11,7 @@ import {
 	type DishSaveResult,
 	type IngredientInput
 } from './data/dishes.ts';
-import { nameField, parseForm, type FormFailure } from './forms.ts';
+import { id, nameField, parseForm, type FormFailure } from './forms.ts';
 import { deletePhoto, savePhoto } from './photos.ts';
 
 // The recipe editor's form (design 7, Edit recipe): the text its fields start with, what it
@@ -52,10 +52,19 @@ export type RecipeSubmission = {
 	photo: PhotoUpload | null;
 	/** Whether to clear the current photo. Never true with a new photo, which replaces it anyway. */
 	removePhoto: boolean;
+	/** The archived items the person agreed to restore, if the recipe uses them (design 6.10). */
+	restoreItemIds: number[];
 };
 
-/** archivedId is an archived recipe that has the name, which the page offers to restore. */
-export type RecipeFailure = FormFailure & { archivedId?: number };
+/**
+ * archivedId is an archived recipe that has the name, which the page offers to restore.
+ * archivedItems are archived items the recipe would start using, which the page offers to restore
+ * by saving again.
+ */
+export type RecipeFailure = FormFailure & {
+	archivedId?: number;
+	archivedItems?: { id: number; name: string }[];
+};
 
 const ACTION = 'recipe';
 
@@ -350,6 +359,12 @@ function upload(value: FormDataEntryValue | null): File | null | undefined {
 	return value.size === 0 ? null : value;
 }
 
+// The ids the "Restore and save" button sends, joined by commas.
+const itemIds = z.preprocess(
+	(value) => (typeof value === 'string' ? value.split(',') : value),
+	z.array(id)
+);
+
 /**
  * Reads the recipe editor's form. Names, units and amounts are normalized as they're stored,
  * blank optional fields are null, and the rows in `ingredients` become the ingredients, each in
@@ -357,7 +372,8 @@ function upload(value: FormDataEntryValue | null): File | null | undefined {
  * problem, in the order of the form.
  *
  * A new photo comes as two files, `photo` and `thumb`. `removePhoto` set to '1' asks to clear the
- * current photo.
+ * current photo. `restoreItems`, sent by the editor's "Restore and save" button, lists the ids of
+ * the archived items it asked about, joined by commas.
  */
 export function parseRecipeForm(
 	formData: FormData
@@ -371,10 +387,23 @@ export function parseRecipeForm(
 	if (photo === undefined || thumb === undefined || (photo === null) !== (thumb === null)) {
 		return { failure: failure("The photo couldn't be uploaded. Choose it again.") };
 	}
+
+	const restore = formData.get('restoreItems');
+	let restoreItemIds: number[] = [];
+	if (restore !== null) {
+		const ids = itemIds.safeParse(restore);
+		if (!ids.success) {
+			return {
+				failure: failure("The items to restore couldn't be read. Reload the page and try again.")
+			};
+		}
+		restoreItemIds = ids.data;
+	}
 	return {
 		data,
 		photo: photo && thumb ? { photo, thumb } : null,
-		removePhoto: photo === null && formData.get('removePhoto') === '1'
+		removePhoto: photo === null && formData.get('removePhoto') === '1',
+		restoreItemIds
 	};
 }
 
@@ -391,6 +420,23 @@ export function nameTakenFailure(
 		return fail(400, { action: ACTION, error, archivedId: taken.id });
 	}
 	return failure(`A recipe is already called ${name}.`);
+}
+
+/**
+ * The failure for a recipe that would start using archived items (createDish and updateDish
+ * return `archived`). Saving again with their ids in `restoreItems` restores them (design 6.10).
+ */
+export function archivedItemsFailure(
+	items: { id: number; name: string }[]
+): ActionFailure<RecipeFailure> {
+	const names = items.map((item) => item.name);
+	const one = names.length === 1;
+	// "Salt", "Salt and Pepper", or "Salt, Pepper and Cumin".
+	const list = one ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+	const error = one
+		? `${list} is archived. Restore it and save the recipe?`
+		: `${list} are archived. Restore them and save the recipe?`;
+	return fail(400, { action: ACTION, error, archivedItems: items });
 }
 
 /**
@@ -421,7 +467,7 @@ export async function saveRecipe(
 ): Promise<{ id: number } | { failure: ActionFailure<RecipeFailure> }> {
 	const parsed = parseRecipeForm(formData);
 	if ('failure' in parsed) return parsed;
-	const { data, photo, removePhoto } = parsed;
+	const { data, photo, removePhoto, restoreItemIds } = parsed;
 
 	let photoKey: string | null = null;
 	if (photo) {
@@ -439,8 +485,8 @@ export async function saveRecipe(
 	try {
 		saved =
 			dishId === null
-				? createDish(householdId, data, now)
-				: updateDish(householdId, dishId, data, now);
+				? createDish(householdId, data, restoreItemIds, now)
+				: updateDish(householdId, dishId, data, restoreItemIds, now);
 		if (saved.kind === 'saved' && (photoKey !== null || removePhoto)) {
 			previousKey = setDishPhoto(householdId, saved.id, photoKey, now);
 		}
@@ -453,6 +499,10 @@ export async function saveRecipe(
 	if (saved.kind === 'taken') {
 		if (photoKey !== null) discardPhoto(photoKey);
 		return { failure: nameTakenFailure(data.name, saved) };
+	}
+	if (saved.kind === 'archived') {
+		if (photoKey !== null) discardPhoto(photoKey);
+		return { failure: archivedItemsFailure(saved.items) };
 	}
 	if (previousKey !== null) discardPhoto(previousKey);
 	return { id: saved.id };
