@@ -2,6 +2,7 @@ import type { Dialog, Page } from '@playwright/test';
 import {
 	addDays,
 	addDinner,
+	addItem,
 	addPerson,
 	addRecipe,
 	dayLabel,
@@ -830,10 +831,7 @@ test('clears a dinner after asking, and shows the date as not planned', async ({
 test("can't see or change another household's dinners", async ({ page, db, baseURL, person }) => {
 	const other = addPerson(db);
 	expect(other.householdId).not.toBe(person.householdId);
-	const stew = addRecipe(db, other.householdId, {
-		name: 'Secret stew',
-		ingredients: [{ item: 'Saffron', amount: 1, unit: 'tsp' }]
-	});
+	const stew = addRecipe(db, other.householdId, { name: 'Secret stew' });
 	const date = addDays(today(), 1);
 	const later = addDays(today(), 2);
 	const theirs = addDinner(db, other.householdId, date, {
@@ -863,17 +861,6 @@ test("can't see or change another household's dinners", async ({ page, db, baseU
 	await page.goto(`/menu?week=${later}`);
 	await expect(page.getByText(/Secret/)).toHaveCount(0);
 	await expect(day(page, later)).toContainText('Not planned');
-
-	// Their dinners add nothing to this household's pantry check.
-	await page.goto('/menu');
-	await page.getByRole('button', { name: 'Check pantry' }).click();
-	await page.getByRole('dialog').getByRole('button', { name: 'Start check' }).click();
-	await expect(page).toHaveURL(/\/pantry$/);
-	await expect(page.getByText('No ingredients yet:')).toHaveText(
-		`No ingredients yet: Chicken tacos (${weekday(date)})`
-	);
-	await expect(page.locator('li.item')).toHaveCount(0);
-	await expect(page.getByText(/Secret|Saffron/)).toHaveCount(0);
 
 	const headers = { origin: baseURL ?? '', 'x-sveltekit-action': 'true' };
 	const post = (path: string, form: Record<string, string>) =>
@@ -953,44 +940,25 @@ test("says the year a past dinner was last made when it isn't this year", async 
 	);
 });
 
-test('fits long dish and item names from a menu pantry check on the grocery list', async ({
+test('fits long dish and item names from an earlier menu pantry check on the grocery list', async ({
 	page,
 	db,
 	person
 }) => {
-	// As long as the recipe editor allows, in single words that can't wrap at a space.
+	// The pantry check is hidden (design 6.8), but the lines its Need added stay on the list, as
+	// Need left them. As long as the recipe editor allows, in single words that can't wrap at a
+	// space.
 	const longDish = 'N'.repeat(80);
 	const longItem = 'Z'.repeat(80);
-	const chicken = addRecipe(db, person.householdId, {
-		name: longDish,
-		ingredients: [{ item: 'Chicken', amount: 1, unit: 'lb' }]
-	});
-	const salad = addRecipe(db, person.householdId, {
-		name: 'Salad',
-		ingredients: [{ item: longItem, amount: 1 }]
-	});
 	const date = addDays(today(), 1);
-	addDinner(db, person.householdId, date, {
-		dishes: [
-			[chicken, 'main'],
-			[salad, 'side']
-		]
-	});
-
-	await page.goto('/menu');
-	await page.getByRole('button', { name: 'Check pantry' }).click();
-	await page
-		.getByRole('dialog', { name: 'Check pantry' })
-		.getByRole('button', { name: 'Start check' })
-		.click();
-	await expect(page).toHaveURL(/\/pantry$/);
-	for (const item of ['Chicken', longItem]) {
-		await page.getByRole('button', { name: `Need ${item}`, exact: true }).click();
-		await expect(
-			page.getByRole('button', { name: `Undo Need for ${item}`, exact: true })
-		).toBeVisible();
-	}
-	expect(await sideways(page), '/pantry').toBe(0);
+	const needLine = (item: string, note: string) =>
+		db
+			.prepare(
+				"insert into grocery_needs (household_id, item_id, quantity, status, note, created_at) values (?, ?, 1, 'to_order', ?, ?)"
+			)
+			.run(person.householdId, addItem(db, person.householdId, item), note, Date.now());
+	needLine('Chicken', `1 lb for ${longDish} (${weekday(date)})`);
+	needLine(longItem, `1 for Salad (${weekday(date)})`);
 
 	// The note names the dish, and the other line is the long item.
 	await page.goto('/groceries');

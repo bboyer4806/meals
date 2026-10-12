@@ -1,21 +1,12 @@
 import { redirect } from '@sveltejs/kit';
 import { dateIn } from '#lib/dates.ts';
-import {
-	DEFAULT_CHECK_DAYS,
-	DISH_ROLES,
-	addDays,
-	isDate,
-	weekDates,
-	weekStart,
-	type DishRole
-} from '#lib/menu.ts';
+import { DISH_ROLES, addDays, isDate, weekDates, weekStart, type DishRole } from '#lib/menu.ts';
 import { requireHousehold } from '#lib/server/auth/guards.ts';
 import { getDinners, type Dinner } from '#lib/server/data/dinners.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
-import { getChecklistSummary } from '#lib/server/data/pantry.ts';
 
 // The week view (design 7, Menu): Sunday to Saturday, one row per day. ?week= can be any date
-// in the week, since the pantry check links to the week its dates start in.
+// in the week.
 
 /** The Sunday that starts the week to show, or null when ?week= isn't a date it can show. */
 function weekToShow(param: string | null, today: string): string | null {
@@ -76,10 +67,6 @@ export function load({ locals, url }) {
 					? { type: dinner.type, note: dinner.note, roles: byRole(dinner.dishes) }
 					: null
 			};
-		}),
-		// Check pantry starts with the next 7 days (Q5), whichever week is showing.
-		check: { startDate: today, endDate: addDays(today, DEFAULT_CHECK_DAYS - 1) },
-		// A new pantry check replaces the current one, so the sheet asks first if it has marks.
-		pantryMarked: getChecklistSummary(user.householdId)?.markedCount ?? 0
+		})
 	};
 }

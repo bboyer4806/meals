@@ -1,16 +1,7 @@
 import { isRedirect } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setDishArchived } from '#lib/server/data/dishes.ts';
-import { findItemByName } from '#lib/server/data/items.ts';
-import { markHave, startMenuChecklist } from '#lib/server/data/pantry.ts';
-import {
-	freshDb,
-	ingredient,
-	makeDinner,
-	makeDish,
-	makeHousehold,
-	recipe
-} from '#lib/server/testing.ts';
+import { freshDb, makeDinner, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
 import { load } from './+page.server.ts';
 
 // Sat 2026-10-03 22:00 in Chicago, already Sunday Oct 4 in UTC. The household's week runs from
@@ -173,28 +164,5 @@ describe("each day's dinner", () => {
 		makeDinner(householdId, '2026-09-27', { dishes: [[pie, 'dessert']] });
 		setDishArchived(householdId, pie, true, NOW);
 		expect(week().days[0]?.dinner?.roles).toEqual([{ role: 'dessert', names: ['Pie'] }]);
-	});
-});
-
-describe('Check pantry', () => {
-	it('starts with today and the 6 days after it, in any week', () => {
-		const expected = { startDate: '2026-10-03', endDate: '2026-10-09' };
-		expect(week().check).toEqual(expected);
-		expect(week('2026-11-20').check).toEqual(expected);
-	});
-
-	it('says how many items the current check has checked', () => {
-		expect(week().pantryMarked).toBe(0);
-		const cake = makeDish(
-			householdId,
-			recipe('Cake', { ingredients: [ingredient('Butter', 1, 'cup'), ingredient('Sugar')] })
-		);
-		makeDinner(householdId, '2026-10-03', { dishes: [[cake, 'dessert']] });
-		startMenuChecklist(householdId, '2026-10-03', '2026-10-09', false, NOW);
-		expect(week().pantryMarked).toBe(0);
-		const butter = findItemByName(householdId, 'Butter');
-		if (!butter) throw new Error('No butter');
-		markHave(householdId, butter.id);
-		expect(week().pantryMarked).toBe(1);
 	});
 });

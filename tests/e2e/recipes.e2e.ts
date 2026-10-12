@@ -1115,7 +1115,6 @@ test('finds recipes by name and tag, and archives and restores one', async ({
 		'href',
 		`/recipes/${tacosId}/edit`
 	);
-	await expect(page.getByRole('button', { name: 'Check pantry' })).toHaveCount(0);
 	await expect(page.getByRole('link', { name: 'Cook' })).toHaveCount(0);
 
 	// Archive asks first, then the recipe leaves the list.
@@ -1181,20 +1180,9 @@ test("can't see or change another household's recipe or its photo", async ({
 		headers
 	});
 	expect(save.status()).toBe(404);
-	const start = await page.request.post('/pantry?/start', {
-		form: { dishId: String(dishId), servings: '4' },
-		headers
-	});
-	expect(start.status()).toBe(404);
 	expect(
 		db.prepare('select name, photo_key, archived_at from dishes where id = ?').get(dishId)
 	).toEqual({ name: 'Secret stew', photo_key: key, archived_at: null });
-	expect(
-		db
-			.prepare('select count(*) from pantry_checklists where household_id = ?')
-			.pluck()
-			.get(person.householdId)
-	).toBe(0);
 	await page.goto('/recipes');
 	await expect(page.getByText('Secret stew')).toHaveCount(0);
 
@@ -1240,8 +1228,4 @@ test('fits long names and words on a phone screen without scrolling sideways', a
 		await page.goto(path);
 		expect(await sideways(), path).toBe(0);
 	}
-	await page.goto(`/recipes/${dishId}`);
-	await page.getByRole('button', { name: 'Check pantry' }).click();
-	await expect(page).toHaveURL(/\/pantry$/);
-	expect(await sideways(), '/pantry').toBe(0);
 });

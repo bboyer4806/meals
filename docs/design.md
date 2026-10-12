@@ -468,6 +468,13 @@ minutes" (Q34, change 2.1.3).
 
 ### 6.8 Pantry checklist
 
+**Hidden for now.** The pantry check is too much functionality for the value it gives right
+now, so nothing leads to it: no "Check pantry" on the menu or a recipe, no link in the More
+menu, and `/pantry` and its actions are not found. It may come back, so its data and code
+stay, and a household's check in progress stays stored. While it's hidden, the Items page
+doesn't show or change Always have (addition 2.2.1), and grocery lines that Need added stay
+on the list. The rest of this section describes it as built.
+
 - A household has at most one checklist. It's shared by the household's members, and its
   check marks are saved (Q35).
 - It's started from the menu with a date range (default: today through 6 days from
@@ -529,14 +536,14 @@ header menu holds Household, Items, Admin (admin only) and Sign out.
 | Household setup  | `/setup`                             | First sign-in for a new household: name, usual servings, time zone.                                                                 |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | History          | `/groceries/history`                 | Received lines by date, newest first, searchable by item.                                                                            |
-| Items            | `/groceries/items`                   | The catalog: rename, notes, Always have, archive and restore. Shows each item's default store and when and where it was last bought. |
+| Items            | `/groceries/items`                   | The catalog: rename, notes, archive and restore. Shows each item's default store and when and where it was last bought.              |
 | Recipes          | `/recipes`                           | Search by name, filter by tag, photo thumbnails, total time, the "No recipe" label, and New recipe.                                  |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
 | Edit recipe      | `/recipes/new`, `/recipes/[id]/edit` | See below.                                                                                                                           |
 | Cooking view     | `/recipes/[id]/cook`                 | Large text, the screen stays on, and you tap ingredients and steps to check them off (Q36).                                          |
 | Menu             | `/menu`                              | See below.                                                                                                                           |
 | Dinner           | `/menu/[date]`                       | See below.                                                                                                                           |
-| Pantry checklist | `/pantry`                            | Section 6.8.                                                                                                                         |
+| Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
 | Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
 | Admin            | `/admin`                             | Invite households, list households, last backup date.                                                                                |
 
@@ -552,8 +559,8 @@ size) show under its name.
 **Recipe.** Photo, name, tags, prep, cook and total time, and a servings control (plus
 and minus). Ingredients grouped by section and scaled (section 6.6), numbered steps with
 warnings when scaled (6.7), notes, source (a link when it's a URL), and nutrition per
-serving. Actions: Cook, Print, Check pantry, Edit, Archive. Print uses a print layout of
-this page at the current servings, without buttons or navigation.
+serving. Actions: Cook, Print, Edit, Archive ("Check pantry" is hidden for now; 6.8). Print
+uses a print layout of this page at the current servings, without buttons or navigation.
 
 **Edit recipe.** Name, photo (take or choose; resized on the phone), servings
 (pre-filled with the household's usual number for a new recipe), prep and cook minutes,
@@ -563,8 +570,8 @@ type your own), an item (with suggestions, or a new one) and a prep note. Rows m
 up and down buttons, and "Add section" inserts a heading.
 
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, dishes by role,
-and note. Today is highlighted. Previous, next and "This week" buttons. "Check pantry"
-starts a checklist (section 6.8). Tapping a day opens its dinner.
+and note. Today is highlighted. Previous, next and "This week" buttons. Tapping a day
+opens its dinner. ("Check pantry" is hidden for now; 6.8.)
 
 **Dinner.** Type (four buttons), note, servings, and dishes. You add a dish by searching
 existing dishes or typing a new name, then picking its role. Each dish links to its

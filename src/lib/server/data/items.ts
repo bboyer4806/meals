@@ -129,7 +129,7 @@ export type ItemNameResult = { kind: 'saved' } | { kind: 'taken'; archived: bool
 export function updateItem(
 	householdId: number,
 	itemId: number,
-	changes: { name: string; notes: string | null; alwaysHave: boolean }
+	changes: { name: string; notes: string | null }
 ): ItemNameResult {
 	getItem(householdId, itemId);
 	const existing = findItemByName(householdId, changes.name);
