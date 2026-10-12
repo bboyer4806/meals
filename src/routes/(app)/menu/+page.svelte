@@ -1,8 +1,26 @@
 <script lang="ts">
+	import { afterNavigate, goto } from '$app/navigation';
 	import { formatDateLabel } from '#lib/dates.ts';
 	import { DINNER_TYPE_LABELS, DISH_ROLE_LABELS, hasDishes } from '#lib/menu.ts';
 
 	let { data } = $props();
+
+	// Saving a dinner's servings and note comes here with ?saved=<its date> (design 7, Dinner),
+	// and that day's row says "Saved" for 3 seconds. The address drops it straight away, so a
+	// reload, or coming back with Back, doesn't say it again.
+	let saved = $state<string | null>(null);
+	let savedTimer: ReturnType<typeof setTimeout> | undefined;
+	afterNavigate(({ to, shallow }) => {
+		// Dropping it from the address is a navigation too.
+		if (shallow || !to) return;
+		clearTimeout(savedTimer);
+		saved = to.url.searchParams.get('saved');
+		if (saved === null) return;
+		savedTimer = setTimeout(() => (saved = null), 3000);
+		const address = new URL(to.url);
+		address.searchParams.delete('saved');
+		void goto(address, { shallow: true, replace: true });
+	});
 </script>
 
 <svelte:head>
@@ -36,6 +54,8 @@
 				<span class="when">
 					<span class="date">{formatDateLabel(day.date)}</span>
 					{#if isToday}<span class="today-badge">Today</span>{/if}
+					<!-- Always there, so a screen reader announces "Saved" when it appears. -->
+					<span class="saved" role="status">{saved === day.date ? 'Saved' : ''}</span>
 				</span>
 				{#if dinner}
 					<span class="type">{DINNER_TYPE_LABELS[dinner.type]}</span>
@@ -142,6 +162,11 @@
 		background: var(--accent);
 		border-radius: 999px;
 		padding: 0 0.5rem;
+	}
+
+	.saved {
+		font-weight: 700;
+		color: var(--received);
 	}
 
 	.type {

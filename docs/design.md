@@ -576,7 +576,10 @@ opens its dinner. ("Check pantry" is hidden for now; 6.8.)
 **Dinner.** Type (four buttons), note, servings, and dishes. You add a dish by searching
 existing dishes or typing a new name, then picking its role. Each dish links to its
 recipe at this dinner's servings. Actions: Copy a dinner, Move to another date, and
-Clear.
+Clear. The type, dishes, copying, moving and clearing save as soon as they're made.
+Save on the servings and note goes to the dinner's week, where its row says "Saved" for 3
+seconds. If someone cleared or moved the dinner meanwhile, Save plans the date again and
+the page stays to say so (6.11).
 
 ## 8. Look and feel
 

@@ -242,20 +242,36 @@ describe('picking a type', () => {
 });
 
 describe('saving servings and the note', () => {
-	it('saves both, with line breaks as \\n and the note trimmed', async () => {
+	it('saves both, with line breaks as \\n and the note trimmed, then goes to the week', async () => {
 		const dinnerId = shown(makeDinner(householdId, TOMORROW, { note: 'Old', servings: 4 }));
-		expect(
+		expectRedirect(
 			await post('details', {
 				servings: '8',
 				note: '  Cousins visit\r\nBring chairs\n ',
 				dinnerId
-			})
-		).toEqual({ action: 'details', replanned: false });
+			}),
+			`/menu?week=2026-10-04&saved=${TOMORROW}`
+		);
 		expect(getDinner(householdId, TOMORROW)).toMatchObject({
 			type: 'cook',
 			note: 'Cousins visit\nBring chairs',
 			servings: 8
 		});
+	});
+
+	it('goes to the Sunday that starts the week, in an earlier month or year', async () => {
+		const weeks: [date: string, sunday: string][] = [
+			['2026-10-03', '2026-09-27'],
+			['2027-01-01', '2026-12-27'],
+			['2026-10-04', '2026-10-04']
+		];
+		for (const [date, sunday] of weeks) {
+			const dinnerId = shown(makeDinner(householdId, date));
+			expectRedirect(
+				await post('details', { servings: '5', dinnerId }, { date }),
+				`/menu?week=${sunday}&saved=${date}`
+			);
+		}
 	});
 
 	it('clears a blank note', async () => {
@@ -313,10 +329,10 @@ describe('saving servings and the note', () => {
 		});
 		// Saved again from the reloaded page, it's an ordinary save.
 		const dinnerId = shown(getDinner(householdId, TOMORROW)?.id);
-		expect(await post('details', { type: 'going', note: 'Bring rolls', dinnerId })).toEqual({
-			action: 'details',
-			replanned: false
-		});
+		expectRedirect(
+			await post('details', { type: 'going', note: 'Bring rolls', dinnerId }),
+			`/menu?week=2026-10-04&saved=${TOMORROW}`
+		);
 	});
 
 	it('keeps an Eating out dinner Eating out when it was cleared meanwhile', async () => {
@@ -614,10 +630,10 @@ describe('a page left open while someone changed its date (6.11)', () => {
 		expect(october()).toEqual(before);
 
 		// Once the page shows the dinner that's there now, its changes go through.
-		expect(await post('details', { note: 'Bring candles', dinnerId: shown(birthday) })).toEqual({
-			action: 'details',
-			replanned: false
-		});
+		expectRedirect(
+			await post('details', { note: 'Bring candles', dinnerId: shown(birthday) }),
+			`/menu?week=2026-10-04&saved=${TOMORROW}`
+		);
 		expect(getDinner(householdId, TOMORROW)).toMatchObject({
 			id: birthday,
 			note: 'Bring candles',
