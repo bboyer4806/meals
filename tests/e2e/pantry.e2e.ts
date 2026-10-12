@@ -93,7 +93,9 @@ test('checks the pantry for a recipe at the servings shown', async ({ page, db, 
 		'3 tbsp for Pound cake'
 	]);
 	await expect(row(page, 'Sugar').locator('.amount')).toHaveText('1 1/2 cups');
-	await expect(row(page, 'Sugar').locator('.breakdown')).toHaveCount(0);
+	await expect(row(page, 'Sugar').locator('.breakdown li')).toHaveText([
+		'1 1/2 cups for Pound cake'
+	]);
 	await expect(row(page, 'Eggs').locator('.amount')).toHaveText('6');
 	await expect(row(page, 'Butter')).toContainText('Already on the list');
 	await expect(row(page, 'Butter')).toContainText('To Order');
@@ -154,6 +156,21 @@ test('checks the pantry for a recipe at the servings shown', async ({ page, db, 
 	await expect(page.getByRole('button', { name: 'Have Sugar' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Have Eggs' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Start over' })).toHaveCount(0);
+});
+
+test("lists each use's amount as its recipe gives it, under the total", async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, {
+		name: 'Rice pudding',
+		ingredients: [{ item: 'Milk', amount: 1, unit: 'quart' }]
+	});
+	await page.goto(`/recipes/${dishId}`);
+	await page.getByRole('button', { name: 'Check pantry' }).click();
+	await expect(row(page, 'Milk').locator('.amount')).toHaveText('4 cups');
+	await expect(row(page, 'Milk').locator('.breakdown li')).toHaveText(['1 quart for Rice pudding']);
 });
 
 test('keeps a line that was ordered when its Need is undone', async ({ page, db, person }) => {

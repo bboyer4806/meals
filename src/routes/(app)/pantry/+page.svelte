@@ -155,14 +155,11 @@
 		<div class="text">
 			<span class="name">{item.itemName}</span>
 			<span class="amount">{totals(item.amounts)}</span>
-			<!-- A recipe's one use says nothing new, but from the menu it names the dish and day. -->
-			{#if item.amounts.breakdown.length > 1 || checklist?.source.kind === 'range'}
-				<ul class="breakdown">
-					{#each item.amounts.breakdown as entry, index (index)}
-						<li>{entry.amount ?? 'Some'} for {entry.source}</li>
-					{/each}
-				</ul>
-			{/if}
+			<ul class="breakdown">
+				{#each item.amounts.breakdown as entry, index (index)}
+					<li>{entry.amount ?? 'Some'} for {entry.source}</li>
+				{/each}
+			</ul>
 			{#if item.itemNotes}<span class="notes muted">{item.itemNotes}</span>{/if}
 		</div>
 
