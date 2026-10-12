@@ -215,12 +215,13 @@
 		{/if}
 		{#if problem.archivedItems}
 			<!-- Saves the recipe form again through submit, so what's typed and the chosen photo go
-			with it, adding restoreItems=1 to restore the archived items (design 6.10). -->
+			with it, adding the ids of the archived items it asked about, so only those are restored
+			(design 6.10). -->
 			<div class="restore">
 				<button
 					form="recipe-form"
 					name="restoreItems"
-					value="1"
+					value={problem.archivedItems.map((item) => item.id).join(',')}
 					disabled={!ready || saving || preparingPhoto}
 				>
 					Restore and save

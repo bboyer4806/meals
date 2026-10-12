@@ -35,13 +35,13 @@ export type DishInput = {
 
 /**
  * `taken` names the dish that already has the name, so the page can offer to restore it.
- * `archived` names the archived items the recipe would start using, so the page can ask before
- * restoring them (6.10).
+ * `archived` names all the archived items the recipe would start using, so the page can ask
+ * before restoring them (6.10).
  */
 export type DishSaveResult =
 	| { kind: 'saved'; id: number }
 	| { kind: 'taken'; archived: boolean; id: number }
-	| { kind: 'archived'; items: string[] };
+	| { kind: 'archived'; items: { id: number; name: string }[] };
 
 export type DishIngredient = {
 	id: number;
@@ -156,14 +156,14 @@ function newlyUsedArchivedItems(
 }
 
 /**
- * Writes the dish and replaces its tags and ingredients, unless it would start using archived
- * items and `restoreItems` is false. Callers run it in a transaction.
+ * Writes the dish and replaces its tags and ingredients, unless it would start using an archived
+ * item that isn't in `restoreItemIds`. Callers run it in a transaction.
  */
 function save(
 	householdId: number,
 	dishId: number | null,
 	input: DishInput,
-	restoreItems: boolean,
+	restoreItemIds: number[],
 	now: number
 ): DishSaveResult {
 	const taken = findDishByName(householdId, input.name);
@@ -172,10 +172,11 @@ function save(
 	}
 
 	// Using an archived item in a recipe brings it back, as adding it to the list does, so it
-	// asks first (6.10).
+	// asks first, and restores only the items the person agreed to. With any left out it asks
+	// about them all, so one more answer restores everything it named (6.10).
 	const archived = newlyUsedArchivedItems(householdId, dishId, input.ingredients);
-	if (archived.size > 0 && !restoreItems) {
-		return { kind: 'archived', items: [...archived.values()] };
+	if ([...archived.keys()].some((itemId) => !restoreItemIds.includes(itemId))) {
+		return { kind: 'archived', items: [...archived].map(([id, name]) => ({ id, name })) };
 	}
 	for (const itemId of archived.keys()) setItemArchived(householdId, itemId, false, now);
 
@@ -235,27 +236,33 @@ function save(
 	return { kind: 'saved', id };
 }
 
-/** `restoreItems` allows restoring the archived items the recipe would start using (6.10). */
+/**
+ * `restoreItemIds` are the archived items the person agreed to restore. Ids of items the recipe
+ * doesn't start using are ignored (6.10).
+ */
 export function createDish(
 	householdId: number,
 	input: DishInput,
-	restoreItems: boolean,
+	restoreItemIds: number[],
 	now: number
 ): DishSaveResult {
-	return transaction(() => save(householdId, null, input, restoreItems, now));
+	return transaction(() => save(householdId, null, input, restoreItemIds, now));
 }
 
-/** `restoreItems` allows restoring the archived items the recipe would start using (6.10). */
+/**
+ * `restoreItemIds` are the archived items the person agreed to restore. Ids of items the recipe
+ * doesn't start using are ignored (6.10).
+ */
 export function updateDish(
 	householdId: number,
 	dishId: number,
 	input: DishInput,
-	restoreItems: boolean,
+	restoreItemIds: number[],
 	now: number
 ): DishSaveResult {
 	return transaction(() => {
 		findDish(householdId, dishId);
-		return save(householdId, dishId, input, restoreItems, now);
+		return save(householdId, dishId, input, restoreItemIds, now);
 	});
 }
 

@@ -357,15 +357,23 @@ test('keeps everything typed when the name is taken, and offers to restore an ar
 	);
 });
 
-test('asks before restoring an archived item a recipe names, keeping everything typed', async ({
+test('asks before restoring archived items a recipe names, restoring only those it asked about', async ({
 	page,
 	db,
 	person
 }) => {
-	const cardamom = addItem(db, person.householdId, 'Cardamom');
-	db.prepare('update items set archived_at = ? where id = ?').run(Date.now(), cardamom);
-	const archivedAt = () =>
-		db.prepare('select archived_at from items where id = ?').pluck().get(cardamom);
+	const archived = (name: string) => {
+		const id = addItem(db, person.householdId, name);
+		db.prepare('update items set archived_at = ? where id = ?').run(Date.now(), id);
+		return id;
+	};
+	const cardamom = archived('Cardamom');
+	const nutmeg = archived('Nutmeg');
+	const archivedAt = (id: number) =>
+		db.prepare('select archived_at from items where id = ?').pluck().get(id);
+	const dishCount = () =>
+		db.prepare('select count(*) from dishes where household_id = ?').pluck().get(person.householdId);
+	const preview = page.getByRole('group', { name: 'Photo' }).locator('img');
 	const jpeg = await makeJpeg(page, { width: 800, height: 600, hue: 30 });
 
 	await page.goto('/recipes/new');
@@ -384,27 +392,46 @@ test('asks before restoring an archived item a recipe names, keeping everything 
 	await expect(problem).toHaveText('Cardamom is archived. Restore it and save the recipe?');
 	await expect(problem).toBeFocused();
 	await expect(page).toHaveURL(/\/recipes\/new$/);
-	expect(archivedAt()).not.toBeNull();
-	expect(
-		db.prepare('select count(*) from dishes where household_id = ?').pluck().get(person.householdId)
-	).toBe(0);
+	expect(archivedAt(cardamom)).not.toBeNull();
+	expect(dishCount()).toBe(0);
 	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Chai');
 	await expect(ingredientRow(page, 1).getByRole('combobox', { name: 'Item' })).toHaveValue(
 		'cardamom'
 	);
-	await expect(page.getByRole('group', { name: 'Photo' }).locator('img')).toHaveAttribute(
-		'src',
-		/^data:image\/jpeg/
+	await expect(preview).toHaveAttribute('src', /^data:image\/jpeg/);
+
+	// Another archived item typed after the question isn't restored without being named. Saving
+	// again names both, and still changes nothing.
+	await page.getByRole('button', { name: 'Add ingredient' }).click();
+	await fillIngredient(ingredientRow(page, 3), { amount: '1', item: 'nutmeg', prepNote: 'grated' });
+	await page.getByRole('button', { name: 'Restore and save' }).click();
+	await expect(problem).toHaveText(
+		'Cardamom and Nutmeg are archived. Restore them and save the recipe?'
 	);
+	await expect(problem).toBeFocused();
+	await expect(page).toHaveURL(/\/recipes\/new$/);
+	expect(archivedAt(cardamom)).not.toBeNull();
+	expect(archivedAt(nutmeg)).not.toBeNull();
+	expect(dishCount()).toBe(0);
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Chai');
+	await expect(ingredientRow(page, 3).getByRole('combobox', { name: 'Item' })).toHaveValue(
+		'nutmeg'
+	);
+	await expect(preview).toHaveAttribute('src', /^data:image\/jpeg/);
 
 	await page.getByRole('button', { name: 'Restore and save' }).click();
 	await expect(page).toHaveURL(/\/recipes\/\d+$/);
 	await expect(page.getByRole('heading', { name: 'Chai', level: 1 })).toBeVisible();
 	await expect(page.getByRole('status')).toHaveText('2 servings');
-	await expect(ingredients(page)).toHaveText(['4 Cardamom, crushed', '2 cups Milk']);
+	await expect(ingredients(page)).toHaveText([
+		'4 Cardamom, crushed',
+		'2 cups Milk',
+		'1 Nutmeg, grated'
+	]);
 	await expect(steps(page)).toHaveText(['Simmer.', 'Strain.']);
 	expect(await loadedWidth(page.locator('img.photo'))).toBe(800);
-	expect(archivedAt()).toBeNull();
+	expect(archivedAt(cardamom)).toBeNull();
+	expect(archivedAt(nutmeg)).toBeNull();
 
 	// Restored, the add bar suggests it again.
 	await page.goto('/groceries');

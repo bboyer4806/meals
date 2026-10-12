@@ -588,12 +588,12 @@ describe('the values the editor starts with', () => {
 		});
 
 		it('show it as it was entered, and save it unchanged', () => {
-			const created = createDish(householdId, parse(recipeValues(poundCake)).data, false, 0);
+			const created = createDish(householdId, parse(recipeValues(poundCake)).data, [], 0);
 			if (created.kind !== 'saved') throw new Error('Expected it to save');
 			const shown = recipeValues(getDish(householdId, created.id));
 			expect(shown).toEqual(recipeValues(poundCake));
 
-			expect(updateDish(householdId, created.id, parse(shown).data, false, 1)).toEqual(created);
+			expect(updateDish(householdId, created.id, parse(shown).data, [], 1)).toEqual(created);
 			expect(recipeValues(getDish(householdId, created.id))).toEqual(shown);
 		});
 	});
@@ -621,23 +621,34 @@ describe('nameTakenFailure', () => {
 });
 
 describe('archived items', () => {
-	it('are restored only when the form asks to', () => {
-		expect(parse().restoreItems).toBe(false);
-		expect(parse({}, { restoreItems: '1' }).restoreItems).toBe(true);
+	it('are restored only when the form names them by id', () => {
+		expect(parse().restoreItemIds).toEqual([]);
+		expect(parse({}, { restoreItems: '7' }).restoreItemIds).toEqual([7]);
+		expect(parse({}, { restoreItems: '7,12' }).restoreItemIds).toEqual([7, 12]);
+	});
+
+	it("fail when the ids to restore can't be read", () => {
+		const message = "The items to restore couldn't be read. Reload the page and try again.";
+		for (const value of ['', '7,', ',7', '0', '-7', '1.5', 'Salt', '7;12']) {
+			expect(problem({}, { restoreItems: value }), value).toBe(message);
+		}
+		expect(problem({}, { restoreItems: jpeg() })).toBe(message);
 	});
 
 	it('are named in a failure that offers to restore them (design 6.10)', () => {
-		const failure = archivedItemsFailure(['Salt']);
+		const salt = { id: 3, name: 'Salt' };
+		const pepper = { id: 5, name: 'Pepper' };
+		const failure = archivedItemsFailure([salt]);
 		expect(failure.status).toBe(400);
 		expect(failure.data).toEqual({
 			action: 'recipe',
 			error: 'Salt is archived. Restore it and save the recipe?',
-			archivedItems: ['Salt']
+			archivedItems: [salt]
 		});
-		expect(archivedItemsFailure(['Salt', 'Pepper']).data.error).toBe(
+		expect(archivedItemsFailure([salt, pepper]).data.error).toBe(
 			'Salt and Pepper are archived. Restore them and save the recipe?'
 		);
-		expect(archivedItemsFailure(['Salt', 'Pepper', 'Cumin']).data.error).toBe(
+		expect(archivedItemsFailure([salt, pepper, { id: 8, name: 'Cumin' }]).data.error).toBe(
 			'Salt, Pepper and Cumin are archived. Restore them and save the recipe?'
 		);
 	});
@@ -767,14 +778,14 @@ describe('saveRecipe', () => {
 		expect(await refused(null, { rows }, newPhoto())).toEqual({
 			action: 'recipe',
 			error: 'Salt is archived. Restore it and save the recipe?',
-			archivedItems: ['Salt']
+			archivedItems: [{ id: salt, name: 'Salt' }]
 		});
 		expect(listDishes(householdId, { search: '', tag: null, archived: false })).toEqual([]);
 		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBe(0);
 		expect(storedFiles()).toEqual([]);
 
-		// The restore button sends the form again with restoreItems.
-		const id = await save(null, { rows }, { ...newPhoto(), restoreItems: '1' });
+		// The restore button sends the form again with the ids it asked about in restoreItems.
+		const id = await save(null, { rows }, { ...newPhoto(), restoreItems: String(salt) });
 		const dish = getDish(householdId, id);
 		expect(dish.ingredients).toMatchObject([{ amount: 1, unit: 'tsp', itemId: salt }]);
 		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBeNull();
@@ -784,15 +795,19 @@ describe('saveRecipe', () => {
 
 		// Saving over a recipe asks too.
 		setItemArchived(householdId, salt, true, 0);
-		setItemArchived(householdId, createItem(householdId, 'Pepper', 0).id, true, 0);
+		const pepper = createItem(householdId, 'Pepper', 0).id;
+		setItemArchived(householdId, pepper, true, 0);
 		const toast = makeDish(householdId, recipe('Toast'));
 		const seasoned = { name: 'Toast', rows: [row('', '', 'Pepper'), row('', '', 'Salt')] };
 		expect(await refused(toast, seasoned)).toMatchObject({
 			error: 'Pepper and Salt are archived. Restore them and save the recipe?',
-			archivedItems: ['Pepper', 'Salt']
+			archivedItems: [
+				{ id: pepper, name: 'Pepper' },
+				{ id: salt, name: 'Salt' }
+			]
 		});
 		expect(getDish(householdId, toast).ingredients).toEqual([]);
-		expect(await save(toast, seasoned, { restoreItems: '1' })).toBe(toast);
+		expect(await save(toast, seasoned, { restoreItems: `${pepper},${salt}` })).toBe(toast);
 		expect(getDish(householdId, toast).ingredients.map((i) => i.itemName)).toEqual([
 			'Pepper',
 			'Salt'
