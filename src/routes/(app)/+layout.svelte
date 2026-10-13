@@ -26,7 +26,6 @@
 			<!-- Not "Menu", which is the menu of dinners in the tab bar. -->
 			<summary>More</summary>
 			<nav aria-label="More">
-				<a href="/pantry">Pantry check</a>
 				<a href="/groceries/items">Items</a>
 				<a href="/groceries/history">History</a>
 				<a href="/household">Household</a>

@@ -196,7 +196,7 @@ function formatDate(date: string, options: Intl.DateTimeFormatOptions): string {
 	);
 }
 
-/** "Tue, Oct 7", as the menu and the pantry check show a date. */
+/** "Tue, Oct 7", as the menu shows a date. */
 export function dayLabel(date: string): string {
 	return formatDate(date, { weekday: 'short', month: 'short', day: 'numeric' });
 }

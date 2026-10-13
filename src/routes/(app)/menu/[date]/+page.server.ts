@@ -7,7 +7,8 @@ import {
 	DINNER_TYPE_LABELS,
 	DISH_ROLES,
 	hasDishes,
-	isDate
+	isDate,
+	weekStart
 } from '#lib/menu.ts';
 import { MAX_SERVINGS } from '#lib/recipe-view.ts';
 import { requireHousehold } from '#lib/server/auth/guards.ts';
@@ -147,6 +148,8 @@ export const actions = {
 		return attempt('type', () => saveDinner(user.householdId, date, fields, Date.now()));
 	},
 
+	// Saving the servings and note is usually the last thing done for a day, so it goes back to
+	// the week, which says "Saved" on the day's row (design 7, Dinner).
 	details: async ({ locals, params, request }) => {
 		const user = requireHousehold(locals);
 		const date = dinnerDate(params);
@@ -158,7 +161,7 @@ export const actions = {
 		if (refused) return refused;
 		// Someone cleared or moved the dinner since the page opened. Saving plans the date again,
 		// as the type the page showed, with what was sent, so nothing typed is lost; the last save
-		// wins (6.11). The page says so.
+		// wins (6.11). The page stays and says so.
 		const fields = dinner
 			? {
 					type: dinner.type,
@@ -170,10 +173,12 @@ export const actions = {
 					note: note ?? null,
 					servings: servings ?? getHousehold(user.householdId).defaultServings
 				};
-		return attempt('details', () => {
-			saveDinner(user.householdId, date, fields, Date.now());
-			return { action: 'details', replanned: dinner === null };
-		});
+		const failed = attempt('details', () =>
+			saveDinner(user.householdId, date, fields, Date.now())
+		);
+		if (failed !== undefined) return failed;
+		if (dinner === null) return { action: 'details', replanned: true };
+		redirect(303, `/menu?week=${weekStart(date)}&saved=${date}`);
 	},
 
 	addDish: async ({ locals, params, request }) => {

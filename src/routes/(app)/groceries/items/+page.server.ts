@@ -23,12 +23,7 @@ export function load({ locals, url }) {
 const updateSchema = z.object({
 	id,
 	name: nameField(80, 'a name'),
-	notes: optionalText(200),
-	// A checkbox is only sent when it's checked.
-	alwaysHave: z
-		.literal('on')
-		.optional()
-		.transform((value) => value === 'on')
+	notes: optionalText(200)
 });
 
 export const actions = {

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { combineAmounts, needNote } from '../../checklist.ts';
 import type { DinnerType, DishRole } from '../../menu.ts';
 import { db } from '../db/index.ts';
-import { dinnerDishes, dinners, pantryChecklists, pantryMarks } from '../db/schema.ts';
+import { dinnerDishes, dinners, items, pantryChecklists, pantryMarks } from '../db/schema.ts';
 import {
 	expectHttpError,
 	freshDb,
@@ -99,10 +99,9 @@ function addToList(itemName: string, input: Partial<AddInput> = {}) {
 	expect(result).toEqual({ kind: 'added' });
 }
 
+// The Items page no longer sets Always have while the pantry check is hidden (6.8).
 function setAlwaysHave(name: string, alwaysHave: boolean) {
-	expect(updateItem(householdId, itemId(name), { name, notes: null, alwaysHave })).toEqual({
-		kind: 'saved'
-	});
+	db().update(items).set({ alwaysHave }).where(eq(items.id, itemId(name))).run();
 }
 
 /**
@@ -182,7 +181,7 @@ describe('starting a checklist', () => {
 	});
 
 	it("shows each item's notes", () => {
-		updateItem(householdId, itemId('Butter'), { name: 'Butter', notes: 'Unsalted', alwaysHave: false });
+		updateItem(householdId, itemId('Butter'), { name: 'Butter', notes: 'Unsalted' });
 		startRecipeChecklist(householdId, cake, 4, false, NOW);
 		expect(checklist().items[0]).toMatchObject({ itemName: 'Butter', itemNotes: 'Unsalted' });
 	});

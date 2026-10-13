@@ -1,7 +1,6 @@
 import {
 	addDays,
 	addDinner,
-	addItem,
 	addPhotoFiles,
 	addRecipe,
 	addStore,
@@ -75,9 +74,6 @@ test('screens', async ({ page, db, person }) => {
 
 // The same for the recipe screens, in the light theme.
 test('recipe screens', async ({ page, db, person }) => {
-	const aldi = addStore(db, person.householdId, 'Aldi');
-	addItem(db, person.householdId, 'Flour', { defaultStoreId: aldi });
-	addItem(db, person.householdId, 'Salt', { alwaysHave: true });
 	const photo = (hue: number) =>
 		Promise.all([
 			makeJpeg(page, { width: 1600, height: 1200, hue }),
@@ -132,12 +128,6 @@ test('recipe screens', async ({ page, db, person }) => {
 		tags: ['Dessert'],
 		steps: 'Mix.\nBake.'
 	});
-	// Butter is on the list already.
-	const butter = addItem(db, person.householdId, 'Butter');
-	db.prepare(
-		"insert into grocery_needs (household_id, item_id, quantity, store_id, status, created_at, ordered_at) values (?, ?, 1, ?, 'ordered', ?, ?)"
-	).run(person.householdId, butter, aldi, Date.now(), Date.now());
-
 	const shot = (name: string) =>
 		page.screenshot({ path: `test-results/screens/${name}.png`, fullPage: true });
 
@@ -152,20 +142,10 @@ test('recipe screens', async ({ page, db, person }) => {
 	await page.getByRole('checkbox', { name: /Butter, softened/ }).tap();
 	await page.getByRole('checkbox', { name: /^1\. Heat the oven/ }).tap();
 	await shot('cooking');
-	await page.goto(`/recipes/${cakeId}?servings=12`);
-	await page.getByRole('button', { name: 'Check pantry' }).click();
-	await page.getByRole('button', { name: 'Have Sugar' }).click();
-	await page.getByRole('button', { name: 'Need Flour' }).click();
-	await page.getByRole('button', { name: 'Undo Need for Flour' }).waitFor();
-	await shot('pantry');
 });
 
-// The menu screens, in the light theme: the week, a dinner, Copy a dinner and a pantry check from
-// the menu.
+// The menu screens, in the light theme: the week, a dinner and Copy a dinner.
 test('menu screens', async ({ page, db, person }) => {
-	const aldi = addStore(db, person.householdId, 'Aldi');
-	addItem(db, person.householdId, 'Butter', { defaultStoreId: aldi });
-	addItem(db, person.householdId, 'Salt', { alwaysHave: true });
 	const recipe = (
 		name: string,
 		servings: number,
@@ -284,11 +264,4 @@ test('menu screens', async ({ page, db, person }) => {
 	await page.getByRole('button', { name: 'Copy a dinner' }).click();
 	await page.getByRole('dialog', { name: 'Copy a dinner' }).getByRole('listitem').first().waitFor();
 	await page.screenshot({ path: 'test-results/screens/copy-dinner.png', animations: 'disabled' });
-	await page.goto('/menu');
-	await page.getByRole('button', { name: 'Check pantry' }).click();
-	await page.getByRole('dialog').getByRole('button', { name: 'Start check' }).click();
-	await page.getByRole('button', { name: 'Have Milk' }).click();
-	await page.getByRole('button', { name: 'Need Butter' }).click();
-	await page.getByRole('button', { name: 'Undo Need for Butter' }).waitFor();
-	await shot('menu-pantry');
 });

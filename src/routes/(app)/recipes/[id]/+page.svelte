@@ -19,7 +19,7 @@
 
 	const dish = $derived(data.dish);
 	const steps = $derived(splitSteps(dish.steps));
-	// With no ingredients and no steps there's nothing to scale, cook, print or check yet.
+	// With no ingredients and no steps there's nothing to scale, cook or print yet.
 	const hasRecipe = $derived(dish.ingredients.length > 0 || steps.length > 0);
 	const facts = $derived(nutritionFacts(dish));
 	const link = $derived(dish.source === null ? null : sourceLink(dish.source));
@@ -46,11 +46,6 @@
 		// Replacing the history entry means Back still leaves the recipe in one step.
 		void goto(url, { shallow: true, replace: true });
 	}
-
-	const pantryQuestion = $derived(
-		`Start a new pantry check for ${dish.name}? It replaces the current one, which has ` +
-			`${data.pantryMarked} ${data.pantryMarked === 1 ? 'item' : 'items'} checked.`
-	);
 </script>
 
 <svelte:head>
@@ -122,20 +117,6 @@
 
 	<div class="actions no-print">
 		<a class="button primary" href="/recipes/{dish.id}/cook?servings={servings}">Cook</a>
-		<form method="POST" action="/pantry?/start" use:enhance>
-			<input type="hidden" name="dishId" value={dish.id} />
-			<input type="hidden" name="servings" value={servings} />
-			{#if data.pantryMarked > 0}
-				<input type="hidden" name="replaceChecked" value="1" />
-				<ConfirmButton
-					label="Check pantry"
-					message={pantryQuestion}
-					confirmLabel="Start new check"
-				/>
-			{:else}
-				<button>Check pantry</button>
-			{/if}
-		</form>
 		<button type="button" onclick={() => window.print()}>Print</button>
 		<a class="button" href="/recipes/{dish.id}/edit">Edit</a>
 	</div>
@@ -287,11 +268,6 @@
 		grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
 		gap: 0.5rem;
 		margin: 0.75rem 0 1rem;
-	}
-
-	/* So the Check pantry button fills its column like the others. */
-	.actions form {
-		display: grid;
 	}
 
 	.steps {

@@ -19,7 +19,7 @@ A phone-first website where households manage three connected things:
 - **Menu:** one dinner per day: cooking at home, eating out, going somewhere, or
   leftovers. Dinners are made of dishes from the recipe collection. A pantry checklist
   built from the coming week's dinners shows what's needed, and anything missing goes
-  onto the grocery list.
+  onto the grocery list (hidden for now; 6.8).
 
 Several households use the site, and each sees only its own data. Sign-in is with
 Google and is invite-only.
@@ -43,7 +43,8 @@ Google and is invite-only.
 ### 2.2 Additions (all kept)
 
 1. **"Always have" on an item.** Items like water or salt are left off pantry
-   checklists. Without this, water shows up on every checklist.
+   checklists. Without this, water shows up on every checklist. Hidden for now with the
+   pantry check (6.8).
 2. **"Move to another date" on a dinner.** For "we didn't make Tuesday's dinner, let's
    do it Wednesday". If the other date already has a dinner, the two swap.
 3. **Received lines stay visible until the end of the day,** checked and struck
@@ -468,6 +469,13 @@ minutes" (Q34, change 2.1.3).
 
 ### 6.8 Pantry checklist
 
+**Hidden for now.** The pantry check is too much functionality for the value it gives right
+now, so nothing leads to it: no "Check pantry" on the menu or a recipe, no link in the More
+menu, and `/pantry` and its actions are not found. It may come back, so its data and code
+stay, and a household's check in progress stays stored. While it's hidden, the Items page
+doesn't show or change Always have (addition 2.2.1), and grocery lines that Need added stay
+on the list. The rest of this section describes it as built.
+
 - A household has at most one checklist. It's shared by the household's members, and its
   check marks are saved (Q35).
 - It's started from the menu with a date range (default: today through 6 days from
@@ -529,14 +537,14 @@ header menu holds Household, Items, Admin (admin only) and Sign out.
 | Household setup  | `/setup`                             | First sign-in for a new household: name, usual servings, time zone.                                                                 |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | History          | `/groceries/history`                 | Received lines by date, newest first, searchable by item.                                                                            |
-| Items            | `/groceries/items`                   | The catalog: rename, notes, Always have, archive and restore. Shows each item's default store and when and where it was last bought. |
+| Items            | `/groceries/items`                   | The catalog: rename, notes, archive and restore. Shows each item's default store and when and where it was last bought.              |
 | Recipes          | `/recipes`                           | Search by name, filter by tag, photo thumbnails, total time, the "No recipe" label, and New recipe.                                  |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
 | Edit recipe      | `/recipes/new`, `/recipes/[id]/edit` | See below.                                                                                                                           |
 | Cooking view     | `/recipes/[id]/cook`                 | Large text, the screen stays on, and you tap ingredients and steps to check them off (Q36).                                          |
 | Menu             | `/menu`                              | See below.                                                                                                                           |
 | Dinner           | `/menu/[date]`                       | See below.                                                                                                                           |
-| Pantry checklist | `/pantry`                            | Section 6.8.                                                                                                                         |
+| Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
 | Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
 | Admin            | `/admin`                             | Invite households, list households, last backup date.                                                                                |
 
@@ -552,8 +560,8 @@ size) show under its name.
 **Recipe.** Photo, name, tags, prep, cook and total time, and a servings control (plus
 and minus). Ingredients grouped by section and scaled (section 6.6), numbered steps with
 warnings when scaled (6.7), notes, source (a link when it's a URL), and nutrition per
-serving. Actions: Cook, Print, Check pantry, Edit, Archive. Print uses a print layout of
-this page at the current servings, without buttons or navigation.
+serving. Actions: Cook, Print, Edit, Archive ("Check pantry" is hidden for now; 6.8). Print
+uses a print layout of this page at the current servings, without buttons or navigation.
 
 **Edit recipe.** Name, photo (take or choose; resized on the phone), servings
 (pre-filled with the household's usual number for a new recipe), prep and cook minutes,
@@ -563,13 +571,16 @@ type your own), an item (with suggestions, or a new one) and a prep note. Rows m
 up and down buttons, and "Add section" inserts a heading.
 
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, dishes by role,
-and note. Today is highlighted. Previous, next and "This week" buttons. "Check pantry"
-starts a checklist (section 6.8). Tapping a day opens its dinner.
+and note. Today is highlighted. Previous, next and "This week" buttons. Tapping a day
+opens its dinner. ("Check pantry" is hidden for now; 6.8.)
 
 **Dinner.** Type (four buttons), note, servings, and dishes. You add a dish by searching
 existing dishes or typing a new name, then picking its role. Each dish links to its
 recipe at this dinner's servings. Actions: Copy a dinner, Move to another date, and
-Clear.
+Clear. The type, dishes, copying, moving and clearing save as soon as they're made.
+Save on the servings and note goes to the dinner's week, where its row says "Saved" for 3
+seconds. If someone cleared or moved the dinner meanwhile, Save plans the date again and
+the page stays to say so (6.11).
 
 ## 8. Look and feel
 

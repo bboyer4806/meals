@@ -104,9 +104,13 @@
 		return typed !== null && typed !== dropped;
 	}
 
+	// Set when the person goes elsewhere while a save is on its way, so the save leaves them there.
+	let leftWhileBusy = false;
+
 	beforeNavigate((navigation) => {
 		if (navigation.type !== 'leave') {
-			if (!confirmLeave()) navigation.cancel();
+			if (!confirmLeave()) return navigation.cancel();
+			if (busy) leftWhileBusy = true;
 			return;
 		}
 		// Closing the tab or leaving the site: the browser asks.
@@ -132,6 +136,7 @@
 	const submit: SubmitFunction = ({ cancel, formElement }) => {
 		if (busy) return cancel();
 		busy = true;
+		leftWhileBusy = false;
 		problem = '';
 		status = '';
 		const sent = { note, servings };
@@ -150,14 +155,28 @@
 					await refreshAll();
 					return;
 				}
+				// Saved, so it goes to the week. The page doesn't reload before it leaves, so what was
+				// sent is marked saved here, or leaving would ask about it. Any other redirect, such as
+				// to sign in again, saved nothing, so leaving still asks.
+				const saved =
+					result.type === 'redirect' &&
+					new URL(result.location, location.href).searchParams.has('saved');
+				if (saved) {
+					if (leftWhileBusy) return;
+					savedNote = sent.note.replace(/\r\n?/g, '\n').trim();
+					if (withServings && sent.servings !== null) savedServings = sent.servings;
+				}
 				await update({ reset: false });
+				// Still here after a save: more was typed meanwhile, and the person chose to stay with it.
+				if (saved) status = 'Saved';
 				if (result.type !== 'success') return;
-				// Shows what was saved (the note trimmed), unless more was typed meanwhile.
+				// Someone had cleared or moved the dinner, so the save planned the date again, and the
+				// page stays to say so. It shows what was saved (the note trimmed), unless more was
+				// typed meanwhile.
 				if (note === sent.note) note = dinner.note ?? '';
 				if (servings === sent.servings) servings = dinner.servings;
-				status = (result.data as { replanned?: boolean } | undefined)?.replanned
-					? 'Someone had cleared or moved this dinner, so it was planned again with what you saved.'
-					: 'Saved';
+				status =
+					'Someone had cleared or moved this dinner, so it was planned again with what you saved.';
 				if (focused instanceof HTMLElement && focused.isConnected) focused.focus();
 			} finally {
 				busy = false;

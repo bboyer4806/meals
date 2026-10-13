@@ -2,6 +2,7 @@ import type { Dialog, Page } from '@playwright/test';
 import {
 	addDays,
 	addDinner,
+	addItem,
 	addPerson,
 	addRecipe,
 	dayLabel,
@@ -120,6 +121,21 @@ function sideways(page: Page) {
 	return page.evaluate(
 		() => document.documentElement.scrollWidth - document.documentElement.clientWidth
 	);
+}
+
+/** Makes requests that match take a while, as on a slow phone connection. */
+async function slow(page: Page, matches: (url: URL) => boolean, ms: number) {
+	await page.route(matches, async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, ms));
+		await route.continue();
+	});
+}
+
+/** Saves the servings and note, which goes to the date's week with "Saved" on its row. */
+async function saveToWeek(page: Page, date: string) {
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sundayOf(date)}$`));
+	await expect(day(page, date).getByRole('status')).toHaveText('Saved');
 }
 
 const LEAVE = 'Leave without saving? What you typed will be lost.';
@@ -244,9 +260,8 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 	await page.getByRole('button', { name: 'More servings' }).click();
 	await expect(page.getByLabel('Servings', { exact: true })).toHaveValue('6');
 	await page.getByLabel('Note', { exact: true }).fill('Birthday dinner');
-	await page.getByRole('button', { name: 'Save' }).click();
-	await expect(page.getByRole('status')).toHaveText('Saved');
-	await expect(dishLinks(page).first()).toHaveAttribute('href', `/recipes/${tacosId}?servings=6`);
+	await saveToWeek(page, sun);
+	await expect(day(page, sun).locator('.note')).toHaveText('Birthday dinner');
 	const sunDinner = dinnerRow(db, person.householdId, sun);
 	expect(sunDinner).toMatchObject({ type: 'cook', note: 'Birthday dinner', servings: 6 });
 	expect(dinnerDishes(db, sunDinner?.id ?? 0)).toEqual([
@@ -255,6 +270,9 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 		{ name: 'Apple pie', role: 'dessert' },
 		{ name: 'Rice', role: 'side' }
 	]);
+	// Its dishes open their recipes at the servings saved.
+	await day(page, sun).click();
+	await expect(dishLinks(page).first()).toHaveAttribute('href', `/recipes/${tacosId}?servings=6`);
 
 	// Monday: Eating out, which has a note but no dishes or servings.
 	const backToWeek = page.getByRole('link', { name: `‹ Week of ${monthDay(sunday)}` });
@@ -270,11 +288,9 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 		'Where to go'
 	);
 	await page.getByLabel('Note', { exact: true }).fill('Pizza at Mario’s');
-	await page.getByRole('button', { name: 'Save' }).click();
-	await expect(page.getByRole('status')).toHaveText('Saved');
+	await saveToWeek(page, mon);
 
 	// Tuesday: Going somewhere, with a dish to bring.
-	await backToWeek.click();
 	await day(page, tue).click();
 	await typeButton(page, 'Going somewhere').click();
 	await expect(typeButton(page, 'Going somewhere')).toHaveAttribute('aria-pressed', 'true');
@@ -284,21 +300,17 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 	await expect(page.getByLabel('Role for Potato salad')).toHaveValue('main');
 	await expect(typeButton(page, 'Going somewhere')).toHaveAttribute('aria-pressed', 'true');
 	await page.getByLabel('Note', { exact: true }).fill('Picnic at the lake');
-	await page.getByRole('button', { name: 'Save' }).click();
-	await expect(page.getByRole('status')).toHaveText('Saved');
+	await saveToWeek(page, tue);
 
 	// Wednesday: Leftovers.
-	await backToWeek.click();
 	await day(page, wed).click();
 	await typeButton(page, 'Leftovers').click();
 	await expect(typeButton(page, 'Leftovers')).toHaveAttribute('aria-pressed', 'true');
 	await expect(dishSection(page)).toHaveCount(0);
 	await page.getByLabel('Note', { exact: true }).fill('Tacos from Sunday');
-	await page.getByRole('button', { name: 'Save' }).click();
-	await expect(page.getByRole('status')).toHaveText('Saved');
+	await saveToWeek(page, wed);
 
 	// The week shows each day's type, its dishes by role and its note.
-	await backToWeek.click();
 	await expect(day(page, sun).locator('.type')).toHaveText('Cooking at home');
 	await expect(day(page, sun).locator('.role')).toHaveText(['Main', 'Side', 'Dessert']);
 	await expect(day(page, sun).locator('.names')).toHaveText([
@@ -506,13 +518,143 @@ test("opens each dish's recipe at the servings shown, and asks before leaving wi
 	await expect(note).toHaveValue('Use the good butter');
 	page.off('dialog', stay);
 
-	// Once saved, leaving asks nothing.
-	await page.getByRole('button', { name: 'Save' }).click();
-	await expect(page.getByRole('status')).toHaveText('Saved');
-	await page.goBack();
-	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${date}$`));
+	// Saving goes to the week without asking.
+	await saveToWeek(page, date);
 	await expect(day(page, date).locator('.note')).toHaveText('Use the good butter');
 	expect(questions).toHaveLength(4);
+});
+
+test('goes to the week after a save, which says Saved on that day for a moment', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { note: 'Taco night' });
+	const questions: string[] = [];
+	page.on('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	});
+	const saved = page.getByRole('status').filter({ hasText: 'Saved' });
+
+	await page.goto(`/menu/${date}`);
+	await page.getByLabel('Note', { exact: true }).fill('Taco night with the neighbors');
+	await saveToWeek(page, date);
+	expect(questions).toEqual([]);
+	await expect(day(page, date).locator('.note')).toHaveText('Taco night with the neighbors');
+	await expect(saved).toHaveCount(1);
+	await expect(day(page, date).getByRole('status')).toHaveText('', { timeout: 6000 });
+
+	// Coming back to the week, reloading it or opening it from the tab says nothing.
+	await day(page, date).click();
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	await page.goBack();
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sundayOf(date)}$`));
+	await expect(day(page, date).locator('.note')).toHaveText('Taco night with the neighbors');
+	expect(await saved.count()).toBe(0);
+	await page.reload();
+	await expect(day(page, date).locator('.note')).toHaveText('Taco night with the neighbors');
+	expect(await saved.count()).toBe(0);
+	await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Menu' }).click();
+	await expect(page).toHaveURL(/\/menu$/);
+	expect(await saved.count()).toBe(0);
+	expect(questions).toEqual([]);
+});
+
+test('lets someone leave while a save is on its way, and stays where they went', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { note: 'Taco night' });
+	await slow(page, (url) => url.pathname === `/menu/${date}` && url.search === '?/details', 800);
+	// The page they go to is still loading when the save finishes.
+	await slow(page, (url) => url.pathname === '/recipes/__data.json', 2000);
+
+	await page.goto(`/menu/${date}`);
+	await page.getByLabel('Note', { exact: true }).fill('Taco night with the neighbors');
+	page.on('dialog', (dialog) => void dialog.accept());
+	await page.getByRole('button', { name: 'Save' }).click();
+	await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Recipes' }).click();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(page.getByRole('heading', { name: 'Recipes', level: 1 })).toBeVisible();
+	expect(dinnerRow(db, person.householdId, date)?.note).toBe('Taco night with the neighbors');
+});
+
+test('says Saved and stays when more was typed during a save and the person keeps it', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { note: 'Taco night' });
+	await slow(page, (url) => url.pathname === `/menu/${date}` && url.search === '?/details', 800);
+	const questions: string[] = [];
+	page.on('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	});
+	const note = page.getByLabel('Note', { exact: true });
+
+	await page.goto(`/menu/${date}`);
+	await note.fill('Taco night at 6');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await note.fill('Taco night at 6, bring salsa');
+	await expect.poll(() => questions).toEqual([LEAVE]);
+	await expect(page.getByRole('status')).toHaveText('Saved');
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	await expect(note).toHaveValue('Taco night at 6, bring salsa');
+	expect(dinnerRow(db, person.householdId, date)?.note).toBe('Taco night at 6');
+});
+
+test('asks before leaving to sign in when the session ended, and saves nothing', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { note: 'Taco night' });
+	const questions: string[] = [];
+	page.on('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	});
+	const note = page.getByLabel('Note', { exact: true });
+
+	await page.goto(`/menu/${date}`);
+	await note.fill('Taco night with the neighbors');
+	// Signed out on another device, so the save is sent to sign in instead.
+	db.prepare('delete from sessions where user_id = ?').run(person.userId);
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect.poll(() => questions).toEqual([LEAVE]);
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	await expect(note).toHaveValue('Taco night with the neighbors');
+	expect(dinnerRow(db, person.householdId, date)?.note).toBe('Taco night');
+});
+
+test('stays on the day with the error when a save fails, keeping what was typed', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { servings: 4 });
+	const servings = page.getByLabel('Servings', { exact: true });
+	const note = page.getByLabel('Note', { exact: true });
+
+	await page.goto(`/menu/${date}`);
+	// The field's own minimum stops the browser sending 0, so it's taken off to reach the server.
+	await servings.evaluate((input) => input.removeAttribute('min'));
+	await servings.fill('0');
+	await note.fill('Bring candles');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('alert')).toHaveText('Enter at least 1 serving');
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	await expect(servings).toHaveValue('0');
+	await expect(note).toHaveValue('Bring candles');
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({ servings: 4, note: null });
 });
 
 test('offers to restore an archived dish typed by name, and keeps archived dishes on dinners', async ({
@@ -830,10 +972,7 @@ test('clears a dinner after asking, and shows the date as not planned', async ({
 test("can't see or change another household's dinners", async ({ page, db, baseURL, person }) => {
 	const other = addPerson(db);
 	expect(other.householdId).not.toBe(person.householdId);
-	const stew = addRecipe(db, other.householdId, {
-		name: 'Secret stew',
-		ingredients: [{ item: 'Saffron', amount: 1, unit: 'tsp' }]
-	});
+	const stew = addRecipe(db, other.householdId, { name: 'Secret stew' });
 	const date = addDays(today(), 1);
 	const later = addDays(today(), 2);
 	const theirs = addDinner(db, other.householdId, date, {
@@ -863,17 +1002,6 @@ test("can't see or change another household's dinners", async ({ page, db, baseU
 	await page.goto(`/menu?week=${later}`);
 	await expect(page.getByText(/Secret/)).toHaveCount(0);
 	await expect(day(page, later)).toContainText('Not planned');
-
-	// Their dinners add nothing to this household's pantry check.
-	await page.goto('/menu');
-	await page.getByRole('button', { name: 'Check pantry' }).click();
-	await page.getByRole('dialog').getByRole('button', { name: 'Start check' }).click();
-	await expect(page).toHaveURL(/\/pantry$/);
-	await expect(page.getByText('No ingredients yet:')).toHaveText(
-		`No ingredients yet: Chicken tacos (${weekday(date)})`
-	);
-	await expect(page.locator('li.item')).toHaveCount(0);
-	await expect(page.getByText(/Secret|Saffron/)).toHaveCount(0);
 
 	const headers = { origin: baseURL ?? '', 'x-sveltekit-action': 'true' };
 	const post = (path: string, form: Record<string, string>) =>
@@ -953,44 +1081,25 @@ test("says the year a past dinner was last made when it isn't this year", async 
 	);
 });
 
-test('fits long dish and item names from a menu pantry check on the grocery list', async ({
+test('fits long dish and item names from an earlier menu pantry check on the grocery list', async ({
 	page,
 	db,
 	person
 }) => {
-	// As long as the recipe editor allows, in single words that can't wrap at a space.
+	// The pantry check is hidden (design 6.8), but the lines its Need added stay on the list, as
+	// Need left them. As long as the recipe editor allows, in single words that can't wrap at a
+	// space.
 	const longDish = 'N'.repeat(80);
 	const longItem = 'Z'.repeat(80);
-	const chicken = addRecipe(db, person.householdId, {
-		name: longDish,
-		ingredients: [{ item: 'Chicken', amount: 1, unit: 'lb' }]
-	});
-	const salad = addRecipe(db, person.householdId, {
-		name: 'Salad',
-		ingredients: [{ item: longItem, amount: 1 }]
-	});
 	const date = addDays(today(), 1);
-	addDinner(db, person.householdId, date, {
-		dishes: [
-			[chicken, 'main'],
-			[salad, 'side']
-		]
-	});
-
-	await page.goto('/menu');
-	await page.getByRole('button', { name: 'Check pantry' }).click();
-	await page
-		.getByRole('dialog', { name: 'Check pantry' })
-		.getByRole('button', { name: 'Start check' })
-		.click();
-	await expect(page).toHaveURL(/\/pantry$/);
-	for (const item of ['Chicken', longItem]) {
-		await page.getByRole('button', { name: `Need ${item}`, exact: true }).click();
-		await expect(
-			page.getByRole('button', { name: `Undo Need for ${item}`, exact: true })
-		).toBeVisible();
-	}
-	expect(await sideways(page), '/pantry').toBe(0);
+	const needLine = (item: string, note: string) =>
+		db
+			.prepare(
+				"insert into grocery_needs (household_id, item_id, quantity, status, note, created_at) values (?, ?, 1, 'to_order', ?, ?)"
+			)
+			.run(person.householdId, addItem(db, person.householdId, item), note, Date.now());
+	needLine('Chicken', `1 lb for ${longDish} (${weekday(date)})`);
+	needLine(longItem, `1 for Salad (${weekday(date)})`);
 
 	// The note names the dish, and the other line is the long item.
 	await page.goto('/groceries');
@@ -1130,8 +1239,7 @@ test("refuses to switch, copy onto or save a dinner the page didn't show", async
 	expect(dinnerRow(db, person.householdId, later)).toMatchObject({ id: saladId, note: null });
 	// Typed again and saved, it goes to the dinner the page shows now.
 	await note.fill('Bring candles');
-	await page.getByRole('button', { name: 'Save' }).click();
-	await expect(page.getByRole('status')).toHaveText('Saved');
+	await saveToWeek(page, date);
 	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
 		id: roastId,
 		note: 'Bring candles',
@@ -1161,10 +1269,12 @@ test('keeps what was typed when coming back to the app finds the dinner cleared 
 	);
 	await expect(note).toHaveValue("Grandma's house, bring dessert");
 	await expect(page.getByLabel('Servings', { exact: true })).toHaveValue('5');
+	// It stays on the day to say so (MEA-15 decides where it goes).
 	await page.getByRole('button', { name: 'Save' }).click();
 	await expect(page.getByRole('status')).toHaveText(
 		'Someone had cleared or moved this dinner, so it was planned again with what you saved.'
 	);
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
 	await expect(typeButton(page, 'Going somewhere')).toHaveAttribute('aria-pressed', 'true');
 	await expect(page.getByRole('alert')).toHaveCount(0);
 	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
