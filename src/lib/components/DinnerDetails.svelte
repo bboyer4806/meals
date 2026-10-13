@@ -156,13 +156,19 @@
 					return;
 				}
 				// Saved, so it goes to the week. The page doesn't reload before it leaves, so what was
-				// sent is marked saved here, or leaving would ask about it.
-				if (result.type === 'redirect') {
+				// sent is marked saved here, or leaving would ask about it. Any other redirect, such as
+				// to sign in again, saved nothing, so leaving still asks.
+				const saved =
+					result.type === 'redirect' &&
+					new URL(result.location, location.href).searchParams.has('saved');
+				if (saved) {
 					if (leftWhileBusy) return;
 					savedNote = sent.note.replace(/\r\n?/g, '\n').trim();
 					if (withServings && sent.servings !== null) savedServings = sent.servings;
 				}
 				await update({ reset: false });
+				// Still here after a save: more was typed meanwhile, and the person chose to stay with it.
+				if (saved) status = 'Saved';
 				if (result.type !== 'success') return;
 				// Someone had cleared or moved the dinner, so the save planned the date again, and the
 				// page stays to say so. It shows what was saved (the note trimmed), unless more was

@@ -57,7 +57,8 @@ test('has no way to reach the pantry check, and keeps a check already started', 
 		startMenu: { startDate: today(), endDate: addDays(today(), 6), replaceChecked: '1' },
 		have: { itemId: String(sugar) },
 		need: { itemId: String(sugar) },
-		undo: { itemId: String(butter) }
+		undo: { itemId: String(butter) },
+		startOver: {}
 	};
 	for (const [action, form] of Object.entries(forms)) {
 		const posted = await page.request.post(`/pantry?/${action}`, { form, headers });

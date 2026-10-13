@@ -19,7 +19,7 @@ A phone-first website where households manage three connected things:
 - **Menu:** one dinner per day: cooking at home, eating out, going somewhere, or
   leftovers. Dinners are made of dishes from the recipe collection. A pantry checklist
   built from the coming week's dinners shows what's needed, and anything missing goes
-  onto the grocery list.
+  onto the grocery list (hidden for now; 6.8).
 
 Several households use the site, and each sees only its own data. Sign-in is with
 Google and is invite-only.
@@ -43,7 +43,8 @@ Google and is invite-only.
 ### 2.2 Additions (all kept)
 
 1. **"Always have" on an item.** Items like water or salt are left off pantry
-   checklists. Without this, water shows up on every checklist.
+   checklists. Without this, water shows up on every checklist. Hidden for now with the
+   pantry check (6.8).
 2. **"Move to another date" on a dinner.** For "we didn't make Tuesday's dinner, let's
    do it Wednesday". If the other date already has a dinner, the two swap.
 3. **Received lines stay visible until the end of the day,** checked and struck

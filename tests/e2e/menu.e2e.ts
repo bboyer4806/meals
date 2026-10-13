@@ -123,6 +123,14 @@ function sideways(page: Page) {
 	);
 }
 
+/** Makes requests that match take a while, as on a slow phone connection. */
+async function slow(page: Page, matches: (url: URL) => boolean, ms: number) {
+	await page.route(matches, async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, ms));
+		await route.continue();
+	});
+}
+
 /** Saves the servings and note, which goes to the date's week with "Saved" on its row. */
 async function saveToWeek(page: Page, date: string) {
 	await page.getByRole('button', { name: 'Save' }).click();
@@ -561,14 +569,9 @@ test('lets someone leave while a save is on its way, and stays where they went',
 }) => {
 	const date = addDays(today(), 1);
 	addDinner(db, person.householdId, date, { note: 'Taco night' });
-	const slow = (matches: (url: URL) => boolean, ms: number) =>
-		page.route(matches, async (route) => {
-			await new Promise((resolve) => setTimeout(resolve, ms));
-			await route.continue();
-		});
-	await slow((url) => url.pathname === `/menu/${date}` && url.search === '?/details', 800);
+	await slow(page, (url) => url.pathname === `/menu/${date}` && url.search === '?/details', 800);
 	// The page they go to is still loading when the save finishes.
-	await slow((url) => url.pathname === '/recipes/__data.json', 2000);
+	await slow(page, (url) => url.pathname === '/recipes/__data.json', 2000);
 
 	await page.goto(`/menu/${date}`);
 	await page.getByLabel('Note', { exact: true }).fill('Taco night with the neighbors');
@@ -578,6 +581,57 @@ test('lets someone leave while a save is on its way, and stays where they went',
 	await expect(page).toHaveURL(/\/recipes$/);
 	await expect(page.getByRole('heading', { name: 'Recipes', level: 1 })).toBeVisible();
 	expect(dinnerRow(db, person.householdId, date)?.note).toBe('Taco night with the neighbors');
+});
+
+test('says Saved and stays when more was typed during a save and the person keeps it', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { note: 'Taco night' });
+	await slow(page, (url) => url.pathname === `/menu/${date}` && url.search === '?/details', 800);
+	const questions: string[] = [];
+	page.on('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	});
+	const note = page.getByLabel('Note', { exact: true });
+
+	await page.goto(`/menu/${date}`);
+	await note.fill('Taco night at 6');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await note.fill('Taco night at 6, bring salsa');
+	await expect.poll(() => questions).toEqual([LEAVE]);
+	await expect(page.getByRole('status')).toHaveText('Saved');
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	await expect(note).toHaveValue('Taco night at 6, bring salsa');
+	expect(dinnerRow(db, person.householdId, date)?.note).toBe('Taco night at 6');
+});
+
+test('asks before leaving to sign in when the session ended, and saves nothing', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { note: 'Taco night' });
+	const questions: string[] = [];
+	page.on('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	});
+	const note = page.getByLabel('Note', { exact: true });
+
+	await page.goto(`/menu/${date}`);
+	await note.fill('Taco night with the neighbors');
+	// Signed out on another device, so the save is sent to sign in instead.
+	db.prepare('delete from sessions where user_id = ?').run(person.userId);
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect.poll(() => questions).toEqual([LEAVE]);
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	await expect(note).toHaveValue('Taco night with the neighbors');
+	expect(dinnerRow(db, person.householdId, date)?.note).toBe('Taco night');
 });
 
 test('stays on the day with the error when a save fails, keeping what was typed', async ({
