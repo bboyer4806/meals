@@ -37,7 +37,9 @@ export const users = sqliteTable(
 		googleSub: text('google_sub').notNull().unique(),
 		email: text('email').notNull().unique(),
 		name: text('name').notNull(),
-		createdAt: integer('created_at').notNull()
+		createdAt: integer('created_at').notNull(),
+		// The release date (YYYY-MM-DD) of the newest release they've seen on What's new.
+		whatsNewSeen: text('whats_new_seen')
 	},
 	(t) => [index('users_household').on(t.householdId)]
 );
