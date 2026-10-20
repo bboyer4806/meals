@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import type { Dialog, Locator, Page } from '@playwright/test';
 import {
+	addDays,
+	addDinner,
 	addItem,
 	addPerson,
 	addPhotoFiles,
@@ -9,7 +11,8 @@ import {
 	makeJpeg,
 	photoFile,
 	signInAs,
-	test
+	test,
+	today
 } from './fixtures.ts';
 
 function ingredientRow(page: Page, number: number) {
@@ -245,7 +248,7 @@ test('creates a recipe with every field on a phone, with a photo', async ({ page
 	await expectJpeg(page, `/photos/${key}-thumb.jpg`);
 	expect(db.prepare('select photo_key from dishes where id = ?').pluck().get(dishId)).toBe(key);
 
-	await page.getByRole('link', { name: 'Recipes' }).click();
+	await page.getByRole('link', { name: 'Recipes', exact: true }).click();
 	const listed = page.getByRole('link', { name: /^Pound cake/ });
 	await expect(listed).toContainText('1 hr 15 min · Dessert, Baking');
 	const thumb = listed.locator('img');
@@ -899,7 +902,7 @@ test('prints the recipe at the servings shown, without navigation or buttons', a
 	await expect(header).toBeHidden();
 	await expect(tabs).toBeHidden();
 	await expect(page.getByRole('button')).toHaveCount(0);
-	for (const link of ['Cook', 'Edit']) {
+	for (const link of ['‹ Recipes', 'Cook', 'Edit']) {
 		await expect(page.getByRole('link', { name: link, exact: true })).toBeHidden();
 	}
 	await expect(page.getByRole('status')).toBeHidden();
@@ -907,6 +910,36 @@ test('prints the recipe at the servings shown, without navigation or buttons', a
 	await expect(page.getByRole('heading', { name: 'Scaling test', level: 1 })).toBeVisible();
 	await expect(ingredients(page).nth(0)).toHaveText('3/4 cup Milk');
 	await expect(steps(page)).toHaveCount(2);
+});
+
+test('goes back to the plain Recipes list, however the recipe was opened', async ({
+	page,
+	db,
+	person
+}) => {
+	const cakeId = addRecipe(db, person.householdId, { name: 'Pound cake', tags: ['Dessert'] });
+	addRecipe(db, person.householdId, { name: 'Tacos', tags: ['Dinner'] });
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { dishes: [[cakeId, 'dessert']] });
+	const back = page.getByRole('link', { name: '‹ Recipes', exact: true });
+	const tacos = page.getByRole('link', { name: /Tacos/ });
+
+	// From a searched list, Back opens the list without the search.
+	await page.goto('/recipes?q=pound&tag=Dessert');
+	await expect(tacos).toHaveCount(0);
+	await page.getByRole('link', { name: /Pound cake/ }).click();
+	await expect(page.getByRole('heading', { name: 'Pound cake', level: 1 })).toBeVisible();
+	await back.click();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(tacos).toBeVisible();
+
+	// From a dinner's dish link, Back opens Recipes, not the dinner.
+	await page.goto(`/menu/${date}`);
+	await page.getByRole('link', { name: 'Pound cake' }).click();
+	await expect(page.getByRole('heading', { name: 'Pound cake', level: 1 })).toBeVisible();
+	await back.click();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(tacos).toBeVisible();
 });
 
 /** A line in the cooking view that's checked off with a tap: its checkbox, label and text. */
@@ -1130,7 +1163,7 @@ test('finds recipes by name and tag, and archives and restores one', async ({
 	await expect(page.getByText('Archived', { exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Archive' })).toHaveCount(0);
 
-	await page.getByRole('link', { name: 'Recipes' }).click();
+	await page.getByRole('link', { name: 'Recipes', exact: true }).click();
 	await expect(names).toHaveText(['Lemon bars', 'Pound cake', 'Tacos']);
 	await page.getByRole('link', { name: 'Show archived' }).click();
 	await expect(page.getByRole('heading', { name: 'Archived recipes' })).toBeVisible();
@@ -1139,7 +1172,7 @@ test('finds recipes by name and tag, and archives and restores one', async ({
 	await page.getByRole('button', { name: 'Restore' }).click();
 	await expect(page.getByText('Archived', { exact: true })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'Archive' })).toBeVisible();
-	await page.getByRole('link', { name: 'Recipes' }).click();
+	await page.getByRole('link', { name: 'Recipes', exact: true }).click();
 	await expect(names).toHaveText(['Chili', 'Lemon bars', 'Pound cake', 'Tacos']);
 	await page.getByRole('link', { name: 'Show archived' }).click();
 	await expect(page.getByText('No archived recipes.')).toBeVisible();

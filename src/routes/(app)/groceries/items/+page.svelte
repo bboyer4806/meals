@@ -37,6 +37,8 @@
 	<title>Items · Meals</title>
 </svelte:head>
 
+<a class="link-tap back" href="/groceries">‹ Groceries</a>
+
 <h1>{data.archived ? 'Archived items' : 'Items'}</h1>
 <p class="muted">
 	Everything you've added to the list. An item's store is the one it was last ordered or bought
@@ -122,6 +124,10 @@
 </Sheet>
 
 <style>
+	.back {
+		font-weight: 700;
+	}
+
 	.search {
 		margin-bottom: 0.5rem;
 	}

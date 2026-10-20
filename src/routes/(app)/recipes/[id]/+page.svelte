@@ -52,6 +52,9 @@
 	<title>{dish.name} · Meals</title>
 </svelte:head>
 
+<!-- Always the plain list, however the recipe was opened (section 7). -->
+<a class="link-tap back no-print" href="/recipes">‹ Recipes</a>
+
 {#if dish.photoKey}
 	<img class="photo" src="/photos/{dish.photoKey}.jpg" alt="" />
 {/if}
@@ -193,6 +196,10 @@
 {/if}
 
 <style>
+	.back {
+		font-weight: 700;
+	}
+
 	.photo {
 		display: block;
 		width: 100%;

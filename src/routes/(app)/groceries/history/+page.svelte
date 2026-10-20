@@ -9,6 +9,8 @@
 	<title>History · Meals</title>
 </svelte:head>
 
+<a class="link-tap back" href="/groceries">‹ Groceries</a>
+
 <h1>History</h1>
 
 <form method="GET" class="row search">
@@ -43,6 +45,10 @@
 {/if}
 
 <style>
+	.back {
+		font-weight: 700;
+	}
+
 	.search {
 		margin-bottom: 1rem;
 	}
