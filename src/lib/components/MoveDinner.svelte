@@ -8,7 +8,8 @@
 
 	// Move to another date (design 2.2.2): "we didn't make Tuesday's dinner, let's do it
 	// Wednesday", so the next day is filled in. A dinner already on that date swaps places with
-	// this one. The page then opens the new date.
+	// this one. The page then opens the new date. The dinner's date at the top of the page opens
+	// it (7).
 	let {
 		date,
 		dinnerId,
@@ -40,7 +41,7 @@
 	let removed = false;
 	onDestroy(() => (removed = true));
 
-	function show() {
+	export function show() {
 		to = addDays(date, 1);
 		problem = '';
 		open = true;
@@ -75,8 +76,6 @@
 		};
 	};
 </script>
-
-<button type="button" onclick={show}>Move to another date</button>
 
 <Sheet bind:open title="Move to another date">
 	<form method="POST" action="?/move" use:enhance={submit}>

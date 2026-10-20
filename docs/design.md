@@ -46,7 +46,8 @@ Google and is invite-only.
    checklists. Without this, water shows up on every checklist. Hidden for now with the
    pantry check (6.8).
 2. **"Move to another date" on a dinner.** For "we didn't make Tuesday's dinner, let's
-   do it Wednesday". If the other date already has a dinner, the two swap.
+   do it Wednesday". If the other date already has a dinner, the two swap. The dinner's
+   date at the top of its page opens it (7).
 3. **Received lines stay visible until the end of the day,** checked and struck
    through. Tapping one again undoes it. This handles mis-taps in a store.
 4. **The Admin page shows the date of the last backup.** Nothing else would tell you
@@ -510,7 +511,7 @@ on the list. The rest of this section describes it as built.
   to groups with a dish whose name matches, most recent first. Copying sets the type and
   the dishes with their roles.
 - **Move to another date** (addition 2.2.2) swaps the two dinners if the other date has
-  one.
+  one. Tapping the dinner's date at the top of its page opens it (7).
 
 ### 6.10 Archiving
 
@@ -583,8 +584,9 @@ opens its dinner. ("Check pantry" is hidden for now; 6.8.)
 
 **Dinner.** Type (four buttons), note, servings, and dishes. You add a dish by searching
 existing dishes or typing a new name, then picking its role. Each dish links to its
-recipe at this dinner's servings. Actions: Copy a dinner, Move to another date, and
-Clear. The type, dishes, copying, moving and clearing save as soon as they're made.
+recipe at this dinner's servings. Actions: Copy a dinner and Clear. On a planned dinner,
+the date at the top is a button, with an icon, that opens Move to another date; on a date
+with no dinner it's plain text. The type, dishes, copying, moving and clearing save as soon as they're made.
 Save on the servings and note goes to the dinner's week, where its row says "Saved" for 3
 seconds. If someone cleared or moved the dinner meanwhile, Save plans the date again and
 the page stays to say so (6.11).
