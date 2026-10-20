@@ -290,15 +290,15 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 	await page.getByLabel('Note', { exact: true }).fill('Pizza at Mario’s');
 	await saveToWeek(page, mon);
 
-	// Tuesday: Going somewhere, with a dish to bring.
+	// Tuesday: Bringing a dish, with the dish to bring.
 	await day(page, tue).click();
-	await typeButton(page, 'Going somewhere').click();
-	await expect(typeButton(page, 'Going somewhere')).toHaveAttribute('aria-pressed', 'true');
+	await typeButton(page, 'Bringing a dish').click();
+	await expect(typeButton(page, 'Bringing a dish')).toHaveAttribute('aria-pressed', 'true');
 	await expect(page.getByLabel('Servings', { exact: true })).toHaveValue('4');
 	await addDish(page, 'Potato salad', 'new');
 	await expect(dishLinks(page)).toHaveText(['Potato salad']);
 	await expect(page.getByLabel('Role for Potato salad')).toHaveValue('main');
-	await expect(typeButton(page, 'Going somewhere')).toHaveAttribute('aria-pressed', 'true');
+	await expect(typeButton(page, 'Bringing a dish')).toHaveAttribute('aria-pressed', 'true');
 	await page.getByLabel('Note', { exact: true }).fill('Picnic at the lake');
 	await saveToWeek(page, tue);
 
@@ -322,7 +322,7 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 	await expect(day(page, mon).locator('.type')).toHaveText('Eating out');
 	await expect(day(page, mon).locator('.dishes')).toHaveCount(0);
 	await expect(day(page, mon).locator('.note')).toHaveText('Pizza at Mario’s');
-	await expect(day(page, tue).locator('.type')).toHaveText('Going somewhere');
+	await expect(day(page, tue).locator('.type')).toHaveText('Bringing a dish');
 	await expect(day(page, tue).locator('.role')).toHaveText(['Main']);
 	await expect(day(page, tue).locator('.names')).toHaveText(['Potato salad']);
 	await expect(day(page, tue).locator('.note')).toHaveText('Picnic at the lake');
@@ -396,9 +396,9 @@ test('asks before switching a dinner with dishes to Eating out or Leftovers', as
 	await page.goto(`/menu/${date}`);
 	await expect(dishLinks(page)).toHaveText(['Chicken tacos', 'Rice']);
 
-	// Going somewhere has dishes too, so nothing to ask.
-	await typeButton(page, 'Going somewhere').click();
-	await expect(typeButton(page, 'Going somewhere')).toHaveAttribute('aria-pressed', 'true');
+	// Bringing a dish has dishes too, so nothing to ask.
+	await typeButton(page, 'Bringing a dish').click();
+	await expect(typeButton(page, 'Bringing a dish')).toHaveAttribute('aria-pressed', 'true');
 	await expect(page.getByRole('dialog')).toHaveCount(0);
 	await expect(dishLinks(page)).toHaveText(['Chicken tacos', 'Rice']);
 
@@ -410,7 +410,7 @@ test('asks before switching a dinner with dishes to Eating out or Leftovers', as
 	);
 	await dialog.getByRole('button', { name: 'Cancel' }).click();
 	await expect(dialog).toHaveCount(0);
-	await expect(typeButton(page, 'Going somewhere')).toHaveAttribute('aria-pressed', 'true');
+	await expect(typeButton(page, 'Bringing a dish')).toHaveAttribute('aria-pressed', 'true');
 	await expect(dishLinks(page)).toHaveText(['Chicken tacos', 'Rice']);
 	expect(dinnerDishes(db, dinnerId)).toHaveLength(2);
 
@@ -831,7 +831,7 @@ test('copies a past dinner from the most-made list or by searching a dish name',
 	await sheet.getByRole('button', { name: 'Replace dishes' }).click();
 	await expect(sheet).toHaveCount(0);
 	await expect(dishLinks(page)).toHaveText(['Lasagna', 'Caesar salad']);
-	await expect(typeButton(page, 'Going somewhere')).toHaveAttribute('aria-pressed', 'true');
+	await expect(typeButton(page, 'Bringing a dish')).toHaveAttribute('aria-pressed', 'true');
 	await expect(page.getByLabel('Servings', { exact: true })).toHaveValue('6');
 	await expect(page.getByLabel('Note', { exact: true })).toHaveValue('Grandma visits');
 	expect(dinnerRow(db, person.householdId, planned)).toMatchObject({
@@ -1188,7 +1188,7 @@ test("refuses to switch, copy onto or save a dinner the page didn't show", async
 	await page.goto(`/menu/${empty}`);
 	await expect(page.getByText('Not planned yet.', { exact: false })).toBeVisible();
 	addDinner(db, person.householdId, empty, { type: 'eat_out', note: 'Pizza' });
-	await typeButton(page, 'Going somewhere').click();
+	await typeButton(page, 'Bringing a dish').click();
 	await expect(page.getByRole('alert')).toHaveText(CHANGED);
 	await expect(typeButton(page, 'Eating out')).toHaveAttribute('aria-pressed', 'true');
 	await expect(note).toHaveValue('Pizza');
@@ -1275,7 +1275,7 @@ test('keeps what was typed when coming back to the app finds the dinner cleared 
 		'Someone had cleared or moved this dinner, so it was planned again with what you saved.'
 	);
 	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
-	await expect(typeButton(page, 'Going somewhere')).toHaveAttribute('aria-pressed', 'true');
+	await expect(typeButton(page, 'Bringing a dish')).toHaveAttribute('aria-pressed', 'true');
 	await expect(page.getByRole('alert')).toHaveCount(0);
 	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
 		type: 'going',
@@ -1293,7 +1293,7 @@ test('keeps what was typed when coming back to the app finds the dinner cleared 
 	await expect(typeButton(page, 'Eating out')).toHaveAttribute('aria-pressed', 'true');
 	await expect(dishSection(page)).toHaveCount(0);
 	await expect(page.getByRole('alert')).toHaveText(
-		"Grilled corn with lime butter wasn't added. Switch to Cooking at home or Going somewhere to add dishes."
+		"Grilled corn with lime butter wasn't added. Switch to Cooking at home or Bringing a dish to add dishes."
 	);
 });
 

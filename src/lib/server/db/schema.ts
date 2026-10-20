@@ -273,7 +273,7 @@ export const dinners = sqliteTable(
 	]
 );
 
-// Only Cooking at home and Going somewhere dinners have dishes (Q26); the data layer keeps it so.
+// Only Cooking at home and Bringing a dish dinners have dishes (Q26); the data layer keeps it so.
 export const dinnerDishes = sqliteTable(
 	'dinner_dishes',
 	{

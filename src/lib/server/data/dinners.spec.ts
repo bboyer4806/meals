@@ -267,7 +267,7 @@ describe('adding a dish', () => {
 		expect(row(TODAY)).toMatchObject({ createdAt: NOW, updatedAt: NOW });
 	});
 
-	it('adds dishes to a Going somewhere dinner', () => {
+	it('adds dishes to a Bringing a dish dinner', () => {
 		makeDinner(householdId, TODAY, { type: 'going' });
 		addDinnerDish(householdId, TODAY, { id: salad }, 'side', NOW);
 		expect(dishesOn(TODAY)).toEqual(['Salad (side)']);
@@ -362,7 +362,7 @@ describe('adding a dish', () => {
 		expect(refusal(add({ name: 'tacos' }))).toBe('Tacos is already on this dinner');
 		expect(refusal(add({ id: rice }))).toBe('Restore Rice before adding it');
 		expect(refusal(add({ id: salad }, TOMORROW))).toBe(
-			'Switch to Cooking at home or Going somewhere to add dishes'
+			'Switch to Cooking at home or Bringing a dish to add dishes'
 		);
 		expect(refusal(add({ name: ' ' }))).toBe('Enter a dish name');
 		expect(refusal(add({ name: 'x'.repeat(81) }))).toBe('Keep a dish name under 80 characters');

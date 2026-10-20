@@ -53,7 +53,7 @@ describe('weeks', () => {
 });
 
 describe('dinner types', () => {
-	it('give dishes only to Cooking at home and Going somewhere (Q26)', () => {
+	it('give dishes only to Cooking at home and Bringing a dish (Q26)', () => {
 		expect(hasDishes('cook')).toBe(true);
 		expect(hasDishes('going')).toBe(true);
 		expect(hasDishes('eat_out')).toBe(false);
