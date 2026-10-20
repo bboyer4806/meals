@@ -22,6 +22,8 @@
 
 	const dinner = $derived(data.dinner);
 	const dishCount = $derived(dinner?.dishes.length ?? 0);
+	const dateLabel = $derived(formatDateLabel(data.date, { today: data.today, weekday: 'long' }));
+	let mover = $state<ReturnType<typeof MoveDinner>>();
 
 	// The servings field's value, saved or not, so a dish opens at what the person sees (design 7).
 	// One that can't be saved opens it at the saved servings.
@@ -227,8 +229,27 @@
 {#key data.date}
 	<a class="link-tap week" href="/menu?week={weekStart(data.date)}">‹ Week of {weekLabel(data.date)}</a>
 
+	<!-- A planned dinner's date opens Move to another date (2.2.2, 7). -->
 	<div class="title">
-		<h1>{formatDateLabel(data.date, { today: data.today, weekday: 'long' })}</h1>
+		<h1>
+			{#if dinner}
+				<button
+					type="button"
+					class="quiet date"
+					aria-label="{dateLabel}. Move to another date"
+					onclick={() => mover?.show()}
+				>
+					<!-- No space before the icon, so the heading's text is the date alone. -->
+					{dateLabel}<svg viewBox="0 0 24 24" aria-hidden="true"
+						><rect x="3" y="5" width="18" height="16" rx="2" /><path
+							d="M3 10h18M8 3v4M16 3v4"
+						/></svg
+					>
+				</button>
+			{:else}
+				{dateLabel}
+			{/if}
+		</h1>
 		{#if data.date === data.today}<span class="badge today">Today</span>{/if}
 	</div>
 
@@ -283,18 +304,17 @@
 
 	<div class="actions">
 		<CopyDinner groups={data.copyGroups} dinnerId={dinner?.id} {dishCount} today={data.today} />
-		{#if dinner}
-			<MoveDinner
-				date={data.date}
-				dinnerId={dinner.id}
-				canLeave={() => details?.confirmLeave() ?? true}
-				keepAsking={() => details?.keepAsking()}
-				onlost={showNotice}
-			/>
-		{/if}
 	</div>
 
 	{#if dinner}
+		<MoveDinner
+			date={data.date}
+			dinnerId={dinner.id}
+			canLeave={() => details?.confirmLeave() ?? true}
+			keepAsking={() => details?.keepAsking()}
+			onlost={showNotice}
+			bind:this={mover}
+		/>
 		<form class="clear" method="POST" action="?/clear" use:enhance={submitClear}>
 			{@render shownDinner()}
 			<ConfirmButton
@@ -339,6 +359,25 @@
 
 	.title h1 {
 		margin: 0;
+	}
+
+	/* Looks like the heading it's in, with the icon saying it can be tapped. */
+	.title .date {
+		font-weight: inherit;
+		color: inherit;
+		padding-inline: 0;
+		text-align: start;
+	}
+
+	.date svg {
+		flex: none;
+		width: 1.1em;
+		height: 1.1em;
+		fill: none;
+		stroke: var(--accent);
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 
 	.today {

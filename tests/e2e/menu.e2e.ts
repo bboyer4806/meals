@@ -51,6 +51,9 @@ function dishLinks(page: Page) {
 	return dishSection(page).getByRole('list').getByRole('link');
 }
 
+/** A planned dinner's date at the top of its page, which opens Move to another date. */
+const dateButton = (page: Page) =>
+	page.getByRole('heading', { level: 1 }).getByRole('button', { name: 'Move to another date' });
 const dishField = (page: Page) => page.getByRole('combobox', { name: 'Add a dish' });
 const newRole = (page: Page) => page.getByLabel('Role', { exact: true });
 const addButton = (page: Page) => page.getByRole('button', { name: 'Add', exact: true });
@@ -878,7 +881,7 @@ test('moves a dinner to an empty date, and swaps it with a planned one', async (
 
 	// The next day is filled in, which has nothing planned.
 	await page.goto(`/menu/${mon}`);
-	await page.getByRole('button', { name: 'Move to another date' }).click();
+	await dateButton(page).click();
 	const sheet = page.getByRole('dialog', { name: 'Move to another date' });
 	await expect(sheet.getByLabel('New date')).toHaveValue(tue);
 	await expect(sheet).toContainText('If that date already has a dinner, the two swap places.');
@@ -905,7 +908,7 @@ test('moves a dinner to an empty date, and swaps it with a planned one', async (
 		questions.push(dialog.message());
 		void dialog.dismiss();
 	});
-	await page.getByRole('button', { name: 'Move to another date' }).click();
+	await dateButton(page).click();
 	await sheet.getByLabel('New date').fill(wed);
 	await sheet.getByRole('button', { name: `Move to ${dayLabel(wed)}` }).click();
 	await expect.poll(() => questions).toEqual([LEAVE]);
@@ -960,7 +963,11 @@ test('clears a dinner after asking, and shows the date as not planned', async ({
 	await expect(types(page).getByRole('button', { pressed: true })).toHaveCount(0);
 	await expect(dishSection(page).getByText('No dishes yet.')).toBeVisible();
 	await expect(page.getByLabel('Note', { exact: true })).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'Move to another date' })).toHaveCount(0);
+	// The date is plain text, with nothing to move.
+	await expect(dateButton(page)).toHaveCount(0);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+		new RegExp(`^[A-Z][a-z]+day, ${monthDay(date)}`)
+	);
 	await expect(page.getByRole('button', { name: 'Clear' })).toHaveCount(0);
 	expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
 	expect(db.prepare('select count(*) from dishes where id = ?').pluck().get(tacos)).toBe(1);
@@ -1144,7 +1151,7 @@ test('refuses to clear or move a dinner someone moved onto the date after the pa
 	// Move, after someone moved the salad back.
 	swap(db, saladId, roastId);
 	const away = addDays(today(), 5);
-	await page.getByRole('button', { name: 'Move to another date' }).click();
+	await dateButton(page).click();
 	const sheet = page.getByRole('dialog', { name: 'Move to another date' });
 	await sheet.getByLabel('New date').fill(away);
 	await sheet.getByRole('button', { name: `Move to ${dayLabel(away)}` }).click();
