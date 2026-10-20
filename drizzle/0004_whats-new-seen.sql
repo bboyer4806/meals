@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `whats_new_seen` text;

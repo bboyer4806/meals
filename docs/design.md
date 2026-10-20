@@ -276,6 +276,7 @@ src/lib/                  used by browser and server; no database access
   checklist.ts            combine ingredient amounts into checklist lines
   steps.ts                find numbers in steps that won't scale
   dates.ts                "today" and weeks in a time zone
+  whats-new.ts            the releases listed on What's new, newest first
 src/lib/server/
   config.ts               settings from the environment, checked at startup
   db/schema.ts            tables
@@ -283,7 +284,8 @@ src/lib/server/
   auth/                   Google sign-in, sessions, invites
   data/                   one module per area: households, stores, items, needs,
                           dishes, dinners, requests, pantry. Every function takes
-                          householdId first.
+                          householdId first, except whats-new (a person's seen
+                          release), which takes the person's id.
   photos.ts               save, delete and serve photos
 src/routes/               pages and form actions; database access only through data/
 drizzle/                  generated SQL migrations
@@ -305,7 +307,8 @@ Q28), `time_zone` (an IANA name such as `America/Chicago`), `created_at`.
 
 **users:** `household_id` (empty only until household setup is done), `google_sub`
 (Google's permanent account ID, unique), `email` (unique, lowercase), `name`,
-`created_at`. One household per person (E1).
+`created_at`, `whats_new_seen` (the date of the newest release they've seen on What's new;
+empty until they first open it; section 7). One household per person (E1).
 
 **sessions:** `id` (SHA-256 of the token), `user_id`, `expires_at`.
 
@@ -554,7 +557,8 @@ If two people change the same thing, the last save wins.
 ## 7. Screens
 
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
-header menu holds Household, Items, Admin (admin only) and Sign out.
+header menu, More, holds Items, History, Household, What's new, Admin (admin only) and Sign
+out.
 
 | Screen           | Path                                 | What it does                                                                                                                         |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -572,6 +576,7 @@ header menu holds Household, Items, Admin (admin only) and Sign out.
 | Dinner           | `/menu/[date]`                       | See below.                                                                                                                           |
 | Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
 | Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
+| What's new       | `/whats-new`                         | See below.                                                                                                                           |
 | Admin            | `/admin`                             | Invite households, list households, last backup date.                                                                                |
 
 **Grocery list.** An add bar at the top: item (with suggestions), quantity, unit, store
@@ -616,6 +621,17 @@ servings and note for Save. Save on the servings and note goes to the dinner's w
 row says "Saved" for 3 seconds; on a date with no dinner it plans it as the type shown. Leaving
 with something typed asks first. If someone cleared or moved the dinner meanwhile, Save plans
 the date again and the page stays to say so (6.11).
+
+**What's new.** What each release changed, newest first, in words for the people using the
+app; every household sees the same page. Each release's heading is its version, such as "1.2"
+for the "Meals 1.2" sprint, then "Released" with its date and one line per change people will
+notice. Internal changes, such as tests or instruction files, aren't listed, and the page never
+says "sprint". Releases live in `src/lib/whats-new.ts`, and when a sprint closes, one pull
+request adds its release. When the newest release's date is later than both the person's
+`whats_new_seen` and the day their account was created (in the household's time zone), a dot,
+read by screen readers as "new", shows on More and on What's new. Opening the page records the
+newest release as seen, which clears the dot on every device. The link doesn't preload on
+hover, as that would run the page's load and clear the dot without anyone opening it.
 
 ## 8. Look and feel
 
