@@ -503,6 +503,8 @@ on the list. The rest of this section describes it as built.
   Leftovers. All have a note. Cooking at home and Bringing a dish also have dishes and
   servings (Q26).
 - Servings start at the household's usual number (Q28).
+- A date with no dinner shows Cooking at home, with the usual servings and an empty note,
+  without saving it. The date stays not planned until a dish, a copy, a type or Save plans it.
 - Every dish in a dinner has a role. The first dish added defaults to Main and later ones
   to Side. Dishes are listed Main, Side, Dessert, Other (Q29).
 - **Copy a dinner** (Q3, Q30): the picker groups all dinners that have dishes by their
@@ -586,10 +588,13 @@ opens its dinner. ("Check pantry" is hidden for now; 6.8.)
 existing dishes or typing a new name, then picking its role. Each dish links to its
 recipe at this dinner's servings. Actions: Copy a dinner and Clear. On a planned dinner,
 the date at the top is a button, with an icon, that opens Move to another date; on a date
-with no dinner it's plain text. The type, dishes, copying, moving and clearing save as soon as they're made.
-Save on the servings and note goes to the dinner's week, where its row says "Saved" for 3
-seconds. If someone cleared or moved the dinner meanwhile, Save plans the date again and
-the page stays to say so (6.11).
+with no dinner it's plain text. A date with no dinner says "Not planned yet" and shows Cooking
+at home selected, with its servings and note ready to fill in, unsaved (6.9). The type, dishes,
+copying, moving and clearing save as soon as they're made, and keep anything typed in the
+servings and note for Save. Save on the servings and note goes to the dinner's week, where its
+row says "Saved" for 3 seconds; on a date with no dinner it plans it as the type shown. Leaving
+with something typed asks first. If someone cleared or moved the dinner meanwhile, Save plans
+the date again and the page stays to say so (6.11).
 
 ## 8. Look and feel
 

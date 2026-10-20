@@ -17,7 +17,8 @@
 		dinner,
 		suggestions,
 		servings,
-		onlost
+		onlost,
+		ownUpdate
 	}: {
 		dinner: Dinner | null;
 		/** Active dishes, most used first. */
@@ -29,6 +30,11 @@
 		 * page (someone switched the dinner to a type without dishes meanwhile).
 		 */
 		onlost: (message: string) => void;
+		/**
+		 * Reloads the page after an added dish. One added to a date with no dinner plans it, and
+		 * the page keeps what's typed in its note and servings.
+		 */
+		ownUpdate: (result: ActionResult, update: () => Promise<void>) => Promise<void>;
 	} = $props();
 
 	type Failure = { error?: string } | undefined;
@@ -228,7 +234,7 @@
 					restoreOpen = true;
 					return;
 				}
-				await update({ reset: false });
+				await ownUpdate(result, () => update({ reset: false }));
 				if (result.type === 'success') added(sent);
 			} finally {
 				adding = false;
@@ -249,7 +255,7 @@
 					await reload(notAdded(sentName, message));
 					return;
 				}
-				await update({ reset: false });
+				await ownUpdate(result, () => update({ reset: false }));
 				if (result.type === 'success') {
 					restoreOpen = false;
 					// Once the sheet has closed and given focus back.

@@ -42,12 +42,15 @@ function dinnerDate(params: { date: string }): string {
 export function load({ locals, params }) {
 	const user = requireHousehold(locals);
 	const date = dinnerDate(params);
-	const today = dateIn(Date.now(), getHousehold(user.householdId).timeZone);
+	const household = getHousehold(user.householdId);
+	const today = dateIn(Date.now(), household.timeZone);
 	const dinner = getDinner(user.householdId, date);
 	return {
 		date,
 		today,
 		dinner,
+		// A date with no dinner shows Cooking at home at these servings, unsaved (6.9, Q28).
+		defaultServings: household.defaultServings,
 		// Dinners already made, so a plan for later in the week isn't offered (assumption 1).
 		// Copying the group whose latest dinner is this one would change nothing, so it's left out.
 		copyGroups: listCopyGroups(user.householdId, today).filter(
@@ -159,9 +162,10 @@ export const actions = {
 		const dinner = getDinner(user.householdId, date);
 		const refused = notShown(dinner, dinnerId, 'details');
 		if (refused) return refused;
-		// Someone cleared or moved the dinner since the page opened. Saving plans the date again,
-		// as the type the page showed, with what was sent, so nothing typed is lost; the last save
-		// wins (6.11). The page stays and says so.
+		// No dinner yet: the page showed a date with no dinner, and Save plans it as the type the
+		// page showed. When the page showed a dinner, someone cleared or moved it since, and Save
+		// plans the date again with what was sent, so nothing typed is lost; the last save wins
+		// (6.11). The page then stays and says so.
 		const fields = dinner
 			? {
 					type: dinner.type,
@@ -177,7 +181,7 @@ export const actions = {
 			saveDinner(user.householdId, date, fields, Date.now())
 		);
 		if (failed !== undefined) return failed;
-		if (dinner === null) return { action: 'details', replanned: true };
+		if (dinner === null && dinnerId !== undefined) return { action: 'details', replanned: true };
 		redirect(303, `/menu?week=${weekStart(date)}&saved=${date}`);
 	},
 

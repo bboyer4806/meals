@@ -11,7 +11,8 @@
 		dinner,
 		servings = $bindable(null)
 	}: {
-		dinner: Dinner;
+		/** A saved dinner, or with no id the Cooking at home a date with no dinner shows (6.9). */
+		dinner: Pick<Dinner, 'type' | 'note' | 'servings'> & { id: number | null };
 		/**
 		 * The servings on screen, saved or not, which the dish links use. A number field bound
 		 * with bind:value holds a number, or null while it's empty.
@@ -186,7 +187,7 @@
 </script>
 
 <form class="card" method="POST" action="?/details" use:enhance={submit}>
-	<input type="hidden" name="dinnerId" value={dinner.id} />
+	{#if dinner.id !== null}<input type="hidden" name="dinnerId" value={dinner.id} />{/if}
 	<input type="hidden" name="type" value={dinner.type} />
 	{#if withServings}
 		<div class="field">

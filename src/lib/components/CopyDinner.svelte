@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { enhance, type SubmitFunction } from '$app/forms';
+	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import { filterCopyGroups } from '../copy-groups.ts';
 	import { formatDateLabel } from '../dates.ts';
@@ -14,7 +14,8 @@
 		groups,
 		dinnerId,
 		dishCount,
-		today
+		today,
+		ownUpdate
 	}: {
 		groups: CopyGroup[];
 		/** The dinner the page shows, if any, so a copy doesn't land on another one. */
@@ -22,6 +23,11 @@
 		/** How many dishes this dinner has now. */
 		dishCount: number;
 		today: string;
+		/**
+		 * Reloads the page after the copy. A copy onto a date with no dinner plans it, and the
+		 * page keeps what's typed in its note and servings.
+		 */
+		ownUpdate: (result: ActionResult, update: () => Promise<void>) => Promise<void>;
 	} = $props();
 
 	const uid = $props.id();
@@ -82,7 +88,7 @@
 					return;
 				}
 				open = false;
-				await update({ reset: false });
+				await ownUpdate(result, () => update({ reset: false }));
 				// SvelteKit moves focus to the top of the page after a form succeeds. The sheet's
 				// button gets it back, as when the sheet closes.
 				await tick();
