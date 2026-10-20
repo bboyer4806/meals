@@ -16,7 +16,7 @@ A phone-first website where households manage three connected things:
   remembers the store it was last bought from.
 - **Recipes:** ingredients, steps, notes, a photo and nutrition. Recipes scale to any
   number of servings, with unit conversion.
-- **Menu:** one dinner per day: cooking at home, eating out, going somewhere, or
+- **Menu:** one dinner per day: cooking at home, eating out, bringing a dish, or
   leftovers. Dinners are made of dishes from the recipe collection. A pantry checklist
   built from the coming week's dinners shows what's needed, and anything missing goes
   onto the grocery list (hidden for now; 6.8).
@@ -126,7 +126,7 @@ Backups:
 | Q23   | Categories             | None. The list is grouped by store.                                                                                                              |
 | Q24   | Stores                 | Each household manages its own, starting empty.                                                                                                  |
 | Q25   | Item details           | A notes field. No prices.                                                                                                                        |
-| Q26   | Dinner types           | Cooking at home, Eating out, Going somewhere, Leftovers. All have a note; Cooking at home and Going somewhere also have dishes.                  |
+| Q26   | Dinner types           | Cooking at home, Eating out, Bringing a dish, Leftovers. All have a note; Cooking at home and Bringing a dish also have dishes.                  |
 | Q26b  | Leftovers              | A note only, no link to the original dinner.                                                                                                     |
 | Q27   | Calendar               | A week list. No month view.                                                                                                                      |
 | Q27b  | Week start             | Sunday.                                                                                                                                          |
@@ -498,8 +498,8 @@ on the list. The rest of this section describes it as built.
 
 ### 6.9 Dinners and reuse
 
-- One dinner per date. The types are Cooking at home, Eating out, Going somewhere and
-  Leftovers. All have a note. Cooking at home and Going somewhere also have dishes and
+- One dinner per date. The types are Cooking at home, Eating out, Bringing a dish and
+  Leftovers. All have a note. Cooking at home and Bringing a dish also have dishes and
   servings (Q26).
 - Servings start at the household's usual number (Q28).
 - Every dish in a dinner has a role. The first dish added defaults to Main and later ones

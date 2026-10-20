@@ -8,17 +8,17 @@ export type DinnerType = (typeof DINNER_TYPES)[number];
 export const DINNER_TYPE_LABELS: Record<DinnerType, string> = {
 	cook: 'Cooking at home',
 	eat_out: 'Eating out',
-	going: 'Going somewhere',
+	going: 'Bringing a dish',
 	leftovers: 'Leftovers'
 };
 
-/** Cooking at home and Going somewhere have dishes and servings; the others only a note (Q26). */
+/** Cooking at home and Bringing a dish have dishes and servings; the others only a note (Q26). */
 export function hasDishes(type: DinnerType): boolean {
 	return type === 'cook' || type === 'going';
 }
 
 /** Why a dish can't go on a dinner of the other types. */
-export const NO_DISHES = 'Switch to Cooking at home or Going somewhere to add dishes';
+export const NO_DISHES = 'Switch to Cooking at home or Bringing a dish to add dishes';
 
 /** In the order a dinner lists its dishes (6.9). */
 export const DISH_ROLES = ['main', 'side', 'dessert', 'other'] as const;

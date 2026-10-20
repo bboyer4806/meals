@@ -408,7 +408,7 @@ describe('adding a dish', () => {
 			[{ name: 'tacos', role: 'side' }, 'Tacos is already on this dinner'],
 			[
 				{ name: 'Rice', role: 'side' },
-				'Switch to Cooking at home or Going somewhere to add dishes',
+				'Switch to Cooking at home or Bringing a dish to add dishes',
 				TODAY
 			]
 		];
