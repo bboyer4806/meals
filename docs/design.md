@@ -530,6 +530,12 @@ If two people change the same thing, the last save wins.
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
 header menu holds Household, Items, Admin (admin only) and Sign out.
 
+Some screens start with a Back link to the screen above. It is a plain link to one fixed
+screen, not the browser's history, so it works the same however the page was opened:
+Recipe has "‹ Recipes" (the Recipes list with no search or filters, even when the recipe
+was opened from a dinner), History and Items have "‹ Groceries", and Dinner has "‹ Week
+of" its week.
+
 | Screen           | Path                                 | What it does                                                                                                                         |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | Sign in          | `/login`                             | "Sign in with Google".                                                                                                               |
@@ -561,7 +567,8 @@ size) show under its name.
 and minus). Ingredients grouped by section and scaled (section 6.6), numbered steps with
 warnings when scaled (6.7), notes, source (a link when it's a URL), and nutrition per
 serving. Actions: Cook, Print, Edit, Archive ("Check pantry" is hidden for now; 6.8). Print
-uses a print layout of this page at the current servings, without buttons or navigation.
+uses a print layout of this page at the current servings, without buttons or navigation
+(including "‹ Recipes").
 
 **Edit recipe.** Name, photo (take or choose; resized on the phone), servings
 (pre-filled with the household's usual number for a new recipe), prep and cook minutes,

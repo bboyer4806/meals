@@ -411,3 +411,24 @@ test('shows the sign-in page after going Back from signing out', async ({ page, 
 	await expect(page).toHaveURL(/\/login$/);
 	await expect(page.getByRole('link', { name: 'Sign in with Google' })).toBeVisible();
 });
+
+test('goes back to Groceries from History and Items, opened from Groceries or More', async ({
+	page,
+	person: _
+}) => {
+	const back = page.getByRole('link', { name: '‹ Groceries', exact: true });
+	const more = page.getByRole('navigation', { name: 'More' });
+	for (const name of ['History', 'Items']) {
+		await page.goto('/groceries');
+		await page.getByRole('main').getByRole('link', { name, exact: true }).click();
+		await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
+		await back.click();
+		await expect(page).toHaveURL(/\/groceries$/);
+
+		await page.getByText('More', { exact: true }).click();
+		await more.getByRole('link', { name, exact: true }).click();
+		await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
+		await back.click();
+		await expect(page).toHaveURL(/\/groceries$/);
+	}
+});
