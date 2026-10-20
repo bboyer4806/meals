@@ -367,3 +367,33 @@ export const pantryMarks = sqliteTable(
 		check('pantry_marks_need_line', sql`(${t.state} = 'need') = (${t.needId} is not null)`)
 	]
 );
+
+// A dish someone asked for. It stays until someone removes it (design 6.12).
+export const dishRequests = sqliteTable(
+	'dish_requests',
+	{
+		id: integer('id').primaryKey(),
+		householdId: integer('household_id')
+			.notNull()
+			.references(() => households.id),
+		// Who asked. Removing them from the household removes their requests.
+		userId: integer('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		// As typed, kept when the linked dish is renamed or archived.
+		name: text('name').notNull(),
+		note: text('note'),
+		// The recipe the name matched when it was asked for, if any. Nothing changes it later.
+		dishId: integer('dish_id'),
+		createdAt: integer('created_at').notNull()
+	},
+	(t) => [
+		foreignKey({
+			columns: [t.householdId, t.dishId],
+			foreignColumns: [dishes.householdId, dishes.id]
+		}),
+		index('dish_requests_household').on(t.householdId),
+		index('dish_requests_user').on(t.userId),
+		index('dish_requests_dish').on(t.dishId)
+	]
+);

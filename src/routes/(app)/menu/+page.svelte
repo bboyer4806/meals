@@ -1,7 +1,17 @@
 <script lang="ts">
-	import { afterNavigate, goto } from '$app/navigation';
+	import { tick } from 'svelte';
+	import { enhance, type SubmitFunction } from '$app/forms';
+	import { afterNavigate, goto, refreshAll } from '$app/navigation';
+	import ItemInput from '#lib/components/ItemInput.svelte';
+	import Sheet from '#lib/components/Sheet.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
-	import { DINNER_TYPE_LABELS, DISH_ROLE_LABELS, hasDishes } from '#lib/menu.ts';
+	import {
+		DINNER_TYPE_LABELS,
+		DISH_ROLE_LABELS,
+		REQUEST_NAME_MAX,
+		REQUEST_NOTE_MAX,
+		hasDishes
+	} from '#lib/menu.ts';
 
 	let { data } = $props();
 
@@ -21,7 +31,74 @@
 		address.searchParams.delete('saved');
 		void goto(address, { shallow: true, replace: true });
 	});
+
+	// Dish requests (6.12). The fields stop taking characters at their limit, pasted text
+	// included, and say so while they're full.
+
+	let requestOpen = $state(false);
+	let requestName = $state('');
+	let requestNote = $state('');
+	let requestError = $state('');
+	let requesting = $state(false);
+	let requestsError = $state('');
+	let requestButton = $state<HTMLButtonElement>();
+
+	function failureMessage(data: unknown): string {
+		const error = (data as { error?: string } | undefined)?.error;
+		return error ?? 'Something went wrong. Please try again.';
+	}
+
+	function openRequest() {
+		requestError = '';
+		requestOpen = true;
+	}
+
+	const submitRequest: SubmitFunction = ({ cancel }) => {
+		if (requesting) return cancel();
+		requesting = true;
+		requestError = '';
+		return async ({ result, update }) => {
+			try {
+				if (result.type === 'failure') {
+					requestError = failureMessage(result.data);
+					return;
+				}
+				await update({ reset: false });
+				if (result.type !== 'success') return;
+				requestName = '';
+				requestNote = '';
+				requestOpen = false;
+				await tick();
+				requestButton?.focus();
+			} finally {
+				requesting = false;
+			}
+		};
+	};
+
+	// Someone else may have removed it already, which is what was wanted.
+	const submitRemove: SubmitFunction = () => {
+		requestsError = '';
+		return async ({ result, update }) => {
+			if (result.type === 'error' && result.status === 404) {
+				await refreshAll();
+			} else if (result.type === 'failure') {
+				requestsError = failureMessage(result.data);
+			} else {
+				await update();
+			}
+			await tick();
+			requestButton?.focus();
+		};
+	};
 </script>
+
+{#snippet limitWarning(text: string, max: number)}
+	<!-- Always there, so a screen reader announces the warning when it appears. -->
+	<p class="limit" role="status">
+		{text.length >= max ? `You've reached the ${max}-character limit.` : ''}
+	</p>
+{/snippet}
 
 <svelte:head>
 	<title>Menu · Meals</title>
@@ -75,6 +152,65 @@
 		</li>
 	{/each}
 </ol>
+
+<section class="card requests" aria-labelledby="requests-heading">
+	<h2 id="requests-heading">Requests</h2>
+	{#if requestsError}<p class="error" role="alert">{requestsError}</p>{/if}
+	{#if data.requests.length > 0}
+		<ul class="list">
+			{#each data.requests as request (request.id)}
+				<li class="request">
+					<div class="what">
+						{#if request.dishId !== null}
+							<a class="dish" href="/recipes/{request.dishId}">{request.name}</a>
+						{:else}
+							<span class="dish">{request.name}</span>
+						{/if}
+						{#if request.note}<span class="request-note">{request.note}</span>{/if}
+						<span class="muted">Asked by {request.askedBy}</span>
+					</div>
+					<form method="POST" action="?/removeRequest" use:enhance={submitRemove}>
+						<input type="hidden" name="id" value={request.id} />
+						<button class="quiet" aria-label="Remove {request.name}">Remove</button>
+					</form>
+				</li>
+			{/each}
+		</ul>
+	{:else}
+		<p class="muted">No requests yet.</p>
+	{/if}
+	<button type="button" bind:this={requestButton} onclick={openRequest}>Request a dish</button>
+</section>
+
+<Sheet bind:open={requestOpen} title="Request a dish">
+	<form method="POST" action="?/request" use:enhance={submitRequest}>
+		{#if requestError}<p class="error" role="alert">{requestError}</p>{/if}
+		<div class="field">
+			<label for="request-name">Dish</label>
+			<ItemInput
+				id="request-name"
+				name="name"
+				placeholder="Search or type a dish"
+				items={data.dishes}
+				bind:value={requestName}
+				noun={null}
+			/>
+			{@render limitWarning(requestName, REQUEST_NAME_MAX)}
+		</div>
+		<div class="field">
+			<label for="request-note">Note (optional)</label>
+			<input
+				id="request-note"
+				name="note"
+				autocomplete="off"
+				maxlength={REQUEST_NOTE_MAX}
+				bind:value={requestNote}
+			/>
+			{@render limitWarning(requestNote, REQUEST_NOTE_MAX)}
+		</div>
+		<button class="primary">Request</button>
+	</form>
+</Sheet>
 
 <style>
 	.weeks {
@@ -203,5 +339,41 @@
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		overflow: hidden;
+	}
+
+	.requests {
+		margin-top: 1rem;
+		overflow-wrap: anywhere;
+	}
+
+	.requests ul {
+		margin-bottom: 0.75rem;
+	}
+
+	.request {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.what {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.dish {
+		font-weight: 700;
+	}
+
+	.request-note {
+		white-space: pre-line;
+	}
+
+	/* Takes no room while empty. */
+	.limit {
+		margin: 0;
+		color: var(--muted);
 	}
 </style>

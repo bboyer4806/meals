@@ -283,7 +283,8 @@ src/lib/server/
   db/index.ts             connection, settings, migrations at startup
   auth/                   Google sign-in, sessions, invites
   data/                   one module per area: households, stores, items, needs,
-                          dishes, dinners, pantry. Every function takes householdId first.
+                          dishes, dinners, requests, pantry. Every function takes
+                          householdId first.
   photos.ts               save, delete and serve photos
   jira.ts                 create a feedback ticket in Jira
 src/routes/               pages and form actions; database access only through data/
@@ -344,6 +345,10 @@ date with no row is not planned.
 **dinner_dishes:** `dinner_id`, `dish_id` (unique per dinner), `role` (`main`, `side`,
 `dessert` or `other`; Q29). Only `cook` and `going` dinners have dishes.
 
+**dish_requests:** `user_id` (who asked; removing them from the household removes their
+requests), `name` (as typed), `note`, `dish_id` (optional: the recipe the name matched when it
+was asked for), `created_at` (6.12).
+
 **pantry_checklists:** at most one per household (Q35). Either `start_date` and
 `end_date` (from the menu), or `dish_id` and `servings` (from one recipe). `created_at`.
 
@@ -352,7 +357,8 @@ date with no row is not planned.
 the mark).
 
 How they connect: a household has users, invites, stores, items, grocery lines, dishes,
-dinners and at most one checklist. A grocery line points at an item and a store. An
+dinners, dish requests and at most one checklist. A dish request points at the member who
+asked and sometimes a dish. A grocery line points at an item and a store. An
 ingredient points at a dish and an item. A dinner has dishes through `dinner_dishes`. A
 mark points at a checklist, an item and sometimes a grocery line.
 
@@ -530,6 +536,23 @@ adding the same name offers to restore it.
 Every page reloads its data when opened and when you come back to the tab or app (Q11).
 If two people change the same thing, the last save wins.
 
+### 6.12 Dish requests
+
+- Anyone in the household can ask for a dish, see every request and remove any of them (E2).
+  Requests are listed oldest first, each with the dish, the note if there is one, and "Asked by"
+  with the asker's name. Showing who asked is an exception to section 12, for requests only.
+- The dish field suggests the household's active dishes, like adding a dish to a dinner (6.9),
+  but offers no new dish. A request whose name matches an active dish, ignoring case, links to
+  its recipe. Any other name stays plain text and adds no dish to Recipes.
+- The link is set when the request is made and never changes: a linked request keeps it, and
+  the name as typed, after the recipe is renamed or archived, and a plain one stays plain after
+  a recipe with its name is added.
+- The dish name is required and up to 80 characters; the note is optional and up to 200. Each
+  field stops taking characters at its limit, pasted text included, and says so while it's full.
+  The server refuses anything longer (4.5).
+- Requests have no statuses, dates or link to dinners. One stays until someone removes it,
+  without being asked first. Removing a member removes their requests.
+
 ## 7. Screens
 
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
@@ -595,7 +618,9 @@ up and down buttons, and "Add section" inserts a heading.
 
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, dishes by role,
 and note. Today is highlighted. Previous, next and "This week" buttons. Tapping a day
-opens its dinner. ("Check pantry" is hidden for now; 6.8.)
+opens its dinner. ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
+**Requests** lists the dish requests (6.12), or "No requests yet.", each with Remove. "Request
+a dish" opens a sheet with Dish (with suggestions), an optional Note and Request.
 
 **Dinner.** "‹ Week of" goes to the dinner's week. Type (four buttons), note, servings,
 and dishes. You add a dish by searching existing dishes or typing a new name, then picking
@@ -739,7 +764,7 @@ ingredients.
 - Importing recipes from a website (Q37; planned for later).
 - Backups off the server (Q13).
 - Merging duplicate items.
-- Showing who added or changed something.
+- Showing who added or changed something, except who asked for a dish request (6.12).
 - Deleting a household.
 - Different servings for different dishes in the same dinner.
 - Metric units in the known list.

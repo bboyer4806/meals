@@ -5,7 +5,8 @@
 	// first, then names that contain it, most often added first within each. A name that
 	// matches no item offers "Add as a new item" (design 6.4). The recipe editor turns off
 	// `required`, since a blank ingredient row is left out rather than refused. The dinner
-	// editor suggests dishes, so its new option says "new dish".
+	// editor suggests dishes, so its new option says "new dish". A dish request adds nothing, so
+	// it offers no new option (6.12).
 	let {
 		items,
 		value = $bindable(''),
@@ -21,8 +22,8 @@
 		name: string;
 		placeholder?: string;
 		required?: boolean;
-		/** What a name that matches nothing would be added as. */
-		noun?: string;
+		/** What a name that matches nothing would be added as; null offers nothing for it. */
+		noun?: string | null;
 	} = $props();
 
 	type Option = { kind: 'item'; item: T } | { kind: 'new' };
@@ -48,7 +49,7 @@
 			.slice(0, 8)
 			.map((match): Option => ({ kind: 'item', item: match.item }));
 		const exists = items.some((item) => foldCase(item.name) === query);
-		return exists ? matches : [...matches, { kind: 'new' }];
+		return exists || noun === null ? matches : [...matches, { kind: 'new' }];
 	});
 
 	const showList = $derived(open && options.length > 0);
