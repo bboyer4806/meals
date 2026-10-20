@@ -185,7 +185,10 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 	await expect(
 		page.getByText('Not planned yet. Pick a type, add a dish or copy a dinner.')
 	).toBeVisible();
-	await expect(types(page).getByRole('button', { pressed: true })).toHaveCount(0);
+	// It shows Cooking at home at the household's usual servings, unsaved (6.9).
+	await expect(types(page).getByRole('button', { pressed: true })).toHaveText(['Cooking at home']);
+	await expect(page.getByLabel('Servings', { exact: true })).toHaveValue('4');
+	await expect(page.getByLabel('Note', { exact: true })).toHaveValue('');
 	await expect(dishSection(page).getByText('No dishes yet.')).toBeVisible();
 	// The first dish is a Main.
 	await expect(newRole(page)).toHaveValue('main');
@@ -960,9 +963,9 @@ test('clears a dinner after asking, and shows the date as not planned', async ({
 	const unplanned = page.getByText('Not planned yet. Pick a type, add a dish or copy a dinner.');
 	await expect(unplanned).toBeVisible();
 	await expect(unplanned).toBeFocused();
-	await expect(types(page).getByRole('button', { pressed: true })).toHaveCount(0);
+	await expect(types(page).getByRole('button', { pressed: true })).toHaveText(['Cooking at home']);
 	await expect(dishSection(page).getByText('No dishes yet.')).toBeVisible();
-	await expect(page.getByLabel('Note', { exact: true })).toHaveCount(0);
+	await expect(page.getByLabel('Note', { exact: true })).toHaveValue('');
 	// The date is plain text, with nothing to move.
 	await expect(dateButton(page)).toHaveCount(0);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
@@ -1398,7 +1401,7 @@ test("lets what was typed go after the page's own Clear or switch to Eating out"
 	await page.getByRole('button', { name: 'Clear' }).click();
 	await page.getByRole('dialog', { name: 'Clear' }).getByRole('button', { name: 'Clear' }).click();
 	await expect(page.getByText('Not planned yet.', { exact: false })).toBeFocused();
-	await expect(note).toHaveCount(0);
+	await expect(note).toHaveValue('');
 	await expect(page.getByRole('alert')).toHaveCount(0);
 	expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
 
@@ -1408,4 +1411,91 @@ test("lets what was typed go after the page's own Clear or switch to Eating out"
 	await expect(dishSection(page)).toHaveCount(0);
 	await expect(page.getByRole('alert')).toHaveCount(0);
 	expect(dinnerRow(db, person.householdId, date)).toMatchObject({ type: 'eat_out', note: null });
+});
+
+test('saves an unplanned day as Cooking at home, only when Save is tapped', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	const note = page.getByLabel('Note', { exact: true });
+
+	// Opening it, and leaving it untouched, saves nothing.
+	await page.goto(`/menu/${date}`);
+	await expect(typeButton(page, 'Cooking at home')).toHaveAttribute('aria-pressed', 'true');
+	await page.getByRole('link', { name: /^‹ Week of/ }).click();
+	await expect(day(page, date)).toContainText('Not planned');
+	expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
+
+	await day(page, date).click();
+	await note.fill('Grill outside');
+	await page.getByRole('button', { name: 'More servings' }).click();
+	await saveToWeek(page, date);
+	await expect(day(page, date).locator('.note')).toHaveText('Grill outside');
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+		type: 'cook',
+		note: 'Grill outside',
+		servings: 5
+	});
+});
+
+test('asks before leaving an unplanned day with something typed', async ({ page, db, person }) => {
+	const date = addDays(today(), 1);
+	const questions: string[] = [];
+	page.on('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	});
+
+	await page.goto(`/menu/${date}`);
+	await page.getByLabel('Note', { exact: true }).fill('Grill outside');
+	await page.getByRole('link', { name: /^‹ Week of/ }).click();
+	await expect.poll(() => questions).toEqual([LEAVE]);
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
+});
+
+test('keeps what was typed on an unplanned day when a dish or a copy plans it', async ({
+	page,
+	db,
+	person
+}) => {
+	const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+	addDinner(db, person.householdId, addDays(today(), -1), { dishes: [[tacos, 'main']] });
+	const note = page.getByLabel('Note', { exact: true });
+	const servings = page.getByLabel('Servings', { exact: true });
+
+	// Adding a dish plans the day with the dish alone; the note and servings wait for Save.
+	const dished = addDays(today(), 1);
+	await page.goto(`/menu/${dished}`);
+	await note.fill('Grill outside');
+	await servings.fill('6');
+	await addDish(page, 'Grilled corn', 'new');
+	await expect(dishLinks(page)).toHaveText(['Grilled corn']);
+	await expect(note).toHaveValue('Grill outside');
+	await expect(servings).toHaveValue('6');
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect(dinnerRow(db, person.householdId, dished)).toMatchObject({ note: null, servings: 4 });
+	await saveToWeek(page, dished);
+	expect(dinnerRow(db, person.householdId, dished)).toMatchObject({
+		type: 'cook',
+		note: 'Grill outside',
+		servings: 6
+	});
+
+	// Copying a dinner does the same.
+	const copied = addDays(today(), 2);
+	await page.goto(`/menu/${copied}`);
+	await note.fill('Taco night');
+	await page.getByRole('button', { name: 'Copy a dinner' }).click();
+	const sheet = page.getByRole('dialog', { name: 'Copy a dinner' });
+	await sheet.getByRole('button', { name: /^Chicken tacos/ }).click();
+	await expect(sheet).toHaveCount(0);
+	await expect(dishLinks(page)).toHaveText(['Chicken tacos']);
+	await expect(note).toHaveValue('Taco night');
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect(dinnerRow(db, person.householdId, copied)).toMatchObject({ note: null });
+	await saveToWeek(page, copied);
+	expect(dinnerRow(db, person.householdId, copied)).toMatchObject({ note: 'Taco night' });
 });

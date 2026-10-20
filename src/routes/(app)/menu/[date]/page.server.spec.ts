@@ -132,6 +132,7 @@ describe('loading a date', () => {
 					{ dishId: rice, name: 'Rice', role: 'side', archived: false }
 				]
 			},
+			defaultServings: 3,
 			// Tomorrow's dinner isn't made yet (assumption 1).
 			copyGroups: [
 				{
@@ -164,8 +165,12 @@ describe('loading a date', () => {
 		expect(groups(TOMORROW)).toEqual([latest, soup]);
 	});
 
-	it('gives no dinner for a date that is not planned', () => {
-		expect(loadPage('2027-01-01')).toMatchObject({ date: '2027-01-01', dinner: null });
+	it('gives no dinner for a date that is not planned, and the usual servings to show (Q28)', () => {
+		expect(loadPage('2027-01-01')).toMatchObject({
+			date: '2027-01-01',
+			dinner: null,
+			defaultServings: 3
+		});
 	});
 
 	it('is not found for a date that is not one', () => {
@@ -335,8 +340,23 @@ describe('saving servings and the note', () => {
 		);
 	});
 
+	it('plans a date with no dinner as the type the page showed, then goes to the week (6.9)', async () => {
+		expectRedirect(
+			await post('details', { type: 'cook', servings: '5', note: ' Soup ' }),
+			`/menu?week=2026-10-04&saved=${TOMORROW}`
+		);
+		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+			type: 'cook',
+			note: 'Soup',
+			servings: 5,
+			dishes: []
+		});
+	});
+
 	it('keeps an Eating out dinner Eating out when it was cleared meanwhile', async () => {
-		await post('details', { type: 'eat_out', note: 'Thai place' });
+		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'eat_out' }));
+		clearDinner(householdId, TOMORROW);
+		await post('details', { type: 'eat_out', note: 'Thai place', dinnerId });
 		expect(getDinner(householdId, TOMORROW)).toMatchObject({ type: 'eat_out', note: 'Thai place' });
 	});
 
@@ -348,7 +368,9 @@ describe('saving servings and the note', () => {
 
 	it('starts a dinner planned that way at the usual servings when none were sent (Q28)', async () => {
 		// The page of an Eating out dinner sends only the note.
-		await post('details', { note: 'Thai place' });
+		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'eat_out', servings: 6 }));
+		clearDinner(householdId, TOMORROW);
+		await post('details', { note: 'Thai place', dinnerId });
 		expect(getDinner(householdId, TOMORROW)).toMatchObject({
 			type: 'cook',
 			note: 'Thai place',

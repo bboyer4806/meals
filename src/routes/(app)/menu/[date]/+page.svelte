@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
-	import { enhance, type SubmitFunction } from '$app/forms';
+	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import CopyDinner from '#lib/components/CopyDinner.svelte';
@@ -64,18 +64,37 @@
 		return shown === null || hasDishes(shown.type);
 	}
 
+	// What the details form shows on a date with no dinner: Cooking at home at the usual servings,
+	// saved only by Save, a dish, a copy or a type (6.9, Q28).
+	function unplannedDinner() {
+		return { id: null, type: 'cook' as const, note: null, servings: data.defaultServings };
+	}
+
 	// The dinner the details form is for: the one on this date, except when a reload finds it
 	// cleared or moved away while something typed in the form isn't saved. The form then keeps the
 	// dinner it had, since such a reload, as on coming back to the app (Q11), would otherwise drop
 	// what was typed without a word, and saving plans the date again with it (6.11).
-	let editing = $state(untrack(() => data.dinner));
+	let editing = $state<Dinner | ReturnType<typeof unplannedDinner>>(
+		untrack(() => data.dinner ?? unplannedDinner())
+	);
 	const HELD = 'Someone cleared or moved this dinner. Save to plan it again with what you typed.';
 	let details = $state<ReturnType<typeof DinnerDetails>>();
 	let dishEditor = $state<ReturnType<typeof DinnerDishes>>();
 
-	// Set while this page's own Clear or type switch reloads it. The person asked for those, so
-	// what they take off the page goes without a word.
+	// Set while this page's own change reloads it. The person asked for it, so what it takes off
+	// the page goes without a word, and what's typed in the form stays for Save, also when the
+	// change planned the date.
 	let ownChange = false;
+
+	/** Reloads the page after one of its own changes, sent with the result it got. */
+	async function ownUpdate(result: ActionResult, update: () => Promise<void>) {
+		ownChange = result.type === 'success';
+		try {
+			await update();
+		} finally {
+			ownChange = false;
+		}
+	}
 
 	// After each load and before the page updates, while the editors about to go still hold what
 	// was typed in them.
@@ -86,7 +105,7 @@
 			const was = loaded;
 			loaded = now;
 			if (now.date !== was.date || ownChange) {
-				editing = now.dinner;
+				editing = now.dinner ?? unplannedDinner();
 				return;
 			}
 			// Someone switched the dinner to a type without dishes, which takes the dish field away.
@@ -94,7 +113,7 @@
 				const lost = dishEditor?.nameLost();
 				if (lost) void showNotice(lost);
 			}
-			if (now.dinner === null && editing !== null && details?.hasUnsaved()) {
+			if (now.dinner === null && editing.id !== null && details?.hasUnsaved()) {
 				// Said once, when the dinner goes; later reloads find it still gone.
 				if (was.dinner !== null) void showNotice(HELD);
 				return;
@@ -103,15 +122,15 @@
 			// while something typed isn't saved. The form shows that dinner, so its note isn't
 			// replaced unseen, and what was typed goes in the notice to copy. A dinner that already
 			// has what was typed is this page's own save planning the date again.
-			const replaced =
-				editing !== null &&
-				now.dinner !== null &&
-				now.dinner.id !== editing.id &&
+			const other = now.dinner;
+			if (
+				other !== null &&
+				other.id !== editing.id &&
 				details?.hasUnsaved() &&
-				!details.matches(now.dinner);
-			if (replaced && details) {
+				!details.matches(other)
+			) {
 				const typed = details.typedNote();
-				editing = now.dinner;
+				editing = other;
 				const form = details;
 				void tick().then(() => form.reset());
 				void showNotice(
@@ -123,7 +142,7 @@
 			}
 			// The form held for a cleared dinner has nothing left to save, so its notice goes too.
 			if (notice?.message === HELD) notice = null;
-			editing = now.dinner;
+			editing = now.dinner ?? unplannedDinner();
 		});
 	});
 
@@ -174,11 +193,9 @@
 					// put on this date.
 					await refreshAll();
 				} else {
-					ownChange = result.type === 'success';
-					await update({ reset: false });
+					await ownUpdate(result, () => update({ reset: false }));
 				}
 			} finally {
-				ownChange = false;
 				typeBusy = false;
 			}
 			// SvelteKit moves focus to the top of the page after a form succeeds, and the sheet
@@ -189,20 +206,17 @@
 		};
 	};
 
-	// Clearing removes the actions it was among, so focus goes to the date's new state.
+	// Clearing removes the actions it was among, so focus goes to the date's new state. The form
+	// drops what was typed for the cleared dinner.
 	let unplanned = $state<HTMLElement>();
 	const submitClear: SubmitFunction = () => {
 		return async ({ result, update }) => {
-			ownChange = result.type === 'success';
-			try {
-				// When someone put another dinner on this date meanwhile, it isn't cleared, and the
-				// page shows it under the message.
-				await update({ reset: false, refreshAll: true });
-			} finally {
-				ownChange = false;
-			}
+			// When someone put another dinner on this date meanwhile, it isn't cleared, and the
+			// page shows it under the message.
+			await ownUpdate(result, () => update({ reset: false, refreshAll: true }));
 			if (result.type !== 'success') return;
 			await tick();
+			details?.reset();
 			unplanned?.focus();
 		};
 	};
@@ -276,7 +290,7 @@
 			<button
 				name="type"
 				value={type}
-				aria-pressed={dinner?.type === type}
+				aria-pressed={editing.type === type}
 				onclick={(event) => {
 					if (dishCount > 0 && !hasDishes(type)) {
 						event.preventDefault();
@@ -294,16 +308,21 @@
 			suggestions={data.dishes}
 			servings={linkServings}
 			onlost={showNotice}
+			{ownUpdate}
 			bind:this={dishEditor}
 		/>
 	{/if}
 
-	{#if editing}
-		<DinnerDetails dinner={editing} bind:servings={shownServings} bind:this={details} />
-	{/if}
+	<DinnerDetails dinner={editing} bind:servings={shownServings} bind:this={details} />
 
 	<div class="actions">
-		<CopyDinner groups={data.copyGroups} dinnerId={dinner?.id} {dishCount} today={data.today} />
+		<CopyDinner
+			groups={data.copyGroups}
+			dinnerId={dinner?.id}
+			{dishCount}
+			today={data.today}
+			{ownUpdate}
+		/>
 	</div>
 
 	{#if dinner}
