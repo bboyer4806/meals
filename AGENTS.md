@@ -42,8 +42,9 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
   or `requireAdmin` from `src/lib/server/auth/guards.ts`; layout checks do not protect actions.
   Derive household identity from the signed-in session, never from request input.
 - Household data goes through `src/lib/server/data/`, one module per area. Operations on
-  household-owned data take `householdId` first; household creation and administrative
-  listing have different signatures. Preserve household isolation in reads and writes.
+  household-owned data take `householdId` first; household creation, administrative
+  listing and a person's What's new seen date have different signatures. Preserve household
+  isolation in reads and writes.
 - Routes use that data layer rather than querying the database. Sign-in and sessions live
   in `src/lib/server/auth/`, photo files in `src/lib/server/photos.ts`. The `/healthz`
   database check is the direct-query route exception.
@@ -69,6 +70,11 @@ applies migrations when it starts. Use the existing `transaction()` helper in
   for sessions and its helpers (`addRecipe`, `addDinner` and others) to set up data.
 
 ## Workflow
+
+When a sprint closes, one pull request adds its release to the top of `src/lib/whats-new.ts`:
+the sprint's version ("Meals 1.2" is "1.2"), the date it closed, and one line per change
+people will notice, written for them. Leave out internal changes, such as tests or instruction
+files. See design.md section 7 (What's new).
 
 A push to `main` deploys to production, including documentation-only changes. PRs run checks
 only. Keep setup, deployment, backup and OAuth details in README, and behavior details in

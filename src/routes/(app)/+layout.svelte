@@ -19,17 +19,26 @@
 	}
 </script>
 
+<!-- A release added since the person last opened What's new (design 7). -->
+{#snippet dot()}
+	{#if data.whatsNew}
+		<span class="dot"><span class="visually-hidden">new</span></span>
+	{/if}
+{/snippet}
+
 <header class="no-print">
 	<div class="bar">
 		<a class="brand link-tap" href="/groceries">Meals</a>
 		<span class="household">{data.householdName}</span>
 		<details class="menu" bind:this={menu}>
 			<!-- Not "Menu", which is the menu of dinners in the tab bar. -->
-			<summary>More</summary>
+			<summary>More{@render dot()}</summary>
 			<nav aria-label="More">
 				<a href="/groceries/items">Items</a>
 				<a href="/groceries/history">History</a>
 				<a href="/household">Household</a>
+				<!-- Preloading on hover would run its load, which clears the dot (design 7). -->
+				<a href="/whats-new" data-sveltekit-preload-data="false">What's new{@render dot()}</a>
 				{#if data.user.isAdmin}
 					<a href="/admin">Admin</a>
 				{/if}
@@ -161,6 +170,16 @@
 		width: 100%;
 		justify-content: flex-start;
 		color: var(--accent);
+	}
+
+	.dot {
+		display: inline-block;
+		flex-shrink: 0;
+		width: 0.5rem;
+		height: 0.5rem;
+		margin-left: 0.375rem;
+		border-radius: 50%;
+		background: var(--accent);
 	}
 
 	.menu a:hover {
