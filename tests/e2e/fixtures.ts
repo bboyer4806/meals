@@ -297,3 +297,30 @@ export function addPhotoFiles(photo: Buffer, thumb: Buffer): string {
 export function photoFile(key: string, size: 'full' | 'thumb'): string {
 	return `.e2e-data/photos/${key}${size === 'thumb' ? '-thumb' : ''}.jpg`;
 }
+
+// The stand-in Jira that feedback goes to (tests/e2e/jira-stub.ts), on the port
+// playwright.config.ts gives it.
+const JIRA_STUB = 'http://localhost:4174';
+
+export type JiraTicket = {
+	authorization: string | undefined;
+	fields: {
+		project: { key: string };
+		issuetype: { name: string };
+		labels: string[];
+		summary: string;
+		description: unknown;
+	};
+};
+
+/** The tickets the stand-in Jira received whose request contains the text. */
+export async function jiraTickets(containing: string): Promise<JiraTicket[]> {
+	const response = await fetch(`${JIRA_STUB}/tickets`);
+	const tickets = (await response.json()) as JiraTicket[];
+	return tickets.filter((ticket) => JSON.stringify(ticket).includes(containing));
+}
+
+/** Makes the stand-in Jira fail the next ticket whose request contains the text. */
+export async function failNextJiraTicket(containing: string): Promise<void> {
+	await fetch(`${JIRA_STUB}/fail?match=${encodeURIComponent(containing)}`, { method: 'POST' });
+}

@@ -6,6 +6,16 @@ import { createDish, type DishInput, type IngredientInput } from './data/dishes.
 import { db, openDb } from './db/index.ts';
 import { dinnerDishes, dinners, households, stores, users } from './db/schema.ts';
 
+/** Settings for loadConfig, with DATA_DIR to fill in. */
+export const TEST_ENV = {
+	GOOGLE_CLIENT_ID: 'client-id',
+	GOOGLE_CLIENT_SECRET: 'client-secret',
+	ADMIN_EMAIL: 'admin@example.com',
+	JIRA_URL: 'https://jira.example.com',
+	JIRA_EMAIL: 'feedback@example.com',
+	JIRA_API_TOKEN: 'jira-token'
+};
+
 export function freshDb(): void {
 	openDb(':memory:');
 }

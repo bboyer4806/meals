@@ -14,7 +14,7 @@ import {
 	savePhoto,
 	THUMB_MAX_BYTES
 } from './photos.ts';
-import { freshDb, makeDish, makeHousehold, recipe } from './testing.ts';
+import { TEST_ENV, freshDb, makeDish, makeHousehold, recipe } from './testing.ts';
 
 // Real random bytes unless a test says otherwise.
 vi.mock('node:crypto', async (importOriginal) => {
@@ -28,12 +28,7 @@ let dataDir: string;
 
 /** Loads the settings the way the server does at startup, with a new, empty data folder. */
 function useDataDir(dir: string) {
-	loadConfig({
-		GOOGLE_CLIENT_ID: 'client-id',
-		GOOGLE_CLIENT_SECRET: 'client-secret',
-		ADMIN_EMAIL: 'admin@example.com',
-		DATA_DIR: dir
-	});
+	loadConfig({ ...TEST_ENV, DATA_DIR: dir });
 }
 
 beforeEach(() => {

@@ -21,6 +21,9 @@
 	--font-heading: 'Fraunces Variable', Georgia, serif;
 	--radius: 12px;
 	--tap: 44px;
+	/* The app's tab bar, and the feedback button just above it. */
+	--tabs-height: 3.5rem;
+	--feedback-size: 3rem;
 }
 
 @media (prefers-color-scheme: dark) {

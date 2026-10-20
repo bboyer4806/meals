@@ -1,17 +1,13 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../config.ts';
+import { TEST_ENV } from '../testing.ts';
 import { authorizationUrl, exchangeCode } from './google.ts';
 
 const ORIGIN = 'https://meals.example.com';
 const NOW = Date.UTC(2026, 9, 3);
 
 beforeAll(() => {
-	loadConfig({
-		GOOGLE_CLIENT_ID: 'client-id',
-		GOOGLE_CLIENT_SECRET: 'client-secret',
-		ADMIN_EMAIL: 'admin@example.com',
-		DATA_DIR: '/tmp'
-	});
+	loadConfig({ ...TEST_ENV, DATA_DIR: '/tmp' });
 });
 
 afterEach(() => {

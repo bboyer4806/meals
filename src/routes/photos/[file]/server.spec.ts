@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { loadConfig } from '#lib/server/config.ts';
 import { setDishArchived, setDishPhoto } from '#lib/server/data/dishes.ts';
 import { deletePhoto, savePhoto } from '#lib/server/photos.ts';
-import { freshDb, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
+import { TEST_ENV, freshDb, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
 import { GET } from './+server.ts';
 
 let dataDir: string;
@@ -21,12 +21,7 @@ beforeEach(async () => {
 	freshDb();
 	dataDir = mkdtempSync(join(tmpdir(), 'meals-photos-'));
 	// The settings the server reads at startup (hooks.server.ts).
-	loadConfig({
-		GOOGLE_CLIENT_ID: 'client-id',
-		GOOGLE_CLIENT_SECRET: 'client-secret',
-		ADMIN_EMAIL: 'admin@example.com',
-		DATA_DIR: dataDir
-	});
+	loadConfig({ ...TEST_ENV, DATA_DIR: dataDir });
 	({ householdId } = makeHousehold());
 	dishId = makeDish(householdId, recipe('Pound cake'));
 	key = await savePhoto(new File([PHOTO], 'photo.jpg'), new File([THUMB], 'thumb.jpg'));
