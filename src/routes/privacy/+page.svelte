@@ -4,7 +4,7 @@
 
 <main class="page">
 	<h1>Privacy</h1>
-	<p class="muted">Last updated October 12, 2026</p>
+	<p class="muted">Last updated October 20, 2026</p>
 
 	<p>
 		Meals is a private, invite-only website where a household keeps a shared grocery list,
@@ -22,7 +22,7 @@
 	<p>
 		Your name and email address, your household's name and settings, and what your household
 		enters: stores, items, the grocery list and its history, recipes and their photos, the dinner
-		menu and pantry checks, and the email addresses of people you invite until they join. One
+		menu, dish requests and who asked for them, and pantry checks, and the email addresses of people you invite until they join. One
 		cookie keeps you signed in, and two short-lived cookies are used while you sign in. If your
 		address hasn't been invited yet, one more cookie holds it, so the page can show it, until you
 		close your browser.

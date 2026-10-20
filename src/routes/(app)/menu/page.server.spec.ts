@@ -1,8 +1,10 @@
 import { isRedirect } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setDishArchived } from '#lib/server/data/dishes.ts';
+import { listMembers } from '#lib/server/data/households.ts';
+import { addRequest, listRequests } from '#lib/server/data/requests.ts';
 import { freshDb, makeDinner, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
-import { load } from './+page.server.ts';
+import { actions, load } from './+page.server.ts';
 
 // Sat 2026-10-03 22:00 in Chicago, already Sunday Oct 4 in UTC. The household's week runs from
 // Sun Sep 27 to Sat Oct 3.
@@ -19,10 +21,11 @@ const THIS_WEEK = [
 ];
 
 let householdId: number;
+let userId: number;
 
 beforeEach(() => {
 	freshDb();
-	({ householdId } = makeHousehold(TZ));
+	({ householdId, userId } = makeHousehold(TZ));
 	vi.spyOn(Date, 'now').mockReturnValue(NOW);
 });
 
@@ -33,7 +36,7 @@ afterEach(() => {
 /** The signed-in person: a member of the household, someone still in setup, or nobody. */
 function locals(as: 'member' | 'setup' | 'nobody' = 'member') {
 	if (as === 'nobody') return { user: null };
-	const user = { id: 1, email: 'a@example.com', name: 'A', isAdmin: false };
+	const user = { id: userId, email: 'a@example.com', name: 'A', isAdmin: false };
 	return { user: { ...user, householdId: as === 'member' ? householdId : null } };
 }
 
@@ -164,5 +167,81 @@ describe("each day's dinner", () => {
 		makeDinner(householdId, '2026-09-27', { dishes: [[pie, 'dessert']] });
 		setDishArchived(householdId, pie, true, NOW);
 		expect(week().days[0]?.dinner?.roles).toEqual([{ role: 'dessert', names: ['Pie'] }]);
+	});
+});
+
+type Action = keyof typeof actions;
+
+/** Posts a form to /menu, giving what the action returned or what it threw. */
+async function post(action: Action, fields: Record<string, string>): Promise<unknown> {
+	const body = new FormData();
+	for (const [name, value] of Object.entries(fields)) body.set(name, value);
+	const request = new Request(`http://localhost/menu?/${action}`, { method: 'POST', body });
+	const event = { locals: locals(), request } as unknown as Parameters<(typeof actions)[Action]>[0];
+	try {
+		return await actions[action](event);
+	} catch (e) {
+		return e;
+	}
+}
+
+function expectFailure(result: unknown, action: string, error: string) {
+	expect(result).toMatchObject({ status: 400, data: { action, error } });
+}
+
+describe('requests (6.12)', () => {
+	it('are listed on every week, with the dish suggestions', () => {
+		makeDish(householdId, recipe('Lasagna'));
+		addRequest(householdId, userId, { name: 'Soup', note: null }, NOW);
+		for (const param of [undefined, '2027-03-10']) {
+			const data = week(param);
+			expect(data.requests.map((request) => request.name)).toEqual(['Soup']);
+			expect(data.dishes.map((dish) => dish.name)).toEqual(['Lasagna']);
+		}
+	});
+
+	it('come from the signed-in person, with the name and note', async () => {
+		expect(
+			await post('request', { name: 'Pot pie', note: ' Extra crust ', userId: '999' })
+		).toBeUndefined();
+		expect(listRequests(householdId)).toMatchObject([
+			{ name: 'Pot pie', note: 'Extra crust', askedBy: listMembers(householdId)[0]?.name }
+		]);
+	});
+
+	it('leave out an empty note', async () => {
+		await post('request', { name: 'Pot pie', note: '  ' });
+		expect(listRequests(householdId)[0]?.note).toBeNull();
+	});
+
+	it('need a dish name', async () => {
+		expectFailure(await post('request', { name: '  ', note: '' }), 'request', 'Enter a dish name');
+	});
+
+	it('refuse an 81-character name and a 201-character note', async () => {
+		expectFailure(
+			await post('request', { name: 'a'.repeat(81), note: '' }),
+			'request',
+			'Keep a dish name under 80 characters'
+		);
+		expectFailure(
+			await post('request', { name: 'Pie', note: 'a'.repeat(201) }),
+			'request',
+			'Keep the note under 200 characters'
+		);
+		expect(await post('request', { name: 'a'.repeat(80), note: 'a'.repeat(200) })).toBeUndefined();
+		expect(listRequests(householdId)).toHaveLength(1);
+	});
+
+	it("remove one, and not another household's", async () => {
+		const other = makeHousehold(TZ);
+		addRequest(other.householdId, other.userId, { name: 'Curry', note: null }, NOW);
+		addRequest(householdId, userId, { name: 'Soup', note: null }, NOW);
+		const [theirs] = listRequests(other.householdId);
+		const [ours] = listRequests(householdId);
+		expect(await post('removeRequest', { id: String(theirs!.id) })).toMatchObject({ status: 404 });
+		expect(await post('removeRequest', { id: String(ours!.id) })).toBeUndefined();
+		expect(listRequests(householdId)).toEqual([]);
+		expect(listRequests(other.householdId)).toHaveLength(1);
 	});
 });

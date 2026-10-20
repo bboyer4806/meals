@@ -1,12 +1,24 @@
 import { redirect } from '@sveltejs/kit';
+import { z } from 'zod';
 import { dateIn } from '#lib/dates.ts';
-import { DISH_ROLES, addDays, isDate, weekDates, weekStart, type DishRole } from '#lib/menu.ts';
+import {
+	DISH_ROLES,
+	REQUEST_NAME_MAX,
+	REQUEST_NOTE_MAX,
+	addDays,
+	isDate,
+	weekDates,
+	weekStart,
+	type DishRole
+} from '#lib/menu.ts';
 import { requireHousehold } from '#lib/server/auth/guards.ts';
-import { getDinners, type Dinner } from '#lib/server/data/dinners.ts';
+import { dishSuggestions, getDinners, type Dinner } from '#lib/server/data/dinners.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
+import { addRequest, listRequests, removeRequest } from '#lib/server/data/requests.ts';
+import { attempt, id, nameField, parseForm } from '#lib/server/forms.ts';
 
 // The week view (design 7, Menu): Sunday to Saturday, one row per day. ?week= can be any date
-// in the week.
+// in the week. Under it, the household's dish requests, the same on every week (6.12).
 
 /** The Sunday that starts the week to show, or null when ?week= isn't a date it can show. */
 function weekToShow(param: string | null, today: string): string | null {
@@ -67,6 +79,34 @@ export function load({ locals, url }) {
 					? { type: dinner.type, note: dinner.note, roles: byRole(dinner.dishes) }
 					: null
 			};
-		})
+		}),
+		requests: listRequests(user.householdId),
+		dishes: dishSuggestions(user.householdId)
 	};
 }
+
+// The asker is the signed-in person; the form sends only the name and note (6.12).
+const requestSchema = z.object({
+	name: nameField(REQUEST_NAME_MAX, 'a dish name'),
+	note: z
+		.string()
+		.trim()
+		.max(REQUEST_NOTE_MAX, `Keep the note under ${REQUEST_NOTE_MAX} characters`)
+		.transform((text) => (text === '' ? null : text))
+});
+
+export const actions = {
+	request: async ({ locals, request }) => {
+		const user = requireHousehold(locals);
+		const parsed = parseForm(requestSchema, await request.formData(), 'request');
+		if ('failure' in parsed) return parsed.failure;
+		return attempt('request', () => addRequest(user.householdId, user.id, parsed.data, Date.now()));
+	},
+
+	removeRequest: async ({ locals, request }) => {
+		const user = requireHousehold(locals);
+		const parsed = parseForm(z.object({ id }), await request.formData(), 'requests');
+		if ('failure' in parsed) return parsed.failure;
+		return attempt('requests', () => removeRequest(user.householdId, parsed.data.id));
+	}
+};

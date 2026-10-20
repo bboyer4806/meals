@@ -1493,3 +1493,138 @@ test('keeps what was typed on an unplanned day when a dish or a copy plans it', 
 	await saveToWeek(page, copied);
 	expect(dinnerRow(db, person.householdId, copied)).toMatchObject({ note: 'Taco night' });
 });
+
+// Dish requests (design 6.12), under the week.
+
+function requestsSection(page: Page) {
+	return page.getByRole('region', { name: 'Requests' });
+}
+
+function requestSheet(page: Page) {
+	return page.getByRole('dialog', { name: 'Request a dish' });
+}
+
+async function openRequestSheet(page: Page) {
+	await requestsSection(page).getByRole('button', { name: 'Request a dish' }).click();
+	await expect(requestSheet(page)).toBeVisible();
+}
+
+function dishCount(db: Database.Database, householdId: number): number {
+	return db
+		.prepare('select count(*) from dishes where household_id = ?')
+		.pluck()
+		.get(householdId) as number;
+}
+
+test('says when there are no requests, on every week', async ({ page, person: _ }) => {
+	await page.goto('/menu');
+	await expect(requestsSection(page).getByText('No requests yet.')).toBeVisible();
+	await page.goto(`/menu?week=${addDays(today(), 21)}`);
+	await expect(requestsSection(page).getByText('No requests yet.')).toBeVisible();
+});
+
+test('requests a dish from Recipes, linked, with who asked and the note', async ({
+	page,
+	db,
+	person
+}) => {
+	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna' });
+	await page.goto('/menu');
+	await openRequestSheet(page);
+	const sheet = requestSheet(page);
+	await sheet.getByRole('combobox', { name: 'Dish' }).fill('las');
+	await sheet.getByRole('option', { name: 'Lasagna' }).click();
+	// A request adds no dish, so nothing offers a new one.
+	await expect(sheet.getByRole('option')).toHaveCount(0);
+	await sheet.getByLabel('Note (optional)').fill('For Sunday, please');
+	await sheet.getByRole('button', { name: 'Request', exact: true }).click();
+	await expect(sheet).toHaveCount(0);
+
+	const section = requestsSection(page);
+	await expect(section.getByRole('link', { name: 'Lasagna' })).toHaveAttribute(
+		'href',
+		`/recipes/${lasagna}`
+	);
+	await expect(section.getByText('For Sunday, please')).toBeVisible();
+	await expect(section.getByText(/^Asked by Person \d+$/)).toBeVisible();
+	await expect(section.getByText('No requests yet.')).toHaveCount(0);
+});
+
+test('requests a new name as plain text, adding no dish', async ({ page, db, person }) => {
+	await page.goto('/menu');
+	await openRequestSheet(page);
+	const sheet = requestSheet(page);
+	await sheet.getByRole('combobox', { name: 'Dish' }).fill('Shrimp boil');
+	await expect(sheet.getByRole('option')).toHaveCount(0);
+	await sheet.getByRole('button', { name: 'Request', exact: true }).click();
+	await expect(sheet).toHaveCount(0);
+
+	const section = requestsSection(page);
+	await expect(section.getByText('Shrimp boil', { exact: true })).toBeVisible();
+	await expect(section.getByRole('link', { name: 'Shrimp boil' })).toHaveCount(0);
+	expect(dishCount(db, person.householdId)).toBe(0);
+});
+
+test('stops the dish at 80 characters and the note at 200, typed or pasted', async ({
+	page,
+	person: _
+}) => {
+	await page.goto('/menu');
+	await openRequestSheet(page);
+	const sheet = requestSheet(page);
+	const dish = sheet.getByRole('combobox', { name: 'Dish' });
+	const note = sheet.getByLabel('Note (optional)');
+	const dishFull = sheet.getByText("You've reached the 80-character limit.");
+	const noteFull = sheet.getByText("You've reached the 200-character limit.");
+
+	await dish.click();
+	await page.keyboard.insertText('a'.repeat(79));
+	await expect(dishFull).toHaveCount(0);
+	await page.keyboard.type('bcd');
+	await expect(dish).toHaveValue(`${'a'.repeat(79)}b`);
+	await expect(dishFull).toBeVisible();
+	await page.keyboard.press('Backspace');
+	await expect(dishFull).toHaveCount(0);
+	await page.keyboard.insertText('x'.repeat(30));
+	await expect(dish).toHaveValue(`${'a'.repeat(79)}x`);
+	await expect(dishFull).toBeVisible();
+
+	await note.click();
+	await page.keyboard.insertText('n'.repeat(250));
+	await expect(note).toHaveValue('n'.repeat(200));
+	await expect(noteFull).toBeVisible();
+	await page.keyboard.type('more');
+	await expect(note).toHaveValue('n'.repeat(200));
+});
+
+test('needs a dish name', async ({ page, person: _ }) => {
+	await page.goto('/menu');
+	await openRequestSheet(page);
+	const sheet = requestSheet(page);
+	const dish = sheet.getByRole('combobox', { name: 'Dish' });
+	// Past the browser's own check, so the server's message shows.
+	await dish.fill('   ');
+	await sheet.getByRole('button', { name: 'Request', exact: true }).click();
+	await expect(sheet.getByRole('alert')).toHaveText('Enter a dish name');
+});
+
+test('removes a request for everyone', async ({ page, db, person }) => {
+	const insert = db.prepare(
+		'insert into dish_requests (household_id, user_id, name, note, dish_id, created_at) values (?, ?, ?, null, null, ?)'
+	);
+	insert.run(person.householdId, person.userId, 'Gumbo', 1);
+	insert.run(person.householdId, person.userId, 'Chili', 2);
+	await page.goto('/menu');
+	const section = requestsSection(page);
+	await expect(section.getByRole('listitem')).toHaveText([/^Gumbo/, /^Chili/]);
+	await section.getByRole('button', { name: 'Remove Gumbo' }).click();
+	await expect(section.getByRole('listitem')).toHaveText([/^Chili/]);
+	await section.getByRole('button', { name: 'Remove Chili' }).click();
+	await expect(section.getByText('No requests yet.')).toBeVisible();
+	expect(
+		db
+			.prepare('select count(*) from dish_requests where household_id = ?')
+			.pluck()
+			.get(person.householdId)
+	).toBe(0);
+});
