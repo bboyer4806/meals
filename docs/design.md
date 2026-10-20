@@ -533,20 +533,14 @@ If two people change the same thing, the last save wins.
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
 header menu holds Household, Items, Admin (admin only) and Sign out.
 
-Some screens start with a Back link to the screen above. It is a plain link to one fixed
-screen, not the browser's history, so it works the same however the page was opened:
-Recipe has "‹ Recipes" (the Recipes list with no search or filters, even when the recipe
-was opened from a dinner), History and Items have "‹ Groceries", and Dinner has "‹ Week
-of" its week.
-
 | Screen           | Path                                 | What it does                                                                                                                         |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | Sign in          | `/login`                             | "Sign in with Google".                                                                                                               |
 | Invite-only      | `/not-invited`                       | Shown to an account without an invite, with the email it used.                                                                      |
 | Household setup  | `/setup`                             | First sign-in for a new household: name, usual servings, time zone.                                                                 |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
-| History          | `/groceries/history`                 | Received lines by date, newest first, searchable by item.                                                                            |
-| Items            | `/groceries/items`                   | The catalog: rename, notes, archive and restore. Shows each item's default store and when and where it was last bought.              |
+| History          | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
+| Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, archive and restore. Shows each item's default store and when and where it was last bought. |
 | Recipes          | `/recipes`                           | Search by name, filter by tag, photo thumbnails, total time, the "No recipe" label, and New recipe.                                  |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
 | Edit recipe      | `/recipes/new`, `/recipes/[id]/edit` | See below.                                                                                                                           |
@@ -566,12 +560,13 @@ circle checks it off as Received. Tapping a row opens an edit sheet: quantity, u
 store, note, Mark ordered, Didn't come, Got fewer, and Delete. An item's notes (brand,
 size) show under its name.
 
-**Recipe.** Photo, name, tags, prep, cook and total time, and a servings control (plus
-and minus). Ingredients grouped by section and scaled (section 6.6), numbered steps with
-warnings when scaled (6.7), notes, source (a link when it's a URL), and nutrition per
-serving. Actions: Cook, Print, Edit, Archive ("Check pantry" is hidden for now; 6.8). Print
-uses a print layout of this page at the current servings, without buttons or navigation
-(including "‹ Recipes").
+**Recipe.** "‹ Recipes" goes to the Recipes list with no search or filters, even when the
+recipe was opened from a dinner. Photo, name, tags, prep, cook and total time, and a
+servings control (plus and minus). Ingredients grouped by section and scaled (section
+6.6), numbered steps with warnings when scaled (6.7), notes, source (a link when it's a
+URL), and nutrition per serving. Actions: Cook, Print, Edit, Archive ("Check pantry" is
+hidden for now; 6.8). Print uses a print layout of this page at the current servings,
+without buttons or navigation (including "‹ Recipes").
 
 **Edit recipe.** Name, photo (take or choose; resized on the phone), servings
 (pre-filled with the household's usual number for a new recipe), prep and cook minutes,
@@ -584,8 +579,9 @@ up and down buttons, and "Add section" inserts a heading.
 and note. Today is highlighted. Previous, next and "This week" buttons. Tapping a day
 opens its dinner. ("Check pantry" is hidden for now; 6.8.)
 
-**Dinner.** Type (four buttons), note, servings, and dishes. You add a dish by searching
-existing dishes or typing a new name, then picking its role. Each dish links to its
+**Dinner.** "‹ Week of" goes to the dinner's week. Type (four buttons), note, servings,
+and dishes. You add a dish by searching existing dishes or typing a new name, then picking
+its role. Each dish links to its
 recipe at this dinner's servings. Actions: Copy a dinner and Clear. On a planned dinner,
 the date at the top is a button, with an icon, that opens Move to another date; on a date
 with no dinner it's plain text. A date with no dinner says "Not planned yet" and shows Cooking

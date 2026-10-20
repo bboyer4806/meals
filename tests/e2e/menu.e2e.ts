@@ -182,9 +182,7 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
 		new RegExp(`^Sunday, ${monthDay(sun)}`)
 	);
-	await expect(
-		page.getByText('Not planned yet. Pick a type, add a dish or copy a dinner.')
-	).toBeVisible();
+	await expect(page.getByText('Not planned yet.')).toBeVisible();
 	// It shows Cooking at home at the household's usual servings, unsaved (6.9).
 	await expect(types(page).getByRole('button', { pressed: true })).toHaveText(['Cooking at home']);
 	await expect(page.getByLabel('Servings', { exact: true })).toHaveValue('4');
@@ -960,7 +958,7 @@ test('clears a dinner after asking, and shows the date as not planned', async ({
 
 	await page.getByRole('button', { name: 'Clear' }).click();
 	await dialog.getByRole('button', { name: 'Clear' }).click();
-	const unplanned = page.getByText('Not planned yet. Pick a type, add a dish or copy a dinner.');
+	const unplanned = page.getByText('Not planned yet.');
 	await expect(unplanned).toBeVisible();
 	await expect(unplanned).toBeFocused();
 	await expect(types(page).getByRole('button', { pressed: true })).toHaveText(['Cooking at home']);
@@ -1271,9 +1269,7 @@ test('keeps what was typed when coming back to the app finds the dinner cleared 
 	await note.fill("Grandma's house, bring dessert");
 	db.prepare('delete from dinners where id = ?').run(dinnerId);
 	await comeBack(page);
-	await expect(
-		page.getByText('Not planned yet. Pick a type, add a dish or copy a dinner.')
-	).toBeVisible();
+	await expect(page.getByText('Not planned yet.')).toBeVisible();
 	await expect(page.getByRole('alert')).toHaveText(
 		'Someone cleared or moved this dinner. Save to plan it again with what you typed.'
 	);
@@ -1382,9 +1378,7 @@ test('drops the "save to plan it again" notice once another dinner is planned, o
 	await note.fill('Thai place');
 	await comeBack(page);
 	await expect(page.getByRole('alert')).toHaveCount(0);
-	await expect(
-		page.getByText('Not planned yet. Pick a type, add a dish or copy a dinner.')
-	).toBeVisible();
+	await expect(page.getByText('Not planned yet.')).toBeVisible();
 });
 
 test("lets what was typed go after the page's own Clear or switch to Eating out", async ({

@@ -272,9 +272,7 @@
 	{/if}
 
 	{#if !dinner}
-		<p class="muted unplanned" tabindex="-1" bind:this={unplanned}>
-			Not planned yet. Pick a type, add a dish or copy a dinner.
-		</p>
+		<p class="muted unplanned" tabindex="-1" bind:this={unplanned}>Not planned yet.</p>
 	{/if}
 
 	<form
