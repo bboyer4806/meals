@@ -14,6 +14,14 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.4',
+		released: '2026-10-21',
+		lines: [
+			'Tap Help at the top of any page to see what that page is for and how to use it.',
+			'The first time you open the Grocery list, a short tour points out Groceries, Menu, Recipes, More, Help and Send feedback.'
+		]
+	},
+	{
 		version: '1.3',
 		released: '2026-10-21',
 		lines: [

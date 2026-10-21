@@ -672,7 +672,8 @@ says "sprint". Releases live in `src/lib/whats-new.ts`, and when a sprint closes
 request adds its release. When the newest release's date is later than both the person's
 `whats_new_seen` and the day their account was created (in the household's time zone), a dot,
 read by screen readers as "new", shows on More and on What's new. Opening the page records the
-newest release as seen, which clears the dot on every device. The link doesn't preload on
+newest release as seen, which clears the dot on every device. Releases on the same day share a
+date, so someone who saw the earlier one gets no dot for the later one (MEA-25). The link doesn't preload on
 hover, as that would run the page's load and clear the dot without anyone opening it.
 
 ## 8. Look and feel

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.3 was released on 2026-10-21.
+// What's new (design 7). 1.4 was released on 2026-10-21.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -23,14 +23,20 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.3', '1.2', '1.1']);
-	const [newest, newer, older] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.4', '1.3', '1.2', '1.1']);
+	const [newest, previous, newer, older] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
-		page.locator('section').nth(2)
+		page.locator('section').nth(2),
+		page.locator('section').nth(3)
 	];
 	await expect(newest.getByText('Released October 21, 2026')).toBeVisible();
 	await expect(newest.getByRole('listitem')).toHaveText([
+		'Tap Help at the top of any page to see what that page is for and how to use it.',
+		'The first time you open the Grocery list, a short tour points out Groceries, Menu, Recipes, More, Help and Send feedback.'
+	]);
+	await expect(previous.getByText('Released October 21, 2026')).toBeVisible();
+	await expect(previous.getByRole('listitem')).toHaveText([
 		'Send feedback from any page with the button at the bottom right.',
 		'Request a dish on the Menu page, under Requests. Everyone in your household sees who asked for what.',
 		"What's new, in the More menu, lists what changed in each release, and a dot shows when there's something new."
