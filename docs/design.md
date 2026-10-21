@@ -560,7 +560,7 @@ If two people change the same thing, the last save wins.
 
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
 header menu, More, holds Items, History, Household, What's new, Admin (admin only) and Sign
-out.
+out. Help sits in the header to the left of More.
 
 | Screen           | Path                                 | What it does                                                                                                                         |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -596,6 +596,16 @@ ticket's reporter is that token's account. The sheet then says "Thanks, your fee
 sent." The page behind isn't reloaded, so anything typed there and not saved stays. If Jira
 can't be reached or refuses the ticket, it says "Couldn't send your feedback. Try again." and
 keeps the message. Feedback isn't stored in the app.
+
+**Help.** Every screen after household setup, from Grocery list to Admin, has a Help button in
+the header to the left of More, which printing hides with the rest of the header. It opens a
+sheet titled "Help: " and the screen's name, such as "Help: Grocery list", that says what the
+screen is for and how to do its main tasks, in plain words and no more than about 6 short points.
+Recipe, Edit recipe (and New recipe, which shares its form), Cooking view, Dinner, History and
+Items each have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
+Opening it changes nothing on the page behind, so anything typed there and not saved stays. The
+help is fixed text in `src/lib/help.ts`, keyed by each screen's route, and the type check fails
+if a screen has none. It opens only when asked: there's no tour, Help page or link in More.
 
 **Grocery list.** An add bar at the top: item (with suggestions), quantity, unit, store
 (filled from the default; tap to change) and Add. Below it, one group per store plus "No
