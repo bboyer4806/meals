@@ -2,6 +2,7 @@
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import Feedback from '#lib/components/Feedback.svelte';
+	import Help from '#lib/components/Help.svelte';
 
 	let { data, children } = $props();
 	let menu = $state<HTMLDetailsElement>();
@@ -30,6 +31,7 @@
 	<div class="bar">
 		<a class="brand link-tap" href="/groceries">Meals</a>
 		<span class="household">{data.householdName}</span>
+		<Help />
 		<details class="menu" bind:this={menu}>
 			<!-- Not "Menu", which is the menu of dinners in the tab bar. -->
 			<summary>More{@render dot()}</summary>

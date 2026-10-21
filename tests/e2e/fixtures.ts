@@ -64,6 +64,23 @@ export function addPerson(db: Database.Database): Person {
 	return { userId, householdId, email };
 }
 
+/** The ADMIN_EMAIL account, made by whichever test needs it first, in a household of its own. */
+export function adminId(db: Database.Database): number {
+	const find = db.prepare("select id from users where email = 'admin@example.com'");
+	db.transaction(() => {
+		if (find.get()) return;
+		const householdId = db
+			.prepare(
+				"insert into households (name, default_servings, time_zone, created_at) values ('Admin home', 2, 'UTC', 0)"
+			)
+			.run().lastInsertRowid;
+		db.prepare(
+			"insert into users (household_id, google_sub, email, name, created_at) values (?, 'admin-sub', 'admin@example.com', 'Admin', 0)"
+		).run(householdId);
+	}).immediate();
+	return (find.get() as { id: number }).id;
+}
+
 /** Creates a session the same way the app does and puts its cookie in the browser. */
 export async function signInAs(
 	db: Database.Database,

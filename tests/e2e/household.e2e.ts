@@ -1,4 +1,4 @@
-import { expect, signInAs, test } from './fixtures.ts';
+import { adminId, expect, signInAs, test } from './fixtures.ts';
 
 test('sends signed-out people to the sign-in page', async ({ page }) => {
 	await page.goto('/groceries');
@@ -77,23 +77,7 @@ test('keeps the admin page from everyone but the admin', async ({ page, person: 
 });
 
 test('lets the admin invite a household', async ({ page, db, context, baseURL }) => {
-	const existing = db.prepare("select id from users where email = 'admin@example.com'").get() as
-		| { id: number }
-		| undefined;
-	const userId =
-		existing?.id ??
-		Number(
-			db
-				.prepare(
-					"insert into households (name, default_servings, time_zone, created_at) values ('Admin home', 2, 'UTC', 0)"
-				)
-				.run().lastInsertRowid &&
-				db
-					.prepare(
-						"insert into users (household_id, google_sub, email, name, created_at) values ((select max(id) from households), 'admin-sub', 'admin@example.com', 'Admin', 0)"
-					)
-					.run().lastInsertRowid
-		);
+	const userId = adminId(db);
 	await signInAs(db, context, baseURL, userId);
 
 	await page.goto('/admin');
