@@ -92,11 +92,27 @@ The repo needs these Actions secrets (Settings > Secrets and variables > Actions
 Dokku checks `/healthz` before it switches traffic to a new version. `app.json` sets that check
 and the nightly backup.
 
+### Logging in to the server
+
+Log in as `ubuntu` with your own admin key, not the deploy key, which can only run the deploy's
+Dokku commands. An entry in `~/.ssh/config` makes it `ssh budget`:
+
+```
+Host budget
+  HostName 15.204.120.53
+  User ubuntu
+  IdentityFile ~/.ssh/ovh_budget
+  IdentitiesOnly yes
+```
+
+`ubuntu` isn't root, so put `sudo` in front of the `dokku`, `cp`, `rm` and `chown` commands in this
+README, for example `sudo dokku config:set meals NAME='value'`.
+
 ### One-time server setup
 
 The server limits which Dokku commands the deploy key may run, so the app's storage, settings,
-upload limit and ports are set once on the server, as root or another account with full Dokku
-access. On a new server, first run `dokku apps:create meals` and
+upload limit and ports are set once on the server, logged in as described above. On a new
+server, first run `dokku apps:create meals` and
 `dokku domains:set meals meals.dev.boyersoftware.com`: the commands below need the app, and
 `domains:set` must come before `ports:set`.
 
