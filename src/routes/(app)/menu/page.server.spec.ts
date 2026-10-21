@@ -1,5 +1,6 @@
 import { isRedirect } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { addDinner } from '#lib/server/data/dinners.ts';
 import { setDishArchived } from '#lib/server/data/dishes.ts';
 import { listMembers } from '#lib/server/data/households.ts';
 import { addRequest, listRequests } from '#lib/server/data/requests.ts';
@@ -116,13 +117,13 @@ describe('the week', () => {
 	});
 });
 
-describe("each day's dinner", () => {
+describe("each day's dinners", () => {
 	it('gives the type, the dishes by role in the order added, and the note', () => {
 		const dish = (name: string) => makeDish(householdId, recipe(name));
 		const [roast, beans, rolls, cake, salad] = ['Roast', 'Beans', 'Rolls', 'Cake', 'Salad'].map(
 			dish
 		) as [number, number, number, number, number];
-		makeDinner(householdId, '2026-09-29', {
+		const grandma = makeDinner(householdId, '2026-09-29', {
 			note: 'Grandma visits',
 			dishes: [
 				[cake, 'dessert'],
@@ -131,34 +132,55 @@ describe("each day's dinner", () => {
 				[rolls, 'side']
 			]
 		});
-		makeDinner(householdId, '2026-09-30', { type: 'eat_out', note: 'Tacos on Main St' });
-		makeDinner(householdId, '2026-10-01', { type: 'going' });
+		const out = makeDinner(householdId, '2026-09-30', {
+			type: 'eat_out',
+			note: 'Tacos on Main St'
+		});
+		const going = makeDinner(householdId, '2026-10-01', { type: 'going' });
 		// Another week's and another household's dinners stay out.
 		makeDinner(householdId, '2026-10-04', { dishes: [[salad, 'main']] });
 		makeDinner(makeHousehold(TZ).householdId, '2026-09-28', { type: 'leftovers' });
 
 		expect(week().days).toEqual([
-			{ date: '2026-09-27', dinner: null },
-			{ date: '2026-09-28', dinner: null },
+			{ date: '2026-09-27', dinners: [] },
+			{ date: '2026-09-28', dinners: [] },
 			{
 				date: '2026-09-29',
-				dinner: {
-					type: 'cook',
-					note: 'Grandma visits',
-					roles: [
-						{ role: 'main', names: ['Roast'] },
-						{ role: 'side', names: ['Beans', 'Rolls'] },
-						{ role: 'dessert', names: ['Cake'] }
-					]
-				}
+				dinners: [
+					{
+						id: grandma,
+						label: null,
+						type: 'cook',
+						note: 'Grandma visits',
+						roles: [
+							{ role: 'main', names: ['Roast'] },
+							{ role: 'side', names: ['Beans', 'Rolls'] },
+							{ role: 'dessert', names: ['Cake'] }
+						]
+					}
+				]
 			},
 			{
 				date: '2026-09-30',
-				dinner: { type: 'eat_out', note: 'Tacos on Main St', roles: [] }
+				dinners: [
+					{ id: out, label: null, type: 'eat_out', note: 'Tacos on Main St', roles: [] }
+				]
 			},
-			{ date: '2026-10-01', dinner: { type: 'going', note: null, roles: [] } },
-			{ date: '2026-10-02', dinner: null },
-			{ date: '2026-10-03', dinner: null }
+			{
+				date: '2026-10-01',
+				dinners: [{ id: going, label: null, type: 'going', note: null, roles: [] }]
+			},
+			{ date: '2026-10-02', dinners: [] },
+			{ date: '2026-10-03', dinners: [] }
+		]);
+	});
+
+	it("gives each of a day's dinners with its label, in the order they were added (6.9)", () => {
+		const adults = makeDinner(householdId, '2026-09-29', { type: 'eat_out' });
+		const kids = addDinner(householdId, '2026-09-29', { first: 'Adults', added: 'Kids' }, NOW);
+		expect(week().days[2]?.dinners).toEqual([
+			{ id: adults, label: 'Adults', type: 'eat_out', note: null, roles: [] },
+			{ id: kids, label: 'Kids', type: 'cook', note: null, roles: [] }
 		]);
 	});
 
@@ -166,7 +188,7 @@ describe("each day's dinner", () => {
 		const pie = makeDish(householdId, recipe('Pie'));
 		makeDinner(householdId, '2026-09-27', { dishes: [[pie, 'dessert']] });
 		setDishArchived(householdId, pie, true, NOW);
-		expect(week().days[0]?.dinner?.roles).toEqual([{ role: 'dessert', names: ['Pie'] }]);
+		expect(week().days[0]?.dinners[0]?.roles).toEqual([{ role: 'dessert', names: ['Pie'] }]);
 	});
 });
 

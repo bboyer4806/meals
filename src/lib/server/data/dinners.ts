@@ -1,32 +1,42 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import {
+	DINNER_LABEL_MAX,
 	DINNER_NOTE_MAX,
 	DINNER_TYPES,
 	DISH_ROLES,
 	hasDishes,
 	isDate,
+	MAX_DINNERS,
 	NO_DISHES,
 	type DinnerType,
 	type DishRole
 } from '../../menu.ts';
 import { MAX_SERVINGS } from '../../recipe-view.ts';
-import { normalizeName } from '../../text.ts';
+import { foldCase, normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
 import { dinnerDishes, dinners, dishes } from '../db/schema.ts';
 import { getHousehold } from './households.ts';
 
-// The menu: one dinner per date, its dishes and their roles, Copy a dinner and Move to another
-// date (design 6.9). A date with no dinner isn't planned.
+// The menu: a date's dinners (up to 5, labeled when there's more than one), their dishes and
+// roles, Copy a dinner and Move to another date (design 6.9). A date with no dinner isn't planned.
+//
+// A change to one dinner names it by id, the one the page showed, so it never lands on another
+// dinner someone put on the date meanwhile (6.11). A change that can plan the date takes null
+// for a page that showed it not planned.
 
 // The recipe editor's limit for a dish name.
 const MAX_DISH_NAME = 80;
+
+const CHANGED = 'Someone changed this dinner since you opened it.';
 
 export type DinnerDish = { dishId: number; name: string; role: DishRole; archived: boolean };
 
 export type Dinner = {
 	id: number;
 	date: string;
+	/** Set only when the date has more than one dinner. */
+	label: string | null;
 	type: DinnerType;
 	note: string | null;
 	servings: number;
@@ -53,18 +63,53 @@ function requireDate(date: string): void {
 	if (!isDate(date)) error(400, 'Pick a date');
 }
 
-function dinnerOn(householdId: number, date: string) {
+/** The date's dinners in the order they were added. */
+function dinnersOn(householdId: number, date: string) {
 	return db()
-		.select({ id: dinners.id, type: dinners.type })
+		.select({ id: dinners.id, label: dinners.label, type: dinners.type })
 		.from(dinners)
 		.where(and(eq(dinners.householdId, householdId), eq(dinners.date, date)))
-		.get();
+		.orderBy(asc(dinners.id))
+		.all();
 }
 
-function requireDinnerOn(householdId: number, date: string): { id: number; type: DinnerType } {
-	const dinner = dinnerOn(householdId, date);
+/** A dinner on the date, by id. Not found when someone cleared or moved it. */
+function requireDinner(householdId: number, date: string, dinnerId: number) {
+	const dinner = dinnersOn(householdId, date).find((candidate) => candidate.id === dinnerId);
 	if (!dinner) error(404, 'Not found');
 	return dinner;
+}
+
+/**
+ * The dinner a change is for: the one the page showed while it's still on the date, or null
+ * when the date has no dinner (the page showed none, or the one it showed was cleared or moved,
+ * and the change plans the date again). Refuses a change meant for a dinner that isn't on the
+ * date while others are.
+ */
+function shownDinner(householdId: number, date: string, shownId: number | null) {
+	requireDate(date);
+	const day = dinnersOn(householdId, date);
+	const dinner = day.find((candidate) => candidate.id === shownId);
+	if (dinner) return dinner;
+	if (day.length > 0) error(400, CHANGED);
+	return null;
+}
+
+/**
+ * A dinner's label for a date with `count` dinners: none when it's the only one, and otherwise
+ * required, up to 30 characters and unlike the date's other labels, ignoring case (6.9).
+ */
+function checkLabel(label: string | null, count: number, others: (string | null)[]): string | null {
+	if (count === 1) return null;
+	const named = normalizeName(label ?? '');
+	if (named === '') error(400, 'Enter a label for each dinner');
+	if (named.length > DINNER_LABEL_MAX) {
+		error(400, `Keep a label under ${DINNER_LABEL_MAX} characters`);
+	}
+	if (others.some((other) => other !== null && foldCase(other) === foldCase(named))) {
+		error(400, 'Give each dinner on this day a different label');
+	}
+	return named;
 }
 
 /** A new dinner starts at the household's usual servings (Q28). */
@@ -99,7 +144,10 @@ function dinnerDishRows(where: SQL | undefined) {
 		.all();
 }
 
-/** The dinners from startDate to endDate inclusive, by date. Dates without one are left out. */
+/**
+ * The dinners from startDate to endDate inclusive, by date, and each date's in the order they
+ * were added. Dates without one are left out.
+ */
 export function getDinners(householdId: number, startDate: string, endDate: string): Dinner[] {
 	const inRange = and(
 		eq(dinners.householdId, householdId),
@@ -117,58 +165,106 @@ export function getDinners(householdId: number, startDate: string, endDate: stri
 		.select({
 			id: dinners.id,
 			date: dinners.date,
+			label: dinners.label,
 			type: dinners.type,
 			note: dinners.note,
 			servings: dinners.servings
 		})
 		.from(dinners)
 		.where(inRange)
-		.orderBy(asc(dinners.date))
+		.orderBy(asc(dinners.date), asc(dinners.id))
 		.all()
 		.map((dinner) => ({ ...dinner, dishes: byDinner.get(dinner.id) ?? [] }));
 }
 
-export function getDinner(householdId: number, date: string): Dinner | null {
-	return getDinners(householdId, date, date)[0] ?? null;
+/** A date's dinners in the order they were added; none when it isn't planned. */
+export function getDay(householdId: number, date: string): Dinner[] {
+	return getDinners(householdId, date, date);
 }
 
 /**
- * Creates or updates the dinner on a date. A type without dishes (Eating out, Leftovers)
- * removes the dinner's dishes; the page asks first (2.3).
+ * Updates the dinner the page showed, or plans the date with it (dinnerId null, or the shown
+ * one is gone). A type without dishes (Eating out, Leftovers) removes the dinner's dishes; the
+ * page asks first (2.3). The label counts only on a date with more than one dinner. Returns the
+ * dinner's id.
  */
 export function saveDinner(
 	householdId: number,
 	date: string,
-	fields: { type: DinnerType; note: string | null; servings: number },
+	dinnerId: number | null,
+	fields: { label: string | null; type: DinnerType; note: string | null; servings: number },
 	now: number
-): void {
-	transaction(() => {
-		requireDate(date);
+): number {
+	return transaction(() => {
+		const dinner = shownDinner(householdId, date, dinnerId);
 		if (!Number.isInteger(fields.servings)) error(400, 'Enter a whole number of servings');
 		if (fields.servings < 1) error(400, 'Enter at least 1 serving');
 		if (fields.servings > MAX_SERVINGS) error(400, `Enter ${MAX_SERVINGS} servings or fewer`);
 		if (fields.note !== null && fields.note.length > DINNER_NOTE_MAX) {
 			error(400, `Keep the note under ${DINNER_NOTE_MAX} characters`);
 		}
-		// Listed one by one, so nothing else in `fields` is ever written.
-		const values = { type: fields.type, note: fields.note, servings: fields.servings };
 
-		const dinner = dinnerOn(householdId, date);
 		if (!dinner) {
-			db()
+			// Listed one by one, so nothing else in `fields` is ever written.
+			const values = { type: fields.type, note: fields.note, servings: fields.servings };
+			return db()
 				.insert(dinners)
 				.values({ ...values, householdId, date, createdAt: now, updatedAt: now })
-				.run();
-			return;
+				.returning({ id: dinners.id })
+				.get().id;
 		}
+		const day = dinnersOn(householdId, date);
+		const others = day.filter((other) => other.id !== dinner.id).map((other) => other.label);
+		const label = checkLabel(fields.label, day.length, others);
 		db()
 			.update(dinners)
-			.set({ ...values, updatedAt: now })
+			.set({
+				label,
+				type: fields.type,
+				note: fields.note,
+				servings: fields.servings,
+				updatedAt: now
+			})
 			.where(eq(dinners.id, dinner.id))
 			.run();
 		if (!hasDishes(fields.type)) {
 			db().delete(dinnerDishes).where(eq(dinnerDishes.dinnerId, dinner.id)).run();
 		}
+		return dinner.id;
+	});
+}
+
+/**
+ * Adds another dinner to a planned date: Cooking at home at the usual servings, with an empty
+ * note and no dishes (6.9). The second dinner also labels the first, since every dinner on a
+ * date with more than one has a label: `labels.first` is the first one's label then, and null
+ * otherwise. Returns the new dinner's id.
+ */
+export function addDinner(
+	householdId: number,
+	date: string,
+	labels: { first: string | null; added: string },
+	now: number
+): number {
+	return transaction(() => {
+		requireDate(date);
+		const day = dinnersOn(householdId, date);
+		if (day.length === 0) error(400, 'Plan this date before adding another dinner');
+		if (day.length >= MAX_DINNERS) error(400, `A day can have up to ${MAX_DINNERS} dinners`);
+		// The page asks for the first dinner's label only when it's the date's only one.
+		if ((day.length === 1) !== (labels.first !== null)) error(400, CHANGED);
+
+		const count = day.length + 1;
+		const first = day[0];
+		if (day.length === 1 && first) {
+			const label = checkLabel(labels.first, count, []);
+			db().update(dinners).set({ label, updatedAt: now }).where(eq(dinners.id, first.id)).run();
+		}
+		const others = dinnersOn(householdId, date).map((other) => other.label);
+		const label = checkLabel(labels.added, count, others);
+		const dinnerId = insertDinner(householdId, date, 'cook', now);
+		db().update(dinners).set({ label }).where(eq(dinners.id, dinnerId)).run();
+		return dinnerId;
 	});
 }
 
@@ -202,17 +298,17 @@ function insertDish(householdId: number, name: string, now: number): number {
 }
 
 /**
- * The dinner a dish can be added to, if the date has one. Refuses a type without dishes and a
- * dish that's already on it.
+ * The dinner a dish can be added to, or null for a date with no dinner. Refuses a type without
+ * dishes and a dish that's already on it.
  */
 function dinnerForDish(
 	householdId: number,
 	date: string,
+	dinnerId: number | null,
 	dish: { id: number; name: string } | null
-): { id: number } | undefined {
-	requireDate(date);
-	const dinner = dinnerOn(householdId, date);
-	if (!dinner) return undefined;
+): { id: number } | null {
+	const dinner = shownDinner(householdId, date, dinnerId);
+	if (!dinner) return null;
 	if (!hasDishes(dinner.type)) error(400, NO_DISHES);
 	if (dish && isOnDinner(dinner.id, dish.id)) {
 		error(400, `${dish.name} is already on this dinner`);
@@ -233,7 +329,7 @@ function isOnDinner(dinnerId: number, dishId: number): boolean {
 function insertDinnerDish(
 	householdId: number,
 	date: string,
-	dinner: { id: number } | undefined,
+	dinner: { id: number } | null,
 	dishId: number,
 	role: DishRole,
 	now: number
@@ -245,15 +341,16 @@ function insertDinnerDish(
 
 /**
  * Adds an existing dish (by id) or a dish by name (an existing one ignoring case, or a new one
- * with the household's usual servings and no ingredients). A date with no dinner gets one:
- * Cooking at home at the household's usual servings. Refuses (400) a dinner type without
- * dishes, a dish already on the dinner, an archived dish by id, and a blank or too-long name.
- * An archived dish by name changes nothing and returns 'archived' so the page can offer to
- * restore it.
+ * with the household's usual servings and no ingredients) to the dinner. A date with no dinner
+ * gets one: Cooking at home at the household's usual servings. Refuses (400) a dinner type
+ * without dishes, a dish already on the dinner, an archived dish by id, and a blank or too-long
+ * name. An archived dish by name changes nothing and returns 'archived' so the page can offer
+ * to restore it.
  */
 export function addDinnerDish(
 	householdId: number,
 	date: string,
+	dinnerId: number | null,
 	dish: { id: number } | { name: string },
 	role: DishRole,
 	now: number
@@ -261,7 +358,7 @@ export function addDinnerDish(
 	return transaction(() => {
 		if ('id' in dish) {
 			const found = findDish(householdId, dish.id);
-			const dinner = dinnerForDish(householdId, date, found);
+			const dinner = dinnerForDish(householdId, date, dinnerId, found);
 			// Archived dishes are hidden from the suggestions (6.10), so this one was archived
 			// after the page loaded.
 			if (found.archivedAt !== null) error(400, `Restore ${found.name} before adding it`);
@@ -275,7 +372,7 @@ export function addDinnerDish(
 			error(400, `Keep a dish name under ${MAX_DISH_NAME} characters`);
 		}
 		const found = findDishByName(householdId, name);
-		const dinner = dinnerForDish(householdId, date, found ?? null);
+		const dinner = dinnerForDish(householdId, date, dinnerId, found ?? null);
 		// Its name stays taken, so adding it offers to restore it instead (6.10).
 		if (found && found.archivedAt !== null) {
 			return { kind: 'archived', dishId: found.id, name: found.name };
@@ -286,17 +383,18 @@ export function addDinnerDish(
 	});
 }
 
-/** Restores an archived dish and adds it, in one transaction. */
+/** Restores an archived dish and adds it to the dinner, in one transaction. */
 export function restoreAndAddDinnerDish(
 	householdId: number,
 	date: string,
+	dinnerId: number | null,
 	dishId: number,
 	role: DishRole,
 	now: number
 ): void {
 	transaction(() => {
 		const found = findDish(householdId, dishId);
-		const dinner = dinnerForDish(householdId, date, found);
+		const dinner = dinnerForDish(householdId, date, dinnerId, found);
 		if (found.archivedAt !== null) {
 			db().update(dishes).set({ archivedAt: null }).where(eq(dishes.id, found.id)).run();
 		}
@@ -307,12 +405,13 @@ export function restoreAndAddDinnerDish(
 export function setDinnerDishRole(
 	householdId: number,
 	date: string,
+	dinnerId: number,
 	dishId: number,
 	role: DishRole,
 	now: number
 ): void {
 	transaction(() => {
-		const dinner = requireDinnerOn(householdId, date);
+		const dinner = requireDinner(householdId, date, dinnerId);
 		const result = db()
 			.update(dinnerDishes)
 			.set({ role })
@@ -326,11 +425,12 @@ export function setDinnerDishRole(
 export function removeDinnerDish(
 	householdId: number,
 	date: string,
+	dinnerId: number,
 	dishId: number,
 	now: number
 ): void {
 	transaction(() => {
-		const dinner = requireDinnerOn(householdId, date);
+		const dinner = requireDinner(householdId, date, dinnerId);
 		const result = db()
 			.delete(dinnerDishes)
 			.where(and(eq(dinnerDishes.dinnerId, dinner.id), eq(dinnerDishes.dishId, dishId)))
@@ -340,35 +440,55 @@ export function removeDinnerDish(
 	});
 }
 
-/** Deletes the dinner (and its dishes). Nothing to do when the date has none. */
-export function clearDinner(householdId: number, date: string): void {
-	// Its dinner_dishes go with it (on delete cascade).
-	db()
-		.delete(dinners)
-		.where(and(eq(dinners.householdId, householdId), eq(dinners.date, date)))
-		.run();
-}
-
-/** Moves a dinner to another date; if that date has one, the two swap (2.2.2). */
-export function moveDinner(householdId: number, from: string, to: string, now: number): void {
+/**
+ * Deletes the dinner (and its dishes). Nothing to do when the date has no dinner. The last
+ * dinner left on the date loses its label (6.9).
+ */
+export function clearDinner(
+	householdId: number,
+	date: string,
+	dinnerId: number | null,
+	now: number
+): void {
 	transaction(() => {
-		requireDate(from);
-		requireDate(to);
-		const moving = requireDinnerOn(householdId, from);
-		if (from === to) return;
-		const other = dinnerOn(householdId, to);
-		if (other) {
-			// SQLite checks the unique date after each row it changes, so swapping in one
-			// statement would fail. The moving dinner steps aside first. Nothing else can
-			// write meanwhile, since the transaction holds the write lock.
-			db().update(dinners).set({ date: 'moving' }).where(eq(dinners.id, moving.id)).run();
+		const dinner = shownDinner(householdId, date, dinnerId);
+		if (!dinner) return;
+		// Its dinner_dishes go with it (on delete cascade).
+		db().delete(dinners).where(eq(dinners.id, dinner.id)).run();
+		const day = dinnersOn(householdId, date);
+		const last = day[0];
+		if (day.length === 1 && last) {
 			db()
 				.update(dinners)
-				.set({ date: from, updatedAt: now })
-				.where(eq(dinners.id, other.id))
+				.set({ label: null, updatedAt: now })
+				.where(eq(dinners.id, last.id))
 				.run();
 		}
-		db().update(dinners).set({ date: to, updatedAt: now }).where(eq(dinners.id, moving.id)).run();
+	});
+}
+
+/**
+ * Moves all of a date's dinners to another date, and that date's dinners to this one (2.2.2).
+ * They move together, so each date keeps its labels. `shownId` is one the page showed; not
+ * found when the date has no dinner.
+ */
+export function moveDinners(
+	householdId: number,
+	from: string,
+	to: string,
+	shownId: number | null,
+	now: number
+): void {
+	transaction(() => {
+		requireDate(to);
+		if (!shownDinner(householdId, from, shownId)) error(404, 'Not found');
+		if (from === to) return;
+		const moving = dinnersOn(householdId, from).map((dinner) => dinner.id);
+		const other = dinnersOn(householdId, to).map((dinner) => dinner.id);
+		const moveTo = (ids: number[], date: string) =>
+			db().update(dinners).set({ date, updatedAt: now }).where(inArray(dinners.id, ids)).run();
+		moveTo(moving, to);
+		moveTo(other, from);
 	});
 }
 
@@ -434,46 +554,46 @@ export function listCopyGroups(householdId: number, today: string): CopyGroup[] 
 }
 
 /**
- * Sets the dinner's type and dishes (with roles) from another dinner, keeping this date's note
+ * Sets the dinner's type and dishes (with roles) from another dinner, keeping its label, note
  * and servings; a new dinner gets the usual servings (2.3). Archived dishes aren't copied.
  */
 export function copyDinner(
 	householdId: number,
 	date: string,
+	dinnerId: number | null,
 	sourceDinnerId: number,
 	now: number
 ): void {
 	transaction(() => {
-		requireDate(date);
 		const source = db()
 			.select({ id: dinners.id, type: dinners.type })
 			.from(dinners)
 			.where(and(eq(dinners.id, sourceDinnerId), eq(dinners.householdId, householdId)))
 			.get();
 		if (!source) error(404, 'Not found');
-		const target = dinnerOn(householdId, date);
+		const target = shownDinner(householdId, date, dinnerId);
 		// Copying a dinner onto itself would only drop its archived dishes.
 		if (target?.id === source.id) return;
 
 		const copied = hasDishes(source.type)
 			? dinnerDishRows(and(eq(dinnerDishes.dinnerId, source.id), isNull(dishes.archivedAt)))
 			: [];
-		let dinnerId: number;
+		let targetId: number;
 		if (target) {
-			dinnerId = target.id;
+			targetId = target.id;
 			db()
 				.update(dinners)
 				.set({ type: source.type, updatedAt: now })
-				.where(eq(dinners.id, dinnerId))
+				.where(eq(dinners.id, targetId))
 				.run();
-			db().delete(dinnerDishes).where(eq(dinnerDishes.dinnerId, dinnerId)).run();
+			db().delete(dinnerDishes).where(eq(dinnerDishes.dinnerId, targetId)).run();
 		} else {
-			dinnerId = insertDinner(householdId, date, source.type, now);
+			targetId = insertDinner(householdId, date, source.type, now);
 		}
 		// Inserted in display order, so the copy lists them the same way.
 		const rows = copied
 			.sort(byRole)
-			.map(({ dishId, role }) => ({ householdId, dinnerId, dishId, role }));
+			.map(({ dishId, role }) => ({ householdId, dinnerId: targetId, dishId, role }));
 		if (rows.length > 0) db().insert(dinnerDishes).values(rows).run();
 	});
 }

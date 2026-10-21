@@ -7,18 +7,21 @@
 	import Sheet from './Sheet.svelte';
 
 	// Move to another date (design 2.2.2): "we didn't make Tuesday's dinner, let's do it
-	// Wednesday", so the next day is filled in. A dinner already on that date swaps places with
-	// this one. The page then opens the new date. The dinner's date at the top of the page opens
-	// it (7).
+	// Wednesday", so the next day is filled in. All of the date's dinners move together, and any
+	// already on that date swap places with them (6.9). The page then opens the new date. The
+	// date at the top of the page opens it (7).
 	let {
 		date,
+		count,
 		dinnerId,
 		canLeave,
 		keepAsking,
 		onlost
 	}: {
 		date: string;
-		/** The dinner the page shows, so the move doesn't take another one. */
+		/** How many dinners the date has. */
+		count: number;
+		/** A dinner the page shows, so the move doesn't take others someone put there instead. */
 		dinnerId: number;
 		/** Asks about anything unsaved that opening the new date would drop; false to stay. */
 		canLeave: () => boolean;
@@ -84,7 +87,12 @@
 			<label for="{uid}-to">New date</label>
 			<input id="{uid}-to" name="to" type="date" required bind:value={to} />
 		</div>
-		<p class="muted">If that date already has a dinner, the two swap places.</p>
+		<p class="muted">
+			{count === 1
+				? 'If that date already has a dinner, the two swap places.'
+				: `All ${count} dinners move together. If that date already has dinners, the two dates ` +
+					'swap them.'}
+		</p>
 		{#if problem}<p class="error" role="alert">{problem}</p>{/if}
 		<div class="row">
 			<button class="primary">{isDate(to) ? `Move to ${formatDateLabel(to)}` : 'Move'}</button>

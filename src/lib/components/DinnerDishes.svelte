@@ -12,7 +12,7 @@
 	// A dinner's dishes (design 7, Dinner; 6.9). Each links to its recipe at the dinner's servings
 	// and has its role and Remove. A dish is added by name, an existing one or a new one, with a
 	// role: Main for the first, Side after. Adding one to a date with no dinner plans it as
-	// Cooking at home. The forms post to the dinner page's actions.
+	// Cooking at home. The forms post to the dinner page's actions, with the dinner's id.
 	let {
 		dinner,
 		suggestions,
@@ -269,6 +269,11 @@
 	};
 </script>
 
+<!-- Which dinner the dishes are on, so a change meant for it isn't made to another one. -->
+{#snippet shownDinner()}
+	{#if dinner}<input type="hidden" name="dinnerId" value={dinner.id} />{/if}
+{/snippet}
+
 <section class="card" aria-labelledby="{uid}-heading">
 	<h2 id="{uid}-heading">Dishes</h2>
 	{#if lostError}<p class="error" role="alert">{lostError}</p>{/if}
@@ -285,6 +290,7 @@
 					</span>
 					<form method="POST" action="?/role" use:enhance={roleSubmit(dish.dishId)}>
 						<input type="hidden" name="dishId" value={dish.dishId} />
+						{@render shownDinner()}
 						<label class="visually-hidden" for={roleId(dish.dishId)}>
 							Role for {dish.name}
 						</label>
@@ -301,6 +307,7 @@
 					</form>
 					<form method="POST" action="?/removeDish" use:enhance={removeSubmit(dish.dishId)}>
 						<input type="hidden" name="dishId" value={dish.dishId} />
+						{@render shownDinner()}
 						<button id={removeId(dish.dishId)} class="remove" aria-label="Remove {dish.name}">
 							✕
 						</button>
@@ -316,6 +323,7 @@
 	{/if}
 
 	<form class="add" method="POST" action="?/addDish" use:enhance={submitAdd}>
+		{@render shownDinner()}
 		<label for="{uid}-name">Add a dish</label>
 		<div bind:this={nameField}>
 			<ItemInput
@@ -346,6 +354,7 @@
 		<form method="POST" action="?/restoreDish" use:enhance={submitRestore}>
 			<input type="hidden" name="dishId" value={archived.dishId} />
 			<input type="hidden" name="role" value={archived.role} />
+			{@render shownDinner()}
 			{#if restoreError}<p class="error" role="alert">{restoreError}</p>{/if}
 			<div class="row">
 				<button class="primary">Restore it and add</button>

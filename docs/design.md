@@ -46,8 +46,8 @@ Google and is invite-only.
    checklists. Without this, water shows up on every checklist. Hidden for now with the
    pantry check (6.8).
 2. **"Move to another date" on a dinner.** For "we didn't make Tuesday's dinner, let's
-   do it Wednesday". If the other date already has a dinner, the two swap. The dinner's
-   date at the top of its page opens it (7).
+   do it Wednesday". A date's dinners move together (6.9); if the other date already has
+   dinners, the two dates swap them. The date at the top of the page opens it (7).
 3. **Received lines stay visible until the end of the day,** checked and struck
    through. Tapping one again undoes it. This handles mis-taps in a store.
 4. **The Admin page shows the date of the last backup.** Nothing else would tell you
@@ -342,9 +342,10 @@ one step per line), `notes`, `source` (a URL or a book), `photo_key`, `calories`
 with an amount; a known unit code or custom text; Q32b), `item_id` (required; Q1),
 `prep_note` (such as "diced").
 
-**dinners:** `date` (unique per household), `type` (`cook`, `eat_out`, `going` or
-`leftovers`; Q26), `note`, `servings` (at least 1; Q28), `created_at`, `updated_at`. A
-date with no row is not planned.
+**dinners:** `date` (up to 5 per household and date, in the order added; 6.9), `label`
+(set on every dinner of a date with more than one, and only then), `type` (`cook`,
+`eat_out`, `going` or `leftovers`; Q26), `note`, `servings` (at least 1; Q28), `created_at`,
+`updated_at`. A date with no row is not planned.
 
 **dinner_dishes:** `dinner_id`, `dish_id` (unique per dinner), `role` (`main`, `side`,
 `dessert` or `other`; Q29). Only `cook` and `going` dinners have dishes.
@@ -511,9 +512,14 @@ on the list. The rest of this section describes it as built.
 
 ### 6.9 Dinners and reuse
 
-- One dinner per date. The types are Cooking at home, Eating out, Bringing a dish and
-  Leftovers. All have a note. Cooking at home and Bringing a dish also have dishes and
-  servings (Q26).
+- A date has one dinner unless someone adds another (MEA-5), such as one for the kids and
+  one for the adults, up to 5. Each has its own type, note, servings and dishes. The types are
+  Cooking at home, Eating out, Bringing a dish and Leftovers. All have a note. Cooking at home
+  and Bringing a dish also have dishes and servings (Q26).
+- A dinner has a label only when its date has more than one, and then every dinner on it
+  needs one: up to 30 characters, unique within the date ignoring case. Adding the second
+  dinner asks for both labels. When clearing leaves one dinner, its label is removed. A new
+  dinner starts as Cooking at home with the usual servings, an empty note and no dishes.
 - Servings start at the household's usual number (Q28).
 - A date with no dinner shows Cooking at home, with the usual servings and an empty note,
   without saving it. The date stays not planned until a dish, a copy, a type or Save plans it.
@@ -523,9 +529,11 @@ on the list. The rest of this section describes it as built.
   exact set of non-archived dishes. Each group shows its dishes, how many times it was
   made, and when it was last made. The most-made groups are listed first. Typing filters
   to groups with a dish whose name matches, most recent first. Copying sets the type and
-  the dishes with their roles.
-- **Move to another date** (addition 2.2.2) swaps the two dinners if the other date has
-  one. Tapping the dinner's date at the top of its page opens it (7).
+  the dishes with their roles. Each dinner counts on its own, so a date with Kids and Adults
+  dinners counts as one make for each.
+- **Move to another date** (addition 2.2.2) moves all of a date's dinners, and swaps them
+  with the other date's if it has any; a date's dinners can't be moved separately. Tapping
+  the date at the top of its page opens it (7).
 
 ### 6.10 Archiving
 
@@ -646,7 +654,8 @@ type your own), an item (with suggestions, or a new one) and a prep note. Rows m
 up and down buttons, and "Add section" inserts a heading.
 
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, dishes by role,
-and note. Today is highlighted. Previous, next and "This week" buttons. Tapping a day
+and note. A day with more than one dinner shows each one (label, type, dishes by role, note)
+in the order they were added. Today is highlighted. Previous, next and "This week" buttons. Tapping a day
 opens its dinner. ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
 **Requests** lists the dish requests (6.12), or "No requests yet.", each with Remove. "Request
 a dish" opens a sheet with Dish (with suggestions), an optional Note and Request.
@@ -654,15 +663,20 @@ a dish" opens a sheet with Dish (with suggestions), an optional Note and Request
 **Dinner.** "‹ Week of" goes to the dinner's week. Type (four buttons), note, servings,
 and dishes. You add a dish by searching existing dishes or typing a new name, then picking
 its role. Each dish links to its
-recipe at this dinner's servings. Actions: Copy a dinner and Clear. On a planned dinner,
+recipe at this dinner's servings. Actions: Copy a dinner and Clear. A date with more than one
+dinner shows them all on its one page, in the order they were added, each with its own label
+(as a heading, and a Label field saved with its servings and note), type, dishes, servings,
+note, Copy a dinner and Clear; changing one never changes another (6.9). A planned date has
+**Add a dinner** until it has 5. On a planned date,
 the date at the top is a button, with an icon, that opens Move to another date; on a date
 with no dinner it's plain text. A date with no dinner says "Not planned yet" and shows Cooking
 at home selected, with its servings and note ready to fill in, unsaved (6.9). The type, dishes,
 copying, moving and clearing save as soon as they're made, and keep anything typed in the
-servings and note for Save. Save on the servings and note goes to the dinner's week, where its
-row says "Saved" for 3 seconds; on a date with no dinner it plans it as the type shown. Leaving
-with something typed asks first. If someone cleared or moved the dinner meanwhile, Save plans
-the date again and the page stays to say so (6.11).
+servings and note for Save. Save on the servings and note goes to the dinner's week, where that
+dinner's line says "Saved" for 3 seconds; on a date with no dinner it plans it as the type
+shown. Leaving with something typed asks first. If someone cleared or moved the dinner
+meanwhile, Save plans the date again when it has no dinner left, and the page stays to say so
+(6.11).
 
 **What's new.** What each release changed, newest first, in words for the people using the
 app; every household sees the same page. Each release's heading is its version, such as "1.2"

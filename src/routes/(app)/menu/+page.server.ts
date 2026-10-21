@@ -17,8 +17,9 @@ import { getHousehold } from '#lib/server/data/households.ts';
 import { addRequest, listRequests, removeRequest } from '#lib/server/data/requests.ts';
 import { attempt, id, nameField, parseForm } from '#lib/server/forms.ts';
 
-// The week view (design 7, Menu): Sunday to Saturday, one row per day. ?week= can be any date
-// in the week. Under it, the household's dish requests, the same on every week (6.12).
+// The week view (design 7, Menu): Sunday to Saturday, one row per day with its dinners. ?week=
+// can be any date in the week. Under it, the household's dish requests, the same on every week
+// (6.12).
 
 /** The Sunday that starts the week to show, or null when ?week= isn't a date it can show. */
 function weekToShow(param: string | null, today: string): string | null {
@@ -64,22 +65,26 @@ export function load({ locals, url }) {
 	if (start === null) redirect(303, '/menu');
 	const end = addDays(start, 6);
 
-	const dinners = new Map(getDinners(user.householdId, start, end).map((d) => [d.date, d]));
+	const dinners = getDinners(user.householdId, start, end);
 	return {
 		today,
 		label: weekLabel(start, end, today),
 		isThisWeek: start === weekStart(today),
 		previous: addDays(start, -7),
 		next: addDays(start, 7),
-		days: weekDates(start).map((date) => {
-			const dinner = dinners.get(date);
-			return {
-				date,
-				dinner: dinner
-					? { type: dinner.type, note: dinner.note, roles: byRole(dinner.dishes) }
-					: null
-			};
-		}),
+		// Each day's dinners in the order they were added (6.9).
+		days: weekDates(start).map((date) => ({
+			date,
+			dinners: dinners
+				.filter((dinner) => dinner.date === date)
+				.map((dinner) => ({
+					id: dinner.id,
+					label: dinner.label,
+					type: dinner.type,
+					note: dinner.note,
+					roles: byRole(dinner.dishes)
+				}))
+		})),
 		requests: listRequests(user.householdId),
 		dishes: dishSuggestions(user.householdId)
 	};

@@ -15,8 +15,8 @@
 
 	let { data } = $props();
 
-	// Saving a dinner's servings and note comes here with ?saved=<its date> (design 7, Dinner),
-	// and that day's row says "Saved" for 3 seconds. The address drops it straight away, so a
+	// Saving a dinner's servings and note comes here with ?saved=<its id> (design 7, Dinner),
+	// and that dinner's line says "Saved" for 3 seconds. The address drops it straight away, so a
 	// reload, or coming back with Back, doesn't say it again.
 	let saved = $state<string | null>(null);
 	let savedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -117,10 +117,30 @@
 	</div>
 </nav>
 
+<!-- A dinner's type, dishes by role, and note. -->
+{#snippet details(dinner: (typeof data.days)[number]['dinners'][number])}
+	<span class="type">{DINNER_TYPE_LABELS[dinner.type]}</span>
+	{#each dinner.roles as group (group.role)}
+		<span class="dishes">
+			<span class="role">{DISH_ROLE_LABELS[group.role]}</span>
+			<span class="names">{group.names.join(', ')}</span>
+		</span>
+	{:else}
+		{#if hasDishes(dinner.type)}<span class="muted">No dishes yet</span>{/if}
+	{/each}
+	{#if dinner.note}<span class="note">{dinner.note}</span>{/if}
+{/snippet}
+
+<!-- Always there, so a screen reader announces "Saved" when it appears. -->
+{#snippet savedStatus(shown: boolean)}
+	<span class="saved" role="status">{shown ? 'Saved' : ''}</span>
+{/snippet}
+
 <ol class="days">
 	{#each data.days as day (day.date)}
 		{@const isToday = day.date === data.today}
-		{@const { dinner } = day}
+		{@const { dinners } = day}
+		{@const only = dinners.length === 1 ? dinners[0] : undefined}
 		<li>
 			<a
 				class="day card"
@@ -131,20 +151,21 @@
 				<span class="when">
 					<span class="date">{formatDateLabel(day.date)}</span>
 					{#if isToday}<span class="today-badge">Today</span>{/if}
-					<!-- Always there, so a screen reader announces "Saved" when it appears. -->
-					<span class="saved" role="status">{saved === day.date ? 'Saved' : ''}</span>
+					<!-- A day's only dinner is its row; with more, each dinner has its own line (6.9). -->
+					{@render savedStatus(only !== undefined && saved === String(only.id))}
 				</span>
-				{#if dinner}
-					<span class="type">{DINNER_TYPE_LABELS[dinner.type]}</span>
-					{#each dinner.roles as group (group.role)}
-						<span class="dishes">
-							<span class="role">{DISH_ROLE_LABELS[group.role]}</span>
-							<span class="names">{group.names.join(', ')}</span>
+				{#if only}
+					{@render details(only)}
+				{:else if dinners.length > 0}
+					{#each dinners as dinner (dinner.id)}
+						<span class="dinner">
+							<span class="label">
+								{dinner.label}
+								{@render savedStatus(saved === String(dinner.id))}
+							</span>
+							{@render details(dinner)}
 						</span>
-					{:else}
-						{#if hasDishes(dinner.type)}<span class="muted">No dishes yet</span>{/if}
 					{/each}
-					{#if dinner.note}<span class="note">{dinner.note}</span>{/if}
 				{:else}
 					<span class="muted">Not planned</span>
 				{/if}
@@ -307,6 +328,26 @@
 
 	.type {
 		font-weight: 700;
+	}
+
+	.dinner {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+
+	.dinner + .dinner {
+		margin-top: 0.35rem;
+		padding-top: 0.35rem;
+		border-top: 1px solid var(--border);
+	}
+
+	.label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-family: var(--font-heading);
+		font-weight: 600;
 	}
 
 	.dishes {
