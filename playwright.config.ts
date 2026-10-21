@@ -11,7 +11,8 @@ export default defineConfig({
 	testDir: 'tests/e2e',
 	testMatch: '**/*.e2e.ts',
 	fullyParallel: true,
-	reporter: process.env.CI ? 'github' : 'list',
+	// CLAUDECODE is set in Claude Code's shell; dot keeps passing tests out of its context.
+	reporter: process.env.CI ? 'github' : process.env.CLAUDECODE ? 'dot' : 'list',
 	use: {
 		...devices['Pixel 7'],
 		baseURL: `http://localhost:${port}`,
