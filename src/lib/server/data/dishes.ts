@@ -68,6 +68,7 @@ export type DishDetail = {
 	proteinG: number | null;
 	carbsG: number | null;
 	fatG: number | null;
+	tried: boolean;
 	archivedAt: number | null;
 	tags: string[];
 	ingredients: DishIngredient[];
@@ -79,6 +80,7 @@ export type DishSummary = {
 	photoKey: string | null;
 	prepMinutes: number | null;
 	cookMinutes: number | null;
+	tried: boolean;
 	archivedAt: number | null;
 	tags: string[];
 	/** False for a dish with no ingredients and no steps, labeled "No recipe" (change 2.1.1). */
@@ -99,6 +101,7 @@ const detailFields = {
 	proteinG: dishes.proteinG,
 	carbsG: dishes.carbsG,
 	fatG: dishes.fatG,
+	tried: dishes.tried,
 	archivedAt: dishes.archivedAt
 };
 
@@ -281,6 +284,12 @@ export function setDishArchived(
 		.run();
 }
 
+/** Shared by the household; the last change wins (section 7, "Recipe"; 6.11). */
+export function setDishTried(householdId: number, dishId: number, tried: boolean): void {
+	findDish(householdId, dishId);
+	db().update(dishes).set({ tried }).where(eq(dishes.id, dishId)).run();
+}
+
 /**
  * Sets or clears the photo. Returns the previous key, so the caller can delete its files, or
  * null when there was none or it didn't change.
@@ -375,6 +384,7 @@ export function listDishes(
 			photoKey: dishes.photoKey,
 			prepMinutes: dishes.prepMinutes,
 			cookMinutes: dishes.cookMinutes,
+			tried: dishes.tried,
 			archivedAt: dishes.archivedAt,
 			steps: dishes.steps,
 			ingredientCount: ingredientCounts.count

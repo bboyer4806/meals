@@ -50,6 +50,13 @@
       "when": 1792622598527,
       "tag": "0006_multiple-dinners",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792626141406,
+      "tag": "0007_dish-tried",
+      "breakpoints": true
     }
   ]
 }

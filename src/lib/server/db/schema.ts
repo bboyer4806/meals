@@ -177,6 +177,8 @@ export const dishes = sqliteTable(
 		proteinG: real('protein_g'),
 		carbsG: real('carbs_g'),
 		fatG: real('fat_g'),
+		// Whether the household has made it yet, set on the recipe page (section 7, "Recipe").
+		tried: integer('tried', { mode: 'boolean' }).notNull().default(false),
 		archivedAt: integer('archived_at'),
 		createdAt: integer('created_at').notNull(),
 		updatedAt: integer('updated_at').notNull()

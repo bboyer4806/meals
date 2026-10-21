@@ -1,0 +1,1 @@
+ALTER TABLE `dishes` ADD `tried` integer DEFAULT false NOT NULL;
