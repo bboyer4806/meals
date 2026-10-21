@@ -12,11 +12,18 @@ type Fixtures = {
 	db: Database.Database;
 	/** A household with one signed-in member, unique to the test. */
 	person: Person;
+	/**
+	 * Whether `person` has already finished the first-time tour, so it doesn't cover the Grocery
+	 * list. `test.use({ tourSeen: false })` gives a person who hasn't.
+	 */
+	tourSeen: boolean;
 };
 
 let counter = 0;
 
 export const test = base.extend<Fixtures>({
+	tourSeen: [true, { option: true }],
+
 	db: async ({}, use) => {
 		const db = new Database('.e2e-data/meals.db');
 		db.pragma('busy_timeout = 5000');
@@ -25,8 +32,8 @@ export const test = base.extend<Fixtures>({
 		db.close();
 	},
 
-	person: async ({ db, context, baseURL }, use) => {
-		const person = addPerson(db);
+	person: async ({ db, context, baseURL, tourSeen }, use) => {
+		const person = addPerson(db, { tourSeen });
 		await signInAs(db, context, baseURL, person.userId);
 		await use(person);
 	}
@@ -41,8 +48,11 @@ export async function open(page: Page, path: string) {
 	await expect(page.locator('html[data-started]')).toBeAttached();
 }
 
-/** A household with one member, not signed in. Usual servings 4. */
-export function addPerson(db: Database.Database): Person {
+/**
+ * A household with one member, not signed in. Usual servings 4. The member has finished the
+ * first-time tour unless `tourSeen` is false.
+ */
+export function addPerson(db: Database.Database, { tourSeen = true } = {}): Person {
 	counter += 1;
 	const tag = `${test.info().workerIndex}-${counter}-${Date.now()}`;
 	const now = Date.now();
@@ -57,14 +67,18 @@ export function addPerson(db: Database.Database): Person {
 	const userId = Number(
 		db
 			.prepare(
-				'insert into users (household_id, google_sub, email, name, created_at) values (?, ?, ?, ?, ?)'
+				'insert into users (household_id, google_sub, email, name, created_at, tour_seen) values (?, ?, ?, ?, ?, ?)'
 			)
-			.run(householdId, `sub-${tag}`, email, `Person ${counter}`, now).lastInsertRowid
+			.run(householdId, `sub-${tag}`, email, `Person ${counter}`, now, tourSeen ? now : null)
+			.lastInsertRowid
 	);
 	return { userId, householdId, email };
 }
 
-/** The ADMIN_EMAIL account, made by whichever test needs it first, in a household of its own. */
+/**
+ * The ADMIN_EMAIL account, made by whichever test needs it first, in a household of its own.
+ * It has finished the first-time tour.
+ */
 export function adminId(db: Database.Database): number {
 	const find = db.prepare("select id from users where email = 'admin@example.com'");
 	db.transaction(() => {
@@ -75,7 +89,7 @@ export function adminId(db: Database.Database): number {
 			)
 			.run().lastInsertRowid;
 		db.prepare(
-			"insert into users (household_id, google_sub, email, name, created_at) values (?, 'admin-sub', 'admin@example.com', 'Admin', 0)"
+			"insert into users (household_id, google_sub, email, name, created_at, tour_seen) values (?, 'admin-sub', 'admin@example.com', 'Admin', 0, 0)"
 		).run(householdId);
 	}).immediate();
 	return (find.get() as { id: number }).id;

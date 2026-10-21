@@ -39,7 +39,9 @@ export const users = sqliteTable(
 		name: text('name').notNull(),
 		createdAt: integer('created_at').notNull(),
 		// The release date (YYYY-MM-DD) of the newest release they've seen on What's new.
-		whatsNewSeen: text('whats_new_seen')
+		whatsNewSeen: text('whats_new_seen'),
+		// When they finished or skipped the first-time tour; empty until then (design 7, "Tour").
+		tourSeen: integer('tour_seen')
 	},
 	(t) => [index('users_household').on(t.householdId)]
 );

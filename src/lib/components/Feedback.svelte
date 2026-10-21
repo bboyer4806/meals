@@ -45,7 +45,9 @@
 	};
 </script>
 
-<button type="button" class="feedback no-print" aria-label="Send feedback" onclick={show}>
+<button type="button" class="feedback no-print" aria-label="Send feedback"
+	data-tour="feedback"
+	onclick={show}>
 	<svg viewBox="0 0 24 24" aria-hidden="true">
 		<path d="M4 5h16v11H9l-5 4z" />
 		<path d="M8 9h8M8 12h5" />
