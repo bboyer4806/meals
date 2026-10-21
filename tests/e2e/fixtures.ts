@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { test as base, type Page } from '@playwright/test';
+import { expect, test as base, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 
-export { expect } from '@playwright/test';
+export { expect };
 
 type Person = { userId: number; householdId: number; email: string };
 
@@ -31,6 +31,15 @@ export const test = base.extend<Fixtures>({
 		await use(person);
 	}
 });
+
+/**
+ * Opens a page and waits for its script to start, so what the test does next gets the page's
+ * answers (asking before leaving, suggestions) rather than the server's page alone.
+ */
+export async function open(page: Page, path: string) {
+	await page.goto(path);
+	await expect(page.locator('html[data-started]')).toBeAttached();
+}
 
 /** A household with one member, not signed in. Usual servings 4. */
 export function addPerson(db: Database.Database): Person {
