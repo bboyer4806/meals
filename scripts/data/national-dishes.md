@@ -1,0 +1,480 @@
+# National Dishes (one per line)
+
+- Afghanistan: kabuli palaw
+- Albania: tavë kosi
+- Albania: flia
+- Algeria: couscous
+- Algeria: rechta
+- Andorra: escudella i carn d'olla
+- Angola: moamba de galinha
+- Antigua and Barbuda: fungee and pepperpot
+- Argentina: asado
+- Argentina: empanada
+- Argentina: matambre
+- Argentina: locro
+- Armenia: khorovats
+- Armenia: harisa
+- Aruba: Keshi yena
+- Australia: roast lamb
+- Australia: meat pie
+- Australia: Vegemite on toast
+- Austria: Wiener schnitzel
+- Azerbaijan: dolma
+- Bahamas: crack conch with peas and rice
+- Bahrain: kabsa
+- Bangladesh: rice and fish
+- Barbados: cou-cou and flying fish
+- Belarus: draniki
+- Belgium: frites
+- Belgium: carbonade flamande
+- Belgium: waterzooi
+- Belgium: chocolate mousse
+- Belgium: Belgian waffle
+- Belize: rice and beans
+- Benin: kuli-kuli
+- Bhutan: ema datshi
+- Bolivia: salteñas
+- Bosnia and Herzegovina: Bosnian pot
+- Bosnia and Herzegovina: ćevapi
+- Bosnia and Herzegovina: burek
+- Botswana: seswaa
+- Brazil: feijoada
+- Brazil: churrasco
+- Brunei: ambuyat
+- Bulgaria: Shopska salad
+- Bulgaria: banitsa
+- Burkina Faso: riz gras
+- Burundi: boko boko
+- Cambodia: fish amok
+- Cambodia: num banhchok
+- Cambodia: samlar kako
+- Cameroon: ndolé
+- Canada: poutine
+- Canada: donair
+- Canada: butter tarts
+- Canada: Nanaimo bar
+- Canada: tourtière
+- Cape Verde: cachupa
+- Central African Republic: cassava
+- Chad: boule
+- Chile: empanada
+- Chile: pastel de choclo
+- Chile: marraqueta
+- China: Peking duck
+- China: crayfish
+- China: hot pot
+- China: dumpling
+- China: malaxiangguo
+- China: dim sum
+- China: kaolengmian
+- China: tanghulu
+- Colombia: ajiaco
+- Colombia: bandeja paisa
+- Comoros: Langouste a la vanille
+- Democratic Republic of the Congo: poulet à la moambé
+- Republic of the Congo: poulet moambé
+- Costa Rica: casado
+- Costa Rica: chifrijo
+- Costa Rica: gallo pinto
+- Costa Rica: olla de carne
+- Croatia: zagorski štrukli
+- Croatia: pašticada
+- Croatia: sinjski arambaši
+- Croatia: soparnik
+- Croatia: rapska torta
+- Croatia: imotska torta
+- Croatia: rafioli
+- Croatia: jota
+- Cuba: ropa vieja
+- Cyprus: souvla
+- Cyprus: kleftiko
+- Cyprus: trachanás
+- Czech Republic: vepřo knedlo zelo
+- Czech Republic: svíčková
+- Czech Republic: paštika
+- Denmark: stegt flæsk
+- Denmark: smørrebrød
+- Denmark: flæskesteg
+- Faroe Islands: Skerpikjøt
+- Greenland: suaasat
+- Djibouti: skoudehkaris
+- Dominica: mountain chicken
+- Dominica: callaloo
+- Dominican Republic: La bandera
+- Ecuador: encebollado
+- Ecuador: guatitas
+- Ecuador: fanesca
+- Egypt: ful medames
+- Egypt: kushari
+- Egypt: molokhiya
+- Egypt: taʿamiya
+- El Salvador: pupusa
+- Equatorial Guinea: Succotash
+- Eritrea: zigini with injera
+- Estonia: kama
+- Eswatini: Shisa Nyama
+- Ethiopia: doro wat with injera
+- Fiji: kokoda
+- Finland: rye bread
+- Finland: Karelian pie
+- Finland: karjalanpaisti
+- Finland: lohikeitto
+- Finland: joulutorttu
+- France: escargot
+- France: pot-au-feu
+- France: beef bourguignon
+- France: blanquette de veau
+- France: steak frites
+- France: baguette
+- France: cassoulet
+- France: cheese
+- France: crêpe
+- France: crème caramel
+- France: croissant
+- France: poule au pot
+- France: chou à la crème
+- Gabon: poulet nyembwe
+- The Gambia: domoda
+- Georgia: khachapuri
+- Georgia: khinkali
+- Germany: schweinshaxe
+- Germany: bratwurst
+- Germany: sauerbraten
+- Germany: döner kebab
+- Germany: currywurst
+- Germany: eisbein with sauerkraut
+- Ghana: fufu
+- Ghana: jollof rice
+- Greece: horiatiki
+- Greece: moussaka
+- Greece: fasolada
+- Greece: souvlaki
+- Greece: gyros
+- Greece: magiritsa
+- Greece: kokoretsi
+- Grenada: oil down
+- Guatemala: pepián
+- Guinea: poulet yassa
+- Guinea-Bissau: caldo de mancarra
+- Guyana: pepperpot and chicken curry
+- Haiti: griot
+- Haiti: soup joumou
+- Honduras: baleada
+- Hong Kong: pineapple bun
+- Hong Kong: dim sum
+- Hungary: goulash
+- Iceland: lamb
+- Iceland: hákarl
+- India: Khichdi
+- India: Chaat
+- India: butter chicken
+- India: biryani
+- India: Dal
+- India: dosa
+- India: idli
+- Indonesia: nasi goreng
+- Indonesia: mie goreng
+- Indonesia: tumpeng
+- Indonesia: satay
+- Indonesia: soto
+- Indonesia: rendang
+- Indonesia: gado gado
+- Iran: abgoosht
+- Iran: chelo kabab
+- Iran: ghormeh sabzi
+- Iran: Fesenjan
+- Iraq: masgouf
+- Iraq: dolma
+- Iraq: Iraqi kebab
+- Iraq: quzi
+- Ireland: soda bread
+- Ireland: butter
+- Ireland: Irish stew
+- Israel: falafel
+- Israel: Israeli salad
+- Israel: meorav Yerushalmi
+- Israel: sabich
+- Israel: Ptitim
+- Italy: pasta
+- Italy: pizza
+- Italy: risotto
+- Italy: mozzarella
+- Italy: Parmigiano Reggiano
+- Italy: Italian wine
+- Ivory Coast: atcheke
+- Jamaica: Ackee and saltfish
+- Japan: sushi
+- Japan: sashimi
+- Japan: Japanese curry
+- Japan: ramen
+- Japan: tempura
+- Japan: wagashi
+- Japan: miso soup
+- Jordan: mansaf
+- Kazakhstan: beshbarmak
+- Kenya: ugali with sukuma wiki
+- Kenya: githeri
+- Kenya: chapati
+- Kenya: nyama choma
+- Kiribati: Palusami
+- Korea, North: raengmyŏn
+- Korea, North: kimchi
+- Korea, South: kimchi
+- Korea, South: bulgogi
+- Korea, South: bibimbap
+- Korea, South: jajangmyeon
+- Korea, South: bingsu
+- Korea, South: tteokbokki
+- Kosovo: flia
+- Kuwait: Machboos Laham
+- Kyrgyzstan: beshbarmak
+- Laos: larb/laap
+- Laos: sticky rice
+- Laos: tam mak hoong
+- Latvia: layered rye bread
+- Latvia: sklandrausis
+- Latvia: Jāņi cheese
+- Latvia: Grey peas
+- Lebanon: kibbeh
+- Lebanon: tabbouleh
+- Lesotho: Pap-pap
+- Liberia: dumboy
+- Libya: Couscous
+- Liechtenstein: käsknöpfle
+- Lithuania: bigos
+- Lithuania: cepelinai
+- Lithuania: šaltibarščiai
+- Luxembourg: Judd mat Gaardebounen
+- Madagascar: romazava
+- Malaysia: nasi lemak
+- Malaysia: satay
+- Maldives: mas huni
+- Mali: tiguadege na
+- Malta: stuffat tal-fenek
+- Marshall Islands: Barramundi cod
+- Marshall Islands: macadamia nut pie
+- Mauritius: dholl puri
+- Mexico: taco
+- Mexico: mole poblano
+- Mexico: chiles en nogada
+- Moldova: mămăligă
+- Moldova: ghivetch
+- Monaco: barbagiuan
+- Mongolia: buuz
+- Montenegro: njeguški pršut
+- Morocco: couscous
+- Morocco: tagine
+- Myanmar: mohinga
+- Myanmar: lahpet thoke
+- Nauru: coconut fish
+- Nepal: Gundruk and Dhido
+- Netherlands: stamppot
+- Netherlands: soused herring with onion and pickles
+- New Zealand: meat pie
+- New Zealand: bacon and egg pie
+- New Zealand: lamb
+- New Zealand: pavlova
+- Nicaragua: gallo pinto
+- Nicaragua: nacatamal
+- Nicaragua: vigorón
+- Niger: dambou
+- Nigeria: tuwon shinkafa
+- Nigeria: Jollof rice
+- Nigeria: pounded yam and egusi soup
+- Nigeria: Indomie instant noodles
+- North Macedonia: tavče gravče
+- Norway: fårikål
+- Oman: shuwa
+- Pakistan: biryani
+- Pakistan: nihari
+- Pakistan: chicken karahi
+- Pakistan: gulab jamun
+- Palestine: maqluba
+- Palestine: musakhan
+- Palestine: falafel
+- Panama: sancocho
+- Paraguay: Sopa paraguaya
+- Peru: ceviche
+- Peru: pollo a la brasa
+- Philippines: adobo
+- Philippines: sinigang
+- Philippines: sisig
+- Philippines: pancit
+- Philippines: halo-halo
+- Philippines: lechon
+- Poland: bigos
+- Poland: pierogi
+- Poland: kotlet schabowy
+- Portugal: bacalhau
+- Portugal: caldo verde
+- Portugal: cozido à portuguesa
+- Portugal: Pastel de Belem
+- Portugal: Sardinha Assada
+- Qatar: machboos
+- Romania: mămăligă
+- Romania: sarmale
+- Romania: mici
+- Russia: beef stroganoff
+- Russia: chicken Kiev
+- Russia: pierogi
+- Russia: borscht
+- Russia: shchi
+- Russia: Kasha
+- Russia: pelmeni
+- Russia: pirozhki
+- Russia: Olivier salad
+- Russia: blini
+- Rwanda: isombe
+- Rwanda: ibihaza
+- Rwanda: ugali
+- San Marino: torta tre monti
+- Saudi Arabia: saleeg
+- Saudi Arabia: kabsa
+- Saudi Arabia: jareesh
+- Saudi Arabia: maqshush
+- Senegal: thieboudienne
+- Serbia: ćevapčići
+- Serbia: pljeskavica
+- Serbia: gibanica
+- Serbia: Karađorđeva steak
+- Serbia: sarma
+- Serbia: pasulj
+- Singapore: chilli crab
+- Singapore: Hainanese chicken rice
+- Singapore: Hokkien mee
+- Slovakia: pirohy
+- Slovakia: bryndzové halušky
+- Slovenia: cremeschnitte
+- Slovenia: buckwheat dumplings
+- Slovenia: Idrijski žlikrofi
+- Slovenia: Carniolan sausage
+- Somalia: bariis Iskukaris
+- South Africa: bobotie
+- South Africa: mieliepap and braai
+- South Africa: boerewors and chakalaka
+- Spain: tortilla de patatas
+- Asturias: cachopo
+- Catalonia: pa amb tomaquet
+- Galicia: polbo á feira
+- Madrid: churro
+- Valencia: paella
+- Sri Lanka: rice and curry
+- Sri Lanka: kottu
+- Suriname: pom
+- Sweden: köttbullar
+- Sweden: kräftskiva
+- Sweden: surströmming
+- Sweden: pickled herring with potatoes
+- Sweden: ostkaka
+- Sweden: smörgåstårta
+- Sweden: kebab pizza
+- Switzerland: fondue
+- Switzerland: muesli
+- Switzerland: raclette
+- Switzerland: rösti
+- Switzerland: cervelat
+- Switzerland: Zürcher geschnetzeltes
+- Switzerland: cordon bleu
+- Syria: kibbeh
+- Tajikistan: osh palov
+- Tajikistan: qurutob
+- Taiwan: beef noodle soup
+- Taiwan: minced pork rice
+- Tanzania: chipsi mayai
+- Thailand: pad thai
+- Thailand: pad gaprao
+- Thailand: tom yum kung
+- Thailand: som tam
+- Togo: fufu
+- Tonga: 'ota 'ika
+- Trinidad and Tobago: doubles
+- Trinidad and Tobago: pelau
+- Trinidad and Tobago: bake and shark
+- Trinidad and Tobago: Roti
+- Tobago: curry crab and dumplings
+- Tunisia: couscous
+- Tunisia: brik/bric
+- Turkey: doner kebab
+- Turkey: dürüm
+- Turkey: kuru fasulye with pilaf
+- Turkey: kebap
+- Turkey: baklava
+- Turkey: simit
+- Turkey: kapuska
+- Tuvalu: pulaka
+- Uganda: matooke
+- Ukraine: borscht
+- Ukraine: varenyky
+- United Arab Emirates: harees
+- United Arab Emirates: shuwa
+- United Kingdom: a "full" fry-up breakfast
+- United Kingdom: Fried chicken
+- United Kingdom: fish and chips
+- United Kingdom: Sunday roast
+- United Kingdom: chicken tikka masala
+- United Kingdom: potato crisps
+- England: Melton Mowbray pork pies
+- England: crumpets
+- England: custard
+- England: apple pie
+- England: rhubarb crumble
+- England: black pudding
+- England: steak and kidney pudding
+- England: Yorkshire pudding
+- England: plum pudding
+- England: spotted dick
+- England: trifle
+- England: roast beef
+- Cornwall: Cornish pasties
+- Devon: Devonshire cream tea
+- Devon: pasty
+- Northern Ireland: Barmbrack
+- Northern Ireland: boxty
+- Northern Ireland: champ
+- Northern Ireland: Ulster fry
+- Scotland: Burns supper of haggis with neeps and tatties
+- Scotland: scotch whisky
+- Scotland: Arbroath smokies
+- Scotland: kippers
+- Scotland: kedgeree
+- Scotland: Cullen skink
+- Scotland: cock-a-leekie soup
+- Scotland: porridge
+- Scotland: rumbledethumps
+- Scotland: Clootie dumpling
+- Scotland: Cranachan
+- Scotland: Dundee cake
+- Shetland Isles: Reestit mutton
+- Wales: bara brith
+- Wales: cawl
+- Wales: Glamorgan sausages
+- Wales: laverbread
+- Wales: Tatws Pum Munud
+- Wales: Welsh rarebit
+- Wales: Welsh cakes
+- United States: apple pie
+- United States: cheeseburger
+- United States: hamburger
+- United States: hot dog
+- United States: fried chicken
+- United States: Salisbury steak
+- United States: turkey
+- United States: mashed potatoes and gravy
+- American Samoa: palusami
+- Guam: Kelaguen
+- Guam: Spam
+- Hawaii: Saimin
+- Northern Mariana Islands: Kelaguen
+- Puerto Rico: lechon
+- Puerto Rico: mofongo
+- Puerto Rico: arroz con gandules
+- United States Virgin Islands: funji
+- Uruguay: chivito
+- Uzbekistan: Uzbek Plov
+- Vanuatu: laplap
+- Vatican City: Fettuccine alla Papalina
+- Venezuela: pabellón criollo
+- Venezuela: arepa
+- Yemen: saltah
+- Zambia: nshima
+- Zimbabwe: sadza
