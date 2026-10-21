@@ -4,10 +4,10 @@ import { RELEASES } from './whats-new.ts';
 
 // Releases are written by hand when a sprint closes, so these guard each new one.
 describe('RELEASES', () => {
-	// Each a day or more after the one before, as the dot compares dates.
+	// Two releases can share a day, though the dot then misses the later one (design 7, MEA-25).
 	it('lists releases newest first', () => {
 		const dates = RELEASES.map((release) => release.released);
-		expect(dates).toEqual([...new Set(dates)].sort().reverse());
+		expect(dates).toEqual([...dates].sort().reverse());
 	});
 
 	it('has a unique version for each release', () => {
