@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import Feedback from '#lib/components/Feedback.svelte';
 
 	let { data, children } = $props();
 	let menu = $state<HTMLDetailsElement>();
@@ -52,6 +53,8 @@
 <main class="page">
 	{@render children()}
 </main>
+
+<Feedback />
 
 <!-- Phone-style tabs at the bottom (design 7). -->
 <nav class="tabs no-print" aria-label="Main">
@@ -183,14 +186,12 @@
 		background: var(--surface-sunk);
 	}
 
-	main,
-	.tabs {
-		--tabs-height: 3.5rem;
-	}
-
-	/* Room for the tab bar, so it never covers the end of a page. */
+	/* Room for the tab bar and the feedback button above it, so they never cover the end of a
+	   page. */
 	main {
-		padding-bottom: calc(var(--tabs-height) + 2rem + env(safe-area-inset-bottom));
+		padding-bottom: calc(
+			var(--tabs-height) + var(--feedback-size) + 2rem + env(safe-area-inset-bottom)
+		);
 	}
 
 	.tabs {

@@ -8,7 +8,12 @@ const schema = z.object({
 	// The site admin's Google account email; it can invite new households.
 	ADMIN_EMAIL: z.email().transform((email) => email.toLowerCase()),
 	// An existing directory that holds the database.
-	DATA_DIR: z.string().min(1)
+	DATA_DIR: z.string().min(1),
+	// The Jira site that feedback goes to, such as https://example.atlassian.net, and the
+	// Atlassian account and API token that create its tickets.
+	JIRA_URL: z.url(),
+	JIRA_EMAIL: z.email(),
+	JIRA_API_TOKEN: z.string().min(1)
 });
 
 export type Config = z.output<typeof schema>;

@@ -25,7 +25,7 @@ import {
 	type RecipeFormValues,
 	type RecipeRow
 } from './recipe-form.ts';
-import { freshDb, ingredient, makeDish, makeHousehold, recipe } from './testing.ts';
+import { TEST_ENV, freshDb, ingredient, makeDish, makeHousehold, recipe } from './testing.ts';
 
 // The real functions, which a test can make fail once.
 vi.mock('./data/dishes.ts', async (importOriginal) => {
@@ -662,12 +662,7 @@ describe('saveRecipe', () => {
 		freshDb();
 		({ householdId } = makeHousehold());
 		dataDir = mkdtempSync(join(tmpdir(), 'meals-recipe-form-'));
-		loadConfig({
-			GOOGLE_CLIENT_ID: 'client-id',
-			GOOGLE_CLIENT_SECRET: 'client-secret',
-			ADMIN_EMAIL: 'admin@example.com',
-			DATA_DIR: dataDir
-		});
+		loadConfig({ ...TEST_ENV, DATA_DIR: dataDir });
 	});
 
 	afterEach(() => {

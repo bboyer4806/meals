@@ -44,6 +44,24 @@ needs none of them.
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console                                             |
 | `ADMIN_EMAIL`          | The Google account that can invite new households from `/admin`       |
 | `DATA_DIR`             | An existing directory for the database (`/data` on the server)        |
+| `JIRA_URL`             | The Jira site feedback goes to, `https://webpyro.atlassian.net`       |
+| `JIRA_EMAIL`           | The Atlassian account that creates feedback tickets                   |
+| `JIRA_API_TOKEN`       | That account's API token (see [Feedback in Jira](#feedback-in-jira))  |
+
+## Feedback in Jira
+
+The feedback button creates a Task in the MEA project's backlog, labeled `user-feedback`, as
+the account in `JIRA_EMAIL`. That account needs permission to create issues in MEA. To create
+its API token:
+
+1. Sign in to Atlassian as that account and open
+   [API tokens](https://id.atlassian.com/manage-profile/security/api-tokens).
+2. Choose "Create API token", name it "Meals feedback", pick an expiry date, and copy the token.
+3. Set it as `JIRA_API_TOKEN` on the server (see [One-time server setup](#one-time-server-setup)).
+
+A token stops working when it expires; feedback then says "Couldn't send your feedback" and the
+app's log shows Jira's 401. Create a new one and set it the same way. For local development you
+can use your own account and token.
 
 ## Google sign-in
 
@@ -86,7 +104,8 @@ access. On a new server, first run `dokku apps:create meals` and
 dokku storage:ensure-directory --chown heroku meals
 dokku storage:mount meals /var/lib/dokku/data/storage/meals:/data
 dokku config:set --no-restart meals DATA_DIR=/data \
-  GOOGLE_CLIENT_ID='<client ID>' GOOGLE_CLIENT_SECRET='<client secret>' ADMIN_EMAIL='<your Google email>'
+  GOOGLE_CLIENT_ID='<client ID>' GOOGLE_CLIENT_SECRET='<client secret>' ADMIN_EMAIL='<your Google email>' \
+  JIRA_URL='https://webpyro.atlassian.net' JIRA_EMAIL='<Atlassian email>' JIRA_API_TOKEN='<API token>'
 dokku nginx:set meals client-max-body-size 5m
 dokku ports:set meals http:80:3000 https:443:3000
 ```
@@ -105,7 +124,8 @@ database file" means the storage folder isn't owned by uid 1000. Fix it on the s
 deploy again.
 
 To change a setting later, run `dokku config:set meals NAME='value'` on the server. Dokku restarts
-the app with it.
+the app with it. A setting the app newly requires, such as the `JIRA_*` settings, must be set this
+way before the version that needs it deploys, or that version won't start.
 
 ## Backups
 

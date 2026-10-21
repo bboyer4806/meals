@@ -204,6 +204,7 @@ development, configuration, and restoring a backup.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | From Google Cloud Console (section 9)                                                       | Once on the server |
 | `ADMIN_EMAIL`                            | Your Google email. This account can invite new households.                                  | Once on the server |
 | `DATA_DIR`                               | `/data`                                                                                     | Once on the server |
+| `JIRA_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` | The Jira site that feedback goes to, and the Atlassian account and API token that create its tickets (7, Feedback) | Once on the server |
 
 The app reads these when it starts, not when it's built, so building the image needs no
 secrets. It refuses to start if any is missing or if `DATA_DIR` doesn't exist (a missing
@@ -287,6 +288,7 @@ src/lib/server/
                           householdId first, except whats-new (a person's seen
                           release), which takes the person's id.
   photos.ts               save, delete and serve photos
+  jira.ts                 create a feedback ticket in Jira
 src/routes/               pages and form actions; database access only through data/
 drizzle/                  generated SQL migrations
 scripts/backup.js         the nightly backup job
@@ -578,6 +580,22 @@ out.
 | Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
 | What's new       | `/whats-new`                         | See below.                                                                                                                           |
 | Admin            | `/admin`                             | Invite households, list households, last backup date.                                                                                |
+
+**Feedback.** Every screen after household setup, from Grocery list to Admin, has a round
+"Send feedback" button with a speech-bubble icon at the bottom right, just above the tab bar.
+Pages leave room at the end so it never covers their last row, and printing hides it. It opens
+a "Send feedback" sheet with a Feedback box of up to 2,000 characters, a count such as
+"120 / 2,000" ("You've reached the 2,000-character limit." at 2,000), and Send. An empty box
+says "Enter your feedback". While sending, Send reads "Sending…" and can't be tapped again.
+Sending creates a Task in the MEA backlog, labeled `user-feedback`, titled "Feedback: " and the
+first 80 characters of the message's first line. Its description has the message, the page's
+path and query, the sender's name and email, the household's name, the browser's user agent and
+the window size. The sender and household come from the session. The app's server creates it
+with Jira's API and the `JIRA_*` settings (4.3), so the token never reaches the browser and the
+ticket's reporter is that token's account. The sheet then says "Thanks, your feedback was
+sent." The page behind isn't reloaded, so anything typed there and not saved stays. If Jira
+can't be reached or refuses the ticket, it says "Couldn't send your feedback. Try again." and
+keeps the message. Feedback isn't stored in the app.
 
 **Grocery list.** An add bar at the top: item (with suggestions), quantity, unit, store
 (filled from the default; tap to change) and Add. Below it, one group per store plus "No

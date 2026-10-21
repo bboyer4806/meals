@@ -32,7 +32,16 @@
 	<p>
 		Your household's information is visible to the members of your household. The site admin can
 		see household names and members' email addresses, but not your lists, recipes or menu. Meals
-		has no ads and no tracking, and your information is never sold or shared.
+		has no ads and no tracking, and your information is never sold or shared, except for feedback
+		you choose to send.
+	</p>
+
+	<h2>Feedback</h2>
+	<p>
+		The feedback button sends your message, the page you sent it from, your name and email
+		address, your household's name and your browser details (the browser, its version, your
+		device's system and the window size) to the site owner's Jira, which Atlassian runs. Meals
+		doesn't keep a copy.
 	</p>
 
 	<h2>Where it's kept</h2>
