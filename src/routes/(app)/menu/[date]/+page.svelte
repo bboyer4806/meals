@@ -1,41 +1,23 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
-	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
-	import { refreshAll } from '$app/navigation';
-	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
-	import CopyDinner from '#lib/components/CopyDinner.svelte';
-	import DinnerDetails from '#lib/components/DinnerDetails.svelte';
-	import DinnerDishes from '#lib/components/DinnerDishes.svelte';
+	import type { ActionResult } from '$app/forms';
+	import AddDinner from '#lib/components/AddDinner.svelte';
+	import DinnerEditor from '#lib/components/DinnerEditor.svelte';
 	import MoveDinner from '#lib/components/MoveDinner.svelte';
-	import Sheet from '#lib/components/Sheet.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
-	import {
-		DINNER_TYPES,
-		DINNER_TYPE_LABELS,
-		hasDishes,
-		weekStart,
-		type DinnerType
-	} from '#lib/menu.ts';
-	import { MAX_SERVINGS } from '#lib/recipe-view.ts';
+	import { MAX_DINNERS, hasDishes, weekStart } from '#lib/menu.ts';
 
+	// A date's dinners (design 7, Dinner; 6.9), each with its own editor, in the order they were
+	// added. Move takes them all to another date, and Add a dinner adds another, up to 5.
 	let { data, form } = $props();
 
-	const dinner = $derived(data.dinner);
-	const dishCount = $derived(dinner?.dishes.length ?? 0);
+	type Dinner = (typeof data.dinners)[number];
+
+	const dinners = $derived(data.dinners);
+	const labeled = $derived(dinners.length > 1);
 	const dateLabel = $derived(formatDateLabel(data.date, { today: data.today, weekday: 'long' }));
 	let mover = $state<ReturnType<typeof MoveDinner>>();
-
-	// The servings field's value, saved or not, so a dish opens at what the person sees (design 7).
-	// One that can't be saved opens it at the saved servings.
-	let shownServings = $state<number | null>(null);
-	const linkServings = $derived(
-		shownServings !== null &&
-			Number.isInteger(shownServings) &&
-			shownServings >= 1 &&
-			shownServings <= MAX_SERVINGS
-			? shownServings
-			: dinner?.servings
-	);
+	let title = $state<HTMLElement>();
 
 	// What a reload took off the page: a failure whose part of the page went with the reload
 	// after it, such as adding a dish just as someone switched the dinner to Eating out, or what
@@ -57,9 +39,7 @@
 		noticeElement?.focus();
 	}
 
-	type Dinner = NonNullable<typeof data.dinner>;
-
-	/** Whether the page has the dish section: no dinner yet, or one of a type with dishes. */
+	/** Whether a dinner has the dish section: no dinner yet, or one of a type with dishes. */
 	function withDishes(shown: Dinner | null): boolean {
 		return shown === null || hasDishes(shown.type);
 	}
@@ -67,22 +47,40 @@
 	// What the details form shows on a date with no dinner: Cooking at home at the usual servings,
 	// saved only by Save, a dish, a copy or a type (6.9, Q28).
 	function unplannedDinner() {
-		return { id: null, type: 'cook' as const, note: null, servings: data.defaultServings };
+		return {
+			id: null,
+			label: null,
+			type: 'cook' as const,
+			note: null,
+			servings: data.defaultServings
+		};
 	}
 
-	// The dinner the details form is for: the one on this date, except when a reload finds it
-	// cleared or moved away while something typed in the form isn't saved. The form then keeps the
-	// dinner it had, since such a reload, as on coming back to the app (Q11), would otherwise drop
-	// what was typed without a word, and saving plans the date again with it (6.11).
-	let editing = $state<Dinner | ReturnType<typeof unplannedDinner>>(
-		untrack(() => data.dinner ?? unplannedDinner())
-	);
+	// One editor per dinner, or one for a date with no dinner. Each keeps its key while it's for
+	// the same dinner, so what's typed in it stays. `dinner` is the dinner as it is now (null on a
+	// date with none), and `editing` what the details form is for. When a reload finds a dinner
+	// cleared or moved away while something typed in its form isn't saved, and the date has no
+	// dinner left, the form keeps that dinner, since such a reload, as on coming back to the app
+	// (Q11), would otherwise drop what was typed without a word, and saving plans the date again
+	// with it (6.11).
+	type Slot = {
+		key: number;
+		dinner: Dinner | null;
+		editing: Dinner | ReturnType<typeof unplannedDinner>;
+	};
+	let nextKey = 0;
+	function slotFor(dinner: Dinner | null, key = nextKey++): Slot {
+		return { key, dinner, editing: dinner ?? unplannedDinner() };
+	}
+	function freshSlots(now: Dinner[]): Slot[] {
+		return now.length > 0 ? now.map((dinner) => slotFor(dinner)) : [slotFor(null)];
+	}
+	let slots = $state.raw<Slot[]>(untrack(() => freshSlots(data.dinners)));
+	const editors: Record<number, ReturnType<typeof DinnerEditor> | null> = $state({});
 	const HELD = 'Someone cleared or moved this dinner. Save to plan it again with what you typed.';
-	let details = $state<ReturnType<typeof DinnerDetails>>();
-	let dishEditor = $state<ReturnType<typeof DinnerDishes>>();
 
 	// Set while this page's own change reloads it. The person asked for it, so what it takes off
-	// the page goes without a word, and what's typed in the form stays for Save, also when the
+	// the page goes without a word, and what's typed in the forms stays for Save, also when the
 	// change planned the date.
 	let ownChange = false;
 
@@ -96,53 +94,89 @@
 		}
 	}
 
+	/**
+	 * The editors for the date's dinners as they are now. An editor stays with its dinner, and a
+	 * dinner new to the page takes over an editor whose dinner is gone, as when someone moved
+	 * another dinner onto the date or the page's own change planned it.
+	 */
+	function reconcile(now: Dinner[], was: Dinner[], own: boolean): void {
+		const targets: (Dinner | null)[] = now.length > 0 ? now : [null];
+		const isFor = (slot: Slot, target: Dinner | null) => slot.editing.id === (target?.id ?? null);
+		const gone = slots.filter((slot) => !targets.some((target) => isFor(slot, target)));
+		const next: Slot[] = [];
+		let held = false;
+		for (const target of targets) {
+			const same = slots.find((slot) => isFor(slot, target));
+			if (target === null && !same && !own) {
+				const unsaved = gone.filter((slot) => editors[slot.key]?.hasUnsaved());
+				if (unsaved.length > 0) {
+					for (const slot of unsaved) {
+						gone.splice(gone.indexOf(slot), 1);
+						next.push({ key: slot.key, dinner: null, editing: slot.editing });
+					}
+					held = true;
+					// Said once, when the dinner goes; later reloads find it still gone.
+					if (unsaved.some((slot) => was.some((dinner) => dinner.id === slot.editing.id))) {
+						void showNotice(HELD);
+					}
+					continue;
+				}
+			}
+			const slot = same ?? gone.shift();
+			if (!slot) {
+				next.push(slotFor(target));
+				continue;
+			}
+			const editor = editors[slot.key];
+			if (!own && !same && target !== null && editor?.hasUnsaved() && !editor.matches(target)) {
+				// Someone put another dinner here (a swap, or planned it again after a clear) while
+				// something typed isn't saved. The form shows that dinner, so its note isn't replaced
+				// unseen, and what was typed goes in the notice to copy. A dinner that already has
+				// what was typed is this page's own save planning the date again.
+				lostTyped(editor, 'Someone put another dinner on this date');
+				void tick().then(() => editor.reset());
+			} else if (!own && withDishes(slot.dinner) && !withDishes(target)) {
+				// Someone switched it to a type without dishes, which takes the dish field away.
+				const lost = editor?.nameLost();
+				if (lost) void showNotice(lost);
+			}
+			next.push(slotFor(target, slot.key));
+		}
+		// Editors left over: someone cleared or moved their dinners while others are on the date.
+		if (!own) {
+			for (const slot of gone) {
+				const editor = editors[slot.key];
+				if (editor?.hasUnsaved()) lostTyped(editor, 'Someone cleared or moved this dinner');
+			}
+		}
+		// The form held for a cleared dinner has nothing left to save, so its notice goes too.
+		if (!held && notice?.message === HELD) notice = null;
+		slots = next;
+	}
+
+	/** Says what was typed in an editor whose dinner is gone, to copy. */
+	function lostTyped(editor: ReturnType<typeof DinnerEditor>, what: string): void {
+		const typed = editor.typedNote();
+		void showNotice(
+			typed === ''
+				? `${what}, so your changes weren't saved.`
+				: `${what}, so your note wasn't saved: "${typed}"`
+		);
+	}
+
 	// After each load and before the page updates, while the editors about to go still hold what
 	// was typed in them.
-	let loaded = untrack(() => ({ date: data.date, dinner: data.dinner }));
+	let loaded = untrack(() => ({ date: data.date, dinners: data.dinners }));
 	$effect.pre(() => {
-		const now = { date: data.date, dinner: data.dinner };
+		const now = { date: data.date, dinners: data.dinners };
 		untrack(() => {
 			const was = loaded;
 			loaded = now;
-			if (now.date !== was.date || ownChange) {
-				editing = now.dinner ?? unplannedDinner();
+			if (now.date !== was.date) {
+				slots = freshSlots(now.dinners);
 				return;
 			}
-			// Someone switched the dinner to a type without dishes, which takes the dish field away.
-			if (withDishes(was.dinner) && !withDishes(now.dinner)) {
-				const lost = dishEditor?.nameLost();
-				if (lost) void showNotice(lost);
-			}
-			if (now.dinner === null && editing.id !== null && details?.hasUnsaved()) {
-				// Said once, when the dinner goes; later reloads find it still gone.
-				if (was.dinner !== null) void showNotice(HELD);
-				return;
-			}
-			// Someone put another dinner on this date (a swap, or planned it again after a clear)
-			// while something typed isn't saved. The form shows that dinner, so its note isn't
-			// replaced unseen, and what was typed goes in the notice to copy. A dinner that already
-			// has what was typed is this page's own save planning the date again.
-			const other = now.dinner;
-			if (
-				other !== null &&
-				other.id !== editing.id &&
-				details?.hasUnsaved() &&
-				!details.matches(other)
-			) {
-				const typed = details.typedNote();
-				editing = other;
-				const form = details;
-				void tick().then(() => form.reset());
-				void showNotice(
-					typed === ''
-						? "Someone put another dinner on this date, so your changes weren't saved."
-						: `Someone put another dinner on this date, so your note wasn't saved: "${typed}"`
-				);
-				return;
-			}
-			// The form held for a cleared dinner has nothing left to save, so its notice goes too.
-			if (notice?.message === HELD) notice = null;
-			editing = now.dinner ?? unplannedDinner();
+			reconcile(now.dinners, was.dinners, ownChange);
 		});
 	});
 
@@ -155,98 +189,44 @@
 		}).format(new Date(`${weekStart(date)}T00:00:00Z`));
 	}
 
-	/** "Tacos", "Tacos and Rice", "Tacos, Rice and Salad". */
-	function listNames(names: string[]): string {
-		if (names.length <= 1) return names.join('');
-		return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-	}
-
-	// The type. Eating out and Leftovers have no dishes, so switching to them asks first when
-	// there are some (2.3).
-
-	let typeError = $state('');
-	let typeBusy = $state(false);
-	let switchTo = $state<DinnerType>('eat_out');
-	let switchOpen = $state(false);
-	let typesForm = $state<HTMLFormElement>();
-
-	function askSwitch(type: DinnerType) {
-		switchTo = type;
-		typeError = '';
-		switchOpen = true;
-	}
-
-	const submitType: SubmitFunction = ({ cancel, formData, formElement }) => {
-		const type = formData.get('type');
-		if (typeBusy || type === dinner?.type) return cancel();
-		typeBusy = true;
-		typeError = '';
-		const hadFocus = formElement.contains(document.activeElement);
-		return async ({ result, update }) => {
-			try {
-				switchOpen = false;
-				if (result.type === 'failure') {
-					typeError =
-						(result.data as { error?: string } | undefined)?.error ??
-						'Something went wrong. Please try again.';
-					// Shows any dishes someone added, so the next tap asks, or the dinner someone
-					// put on this date.
-					await refreshAll();
-				} else {
-					await ownUpdate(result, () => update({ reset: false }));
-				}
-			} finally {
-				typeBusy = false;
-			}
-			// SvelteKit moves focus to the top of the page after a form succeeds, and the sheet
-			// closes, so the type that was picked takes it back.
-			if (!hadFocus) return;
-			await tick();
-			typesForm?.querySelector<HTMLButtonElement>(`button[value="${type}"]`)?.focus();
-		};
-	};
-
-	// Clearing removes the actions it was among, so focus goes to the date's new state. The form
-	// drops what was typed for the cleared dinner.
+	// Clearing removes the actions it was among, so focus goes to the date's new state.
 	let unplanned = $state<HTMLElement>();
-	const submitClear: SubmitFunction = () => {
-		return async ({ result, update }) => {
-			// When someone put another dinner on this date meanwhile, it isn't cleared, and the
-			// page shows it under the message.
-			await ownUpdate(result, () => update({ reset: false, refreshAll: true }));
-			if (result.type !== 'success') return;
-			await tick();
-			details?.reset();
-			unplanned?.focus();
-		};
-	};
+	function cleared() {
+		(unplanned ?? title)?.focus();
+	}
+
+	/** The new dinner is the last one, since they're in the order they were added. */
+	async function added() {
+		await tick();
+		const last = slots.at(-1);
+		if (last) editors[last.key]?.focus();
+	}
+
+	/** Moving opens the new date, so it asks about anything typed in any of the dinners. */
+	function canLeave(): boolean {
+		return slots.every((slot) => editors[slot.key]?.confirmLeave() ?? true);
+	}
+
+	function keepAsking(): void {
+		for (const slot of slots) editors[slot.key]?.keepAsking();
+	}
 </script>
 
 <svelte:head>
 	<title>{formatDateLabel(data.date)} · Meals</title>
 </svelte:head>
 
-<!-- Which dinner the page shows, so a change meant for it isn't made to another one. -->
-{#snippet shownDinner()}
-	{#if dinner}<input type="hidden" name="dinnerId" value={dinner.id} />{/if}
-{/snippet}
-
 <!-- Any form sent, as the person goes on, takes the last failure's messages away. -->
-<svelte:document
-	onsubmit={() => {
-		notice = null;
-		typeError = '';
-	}}
-/>
+<svelte:document onsubmit={() => (notice = null)} />
 
 <!-- Rebuilt for each date, so nothing typed for one date shows up on another. -->
 {#key data.date}
 	<a class="link-tap week" href="/menu?week={weekStart(data.date)}">‹ Week of {weekLabel(data.date)}</a>
 
-	<!-- A planned dinner's date opens Move to another date (2.2.2, 7). -->
+	<!-- A planned date opens Move to another date (2.2.2, 7). -->
 	<div class="title">
-		<h1>
-			{#if dinner}
+		<h1 tabindex="-1" bind:this={title}>
+			{#if dinners.length > 0}
 				<button
 					type="button"
 					class="quiet date"
@@ -271,94 +251,42 @@
 		<p class="error notice" role="alert" tabindex="-1" bind:this={noticeElement}>{problem}</p>
 	{/if}
 
-	{#if !dinner}
+	{#if dinners.length === 0}
 		<p class="muted unplanned" tabindex="-1" bind:this={unplanned}>Not planned yet.</p>
 	{/if}
 
-	<form
-		class="types"
-		method="POST"
-		action="?/type"
-		use:enhance={submitType}
-		aria-label="Type"
-		bind:this={typesForm}
-	>
-		{@render shownDinner()}
-		{#each DINNER_TYPES as type (type)}
-			<button
-				name="type"
-				value={type}
-				aria-pressed={editing.type === type}
-				onclick={(event) => {
-					if (dishCount > 0 && !hasDishes(type)) {
-						event.preventDefault();
-						askSwitch(type);
-					}
-				}}>{DINNER_TYPE_LABELS[type]}</button
-			>
-		{/each}
-	</form>
-	{#if typeError}<p class="error" role="alert">{typeError}</p>{/if}
-
-	{#if withDishes(dinner)}
-		<DinnerDishes
-			{dinner}
+	{#each slots as slot (slot.key)}
+		<DinnerEditor
+			dinner={slot.dinner}
+			editing={slot.editing}
+			{labeled}
 			suggestions={data.dishes}
-			servings={linkServings}
+			copyGroups={data.copyGroups}
+			today={data.today}
 			onlost={showNotice}
 			{ownUpdate}
-			bind:this={dishEditor}
+			oncleared={cleared}
+			bind:this={editors[slot.key]}
 		/>
+	{/each}
+
+	{#if dinners.length > 0 && dinners.length < MAX_DINNERS}
+		<div class="add">
+			<AddDinner count={dinners.length} {ownUpdate} onadded={added} />
+		</div>
 	{/if}
 
-	<DinnerDetails dinner={editing} bind:servings={shownServings} bind:this={details} />
-
-	<div class="actions">
-		<CopyDinner
-			groups={data.copyGroups}
-			dinnerId={dinner?.id}
-			{dishCount}
-			today={data.today}
-			{ownUpdate}
-		/>
-	</div>
-
-	{#if dinner}
+	{#if dinners[0]}
 		<MoveDinner
 			date={data.date}
-			dinnerId={dinner.id}
-			canLeave={() => details?.confirmLeave() ?? true}
-			keepAsking={() => details?.keepAsking()}
+			count={dinners.length}
+			dinnerId={dinners[0].id}
+			{canLeave}
+			{keepAsking}
 			onlost={showNotice}
 			bind:this={mover}
 		/>
-		<form class="clear" method="POST" action="?/clear" use:enhance={submitClear}>
-			{@render shownDinner()}
-			<ConfirmButton
-				label="Clear"
-				message="Clear this dinner? The date goes back to not planned. Its dishes stay in your recipes."
-				confirmLabel="Clear"
-				danger
-			/>
-		</form>
 	{/if}
-
-	<Sheet bind:open={switchOpen} title="Switch to {DINNER_TYPE_LABELS[switchTo]}?">
-		<p>
-			{DINNER_TYPE_LABELS[switchTo]} has no dishes, so this takes
-			{listNames(dinner?.dishes.map((dish) => dish.name) ?? [])} off this dinner. They stay in your
-			recipes.
-		</p>
-		<form method="POST" action="?/type" use:enhance={submitType}>
-			{@render shownDinner()}
-			<input type="hidden" name="type" value={switchTo} />
-			<input type="hidden" name="removeDishes" value="1" />
-			<div class="row">
-				<button class="primary">Switch to {DINNER_TYPE_LABELS[switchTo]}</button>
-				<button type="button" onclick={() => (switchOpen = false)}>Cancel</button>
-			</div>
-		</form>
-	</Sheet>
 {/key}
 
 <style>
@@ -410,32 +338,8 @@
 		margin-bottom: 0.5rem;
 	}
 
-	/* Two by two on a phone, one row on a wider screen. */
-	.types {
+	.add {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-		gap: 0.5rem;
-		margin-bottom: 1rem;
-	}
-
-	.types button {
-		padding-inline: 0.5rem;
-	}
-
-	/* Filled in, not only colored, so the current type doesn't rely on color alone. */
-	.types button[aria-pressed='true'] {
-		background: var(--accent);
-		border-color: var(--accent);
-		color: var(--on-accent);
-	}
-
-	.actions {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-		gap: 0.5rem;
-	}
-
-	.clear {
 		margin-top: 1.5rem;
 		padding-top: 1rem;
 		border-top: 1px solid var(--border);

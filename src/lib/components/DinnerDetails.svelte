@@ -2,17 +2,22 @@
 	import { untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import { beforeNavigate, refreshAll } from '$app/navigation';
-	import { DINNER_NOTE_MAX, hasDishes, type DinnerType } from '../menu.ts';
+	import { DINNER_LABEL_MAX, DINNER_NOTE_MAX, hasDishes, type DinnerType } from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
+	import { normalizeName } from '../text.ts';
 
-	// A dinner's servings (types with dishes; Q28) and note (all types; Q26), saved together.
+	// A dinner's servings (types with dishes; Q28) and note (all types; Q26), saved together, and
+	// its label on a date with more than one dinner (6.9).
 	let {
 		dinner,
+		labeled,
 		servings = $bindable(null)
 	}: {
 		/** A saved dinner, or with no id the Cooking at home a date with no dinner shows (6.9). */
-		dinner: Pick<Dinner, 'type' | 'note' | 'servings'> & { id: number | null };
+		dinner: Pick<Dinner, 'label' | 'type' | 'note' | 'servings'> & { id: number | null };
+		/** Whether the date has more than one dinner, so this one has a label. */
+		labeled: boolean;
 		/**
 		 * The servings on screen, saved or not, which the dish links use. A number field bound
 		 * with bind:value holds a number, or null while it's empty.
@@ -33,27 +38,39 @@
 	// Copied from the saved dinner, and kept in step with it while unchanged here, so a reload
 	// shows someone else's change (Q11) without dropping what's being typed.
 	let note = $state(untrack(() => dinner.note ?? ''));
+	let label = $state(untrack(() => dinner.label ?? ''));
 	servings = untrack(() => dinner.servings);
 	let savedNote = untrack(() => dinner.note ?? '');
+	let savedLabel = untrack(() => dinner.label ?? '');
 	let savedServings = untrack(() => dinner.servings);
 	$effect(() => {
 		const nextNote = dinner.note ?? '';
+		const nextLabel = dinner.label ?? '';
 		const nextServings = dinner.servings;
 		untrack(() => {
 			if (note === savedNote) note = nextNote;
+			if (label === savedLabel) label = nextLabel;
 			if (servings === savedServings) servings = nextServings;
 			savedNote = nextNote;
+			savedLabel = nextLabel;
 			savedServings = nextServings;
 		});
 	});
 
+	/** The label as typed, as it would be stored, while it shows. */
+	function typedLabel(): string {
+		return labeled ? normalizeName(label) : savedLabel;
+	}
+
 	// What saving would change, or null when nothing would: the note as it's stored, and the
-	// servings while they show. An emptied servings field has nothing to keep.
+	// servings and label while they show. An emptied servings field has nothing to keep.
 	function unsaved(): string | null {
-		const typedNote = note.replace(/\r\n?/g, '\n').trim();
 		const typedServings = withServings && servings !== null ? servings : savedServings;
-		if (typedNote === savedNote && typedServings === savedServings) return null;
-		return JSON.stringify([typedNote, typedServings]);
+		const typed = [typedNote(), typedServings, typedLabel()];
+		if (typed[0] === savedNote && typedServings === savedServings && typed[2] === savedLabel) {
+			return null;
+		}
+		return JSON.stringify(typed);
 	}
 
 	const LEAVE = 'Leave without saving? What you typed will be lost.';
@@ -85,14 +102,20 @@
 	/** Whether what's typed here is what another dinner already has saved. */
 	export function matches(other: Dinner): boolean {
 		const typedServings = withServings && servings !== null ? servings : other.servings;
-		return typedNote() === (other.note ?? '') && typedServings === other.servings;
+		return (
+			typedNote() === (other.note ?? '') &&
+			typedServings === other.servings &&
+			(!labeled || typedLabel() === (other.label ?? ''))
+		);
 	}
 
 	/** Shows the saved dinner again, dropping what was typed. */
 	export function reset(): void {
 		note = dinner.note ?? '';
+		label = dinner.label ?? '';
 		servings = dinner.servings;
 		savedNote = note;
+		savedLabel = label;
 		savedServings = dinner.servings;
 		dropped = null;
 		problem = '';
@@ -140,7 +163,7 @@
 		leftWhileBusy = false;
 		problem = '';
 		status = '';
-		const sent = { note, servings };
+		const sent = { note, servings, label };
 		// SvelteKit moves focus to the top of the page after a form succeeds; Save (or the field
 		// Enter was pressed in) keeps it.
 		const focused = formElement.contains(document.activeElement) ? document.activeElement : null;
@@ -166,6 +189,7 @@
 					if (leftWhileBusy) return;
 					savedNote = sent.note.replace(/\r\n?/g, '\n').trim();
 					if (withServings && sent.servings !== null) savedServings = sent.servings;
+					if (labeled) savedLabel = normalizeName(sent.label);
 				}
 				await update({ reset: false });
 				// Still here after a save: more was typed meanwhile, and the person chose to stay with it.
@@ -176,6 +200,7 @@
 				// typed meanwhile.
 				if (note === sent.note) note = dinner.note ?? '';
 				if (servings === sent.servings) servings = dinner.servings;
+				if (label === sent.label) label = dinner.label ?? '';
 				status =
 					'Someone had cleared or moved this dinner, so it was planned again with what you saved.';
 				if (focused instanceof HTMLElement && focused.isConnected) focused.focus();
@@ -189,6 +214,20 @@
 <form class="card" method="POST" action="?/details" use:enhance={submit}>
 	{#if dinner.id !== null}<input type="hidden" name="dinnerId" value={dinner.id} />{/if}
 	<input type="hidden" name="type" value={dinner.type} />
+	{#if labeled}
+		<div class="field">
+			<label for="{uid}-label">Label</label>
+			<input
+				id="{uid}-label"
+				name="label"
+				autocomplete="off"
+				maxlength={DINNER_LABEL_MAX}
+				placeholder="Such as Kids or Adults"
+				bind:value={label}
+				oninput={() => (status = '')}
+			/>
+		</div>
+	{/if}
 	{#if withServings}
 		<div class="field">
 			<label for="{uid}-servings">Servings</label>

@@ -31,6 +31,12 @@ export const DISH_ROLE_LABELS: Record<DishRole, string> = {
 	other: 'Other'
 };
 
+/** A date can have this many dinners, such as one for the kids and one for the adults (6.9). */
+export const MAX_DINNERS = 5;
+
+/** A dinner's label, such as "Kids", on a date with more than one dinner (6.9). */
+export const DINNER_LABEL_MAX = 30;
+
 /** A dinner's note can hold a long plan, such as a whole evening's notes. */
 export const DINNER_NOTE_MAX = 2500;
 

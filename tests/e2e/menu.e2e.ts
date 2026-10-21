@@ -1036,8 +1036,11 @@ test("can't see or change another household's dinners", async ({ page, db, baseU
 	const headers = { origin: baseURL ?? '', 'x-sveltekit-action': 'true' };
 	const post = (path: string, form: Record<string, string>) =>
 		page.request.post(path, { form, headers }).then((response) => response.status());
-	expect(await post(`/menu/${date}?/role`, { dishId: String(stew), role: 'side' })).toBe(404);
-	expect(await post(`/menu/${date}?/removeDish`, { dishId: String(stew) })).toBe(404);
+	const dinnerId = String(theirs);
+	expect(await post(`/menu/${date}?/role`, { dishId: String(stew), role: 'side', dinnerId })).toBe(
+		404
+	);
+	expect(await post(`/menu/${date}?/removeDish`, { dishId: String(stew), dinnerId })).toBe(404);
 	expect(await post(`/menu/${date}?/restoreDish`, { dishId: String(stew), role: 'side' })).toBe(
 		404
 	);
@@ -1649,4 +1652,100 @@ test('removes a request for everyone', async ({ page, db, person }) => {
 			.pluck()
 			.get(person.householdId)
 	).toBe(0);
+});
+
+test('plans two dinners on a day, each with its own label, dishes, Save and Clear (6.9)', async ({
+	page,
+	db,
+	person
+}) => {
+	const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+	const date = addDays(today(), 1);
+	const adultsId = addDinner(db, person.householdId, date, {
+		note: 'After bedtime',
+		dishes: [[tacos, 'main']]
+	});
+	const labels = () =>
+		db
+			.prepare('select label from dinners where household_id = ? and date = ? order by id')
+			.pluck()
+			.all(person.householdId, date);
+
+	// Not offered on a date that isn't planned.
+	await open(page, `/menu/${addDays(today(), 2)}`);
+	await expect(page.getByText('Not planned yet.', { exact: false })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Add a dinner' })).toHaveCount(0);
+
+	// The second dinner asks for both labels at once.
+	await open(page, `/menu/${date}`);
+	await expect(page.getByLabel('Label', { exact: true })).toHaveCount(0);
+	await page.getByRole('button', { name: 'Add a dinner' }).click();
+	const sheet = page.getByRole('dialog', { name: 'Add a dinner' });
+	await sheet.getByLabel('Label for the dinner already planned').fill('Adults');
+	await sheet.getByRole('button', { name: 'Add dinner' }).click();
+	await expect(sheet.getByRole('alert')).toHaveText('Enter a label for each dinner');
+	await sheet.getByLabel('Label for the new dinner').fill('Kids');
+	await sheet.getByRole('button', { name: 'Add dinner' }).click();
+	await expect(sheet).toBeHidden();
+
+	const adults = page.getByRole('region', { name: 'Adults' });
+	const kids = page.getByRole('region', { name: 'Kids' });
+	await expect(kids.getByRole('heading', { name: 'Kids' })).toBeFocused();
+	await expect(adults.getByRole('region', { name: 'Dishes' }).getByRole('link')).toHaveText([
+		'Chicken tacos'
+	]);
+	// A new dinner starts as Cooking at home with the usual servings, no note and no dishes.
+	await expect(
+		kids.getByRole('button', { name: 'Cooking at home', exact: true })
+	).toHaveAttribute('aria-pressed', 'true');
+	await expect(kids.getByLabel('Servings', { exact: true })).toHaveValue('4');
+	await expect(kids.getByLabel('Note', { exact: true })).toHaveValue('');
+	await expect(kids).toContainText('No dishes yet.');
+	expect(labels()).toEqual(['Adults', 'Kids']);
+
+	// A dish added to one dinner goes on that one only.
+	await kids.getByRole('combobox', { name: 'Add a dish' }).fill('Mac and cheese');
+	await page.getByRole('option', { name: 'Add “Mac and cheese” as a new dish' }).click();
+	await kids.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(kids.getByRole('region', { name: 'Dishes' }).getByRole('link')).toHaveText([
+		'Mac and cheese'
+	]);
+	await expect(adults.getByRole('region', { name: 'Dishes' }).getByRole('link')).toHaveText([
+		'Chicken tacos'
+	]);
+
+	// A label is needed on each dinner, and unlike the others.
+	await kids.getByLabel('Label', { exact: true }).fill('adults');
+	await kids.getByRole('button', { name: 'Save' }).click();
+	await expect(kids.getByRole('alert')).toHaveText(
+		'Give each dinner on this day a different label'
+	);
+
+	// Save goes to the week, where only that dinner's line says Saved.
+	await kids.getByLabel('Label', { exact: true }).fill('Kids');
+	await kids.getByLabel('Note', { exact: true }).fill('Early');
+	await kids.getByRole('button', { name: 'Save' }).click();
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sundayOf(date)}$`));
+	const row = day(page, date);
+	await expect(row.locator('.dinner')).toHaveCount(2);
+	await expect(row.locator('.dinner').nth(0)).toContainText('Adults');
+	await expect(row.locator('.dinner').nth(0)).toContainText('Chicken tacos');
+	await expect(row.locator('.dinner').nth(0)).toContainText('After bedtime');
+	await expect(row.locator('.dinner').nth(1)).toContainText('Kids');
+	await expect(row.locator('.dinner').nth(1)).toContainText('Mac and cheese');
+	await expect(row.locator('.dinner').nth(1)).toContainText('Early');
+	await expect(row.getByRole('status')).toHaveText(['', '', 'Saved']);
+	await expect(row.getByRole('status')).toHaveText(['', '', ''], { timeout: 6000 });
+
+	// Clearing one leaves the other as the day's only dinner, without a label.
+	await open(page, `/menu/${date}`);
+	await adults.getByRole('button', { name: 'Clear' }).click();
+	await page.getByRole('dialog', { name: 'Clear' }).getByRole('button', { name: 'Clear' }).click();
+	await expect(page.getByRole('region', { name: 'Adults' })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Kids' })).toHaveCount(0);
+	await expect(page.getByLabel('Label', { exact: true })).toHaveCount(0);
+	await expect(dishLinks(page)).toHaveText(['Mac and cheese']);
+	await expect(page.getByLabel('Note', { exact: true })).toHaveValue('Early');
+	expect(labels()).toEqual([null]);
+	expect(dinnerRow(db, person.householdId, date)?.id).not.toBe(adultsId);
 });

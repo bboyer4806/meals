@@ -1,7 +1,13 @@
 import { isHttpError, isRedirect } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearDinner, getDinner, getDinners, moveDinner } from '#lib/server/data/dinners.ts';
+import {
+	addDinner,
+	clearDinner,
+	getDay,
+	getDinners,
+	moveDinners
+} from '#lib/server/data/dinners.ts';
 import { getDish, setDishArchived } from '#lib/server/data/dishes.ts';
 import { db } from '#lib/server/db/index.ts';
 import { dishes, households } from '#lib/server/db/schema.ts';
@@ -88,9 +94,26 @@ function expectNotFound(result: unknown) {
 	expect(isHttpError(result, 404)).toBe(true);
 }
 
+/** The date's only dinner, or null when it has none. */
+function dinnerOn(household: number, date: string) {
+	const day = getDay(household, date);
+	expect(day.length).toBeLessThanOrEqual(1);
+	return day[0] ?? null;
+}
+
+/** The id of the date's first dinner, or undefined when it has none. */
+function current(date: string): number | undefined {
+	return getDay(householdId, date)[0]?.id;
+}
+
+/** Clears the date's first dinner, as someone else would. */
+function clearOn(date: string): void {
+	clearDinner(householdId, date, current(date) ?? null, NOW);
+}
+
 /** The dinner's dishes as "Name (role)", in the order it lists them. */
 function dishesOn(date: string): string[] | undefined {
-	return getDinner(householdId, date)?.dishes.map((dish) => `${dish.name} (${dish.role})`);
+	return dinnerOn(householdId, date)?.dishes.map((dish) => `${dish.name} (${dish.role})`);
 }
 
 /** The id of the dinner a page shows, as its forms send it. */
@@ -121,17 +144,20 @@ describe('loading a date', () => {
 		expect(loadPage(TOMORROW)).toEqual({
 			date: TOMORROW,
 			today: TODAY,
-			dinner: {
-				id: expect.any(Number),
-				date: TOMORROW,
-				type: 'cook',
-				note: 'Grandma visits',
-				servings: 6,
-				dishes: [
-					{ dishId: tacos, name: 'Tacos', role: 'main', archived: false },
-					{ dishId: rice, name: 'Rice', role: 'side', archived: false }
-				]
-			},
+			dinners: [
+				{
+					id: expect.any(Number),
+					date: TOMORROW,
+					label: null,
+					type: 'cook',
+					note: 'Grandma visits',
+					servings: 6,
+					dishes: [
+						{ dishId: tacos, name: 'Tacos', role: 'main', archived: false },
+						{ dishId: rice, name: 'Rice', role: 'side', archived: false }
+					]
+				}
+			],
 			defaultServings: 3,
 			// Tomorrow's dinner isn't made yet (assumption 1).
 			copyGroups: [
@@ -150,25 +176,19 @@ describe('loading a date', () => {
 		});
 	});
 
-	it('leaves out the past dinners whose latest is this one, since copying it changes nothing', () => {
-		makeDinner(householdId, '2026-10-01', { dishes: [[tacos, 'main']] });
-		const latest = makeDinner(householdId, YESTERDAY, { dishes: [[tacos, 'main']] });
-		const soup = makeDinner(householdId, '2026-10-03', { dishes: [[rice, 'main']] });
-		const groups = (date: string) =>
-			(loadPage(date) as { copyGroups: { dinnerId: number }[] }).copyGroups.map(
-				(group) => group.dinnerId
-			);
-
-		expect(groups(YESTERDAY)).toEqual([soup]);
-		// An older dinner with the same dishes copies the latest one's type and roles.
-		expect(groups('2026-10-01')).toEqual([latest, soup]);
-		expect(groups(TOMORROW)).toEqual([latest, soup]);
+	it("gives each of the date's dinners, labeled, in the order they were added (6.9)", () => {
+		const adults = makeDinner(householdId, TOMORROW, { type: 'eat_out' });
+		const kids = addDinner(householdId, TOMORROW, { first: 'Adults', added: 'Kids' }, NOW);
+		expect((loadPage(TOMORROW) as { dinners: unknown }).dinners).toMatchObject([
+			{ id: adults, label: 'Adults', type: 'eat_out' },
+			{ id: kids, label: 'Kids', type: 'cook', servings: 3 }
+		]);
 	});
 
 	it('gives no dinner for a date that is not planned, and the usual servings to show (Q28)', () => {
 		expect(loadPage('2027-01-01')).toMatchObject({
 			date: '2027-01-01',
-			dinner: null,
+			dinners: [],
 			defaultServings: 3
 		});
 	});
@@ -188,7 +208,7 @@ describe('loading a date', () => {
 describe('picking a type', () => {
 	it('plans a date at the usual servings (Q28)', async () => {
 		expect(await post('type', { type: 'going' })).toBeUndefined();
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'going',
 			note: null,
 			servings: 3,
@@ -201,7 +221,7 @@ describe('picking a type', () => {
 			makeDinner(householdId, TOMORROW, { note: 'Picnic', servings: 6, dishes: [[tacos, 'main']] })
 		);
 		await post('type', { type: 'going', dinnerId });
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'going',
 			note: 'Picnic',
 			servings: 6
@@ -220,11 +240,11 @@ describe('picking a type', () => {
 			'type',
 			'Someone has added dishes to this dinner since you opened it. To switch to Eating out and remove them, tap it again.'
 		);
-		expect(getDinner(householdId, TOMORROW)?.type).toBe('cook');
+		expect(dinnerOn(householdId, TOMORROW)?.type).toBe('cook');
 		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)']);
 
 		await post('type', { type: 'leftovers', removeDishes: '1', dinnerId });
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'leftovers',
 			note: 'Busy day',
 			dishes: []
@@ -236,13 +256,13 @@ describe('picking a type', () => {
 	it('switches a dinner without dishes without asking', async () => {
 		const dinnerId = shown(makeDinner(householdId, TOMORROW));
 		await post('type', { type: 'eat_out', dinnerId });
-		expect(getDinner(householdId, TOMORROW)?.type).toBe('eat_out');
+		expect(dinnerOn(householdId, TOMORROW)?.type).toBe('eat_out');
 	});
 
 	it('refuses a type that is not one', async () => {
 		expectFailure(await post('type', {}), 'type', 'Pick a type');
 		expectFailure(await post('type', { type: 'brunch' }), 'type', 'Pick a type');
-		expect(getDinner(householdId, TOMORROW)).toBeNull();
+		expect(dinnerOn(householdId, TOMORROW)).toBeNull();
 	});
 });
 
@@ -255,9 +275,9 @@ describe('saving servings and the note', () => {
 				note: '  Cousins visit\r\nBring chairs\n ',
 				dinnerId
 			}),
-			`/menu?week=2026-10-04&saved=${TOMORROW}`
+			`/menu?week=2026-10-04&saved=${current(TOMORROW)}`
 		);
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'cook',
 			note: 'Cousins visit\nBring chairs',
 			servings: 8
@@ -274,7 +294,7 @@ describe('saving servings and the note', () => {
 			const dinnerId = shown(makeDinner(householdId, date));
 			expectRedirect(
 				await post('details', { servings: '5', dinnerId }, { date }),
-				`/menu?week=${sunday}&saved=${date}`
+				`/menu?week=${sunday}&saved=${dinnerId}`
 			);
 		}
 	});
@@ -282,7 +302,7 @@ describe('saving servings and the note', () => {
 	it('clears a blank note', async () => {
 		const dinnerId = shown(makeDinner(householdId, TOMORROW, { note: 'Old' }));
 		await post('details', { servings: '4', note: '  \r\n ', dinnerId });
-		expect(getDinner(householdId, TOMORROW)?.note).toBeNull();
+		expect(dinnerOn(householdId, TOMORROW)?.note).toBeNull();
 	});
 
 	it('keeps what a form leaves out, such as servings for Eating out', async () => {
@@ -290,13 +310,13 @@ describe('saving servings and the note', () => {
 			makeDinner(householdId, TOMORROW, { type: 'eat_out', note: 'Old', servings: 5 })
 		);
 		await post('details', { note: 'Thai place', dinnerId });
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'eat_out',
 			note: 'Thai place',
 			servings: 5
 		});
 		await post('details', { servings: '2', dinnerId });
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({ note: 'Thai place', servings: 2 });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ note: 'Thai place', servings: 2 });
 	});
 
 	it('takes 1 to 100 whole servings and a note up to 2500 characters', async () => {
@@ -311,41 +331,41 @@ describe('saving servings and the note', () => {
 		for (const [fields, error] of tries) {
 			expectFailure(await post('details', { ...fields, dinnerId }), 'details', error);
 		}
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({ servings: 4, note: null });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ servings: 4, note: null });
 
 		await post('details', { servings: '100', note: 'x'.repeat(2500), dinnerId });
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({ servings: 100 });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ servings: 100 });
 	});
 
 	it('plans the date again with what was sent when the dinner was cleared meanwhile (6.11)', async () => {
 		const cleared = shown(makeDinner(householdId, TOMORROW, { type: 'going' }));
-		clearDinner(householdId, TOMORROW);
+		clearOn(TOMORROW);
 		expect(
 			await post('details', { type: 'going', servings: '6', note: ' Hello ', dinnerId: cleared })
 		).toEqual({
 			action: 'details',
 			replanned: true
 		});
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'going',
 			note: 'Hello',
 			servings: 6,
 			dishes: []
 		});
 		// Saved again from the reloaded page, it's an ordinary save.
-		const dinnerId = shown(getDinner(householdId, TOMORROW)?.id);
+		const dinnerId = shown(dinnerOn(householdId, TOMORROW)?.id);
 		expectRedirect(
 			await post('details', { type: 'going', note: 'Bring rolls', dinnerId }),
-			`/menu?week=2026-10-04&saved=${TOMORROW}`
+			`/menu?week=2026-10-04&saved=${current(TOMORROW)}`
 		);
 	});
 
 	it('plans a date with no dinner as the type the page showed, then goes to the week (6.9)', async () => {
 		expectRedirect(
 			await post('details', { type: 'cook', servings: '5', note: ' Soup ' }),
-			`/menu?week=2026-10-04&saved=${TOMORROW}`
+			`/menu?week=2026-10-04&saved=${current(TOMORROW)}`
 		);
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'cook',
 			note: 'Soup',
 			servings: 5,
@@ -355,29 +375,29 @@ describe('saving servings and the note', () => {
 
 	it('keeps an Eating out dinner Eating out when it was cleared meanwhile', async () => {
 		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'eat_out' }));
-		clearDinner(householdId, TOMORROW);
+		clearOn(TOMORROW);
 		await post('details', { type: 'eat_out', note: 'Thai place', dinnerId });
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({ type: 'eat_out', note: 'Thai place' });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ type: 'eat_out', note: 'Thai place' });
 	});
 
 	it("uses the dinner's own type, not the one sent, while it's still there", async () => {
 		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'leftovers' }));
 		await post('details', { type: 'cook', note: 'Soup', dinnerId });
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({ type: 'leftovers', note: 'Soup' });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ type: 'leftovers', note: 'Soup' });
 	});
 
 	it('starts a dinner planned that way at the usual servings when none were sent (Q28)', async () => {
 		// The page of an Eating out dinner sends only the note.
 		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'eat_out', servings: 6 }));
-		clearDinner(householdId, TOMORROW);
+		clearOn(TOMORROW);
 		await post('details', { note: 'Thai place', dinnerId });
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'cook',
 			note: 'Thai place',
 			servings: 3
 		});
 		await post('details', { servings: '5' }, { date: TODAY });
-		expect(getDinner(householdId, TODAY)).toMatchObject({ type: 'cook', note: null, servings: 5 });
+		expect(dinnerOn(householdId, TODAY)).toMatchObject({ type: 'cook', note: null, servings: 5 });
 	});
 
 	it('plans nothing when what was sent is not valid', async () => {
@@ -386,14 +406,15 @@ describe('saving servings and the note', () => {
 			'details',
 			'Enter at least 1 serving'
 		);
-		expect(getDinner(householdId, TOMORROW)).toBeNull();
+		expect(dinnerOn(householdId, TOMORROW)).toBeNull();
 	});
 });
 
 describe('adding a dish', () => {
 	it('adds an existing dish by name, ignoring case', async () => {
 		makeDinner(householdId, TOMORROW, { dishes: [[tacos, 'main']] });
-		expect(await post('addDish', { name: '  rice ', role: 'side' })).toEqual({
+		const dinnerId = shown(current(TOMORROW));
+		expect(await post('addDish', { name: '  rice ', role: 'side', dinnerId })).toEqual({
 			action: 'dish',
 			archived: null
 		});
@@ -402,7 +423,7 @@ describe('adding a dish', () => {
 
 	it('plans a date as Cooking at home and makes a new dish from a new name (2.3)', async () => {
 		await post('addDish', { name: 'Garlic bread', role: 'main' });
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({ type: 'cook', servings: 3 });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ type: 'cook', servings: 3 });
 		expect(dishesOn(TOMORROW)).toEqual(['Garlic bread (main)']);
 		const made = db().select().from(dishes).where(eq(dishes.name, 'Garlic bread')).get();
 		expect(made).toMatchObject({ householdId, servings: 3 });
@@ -414,7 +435,7 @@ describe('adding a dish', () => {
 			action: 'dish',
 			archived: { dishId: cake, name: 'Pound cake', role: 'dessert' }
 		});
-		expect(getDinner(householdId, TOMORROW)).toBeNull();
+		expect(dinnerOn(householdId, TOMORROW)).toBeNull();
 		expect(getDish(householdId, cake).archivedAt).not.toBeNull();
 	});
 
@@ -435,7 +456,8 @@ describe('adding a dish', () => {
 			]
 		];
 		for (const [fields, error, date] of tries) {
-			expectFailure(await post('addDish', fields, { date }), 'dish', error);
+			const dinnerId = shown(current(date ?? TOMORROW));
+			expectFailure(await post('addDish', { ...fields, dinnerId }, { date }), 'dish', error);
 		}
 		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)']);
 		expect(dishesOn(TODAY)).toEqual([]);
@@ -447,7 +469,11 @@ describe('restoring a dish and adding it', () => {
 		setDishArchived(householdId, cake, true, NOW);
 		makeDinner(householdId, TOMORROW, { dishes: [[tacos, 'main']] });
 		expect(
-			await post('restoreDish', { dishId: String(cake), role: 'dessert' })
+			await post('restoreDish', {
+				dishId: String(cake),
+				role: 'dessert',
+				dinnerId: shown(current(TOMORROW))
+			})
 		).toBeUndefined();
 		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)', 'Pound cake (dessert)']);
 		expect(getDish(householdId, cake).archivedAt).toBeNull();
@@ -456,7 +482,7 @@ describe('restoring a dish and adding it', () => {
 	it("is not found for another household's dish", async () => {
 		const theirs = makeDish(otherId, recipe('Stew'));
 		expectNotFound(await post('restoreDish', { dishId: String(theirs), role: 'main' }));
-		expect(getDinner(householdId, TOMORROW)).toBeNull();
+		expect(dinnerOn(householdId, TOMORROW)).toBeNull();
 	});
 });
 
@@ -468,20 +494,30 @@ describe("changing a dish's role", () => {
 				[rice, 'side']
 			]
 		});
-		expect(await post('role', { dishId: String(tacos), role: 'other' })).toBeUndefined();
+		const dinnerId = shown(current(TOMORROW));
+		expect(await post('role', { dishId: String(tacos), role: 'other', dinnerId })).toBeUndefined();
 		expect(dishesOn(TOMORROW)).toEqual(['Rice (side)', 'Tacos (other)']);
 	});
 
 	it('refuses a role that is not one', async () => {
 		makeDinner(householdId, TOMORROW, { dishes: [[tacos, 'main']] });
-		expectFailure(await post('role', { dishId: String(tacos), role: 'x' }), 'dishes', 'Pick a role');
+		const dinnerId = shown(current(TOMORROW));
+		expectFailure(
+			await post('role', { dishId: String(tacos), role: 'x', dinnerId }),
+			'dishes',
+			'Pick a role'
+		);
 		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)']);
 	});
 
 	it('is not found for a dish that is not on the dinner', async () => {
 		makeDinner(householdId, TOMORROW, { dishes: [[tacos, 'main']] });
-		expectNotFound(await post('role', { dishId: String(rice), role: 'side' }));
-		expectNotFound(await post('role', { dishId: String(tacos), role: 'side' }, { date: TODAY }));
+		const dinnerId = shown(current(TOMORROW));
+		expectNotFound(await post('role', { dishId: String(rice), role: 'side', dinnerId }));
+		// Its dinner isn't on that date.
+		expectNotFound(
+			await post('role', { dishId: String(tacos), role: 'side', dinnerId }, { date: TODAY })
+		);
 	});
 });
 
@@ -493,14 +529,16 @@ describe('removing a dish', () => {
 				[rice, 'side']
 			]
 		});
-		expect(await post('removeDish', { dishId: String(tacos) })).toBeUndefined();
+		const dinnerId = shown(current(TOMORROW));
+		expect(await post('removeDish', { dishId: String(tacos), dinnerId })).toBeUndefined();
 		expect(dishesOn(TOMORROW)).toEqual(['Rice (side)']);
 	});
 
 	it('is not found for a dish that is not on the dinner', async () => {
 		makeDinner(householdId, TOMORROW, { dishes: [[tacos, 'main']] });
-		expectNotFound(await post('removeDish', { dishId: String(rice) }));
-		expectNotFound(await post('removeDish', { dishId: String(tacos) }, { date: TODAY }));
+		const dinnerId = shown(current(TOMORROW));
+		expectNotFound(await post('removeDish', { dishId: String(rice), dinnerId }));
+		expectNotFound(await post('removeDish', { dishId: String(tacos), dinnerId }, { date: TODAY }));
 		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)']);
 	});
 });
@@ -522,7 +560,7 @@ describe('copying a dinner', () => {
 
 	it("plans a date with the dinner's type and dishes, at the usual servings (2.3)", async () => {
 		expect(await post('copy', { sourceId: String(past) })).toBeUndefined();
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'going',
 			note: null,
 			servings: 3
@@ -535,7 +573,7 @@ describe('copying a dinner', () => {
 			makeDinner(householdId, TOMORROW, { type: 'eat_out', note: 'Maybe', servings: 2 })
 		);
 		await post('copy', { sourceId: String(past), dinnerId });
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'going',
 			note: 'Maybe',
 			servings: 2
@@ -567,7 +605,7 @@ describe('copying a dinner', () => {
 	it("is not found for another household's dinner", async () => {
 		const theirs = makeDinner(otherId, YESTERDAY, { dishes: [] });
 		expectNotFound(await post('copy', { sourceId: String(theirs) }));
-		expect(getDinner(householdId, TOMORROW)).toBeNull();
+		expect(dinnerOn(householdId, TOMORROW)).toBeNull();
 	});
 });
 
@@ -577,16 +615,16 @@ describe('moving a dinner', () => {
 			makeDinner(householdId, TOMORROW, { note: 'Tacos night', dishes: [[tacos, 'main']] })
 		);
 		expectRedirect(await post('move', { to: '2026-10-09', dinnerId }), '/menu/2026-10-09');
-		expect(getDinner(householdId, TOMORROW)).toBeNull();
-		expect(getDinner(householdId, '2026-10-09')).toMatchObject({ note: 'Tacos night' });
+		expect(dinnerOn(householdId, TOMORROW)).toBeNull();
+		expect(dinnerOn(householdId, '2026-10-09')).toMatchObject({ note: 'Tacos night' });
 	});
 
 	it('swaps with a dinner already on that date (2.2.2)', async () => {
 		const dinnerId = shown(makeDinner(householdId, TOMORROW, { note: 'First' }));
 		makeDinner(householdId, TODAY, { note: 'Second', type: 'eat_out' });
 		expectRedirect(await post('move', { to: TODAY, dinnerId }), `/menu/${TODAY}`);
-		expect(getDinner(householdId, TODAY)?.note).toBe('First');
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({ note: 'Second', type: 'eat_out' });
+		expect(dinnerOn(householdId, TODAY)?.note).toBe('First');
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ note: 'Second', type: 'eat_out' });
 	});
 
 	it('says what is wrong with the date', async () => {
@@ -598,7 +636,7 @@ describe('moving a dinner', () => {
 			'move',
 			'Pick a different date'
 		);
-		expect(getDinner(householdId, TOMORROW)).not.toBeNull();
+		expect(dinnerOn(householdId, TOMORROW)).not.toBeNull();
 	});
 
 	it('is not found when the date has no dinner', async () => {
@@ -611,9 +649,116 @@ describe('clearing a dinner', () => {
 		const dinnerId = shown(makeDinner(householdId, TOMORROW, { dishes: [[tacos, 'main']] }));
 		makeDinner(otherId, TOMORROW);
 		expect(await post('clear', { dinnerId })).toBeUndefined();
-		expect(getDinner(householdId, TOMORROW)).toBeNull();
-		expect(getDinner(otherId, TOMORROW)).not.toBeNull();
+		expect(dinnerOn(householdId, TOMORROW)).toBeNull();
+		expect(dinnerOn(otherId, TOMORROW)).not.toBeNull();
 		expect(getDish(householdId, tacos).archivedAt).toBeNull();
+	});
+});
+
+describe('more than one dinner on a date (6.9)', () => {
+	let adults: number;
+	let kids: number;
+
+	beforeEach(() => {
+		adults = makeDinner(householdId, TOMORROW, { note: 'Late', dishes: [[tacos, 'main']] });
+		kids = addDinner(householdId, TOMORROW, { first: 'Adults', added: 'Kids' }, NOW);
+	});
+
+	/** The date's dinners as "Label: type, note, servings, dishes", in the order added. */
+	function day() {
+		return getDay(householdId, TOMORROW).map(
+			(dinner) =>
+				`${dinner.label}: ${dinner.type}, ${dinner.note}, ${dinner.servings}, ` +
+				dinner.dishes.map((dish) => `${dish.name} (${dish.role})`).join(' ')
+		);
+	}
+
+	it('adds the second dinner with both labels, and later ones with their own', async () => {
+		clearDinner(householdId, TOMORROW, kids, NOW);
+		expect(await post('addDinner', { firstLabel: ' Grown-ups ', label: 'Kids' })).toBeUndefined();
+		expect(await post('addDinner', { label: 'Guests' })).toBeUndefined();
+		expect(day()).toEqual([
+			'Grown-ups: cook, Late, 4, Tacos (main)',
+			'Kids: cook, null, 3, ',
+			'Guests: cook, null, 3, '
+		]);
+	});
+
+	it('says what is wrong with a label, or with the number of dinners', async () => {
+		const tries: [Record<string, string>, string][] = [
+			[{}, 'Enter a label for each dinner'],
+			[{ label: '' }, 'Enter a label for each dinner'],
+			[{ label: 'x'.repeat(31) }, 'Keep a label under 30 characters'],
+			[{ label: 'kids' }, 'Give each dinner on this day a different label'],
+			// The page showed one dinner, but there are two now.
+			[{ firstLabel: 'Adults', label: 'Guests' }, 'Someone changed this dinner since you opened it.']
+		];
+		for (const [fields, error] of tries) {
+			expectFailure(await post('addDinner', fields), 'addDinner', error);
+		}
+		for (const label of ['Three', 'Four', 'Five']) await post('addDinner', { label });
+		expectFailure(
+			await post('addDinner', { label: 'Six' }),
+			'addDinner',
+			'A day can have up to 5 dinners'
+		);
+		expectFailure(
+			await post('addDinner', { firstLabel: 'A', label: 'B' }, { date: TODAY }),
+			'addDinner',
+			'Plan this date before adding another dinner'
+		);
+	});
+
+	it('changes only the dinner whose id it posted', async () => {
+		const dinnerId = String(kids);
+		await post('type', { type: 'going', dinnerId });
+		await post('addDish', { name: 'Rice', role: 'main', dinnerId });
+		await post('addDish', { name: 'Tacos', role: 'side', dinnerId });
+		await post('role', { dishId: String(tacos), role: 'other', dinnerId });
+		await post('removeDish', { dishId: String(rice), dinnerId });
+		expectRedirect(
+			await post('details', { label: ' Little  ones ', servings: '2', note: 'Early', dinnerId }),
+			`/menu?week=2026-10-04&saved=${kids}`
+		);
+		expect(day()).toEqual([
+			'Adults: cook, Late, 4, Tacos (main)',
+			'Little ones: going, Early, 2, Tacos (other)'
+		]);
+
+		const past = makeDinner(householdId, YESTERDAY, { dishes: [[cake, 'dessert']] });
+		await post('copy', { sourceId: String(past), dinnerId: String(adults), replaceDishes: '1' });
+		await post('type', { type: 'eat_out', removeDishes: '1', dinnerId });
+		expect(day()).toEqual([
+			'Adults: cook, Late, 4, Pound cake (dessert)',
+			'Little ones: eat_out, Early, 2, '
+		]);
+
+		// Clearing one leaves the other, which loses its label.
+		expect(await post('clear', { dinnerId: String(adults) })).toBeUndefined();
+		expect(day()).toEqual(['null: eat_out, Early, 2, ']);
+	});
+
+	it('needs a label on each dinner, and keeps it when the form leaves it out', async () => {
+		const dinnerId = String(kids);
+		expectFailure(
+			await post('details', { label: ' ', note: 'Early', dinnerId }),
+			'details',
+			'Enter a label for each dinner'
+		);
+		expectFailure(
+			await post('details', { label: 'ADULTS', dinnerId }),
+			'details',
+			'Give each dinner on this day a different label'
+		);
+		await post('details', { note: 'Early', dinnerId });
+		expect(day()[1]).toBe('Kids: cook, Early, 3, ');
+	});
+
+	it('moves every dinner on the date, and swaps with every dinner on the other', async () => {
+		const other = makeDinner(householdId, TODAY, { type: 'leftovers' });
+		expectRedirect(await post('move', { to: TODAY, dinnerId: String(kids) }), `/menu/${TODAY}`);
+		expect(getDay(householdId, TODAY).map((dinner) => dinner.id)).toEqual([adults, kids]);
+		expect(getDay(householdId, TOMORROW).map((dinner) => dinner.id)).toEqual([other]);
 	});
 });
 
@@ -635,7 +780,7 @@ describe('a page left open while someone changed its date (6.11)', () => {
 			servings: 6,
 			dishes: [[tacos, 'main']]
 		});
-		moveDinner(householdId, LATER, TOMORROW, NOW);
+		moveDinners(householdId, LATER, TOMORROW, birthday, NOW);
 		const before = october();
 
 		const tries: [Action, Record<string, string>, string][] = [
@@ -654,27 +799,29 @@ describe('a page left open while someone changed its date (6.11)', () => {
 		// Once the page shows the dinner that's there now, its changes go through.
 		expectRedirect(
 			await post('details', { note: 'Bring candles', dinnerId: shown(birthday) }),
-			`/menu?week=2026-10-04&saved=${TOMORROW}`
+			`/menu?week=2026-10-04&saved=${current(TOMORROW)}`
 		);
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			id: birthday,
 			note: 'Bring candles',
 			servings: 6
 		});
 		expect(await post('clear', { dinnerId: shown(birthday) })).toBeUndefined();
-		expect(getDinner(householdId, TOMORROW)).toBeNull();
-		expect(getDinner(householdId, LATER)?.id).toBe(riceDinner);
+		expect(dinnerOn(householdId, TOMORROW)).toBeNull();
+		expect(dinnerOn(householdId, LATER)?.id).toBe(riceDinner);
 	});
 
-	it('refuses a change from a page that showed no dinner, once there is one, except a dish', async () => {
+	it('refuses a change from a page that showed no dinner, once there is one', async () => {
 		// The page shows the date as not planned. Someone else then plans it.
-		const picnic = makeDinner(householdId, TOMORROW, { type: 'going', note: 'Picnic' });
+		makeDinner(householdId, TOMORROW, { type: 'going', note: 'Picnic' });
 		const before = october();
 
 		const tries: [Action, Record<string, string>, string][] = [
 			['clear', {}, 'clear'],
 			['type', { type: 'eat_out' }, 'type'],
 			['details', { type: 'cook', servings: '2', note: 'Soup' }, 'details'],
+			['addDish', { name: 'Rice', role: 'side' }, 'dish'],
+			['restoreDish', { dishId: String(rice), role: 'side' }, 'dish'],
 			['copy', { sourceId: String(past) }, 'copy'],
 			['move', { to: '2026-10-12' }, 'move']
 		];
@@ -682,37 +829,29 @@ describe('a page left open while someone changed its date (6.11)', () => {
 			expectFailure(await post(action, fields), name, CHANGED);
 		}
 		expect(october()).toEqual(before);
-
-		// A dish still goes onto the dinner that's there, as it did before.
-		expect(await post('addDish', { name: 'Rice', role: 'side' })).toEqual({
-			action: 'dish',
-			archived: null
-		});
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({ id: picnic, note: 'Picnic' });
-		expect(dishesOn(TOMORROW)).toEqual(['Rice (side)']);
 	});
 
 	it('plans the date again, or has nothing to clear or move, when the dinner shown is gone', async () => {
 		const gone = shown(makeDinner(householdId, TOMORROW, { type: 'going', note: 'Picnic' }));
-		clearDinner(householdId, TOMORROW);
+		clearOn(TOMORROW);
 
 		expect(await post('clear', { dinnerId: gone })).toBeUndefined();
 		expectNotFound(await post('move', { to: '2026-10-12', dinnerId: gone }));
 		expect(october().map((dinner) => dinner.date)).toEqual([YESTERDAY]);
 
 		expect(await post('type', { type: 'eat_out', dinnerId: gone })).toBeUndefined();
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({ type: 'eat_out', servings: 3 });
-		clearDinner(householdId, TOMORROW);
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ type: 'eat_out', servings: 3 });
+		clearOn(TOMORROW);
 
 		expect(await post('copy', { sourceId: String(past), dinnerId: gone })).toBeUndefined();
 		expect(dishesOn(TOMORROW)).toEqual(['Pound cake (dessert)']);
-		clearDinner(householdId, TOMORROW);
+		clearOn(TOMORROW);
 
 		expect(await post('details', { type: 'going', note: 'Picnic', dinnerId: gone })).toEqual({
 			action: 'details',
 			replanned: true
 		});
-		expect(getDinner(householdId, TOMORROW)).toMatchObject({ type: 'going', note: 'Picnic' });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ type: 'going', note: 'Picnic' });
 	});
 });
 
@@ -720,10 +859,11 @@ describe('every action', () => {
 	const forms: Record<Action, Record<string, string>> = {
 		type: { type: 'cook' },
 		details: { servings: '4' },
+		addDinner: { firstLabel: 'Adults', label: 'Kids' },
 		addDish: { name: 'Rice', role: 'main' },
 		restoreDish: { dishId: '1', role: 'main' },
-		role: { dishId: '1', role: 'main' },
-		removeDish: { dishId: '1' },
+		role: { dishId: '1', role: 'main', dinnerId: '1' },
+		removeDish: { dishId: '1', dinnerId: '1' },
 		copy: { sourceId: '1' },
 		move: { to: TODAY },
 		clear: {}

@@ -250,7 +250,8 @@ export const dishIngredients = sqliteTable(
 	]
 );
 
-// One dinner per date (Q26). A date with no row isn't planned.
+// A date's dinners, in the order they were added (by id); up to 5, and labeled only when there's
+// more than one (6.9). A date with no row isn't planned.
 export const dinners = sqliteTable(
 	'dinners',
 	{
@@ -262,6 +263,8 @@ export const dinners = sqliteTable(
 			.references(() => households.id),
 		// YYYY-MM-DD in the household's time zone.
 		date: text('date').notNull(),
+		// Set on every dinner of a date with more than one, and only then; the data layer keeps it so.
+		label: text('label'),
 		type: text('type', { enum: DINNER_TYPES }).notNull(),
 		note: text('note'),
 		// Starts at the household's usual servings (Q28).
@@ -271,7 +274,7 @@ export const dinners = sqliteTable(
 	},
 	(t) => [
 		unique('dinners_household_id').on(t.householdId, t.id),
-		uniqueIndex('dinners_household_date').on(t.householdId, t.date),
+		index('dinners_household_date').on(t.householdId, t.date),
 		check('dinners_type', sql`${t.type} in ('cook', 'eat_out', 'going', 'leftovers')`),
 		check('dinners_servings', sql`${t.servings} >= 1`)
 	]

@@ -13,13 +13,14 @@ import {
 import { MAX_SERVINGS } from '#lib/recipe-view.ts';
 import { requireHousehold } from '#lib/server/auth/guards.ts';
 import {
+	addDinner,
 	addDinnerDish,
 	clearDinner,
 	copyDinner,
 	dishSuggestions,
-	getDinner,
+	getDay,
 	listCopyGroups,
-	moveDinner,
+	moveDinners,
 	removeDinnerDish,
 	restoreAndAddDinnerDish,
 	saveDinner,
@@ -29,10 +30,10 @@ import {
 import { getHousehold } from '#lib/server/data/households.ts';
 import { attempt, id, parseForm } from '#lib/server/forms.ts';
 
-// One dinner (design 7, Dinner; 6.9). Each form sends only what it changes and the rest stays
-// as saved, so a page left open doesn't put back what someone else changed meanwhile (6.11).
-// The forms that change or remove the dinner as a whole also send which one the page showed, so
-// they don't act on another dinner someone moved onto the date, or planned, since it opened.
+// A date's dinners (design 7, Dinner; 6.9). Each form sends only what it changes and the rest
+// stays as saved, so a page left open doesn't put back what someone else changed meanwhile
+// (6.11). Each form for a dinner also sends which one the page showed, and the data layer acts on
+// that one, never on another dinner someone moved onto the date, or planned, since it opened.
 
 function dinnerDate(params: { date: string }): string {
 	if (!isDate(params.date)) error(404, 'Not found');
@@ -44,24 +45,25 @@ export function load({ locals, params }) {
 	const date = dinnerDate(params);
 	const household = getHousehold(user.householdId);
 	const today = dateIn(Date.now(), household.timeZone);
-	const dinner = getDinner(user.householdId, date);
 	return {
 		date,
 		today,
-		dinner,
+		dinners: getDay(user.householdId, date),
 		// A date with no dinner shows Cooking at home at these servings, unsaved (6.9, Q28).
 		defaultServings: household.defaultServings,
 		// Dinners already made, so a plan for later in the week isn't offered (assumption 1).
-		// Copying the group whose latest dinner is this one would change nothing, so it's left out.
-		copyGroups: listCopyGroups(user.householdId, today).filter(
-			(group) => group.dinnerId !== dinner?.id
-		),
+		copyGroups: listCopyGroups(user.householdId, today),
 		dishes: dishSuggestions(user.householdId)
 	};
 }
 
-// The dinner the page showed. A page showing the date as not planned sends none.
-const shownDinner = id.optional();
+// The dinner the page showed, or null from a page showing the date as not planned.
+const shownDinner = id.optional().transform((value) => value ?? null);
+
+/** The dinner the page showed, while it's still on the date. */
+function shownOn(householdId: number, date: string, dinnerId: number | null): Dinner | null {
+	return getDay(householdId, date).find((dinner) => dinner.id === dinnerId) ?? null;
+}
 
 // Sent when the page asked before a change that takes dishes off the dinner (2.3).
 const confirmed = z
@@ -77,10 +79,12 @@ const typeSchema = z.object({
 	dinnerId: shownDinner
 });
 
-// Eating out and Leftovers show no servings, so a missing field keeps what's saved. The type is
-// the one the page shows, used only if the dinner is gone by the time this is saved.
+// Eating out and Leftovers show no servings, and a date with one dinner no label, so a missing
+// field keeps what's saved. The type is the one the page shows, used only if the dinner is gone
+// by the time this is saved. The data layer checks the label (6.9).
 const detailsSchema = z.object({
 	dinnerId: shownDinner,
+	label: z.string().optional(),
 	type: z.enum(DINNER_TYPES, { error: 'Pick a type' }).optional(),
 	servings: z.coerce
 		.number()
@@ -98,9 +102,25 @@ const detailsSchema = z.object({
 });
 
 // A suggestion or a new name alike; the data layer finds an existing dish by name.
-const addDishSchema = z.object({ name: z.string({ error: 'Enter a dish name' }), role });
+const addDishSchema = z.object({
+	name: z.string({ error: 'Enter a dish name' }),
+	role,
+	dinnerId: shownDinner
+});
 
-const dishSchema = z.object({ dishId: id });
+const restoreSchema = z.object({ dishId: id, role, dinnerId: shownDinner });
+
+// A dish on a dinner the page shows.
+const dishSchema = z.object({ dishId: id, dinnerId: id });
+
+// The first dinner's label comes only with the date's second dinner (6.9).
+const addDinnerSchema = z.object({
+	firstLabel: z
+		.string()
+		.optional()
+		.transform((value) => value ?? null),
+	label: z.string({ error: 'Enter a label for each dinner' })
+});
 
 // The past dinner to copy, and the one on this date the page showed.
 const copySchema = z.object({ sourceId: id, dinnerId: shownDinner, replaceDishes: confirmed });
@@ -114,17 +134,6 @@ const clearSchema = z.object({ dinnerId: shownDinner });
 
 const CHANGED_SINCE = 'Someone has added dishes to this dinner since you opened it.';
 
-/**
- * Refuses a change meant for another dinner than the one now on the date: someone moved another
- * dinner onto it, or planned a date the page showed as not planned. The page then shows what's
- * there now. When the dinner the page showed is gone and nothing took its place, each action
- * goes on as it would for a date without one.
- */
-function notShown(dinner: Dinner | null, shownId: number | undefined, action: string) {
-	if (dinner === null || dinner.id === shownId) return null;
-	return fail(400, { action, error: 'Someone changed this dinner since you opened it.' });
-}
-
 export const actions = {
 	type: async ({ locals, params, request }) => {
 		const user = requireHousehold(locals);
@@ -132,9 +141,7 @@ export const actions = {
 		const parsed = parseForm(typeSchema, await request.formData(), 'type');
 		if ('failure' in parsed) return parsed.failure;
 		const { type, removeDishes, dinnerId } = parsed.data;
-		const dinner = getDinner(user.householdId, date);
-		const refused = notShown(dinner, dinnerId, 'type');
-		if (refused) return refused;
+		const dinner = shownOn(user.householdId, date, dinnerId);
 		if (dinner && dinner.dishes.length > 0 && !hasDishes(type) && !removeDishes) {
 			// The page didn't know about them, so it didn't ask. It shows them now and asks next time.
 			return fail(400, {
@@ -143,46 +150,61 @@ export const actions = {
 			});
 		}
 		const fields = {
+			label: dinner?.label ?? null,
 			type,
 			note: dinner?.note ?? null,
 			// A new dinner starts at the household's usual servings (Q28).
 			servings: dinner?.servings ?? getHousehold(user.householdId).defaultServings
 		};
-		return attempt('type', () => saveDinner(user.householdId, date, fields, Date.now()));
+		return attempt('type', () => {
+			saveDinner(user.householdId, date, dinnerId, fields, Date.now());
+		});
 	},
 
-	// Saving the servings and note is usually the last thing done for a day, so it goes back to
-	// the week, which says "Saved" on the day's row (design 7, Dinner).
+	// Saving the servings and note is usually the last thing done for a dinner, so it goes back to
+	// the week, which says "Saved" on that dinner's line (design 7, Dinner).
 	details: async ({ locals, params, request }) => {
 		const user = requireHousehold(locals);
 		const date = dinnerDate(params);
 		const parsed = parseForm(detailsSchema, await request.formData(), 'details');
 		if ('failure' in parsed) return parsed.failure;
-		const { dinnerId, type, servings, note } = parsed.data;
-		const dinner = getDinner(user.householdId, date);
-		const refused = notShown(dinner, dinnerId, 'details');
-		if (refused) return refused;
+		const { dinnerId, label, type, servings, note } = parsed.data;
+		const dinner = shownOn(user.householdId, date, dinnerId);
 		// No dinner yet: the page showed a date with no dinner, and Save plans it as the type the
 		// page showed. When the page showed a dinner, someone cleared or moved it since, and Save
 		// plans the date again with what was sent, so nothing typed is lost; the last save wins
 		// (6.11). The page then stays and says so.
 		const fields = dinner
 			? {
+					label: label === undefined ? dinner.label : label,
 					type: dinner.type,
 					note: note === undefined ? dinner.note : note,
 					servings: servings ?? dinner.servings
 				}
 			: {
+					label: null,
 					type: type ?? 'cook',
 					note: note ?? null,
 					servings: servings ?? getHousehold(user.householdId).defaultServings
 				};
-		const failed = attempt('details', () =>
-			saveDinner(user.householdId, date, fields, Date.now())
+		const saved = attempt('details', () =>
+			saveDinner(user.householdId, date, dinnerId, fields, Date.now())
 		);
-		if (failed !== undefined) return failed;
-		if (dinner === null && dinnerId !== undefined) return { action: 'details', replanned: true };
-		redirect(303, `/menu?week=${weekStart(date)}&saved=${date}`);
+		if (typeof saved !== 'number') return saved;
+		if (dinner === null && dinnerId !== null) return { action: 'details', replanned: true };
+		redirect(303, `/menu?week=${weekStart(date)}&saved=${saved}`);
+	},
+
+	// Another dinner on a planned date, such as one for the kids and one for the adults (6.9).
+	addDinner: async ({ locals, params, request }) => {
+		const user = requireHousehold(locals);
+		const date = dinnerDate(params);
+		const parsed = parseForm(addDinnerSchema, await request.formData(), 'addDinner');
+		if ('failure' in parsed) return parsed.failure;
+		const { firstLabel, label } = parsed.data;
+		return attempt('addDinner', () => {
+			addDinner(user.householdId, date, { first: firstLabel, added: label }, Date.now());
+		});
 	},
 
 	addDish: async ({ locals, params, request }) => {
@@ -190,9 +212,9 @@ export const actions = {
 		const date = dinnerDate(params);
 		const parsed = parseForm(addDishSchema, await request.formData(), 'dish');
 		if ('failure' in parsed) return parsed.failure;
-		const { name, role } = parsed.data;
+		const { name, role, dinnerId } = parsed.data;
 		const added = attempt('dish', () =>
-			addDinnerDish(user.householdId, date, { name }, role, Date.now())
+			addDinnerDish(user.householdId, date, dinnerId, { name }, role, Date.now())
 		);
 		if (!('kind' in added)) return added;
 		// Its name stays taken, so the page offers to restore it instead (6.10).
@@ -205,11 +227,11 @@ export const actions = {
 	restoreDish: async ({ locals, params, request }) => {
 		const user = requireHousehold(locals);
 		const date = dinnerDate(params);
-		const parsed = parseForm(dishSchema.extend({ role }), await request.formData(), 'dish');
+		const parsed = parseForm(restoreSchema, await request.formData(), 'dish');
 		if ('failure' in parsed) return parsed.failure;
-		const { dishId, role: chosen } = parsed.data;
+		const { dishId, role: chosen, dinnerId } = parsed.data;
 		return attempt('dish', () =>
-			restoreAndAddDinnerDish(user.householdId, date, dishId, chosen, Date.now())
+			restoreAndAddDinnerDish(user.householdId, date, dinnerId, dishId, chosen, Date.now())
 		);
 	},
 
@@ -218,9 +240,9 @@ export const actions = {
 		const date = dinnerDate(params);
 		const parsed = parseForm(dishSchema.extend({ role }), await request.formData(), 'dishes');
 		if ('failure' in parsed) return parsed.failure;
-		const { dishId, role: chosen } = parsed.data;
+		const { dishId, dinnerId, role: chosen } = parsed.data;
 		return attempt('dishes', () =>
-			setDinnerDishRole(user.householdId, date, dishId, chosen, Date.now())
+			setDinnerDishRole(user.householdId, date, dinnerId, dishId, chosen, Date.now())
 		);
 	},
 
@@ -229,8 +251,10 @@ export const actions = {
 		const date = dinnerDate(params);
 		const parsed = parseForm(dishSchema, await request.formData(), 'dishes');
 		if ('failure' in parsed) return parsed.failure;
-		const { dishId } = parsed.data;
-		return attempt('dishes', () => removeDinnerDish(user.householdId, date, dishId, Date.now()));
+		const { dishId, dinnerId } = parsed.data;
+		return attempt('dishes', () =>
+			removeDinnerDish(user.householdId, date, dinnerId, dishId, Date.now())
+		);
 	},
 
 	copy: async ({ locals, params, request }) => {
@@ -239,9 +263,7 @@ export const actions = {
 		const parsed = parseForm(copySchema, await request.formData(), 'copy');
 		if ('failure' in parsed) return parsed.failure;
 		const { sourceId, dinnerId, replaceDishes } = parsed.data;
-		const dinner = getDinner(user.householdId, date);
-		const refused = notShown(dinner, dinnerId, 'copy');
-		if (refused) return refused;
+		const dinner = shownOn(user.householdId, date, dinnerId);
 		// Copying replaces the dishes, so the page asks first when there are some (2.3).
 		if (dinner && dinner.id !== sourceId && dinner.dishes.length > 0 && !replaceDishes) {
 			return fail(400, {
@@ -249,10 +271,12 @@ export const actions = {
 				error: `${CHANGED_SINCE} To replace them, pick the dinner to copy again.`
 			});
 		}
-		return attempt('copy', () => copyDinner(user.householdId, date, sourceId, Date.now()));
+		return attempt('copy', () =>
+			copyDinner(user.householdId, date, dinnerId, sourceId, Date.now())
+		);
 	},
 
-	// Lands on the new date, where the dinner is now (2.2.2).
+	// Moves all of the date's dinners and lands on the new date, where they are now (2.2.2).
 	move: async ({ locals, params, request }) => {
 		const user = requireHousehold(locals);
 		const date = dinnerDate(params);
@@ -260,9 +284,9 @@ export const actions = {
 		if ('failure' in parsed) return parsed.failure;
 		const { to, dinnerId } = parsed.data;
 		if (to === date) return fail(400, { action: 'move', error: 'Pick a different date' });
-		const refused = notShown(getDinner(user.householdId, date), dinnerId, 'move');
-		if (refused) return refused;
-		const moved = attempt('move', () => moveDinner(user.householdId, date, to, Date.now()));
+		const moved = attempt('move', () =>
+			moveDinners(user.householdId, date, to, dinnerId, Date.now())
+		);
 		if (moved !== undefined) return moved;
 		redirect(303, `/menu/${to}`);
 	},
@@ -272,8 +296,7 @@ export const actions = {
 		const date = dinnerDate(params);
 		const parsed = parseForm(clearSchema, await request.formData(), 'clear');
 		if ('failure' in parsed) return parsed.failure;
-		const refused = notShown(getDinner(user.householdId, date), parsed.data.dinnerId, 'clear');
-		if (refused) return refused;
-		clearDinner(user.householdId, date);
+		const { dinnerId } = parsed.data;
+		return attempt('clear', () => clearDinner(user.householdId, date, dinnerId, Date.now()));
 	}
 };

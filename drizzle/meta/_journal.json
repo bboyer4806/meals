@@ -43,6 +43,13 @@
       "when": 1792607027727,
       "tag": "0005_tour-seen",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792622598527,
+      "tag": "0006_multiple-dinners",
+      "breakpoints": true
     }
   ]
 }
