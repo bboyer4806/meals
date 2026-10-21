@@ -34,7 +34,7 @@
 		<Help />
 		<details class="menu" bind:this={menu}>
 			<!-- Not "Menu", which is the menu of dinners in the tab bar. -->
-			<summary>More{@render dot()}</summary>
+			<summary data-tour="more">More{@render dot()}</summary>
 			<nav aria-label="More">
 				<a href="/groceries/items">Items</a>
 				<a href="/groceries/history">History</a>
@@ -60,7 +60,7 @@
 
 <!-- Phone-style tabs at the bottom (design 7). -->
 <nav class="tabs no-print" aria-label="Main">
-	<a href="/groceries" aria-current={current('/groceries')}>
+	<a href="/groceries" aria-current={current('/groceries')} data-tour="groceries">
 		<svg viewBox="0 0 24 24" aria-hidden="true">
 			<path d="M7 10a5 5 0 0 1 10 0" />
 			<path d="M3 10h18l-2 10H5z" />
@@ -68,14 +68,14 @@
 		</svg>
 		Groceries
 	</a>
-	<a href="/menu" aria-current={current('/menu')}>
+	<a href="/menu" aria-current={current('/menu')} data-tour="menu">
 		<svg viewBox="0 0 24 24" aria-hidden="true">
 			<rect x="3" y="5" width="18" height="16" rx="2" />
 			<path d="M3 10h18M8 3v4M16 3v4" />
 		</svg>
 		Menu
 	</a>
-	<a href="/recipes" aria-current={current('/recipes')}>
+	<a href="/recipes" aria-current={current('/recipes')} data-tour="recipes">
 		<svg viewBox="0 0 24 24" aria-hidden="true">
 			<path d="M3 5h6a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H3z" />
 			<path d="M21 5h-6a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h7z" />

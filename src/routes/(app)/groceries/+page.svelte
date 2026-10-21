@@ -5,6 +5,7 @@
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import ItemInput from '#lib/components/ItemInput.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
+	import Tour from '#lib/components/Tour.svelte';
 	import { foldCase, formatQuantity, normalizeName } from '#lib/text.ts';
 
 	let { data, form } = $props();
@@ -201,6 +202,10 @@
 <svelte:head>
 	<title>Groceries · Meals</title>
 </svelte:head>
+
+{#if data.tour}
+	<Tour />
+{/if}
 
 <div class="title row">
 	<h1 class="grow">Groceries</h1>

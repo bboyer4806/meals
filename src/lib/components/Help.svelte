@@ -11,7 +11,7 @@
 	let open = $state(false);
 </script>
 
-<button type="button" class="help" onclick={() => (open = true)}>Help</button>
+<button type="button" class="help" data-tour="help" onclick={() => (open = true)}>Help</button>
 
 <Sheet bind:open title="Help: {help.title}">
 	<ul>

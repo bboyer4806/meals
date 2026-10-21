@@ -18,6 +18,7 @@ import {
 	type GroceryLine
 } from '#lib/server/data/needs.ts';
 import { listStores } from '#lib/server/data/stores.ts';
+import { needsTour, recordTourSeen } from '#lib/server/data/tour.ts';
 import { attempt, id, nameField, optionalText, parseForm, quantity } from '#lib/server/forms.ts';
 
 type LineGroup = {
@@ -63,7 +64,10 @@ export function load({ locals }) {
 	return {
 		groups,
 		stores,
-		items: listPickerItems(user.householdId)
+		items: listPickerItems(user.householdId),
+		// The first-time tour lives here, since the layout can't have the action that ends it
+		// (design 7, "Tour").
+		tour: needsTour(user.id)
 	};
 }
 
@@ -193,5 +197,13 @@ export const actions = {
 		const parsed = parseForm(z.object({ id }), await request.formData(), 'line');
 		if ('failure' in parsed) return parsed.failure;
 		return attempt('line', () => deleteLine(user.householdId, parsed.data.id));
+	},
+
+	// Done, Skip or Escape ends the tour for good (design 7, "Tour").
+	tourSeen: async ({ locals, request }) => {
+		const user = requireHousehold(locals);
+		const parsed = parseForm(z.object({}), await request.formData(), 'tour');
+		if ('failure' in parsed) return parsed.failure;
+		return attempt('tour', () => recordTourSeen(user.id, Date.now()));
 	}
 };

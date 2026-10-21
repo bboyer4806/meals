@@ -310,7 +310,8 @@ Q28), `time_zone` (an IANA name such as `America/Chicago`), `created_at`.
 **users:** `household_id` (empty only until household setup is done), `google_sub`
 (Google's permanent account ID, unique), `email` (unique, lowercase), `name`,
 `created_at`, `whats_new_seen` (the date of the newest release they've seen on What's new;
-empty until they first open it; section 7). One household per person (E1).
+empty until they first open it; section 7), `tour_seen` (when they finished or skipped the
+first-time tour; empty until then; section 7). One household per person (E1).
 
 **sessions:** `id` (SHA-256 of the token), `user_id`, `expires_at`.
 
@@ -605,7 +606,20 @@ Recipe, Edit recipe (and New recipe, which shares its form), Cooking view, Dinne
 Items each have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
 Opening it changes nothing on the page behind, so anything typed there and not saved stays. The
 help is fixed text in `src/lib/help.ts`, keyed by each screen's route, and the type check fails
-if a screen has none. It opens only when asked: there's no tour, Help page or link in More.
+if a screen has none. It opens only when asked: there's no Help page or link in More, and the
+first-time tour (below) only points at it.
+
+**Tour.** The first time each person opens the Grocery list, a short tour steps through the
+controls they'll use most: Groceries, Menu, Recipes, More, Help and Send feedback, in that order.
+That includes new people after their first sign-in, whether they set up a household or were
+invited (6.1), and everyone already using Meals when the tour arrived, since their `tour_seen`
+starts empty. It's per person, not per household, and the same for admins. Each step outlines
+its control, dims the rest of the screen and shows a card with its place, such as "1 of 6", the
+control's name, one line about it, Skip and Next; the last step has Done in place of Next. While
+it shows, the page behind can't be tapped, and screen readers announce each step. Done, Skip or
+Escape records `tour_seen`, so it never shows again on any device. Reloading or leaving the
+Grocery list before then records nothing, and the tour starts again from the first step the
+next time. There's no way to replay it, and no other screen has a tour.
 
 **Grocery list.** An add bar at the top: item (with suggestions), quantity, unit, store
 (filled from the default; tap to change) and Add. Below it, one group per store plus "No
