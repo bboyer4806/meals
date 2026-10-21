@@ -5,6 +5,7 @@ import {
 	expect,
 	failNextJiraTicket,
 	jiraTickets,
+	open,
 	test,
 	today
 } from './fixtures.ts';
@@ -72,7 +73,7 @@ test("sits above the tab bar and doesn't cover the end of a long page", async ({
 });
 
 test('stops at 2,000 characters, typed or pasted, and says so', async ({ page, person }) => {
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await feedbackButton(page).click();
 	await expect(sheet(page)).toBeVisible();
 	await expect(sheet(page).getByText('0 / 2,000')).toBeVisible();
@@ -96,7 +97,7 @@ test('stops at 2,000 characters, typed or pasted, and says so', async ({ page, p
 });
 
 test('an empty send asks for feedback and sends nothing', async ({ page, person }) => {
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await feedbackButton(page).click();
 	await send(page).click();
 	await expect(sheet(page).getByRole('alert')).toHaveText('Enter your feedback');
@@ -112,7 +113,7 @@ test('sends one ticket from a dinner and keeps its unsaved note', async ({ page,
 	page.on('dialog', (dialog) => {
 		throw new Error(`Unexpected dialog: ${dialog.message()}`);
 	});
-	await page.goto(`/menu/${date}?from=week`);
+	await open(page, `/menu/${date}?from=week`);
 	const note = page.getByLabel('Note', { exact: true });
 	await note.fill('Typed, not saved');
 
@@ -165,7 +166,7 @@ test('sends one ticket from a dinner and keeps its unsaved note', async ({ page,
 test("says it couldn't send when Jira fails, and keeps the message", async ({ page, person }) => {
 	const message = `Long dish names are cut off ${person.email}`;
 	await failNextJiraTicket(person.email);
-	await page.goto('/menu');
+	await open(page, '/menu');
 	await feedbackButton(page).click();
 	await box(page).fill(message);
 	await send(page).click();
