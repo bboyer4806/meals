@@ -1,4 +1,5 @@
 <script lang="ts" generics="T extends { id: number; name: string; timesAdded: number }">
+	import { onMount } from 'svelte';
 	import { foldCase, normalizeName } from '../text.ts';
 
 	// A text field that suggests existing items as you type: names that start with the text
@@ -54,6 +55,13 @@
 
 	const showList = $derived(open && options.length > 0);
 
+	// Someone can tap the field and type before the page's script starts, which keeps what they
+	// typed but misses its focus and input, so show the suggestions for it once the script runs.
+	let input: HTMLInputElement;
+	onMount(() => {
+		if (document.activeElement === input) open = true;
+	});
+
 	function choose(option: Option) {
 		if (option.kind === 'item') value = option.item.name;
 		open = false;
@@ -80,6 +88,7 @@
 
 <div class="combo">
 	<input
+		bind:this={input}
 		{id}
 		{name}
 		{placeholder}

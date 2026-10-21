@@ -8,6 +8,7 @@ import {
 	dayLabel,
 	expect,
 	monthDay,
+	open,
 	sundayOf,
 	test,
 	today,
@@ -397,7 +398,7 @@ test('asks before switching a dinner with dishes to Eating out or Leftovers', as
 			[rice, 'side']
 		]
 	});
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await expect(dishLinks(page)).toHaveText(['Chicken tacos', 'Rice']);
 
 	// Bringing a dish has dishes too, so nothing to ask.
@@ -457,7 +458,7 @@ test("opens each dish's recipe at the servings shown, and asks before leaving wi
 	const date = addDays(today(), 1);
 	addDinner(db, person.householdId, date, { servings: 4, dishes: [[cakeId, 'dessert']] });
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	const cake = dishSection(page).getByRole('link', { name: 'Pound cake' });
 	await expect(cake).toHaveAttribute('href', `/recipes/${cakeId}?servings=4`);
 	await cake.click();
@@ -542,7 +543,7 @@ test('goes to the week after a save, which says Saved on that day for a moment',
 	});
 	const saved = page.getByRole('status').filter({ hasText: 'Saved' });
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await page.getByLabel('Note', { exact: true }).fill('Taco night with the neighbors');
 	await saveToWeek(page, date);
 	expect(questions).toEqual([]);
@@ -577,7 +578,7 @@ test('lets someone leave while a save is on its way, and stays where they went',
 	// The page they go to is still loading when the save finishes.
 	await slow(page, (url) => url.pathname === '/recipes/__data.json', 2000);
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await page.getByLabel('Note', { exact: true }).fill('Taco night with the neighbors');
 	page.on('dialog', (dialog) => void dialog.accept());
 	await page.getByRole('button', { name: 'Save' }).click();
@@ -602,7 +603,7 @@ test('says Saved and stays when more was typed during a save and the person keep
 	});
 	const note = page.getByLabel('Note', { exact: true });
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await note.fill('Taco night at 6');
 	await page.getByRole('button', { name: 'Save' }).click();
 	await note.fill('Taco night at 6, bring salsa');
@@ -627,7 +628,7 @@ test('asks before leaving to sign in when the session ended, and saves nothing',
 	});
 	const note = page.getByLabel('Note', { exact: true });
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await note.fill('Taco night with the neighbors');
 	// Signed out on another device, so the save is sent to sign in instead.
 	db.prepare('delete from sessions where user_id = ?').run(person.userId);
@@ -648,7 +649,7 @@ test('stays on the day with the error when a save fails, keeping what was typed'
 	const servings = page.getByLabel('Servings', { exact: true });
 	const note = page.getByLabel('Note', { exact: true });
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	// The field's own minimum stops the browser sending 0, so it's taken off to reach the server.
 	await servings.evaluate((input) => input.removeAttribute('min'));
 	await servings.fill('0');
@@ -673,7 +674,7 @@ test('offers to restore an archived dish typed by name, and keeps archived dishe
 	const other = addDays(today(), 4);
 	addDinner(db, person.householdId, other, { dishes: [[salsaId, 'side']] });
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	// Archived dishes aren't suggested.
 	await dishField(page).fill('banana');
 	await expect(page.getByRole('listbox').getByRole('option')).toHaveText([
@@ -711,11 +712,32 @@ test('offers to restore an archived dish typed by name, and keeps archived dishe
 	expect(breadRows()).toEqual([{ id: breadId, archived: 0 }]);
 
 	// A dish archived after it was planned stays on its dinner and on the week.
-	await page.goto(`/menu/${other}`);
+	await open(page, `/menu/${other}`);
 	await expect(dishLinks(page)).toHaveText(['Old salsa']);
 	await expect(dishSection(page).getByText('Archived', { exact: true })).toBeVisible();
 	await page.goto(`/menu?week=${other}`);
 	await expect(day(page, other).locator('.names')).toHaveText(['Old salsa']);
+});
+
+test("suggests a dish typed before the page's script started", async ({ page, db, person }) => {
+	addRecipe(db, person.householdId, { name: 'Banana pudding' });
+	// Holds the script back, as a slow phone might, while the dish is typed.
+	let release!: () => void;
+	const released = new Promise<void>((resolve) => (release = resolve));
+	await page.route('**/_app/immutable/**/*.js', async (route) => {
+		await released;
+		await route.continue();
+	});
+
+	await page.goto(`/menu/${addDays(today(), 3)}`, { waitUntil: 'domcontentloaded' });
+	await dishField(page).fill('banana');
+	release();
+	await expect(page.locator('html[data-started]')).toBeAttached();
+	await expect(dishField(page)).toHaveValue('banana');
+	await expect(page.getByRole('listbox').getByRole('option')).toHaveText([
+		'Banana pudding',
+		'Add “banana” as a new dish'
+	]);
 });
 
 test('copies a past dinner from the most-made list or by searching a dish name', async ({
@@ -782,7 +804,7 @@ test('copies a past dinner from the most-made list or by searching a dish name',
 
 	// Onto a date with nothing planned: it copies straight away, at the usual servings.
 	const empty = addDays(now, 1);
-	await page.goto(`/menu/${empty}`);
+	await open(page, `/menu/${empty}`);
 	await page.getByRole('button', { name: 'Copy a dinner' }).click();
 	const sheet = page.getByRole('dialog', { name: 'Copy a dinner' });
 	const groups = sheet.getByRole('listitem');
@@ -823,7 +845,7 @@ test('copies a past dinner from the most-made list or by searching a dish name',
 		servings: 6,
 		dishes: [[soup, 'main']]
 	});
-	await page.goto(`/menu/${planned}`);
+	await open(page, `/menu/${planned}`);
 	await page.getByRole('button', { name: 'Copy a dinner' }).click();
 	await sheet.getByRole('button', { name: /^Lasagna, Caesar salad/ }).click();
 	await expect(sheet).toContainText('Replace the dish on this dinner with Lasagna, Caesar salad?');
@@ -850,7 +872,7 @@ test('copies a past dinner from the most-made list or by searching a dish name',
 	]);
 
 	// Today's own dinner isn't offered to itself.
-	await page.goto(`/menu/${now}`);
+	await open(page, `/menu/${now}`);
 	await expect(page.locator('.title').getByText('Today', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Copy a dinner' }).click();
 	await expect(groups.locator('.names')).toHaveText([
@@ -881,7 +903,7 @@ test('moves a dinner to an empty date, and swaps it with a planned one', async (
 	const pizzaId = addDinner(db, person.householdId, wed, { type: 'eat_out', note: 'Pizza' });
 
 	// The next day is filled in, which has nothing planned.
-	await page.goto(`/menu/${mon}`);
+	await open(page, `/menu/${mon}`);
 	await dateButton(page).click();
 	const sheet = page.getByRole('dialog', { name: 'Move to another date' });
 	await expect(sheet.getByLabel('New date')).toHaveValue(tue);
@@ -946,7 +968,7 @@ test('clears a dinner after asking, and shows the date as not planned', async ({
 	const date = addDays(today(), 1);
 	addDinner(db, person.householdId, date, { note: 'Taco night', dishes: [[tacos, 'main']] });
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await page.getByRole('button', { name: 'Clear' }).click();
 	const dialog = page.getByRole('dialog', { name: 'Clear' });
 	await expect(dialog).toContainText(
@@ -999,10 +1021,10 @@ test("can't see or change another household's dinners", async ({ page, db, baseU
 	});
 
 	// The page shows this household's dinner on that date, or none.
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await expect(dishLinks(page)).toHaveText(['Chicken tacos']);
 	await expect(page.getByText(/Secret/)).toHaveCount(0);
-	await page.goto(`/menu/${later}`);
+	await open(page, `/menu/${later}`);
 	await expect(page.getByText('Not planned yet.', { exact: false })).toBeVisible();
 	await expect(page.getByText(/Secret/)).toHaveCount(0);
 	await page.getByRole('button', { name: 'Copy a dinner' }).click();
@@ -1073,7 +1095,7 @@ test("says the year a past dinner was last made when it isn't this year", async 
 	addDinner(db, person.householdId, addDays(longAgo, -30), { dishes: [[stew, 'main']] });
 	addDinner(db, person.householdId, addDays(now, -3), { dishes: [[stew, 'main']] });
 
-	await page.goto(`/menu/${addDays(now, 1)}`);
+	await open(page, `/menu/${addDays(now, 1)}`);
 	await page.getByRole('button', { name: 'Copy a dinner' }).click();
 	const groups = page.getByRole('dialog', { name: 'Copy a dinner' }).getByRole('listitem');
 	await expect(groups.locator('.names')).toHaveText(['Stew', 'Soup']);
@@ -1083,7 +1105,7 @@ test("says the year a past dinner was last made when it isn't this year", async 
 	]);
 
 	// As that dinner's own page says.
-	await page.goto(`/menu/${longAgo}`);
+	await open(page, `/menu/${longAgo}`);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(
 		new RegExp(`^[A-Z][a-z]+day, ${monthDay(longAgo)}, ${longAgo.slice(0, 4)}$`)
 	);
@@ -1136,7 +1158,7 @@ test('refuses to clear or move a dinner someone moved onto the date after the pa
 	const onDate = () => dinnerRow(db, person.householdId, date)?.id;
 
 	// Clear, after someone moved the birthday dinner onto this date.
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await expect(dishLinks(page)).toHaveText(['Salad']);
 	swap(db, roastId, saladId);
 	await page.getByRole('button', { name: 'Clear' }).click();
@@ -1193,7 +1215,7 @@ test("refuses to switch, copy onto or save a dinner the page didn't show", async
 	const note = page.getByLabel('Note', { exact: true });
 
 	// A type picked on a page showing the date as not planned, after someone planned it.
-	await page.goto(`/menu/${empty}`);
+	await open(page, `/menu/${empty}`);
 	await expect(page.getByText('Not planned yet.', { exact: false })).toBeVisible();
 	addDinner(db, person.householdId, empty, { type: 'eat_out', note: 'Pizza' });
 	await typeButton(page, 'Bringing a dish').click();
@@ -1203,7 +1225,7 @@ test("refuses to switch, copy onto or save a dinner the page didn't show", async
 	expect(dinnerRow(db, person.householdId, empty)).toMatchObject({ type: 'eat_out' });
 
 	// Switching to Eating out, after someone moved the birthday dinner onto this date.
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await expect(dishLinks(page)).toHaveText(['Salad']);
 	swap(db, roastId, saladId);
 	await typeButton(page, 'Eating out').click();
@@ -1265,7 +1287,7 @@ test('keeps what was typed when coming back to the app finds the dinner cleared 
 	const note = page.getByLabel('Note', { exact: true });
 
 	// Someone else clears the dinner while a note is half typed and the app is in the background.
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await note.fill("Grandma's house, bring dessert");
 	db.prepare('delete from dinners where id = ?').run(dinnerId);
 	await comeBack(page);
@@ -1317,7 +1339,7 @@ test('shows a dinner swapped onto the date, with what was typed in the notice', 
 	});
 	const note = page.getByLabel('Note', { exact: true });
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await note.fill('Salad needs dressing');
 	// Someone else moves the birthday dinner onto this date while the app is in the background.
 	const setDate = db.prepare('update dinners set date = ? where id = ?');
@@ -1349,7 +1371,7 @@ test('drops the "save to plan it again" notice once another dinner is planned, o
 
 	// Cleared, then planned again by someone else before the held note is saved.
 	let thai = addDinner(db, person.householdId, date, { type: 'eat_out', note: 'Thai place' });
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await note.fill('Thai place, table at 7');
 	db.prepare('delete from dinners where id = ?').run(thai);
 	await comeBack(page);
@@ -1370,7 +1392,7 @@ test('drops the "save to plan it again" notice once another dinner is planned, o
 		date
 	);
 	thai = addDinner(db, person.householdId, date, { type: 'eat_out', note: 'Thai place' });
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await note.fill('Thai place, table at 7');
 	db.prepare('delete from dinners where id = ?').run(thai);
 	await comeBack(page);
@@ -1390,7 +1412,7 @@ test("lets what was typed go after the page's own Clear or switch to Eating out"
 	addDinner(db, person.householdId, date, { note: 'Taco night' });
 	const note = page.getByLabel('Note', { exact: true });
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await note.fill('Taco night with the neighbors');
 	await page.getByRole('button', { name: 'Clear' }).click();
 	await page.getByRole('dialog', { name: 'Clear' }).getByRole('button', { name: 'Clear' }).click();
@@ -1416,7 +1438,7 @@ test('saves an unplanned day as Cooking at home, only when Save is tapped', asyn
 	const note = page.getByLabel('Note', { exact: true });
 
 	// Opening it, and leaving it untouched, saves nothing.
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await expect(typeButton(page, 'Cooking at home')).toHaveAttribute('aria-pressed', 'true');
 	await page.getByRole('link', { name: /^‹ Week of/ }).click();
 	await expect(day(page, date)).toContainText('Not planned');
@@ -1442,7 +1464,7 @@ test('asks before leaving an unplanned day with something typed', async ({ page,
 		void dialog.dismiss();
 	});
 
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await page.getByLabel('Note', { exact: true }).fill('Grill outside');
 	await page.getByRole('link', { name: /^‹ Week of/ }).click();
 	await expect.poll(() => questions).toEqual([LEAVE]);
@@ -1462,7 +1484,7 @@ test('keeps what was typed on an unplanned day when a dish or a copy plans it', 
 
 	// Adding a dish plans the day with the dish alone; the note and servings wait for Save.
 	const dished = addDays(today(), 1);
-	await page.goto(`/menu/${dished}`);
+	await open(page, `/menu/${dished}`);
 	await note.fill('Grill outside');
 	await servings.fill('6');
 	await addDish(page, 'Grilled corn', 'new');
@@ -1480,7 +1502,7 @@ test('keeps what was typed on an unplanned day when a dish or a copy plans it', 
 
 	// Copying a dinner does the same.
 	const copied = addDays(today(), 2);
-	await page.goto(`/menu/${copied}`);
+	await open(page, `/menu/${copied}`);
 	await note.fill('Taco night');
 	await page.getByRole('button', { name: 'Copy a dinner' }).click();
 	const sheet = page.getByRole('dialog', { name: 'Copy a dinner' });
