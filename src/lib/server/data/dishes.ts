@@ -425,13 +425,29 @@ function tagsByDish(householdId: number): Map<number, string[]> {
 	return byDish;
 }
 
+/** The Recipes page's orders (section 7, "Recipes"). */
+export const DISH_SORTS = ['name', 'rating'] as const;
+export type DishSort = (typeof DISH_SORTS)[number];
+
+// Sorted in code rather than in SQL, so "Éclairs" sorts with the E's.
+function byName(a: DishSummary, b: DishSummary): number {
+	return a.name.localeCompare(b.name);
+}
+
+/** The exact average, not the rounded one shown, highest first; unrated last; ties by name. */
+function byRating(a: DishSummary, b: DishSummary): number {
+	// Unrated counts as 0, below the lowest rating of 1 star.
+	const difference = (b.rating?.average ?? 0) - (a.rating?.average ?? 0);
+	return difference === 0 ? byName(a, b) : difference;
+}
+
 /**
- * The Recipes page: active dishes, or archived ones, sorted by name. `search` matches anywhere
- * in the name and `tag` matches a tag, both ignoring case.
+ * The Recipes page: active dishes, or archived ones, sorted by name or rating. `search` matches
+ * anywhere in the name and `tag` matches a tag, both ignoring case.
  */
 export function listDishes(
 	householdId: number,
-	filter: { search: string; tag: string | null; archived: boolean }
+	filter: { search: string; tag: string | null; archived: boolean; sort: DishSort }
 ): DishSummary[] {
 	const tags = tagsByDish(householdId);
 	const ingredientCounts = db()
@@ -483,8 +499,7 @@ export function listDishes(
 			// The same test as the recipe page.
 			hasRecipe: ingredientCount !== null || splitSteps(steps).length > 0
 		}))
-		// Sorted here rather than in SQL, so "Éclairs" sorts with the E's.
-		.sort((a, b) => a.name.localeCompare(b.name));
+		.sort(filter.sort === 'rating' ? byRating : byName);
 }
 
 /**

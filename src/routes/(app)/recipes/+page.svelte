@@ -20,14 +20,20 @@
 		return data.tag !== null && foldCase(tag) === foldCase(data.tag);
 	}
 
-	/** This list filtered by another tag, or by none, keeping the search and archived switch. */
-	function withTag(tag: string | null) {
+	/** This list's address with the given search, tag and archived switch, keeping the sort. */
+	function listAddress(search: string, tag: string | null, archived: boolean) {
 		const params = new URLSearchParams();
-		if (data.search) params.set('q', data.search);
+		if (search) params.set('q', search);
 		if (tag !== null) params.set('tag', tag);
-		if (data.archived) params.set('archived', '1');
+		if (archived) params.set('archived', '1');
+		if (data.sort !== 'name') params.set('sort', data.sort);
 		const query = params.toString();
 		return query === '' ? '/recipes' : `/recipes?${query}`;
+	}
+
+	/** This list filtered by another tag, or by none, keeping the search and archived switch. */
+	function withTag(tag: string | null) {
+		return listAddress(data.search, tag, data.archived);
 	}
 
 	function details(recipe: Recipe) {
@@ -58,6 +64,18 @@
 	{#if data.archived}<input type="hidden" name="archived" value="1" />{/if}
 	<label class="visually-hidden" for="q">Search recipes</label>
 	<input class="grow" id="q" name="q" type="search" placeholder="Search" value={data.search} />
+	<!-- Reorders right away, without tapping Search (section 7, "Recipes"). -->
+	<label class="visually-hidden" for="sort">Sort</label>
+	<select
+		class="sort"
+		id="sort"
+		name="sort"
+		value={data.sort}
+		onchange={(event) => event.currentTarget.form?.requestSubmit()}
+	>
+		<option value="name">Name</option>
+		<option value="rating">Rating</option>
+	</select>
 	<button>Search</button>
 </form>
 
@@ -78,9 +96,9 @@
 
 <p>
 	{#if data.archived}
-		<a class="link-tap" href="/recipes">Show active</a>
+		<a class="link-tap" href={listAddress(data.search, data.tag, false)}>Show active</a>
 	{:else}
-		<a class="link-tap" href="/recipes?archived=1">Show archived</a>
+		<a class="link-tap" href={listAddress(data.search, data.tag, true)}>Show archived</a>
 	{/if}
 </p>
 
@@ -119,7 +137,7 @@
 	</ul>
 {:else if data.search || data.tag}
 	<p class="muted">{noMatches}</p>
-	<a class="link-tap" href={data.archived ? '/recipes?archived=1' : '/recipes'}>
+	<a class="link-tap" href={listAddress('', null, data.archived)}>
 		{data.archived ? 'Show all archived recipes' : 'Show all recipes'}
 	</a>
 {:else if data.archived}
@@ -139,6 +157,10 @@
 
 	.search {
 		margin-bottom: 0.75rem;
+	}
+
+	.sort {
+		width: auto;
 	}
 
 	.recipes {

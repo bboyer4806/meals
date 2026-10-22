@@ -599,6 +599,88 @@ test("rates a recipe from its page, shown with the household's average on its ca
 	await expect(cardRating).toHaveCount(0);
 });
 
+test('sorts recipes by rating, kept with the search, tag and archived switch', async ({
+	page,
+	db,
+	person
+}) => {
+	const rate = db.prepare(
+		'insert into dish_ratings (household_id, dish_id, user_id, stars) values (?, ?, ?, ?)'
+	);
+	const pieId = addRecipe(db, person.householdId, { name: 'Apple pie', tags: ['Dessert'] });
+	const browniesId = addRecipe(db, person.householdId, { name: 'Brownies', tags: ['Dessert'] });
+	addRecipe(db, person.householdId, { name: 'Chili', tags: ['Dinner'] });
+	addRecipe(db, person.householdId, { name: 'Lemon bars', tags: ['Dessert'], archived: true });
+	const cherryId = addRecipe(db, person.householdId, {
+		name: 'Cherry pie',
+		tags: ['Dessert'],
+		archived: true
+	});
+	const pecanId = addRecipe(db, person.householdId, {
+		name: 'Pecan pie',
+		tags: ['Dessert'],
+		archived: true
+	});
+	rate.run(person.householdId, pieId, person.userId, 3);
+	rate.run(person.householdId, browniesId, person.userId, 5);
+	rate.run(person.householdId, cherryId, person.userId, 2);
+	rate.run(person.householdId, pecanId, person.userId, 4);
+	const names = page.locator('.recipes .name');
+	const sort = page.getByLabel('Sort');
+
+	await open(page, '/recipes');
+	await expect(sort).toHaveValue('name');
+	await expect(names).toHaveText(['Apple pie', 'Brownies', 'Chili']);
+
+	// Reorders right away, without tapping Search: highest first, unrated last.
+	await sort.selectOption('Rating');
+	await expect(page).toHaveURL(/\?q=&sort=rating$/);
+	await expect(names).toHaveText(['Brownies', 'Apple pie', 'Chili']);
+
+	// Changing the tag, search or archived switch keeps the others.
+	const chips = page.getByRole('list', { name: 'Filter by tag' });
+	await chips.getByRole('link', { name: 'Dessert' }).click();
+	await expect(page).toHaveURL(/\?tag=Dessert&sort=rating$/);
+	await expect(sort).toHaveValue('rating');
+	await expect(names).toHaveText(['Brownies', 'Apple pie']);
+	const search = page.getByLabel('Search recipes');
+	await search.fill('pie');
+	await search.press('Enter');
+	await expect(page).toHaveURL(/\?tag=Dessert&q=pie&sort=rating$/);
+	await expect(names).toHaveText(['Apple pie']);
+	await page.getByRole('link', { name: 'Show archived' }).click();
+	await expect(page).toHaveURL(/\/recipes\?q=pie&tag=Dessert&archived=1&sort=rating$/);
+	await expect(search).toHaveValue('pie');
+	await expect(sort).toHaveValue('rating');
+	await expect(names).toHaveText(['Pecan pie', 'Cherry pie']);
+	await page.getByRole('link', { name: 'Show active' }).click();
+	await expect(page).toHaveURL(/\/recipes\?q=pie&tag=Dessert&sort=rating$/);
+	await expect(names).toHaveText(['Apple pie']);
+
+	// Back keeps them.
+	await page.goBack();
+	await expect(sort).toHaveValue('rating');
+	await expect(names).toHaveText(['Pecan pie', 'Cherry pie']);
+	await page.goForward();
+	await expect(names).toHaveText(['Apple pie']);
+
+	// Back to A to Z, keeping the tag.
+	await search.fill('');
+	await sort.selectOption('Name');
+	await expect(page).toHaveURL(/\?tag=Dessert&q=&sort=name$/);
+	await expect(names).toHaveText(['Apple pie', 'Brownies']);
+
+	// An unknown sort is by name, and the tab bar starts at Name.
+	await page.goto('/recipes?sort=newest');
+	await expect(sort).toHaveValue('name');
+	await expect(names).toHaveText(['Apple pie', 'Brownies', 'Chili']);
+	await page.goto('/recipes?sort=rating');
+	await page.getByRole('link', { name: 'Recipes', exact: true }).click();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(sort).toHaveValue('name');
+	await expect(names).toHaveText(['Apple pie', 'Brownies', 'Chili']);
+});
+
 /** Makes requests that match take a while, as on a slow phone connection. */
 async function slow(page: Page, matches: (url: URL) => boolean, ms: number) {
 	await page.route(matches, async (route) => {
@@ -1212,7 +1294,7 @@ test('finds recipes by name and tag, and archives and restores one', async ({
 	const search = page.getByLabel('Search recipes');
 	await search.fill('CAKE');
 	await search.press('Enter');
-	await expect(page).toHaveURL(/\?q=CAKE$/);
+	await expect(page).toHaveURL(/\?q=CAKE&sort=name$/);
 	await expect(names).toHaveText(['Pound cake']);
 	await search.fill('zzz');
 	await page.getByRole('button', { name: 'Search' }).click();

@@ -37,6 +37,10 @@ vi.mock('./photos.ts', async (importOriginal) => {
 	return { ...photos, deletePhoto: vi.fn(photos.deletePhoto) };
 });
 
+function activeDishes(householdId: number) {
+	return listDishes(householdId, { search: '', tag: null, archived: false, sort: 'name' });
+}
+
 /** The form as the editor sends it: every field, with the rows as JSON in `ingredients`. */
 function formData(
 	values: Partial<RecipeFormValues> = {},
@@ -752,7 +756,7 @@ describe('saveRecipe', () => {
 			error: 'A recipe is already called pound CAKE.'
 		});
 		expect(getDish(householdId, id)).toMatchObject({ name: 'Toast', photoKey: null });
-		expect(listDishes(householdId, { search: '', tag: null, archived: false })).toHaveLength(2);
+		expect(activeDishes(householdId)).toHaveLength(2);
 		expect(storedFiles()).toEqual([]);
 	});
 
@@ -775,7 +779,7 @@ describe('saveRecipe', () => {
 			error: 'Salt is archived. Restore it and save the recipe?',
 			archivedItems: [{ id: salt, name: 'Salt' }]
 		});
-		expect(listDishes(householdId, { search: '', tag: null, archived: false })).toEqual([]);
+		expect(activeDishes(householdId)).toEqual([]);
 		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBe(0);
 		expect(storedFiles()).toEqual([]);
 
@@ -878,7 +882,7 @@ describe('saveRecipe', () => {
 		const id = makeDish(householdId, recipe('Toast'));
 		await refused(id, { name: 'French toast' }, { photo: png, thumb: jpeg() });
 		expect(getDish(householdId, id).name).toBe('Toast');
-		expect(listDishes(householdId, { search: '', tag: null, archived: false })).toHaveLength(1);
+		expect(activeDishes(householdId)).toHaveLength(1);
 		expect(storedFiles()).toEqual([]);
 	});
 

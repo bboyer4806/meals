@@ -585,7 +585,7 @@ out. Help sits in the header to the left of More.
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | History          | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
 | Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, archive and restore. Shows each item's default store and when and where it was last bought. |
-| Recipes          | `/recipes`                           | Search by name, filter by tag, photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, and New recipe. |
+| Recipes          | `/recipes`                           | Search by name, filter by tag, sort by name or rating (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, and New recipe. |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
 | Edit recipe      | `/recipes/new`, `/recipes/[id]/edit` | See below.                                                                                                                           |
 | Cooking view     | `/recipes/[id]/cook`                 | Large text, the screen stays on, and you tap ingredients and steps to check them off (Q36).                                          |
@@ -644,9 +644,17 @@ circle checks it off as Received. Tapping a row opens an edit sheet: quantity, u
 store, note, Mark ordered, Didn't come, Got fewer, and Delete. An item's notes (brand,
 size) show under its name.
 
-**Recipe.** "‹ Recipes" goes to the Recipes list with no search or filters, even when the
-recipe was opened from a dinner. Photo, name, tags, a **Tried it** checkbox, your rating,
-prep, cook and total time, and a servings control (plus and minus). Tried it saves as soon as
+**Recipes.** A **Sort** dropdown beside the search box offers **Name** (A to Z, the default) and
+**Rating** (highest first). Choosing one reorders the list right away, without tapping Search.
+Rating uses the household's exact average, not the rounded one shown; unrated recipes go last,
+and equal averages fall back to name. The sort, search, tag and archived switch are kept in the
+address, so Back and shared links keep them, and changing any one keeps the others; "Show all
+recipes" clears the search and tag. An unknown sort shows Name. Opening Recipes from the tab
+bar or "‹ Recipes" starts at Name.
+
+**Recipe.** "‹ Recipes" goes to the Recipes list with no search or filters, sorted by name,
+even when the recipe was opened from a dinner. Photo, name, tags, a **Tried it** checkbox, your
+rating, prep, cook and total time, and a servings control (plus and minus). Tried it saves as soon as
 it's tapped, with no Save button, and is shared by the household (6.11); Edit recipe leaves it
 as it was, and it works the same on archived recipes. Your rating is five stars under Tried
 it, your own and nobody else's: tapping a star saves it right away, and tapping your current
