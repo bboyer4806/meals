@@ -40,8 +40,14 @@ beforeEach(() => {
 	({ householdId, userId } = makeHousehold());
 });
 
-function list(filter: Partial<{ search: string; tag: string | null; archived: boolean }> = {}) {
-	return listDishes(householdId, { search: '', tag: null, archived: false, ...filter });
+function list(filter: Partial<Parameters<typeof listDishes>[1]> = {}) {
+	return listDishes(householdId, {
+		search: '',
+		tag: null,
+		archived: false,
+		sort: 'name',
+		...filter
+	});
 }
 
 function names(filter: Parameters<typeof list>[0] = {}) {
@@ -659,6 +665,31 @@ describe('ratings', () => {
 		expect(list({ archived: true })[0]?.rating).toEqual({ average: 2, count: 1 });
 	});
 
+	it('sorts by exact average, then unrated, ties by name (section 7, "Recipes")', () => {
+		const people = [userId, addMember('sam'), addMember('kim')];
+		function rated(name: string, stars: number[]) {
+			const id = makeDish(householdId, recipe(name));
+			stars.forEach((star, i) => rateDish(householdId, id, people[i] ?? userId, star));
+		}
+		rated('Zucchini', []);
+		rated('Chili', [4]);
+		// 4.33, shown rounded as 4.5, still sorts below an exact 4.5.
+		rated('Soup', [4, 4, 5]);
+		rated('Tacos', [4, 5]);
+		rated('Apple pie', []);
+		rated('Beans', [3, 5]);
+		expect(names({ sort: 'rating' })).toEqual([
+			'Tacos',
+			'Soup',
+			'Beans',
+			'Chili',
+			'Apple pie',
+			'Zucchini'
+		]);
+		expect(names({ sort: 'rating', search: 'i' })).toEqual(['Chili', 'Apple pie', 'Zucchini']);
+		expect(names()).toEqual(['Apple pie', 'Beans', 'Chili', 'Soup', 'Tacos', 'Zucchini']);
+	});
+
 	it('the database allows only 1 to 5 stars', () => {
 		const dishId = makeDish(householdId, recipe('Omelet'));
 		for (const stars of [0, 6]) {
@@ -673,7 +704,8 @@ describe('households', () => {
 	it("never shows or changes another household's dishes", () => {
 		const id = makeDish(householdId, recipe('Pound cake', { tags: ['Dessert'] }));
 		const other = makeHousehold();
-		expect(listDishes(other.householdId, { search: '', tag: null, archived: false })).toEqual([]);
+		const all = { search: '', tag: null, archived: false, sort: 'name' } as const;
+		expect(listDishes(other.householdId, all)).toEqual([]);
 		expect(listDishTags(other.householdId)).toEqual([]);
 		expectHttpError(() => getDish(other.householdId, id), 404);
 		expectHttpError(() => updateDish(other.householdId, id, recipe('Mine now'), [], NOW), 404);
