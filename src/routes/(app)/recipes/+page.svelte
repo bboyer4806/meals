@@ -107,6 +107,7 @@
 						{#if info}<span class="muted small">{info}</span>{/if}
 						{#if !recipe.hasRecipe}<span class="badge">No recipe</span>{/if}
 					</span>
+					{#if recipe.tried}<span class="badge tried">Tried</span>{/if}
 				</a>
 			</li>
 		{/each}
@@ -174,6 +175,12 @@
 	.small {
 		font-size: 0.9rem;
 		overflow-wrap: anywhere;
+	}
+
+	/* In the card's bottom right corner (section 7, "Recipes"). */
+	.tried {
+		align-self: flex-end;
+		margin: 0 0 0.25rem auto;
 	}
 
 	.empty {

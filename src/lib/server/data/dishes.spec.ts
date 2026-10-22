@@ -17,6 +17,7 @@ import {
 	listDishTags,
 	setDishArchived,
 	setDishPhoto,
+	setDishTried,
 	updateDish,
 	type DishSummary
 } from './dishes.ts';
@@ -98,6 +99,7 @@ describe('saving', () => {
 			proteinG: 5.5,
 			carbsG: 50,
 			fatG: 22,
+			tried: false,
 			archivedAt: null,
 			tags: ['Dessert', 'Baking'],
 			ingredients: [
@@ -440,6 +442,33 @@ describe('failed saves', () => {
 	});
 });
 
+describe('tried', () => {
+	it('starts not tried, and marks and unmarks a dish (section 7, "Recipe")', () => {
+		const id = makeDish(householdId, recipe('Pound cake'));
+		expect(getDish(householdId, id).tried).toBe(false);
+		setDishTried(householdId, id, true);
+		expect(getDish(householdId, id).tried).toBe(true);
+		expect(list()[0]?.tried).toBe(true);
+		setDishTried(householdId, id, false);
+		expect(getDish(householdId, id).tried).toBe(false);
+		expect(list()[0]?.tried).toBe(false);
+	});
+
+	it('keeps the tried mark when the recipe is saved from Edit recipe', () => {
+		const id = makeDish(householdId, recipe('Pound cake'));
+		setDishTried(householdId, id, true);
+		updateDish(householdId, id, recipe('Lemon pound cake'), [], LATER);
+		expect(getDish(householdId, id).tried).toBe(true);
+	});
+
+	it('works on archived dishes', () => {
+		const id = makeDish(householdId, recipe('Pound cake'));
+		setDishArchived(householdId, id, true, NOW);
+		setDishTried(householdId, id, true);
+		expect(list({ archived: true })[0]?.tried).toBe(true);
+	});
+});
+
 describe('archiving and photos', () => {
 	it('archives and restores a dish (design 6.10)', () => {
 		const id = makeDish(householdId, recipe('Pound cake'));
@@ -515,6 +544,7 @@ describe('listing', () => {
 				photoKey: KEY_A,
 				prepMinutes: 15,
 				cookMinutes: 60,
+				tried: false,
 				archivedAt: null,
 				tags: ['Spicy', 'Quick'],
 				hasRecipe: false
@@ -560,8 +590,10 @@ describe('households', () => {
 		expectHttpError(() => updateDish(other.householdId, id, recipe('Mine now'), [], NOW), 404);
 		expectHttpError(() => setDishArchived(other.householdId, id, true, NOW), 404);
 		expectHttpError(() => setDishPhoto(other.householdId, id, KEY_A, NOW), 404);
+		expectHttpError(() => setDishTried(other.householdId, id, true), 404);
 		expect(getDish(householdId, id)).toMatchObject({
 			name: 'Pound cake',
+			tried: false,
 			archivedAt: null,
 			photoKey: null
 		});

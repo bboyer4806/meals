@@ -1,7 +1,17 @@
 import { error, redirect } from '@sveltejs/kit';
+import { z } from 'zod';
 import { parseRecipeId } from '#lib/recipe-view.ts';
 import { requireHousehold } from '#lib/server/auth/guards.ts';
-import { getDish, setDishArchived } from '#lib/server/data/dishes.ts';
+import { getDish, setDishArchived, setDishTried } from '#lib/server/data/dishes.ts';
+import { attempt, parseForm } from '#lib/server/forms.ts';
+
+// A checked box sends "on"; an unchecked one sends nothing.
+const triedSchema = z.object({
+	tried: z
+		.literal('on')
+		.optional()
+		.transform((value) => value !== undefined)
+});
 
 function dishIdIn(params: { id: string }): number {
 	const dishId = parseRecipeId(params.id);
@@ -29,5 +39,14 @@ export const actions = {
 		const dishId = dishIdIn(params);
 		setDishArchived(user.householdId, dishId, false, Date.now());
 		redirect(303, `/recipes/${dishId}`);
+	},
+
+	// Saved as soon as the box is tapped (section 7, "Recipe").
+	tried: async ({ locals, params, request }) => {
+		const user = requireHousehold(locals);
+		const dishId = dishIdIn(params);
+		const parsed = parseForm(triedSchema, await request.formData(), 'tried');
+		if ('failure' in parsed) return parsed.failure;
+		return attempt('tried', () => setDishTried(user.householdId, dishId, parsed.data.tried));
 	}
 };

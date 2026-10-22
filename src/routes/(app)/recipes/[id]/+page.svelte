@@ -15,7 +15,7 @@
 	import { scaleFactor } from '#lib/scaling.ts';
 	import { splitSteps, stepHasUnscaledAmount } from '#lib/steps.ts';
 
-	let { data } = $props();
+	let { data, form } = $props();
 
 	const dish = $derived(data.dish);
 	const steps = $derived(splitSteps(dish.steps));
@@ -77,6 +77,27 @@
 		{/each}
 	</ul>
 {/if}
+
+<!-- Saved on tap, with no Save button (section 7, "Recipe"). -->
+<form
+	class="no-print"
+	method="POST"
+	action="?/tried"
+	use:enhance={() =>
+		({ update }) =>
+			update({ reset: false })}
+>
+	<label class="check-off">
+		<input
+			type="checkbox"
+			name="tried"
+			checked={dish.tried}
+			onchange={(event) => event.currentTarget.form?.requestSubmit()}
+		/>
+		<span>Tried it</span>
+	</label>
+	{#if form?.action === 'tried' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
+</form>
 
 {#if dish.prepMinutes !== null || dish.cookMinutes !== null}
 	<dl class="times">

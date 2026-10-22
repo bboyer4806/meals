@@ -9,6 +9,7 @@ import {
 	addRecipe,
 	expect,
 	makeJpeg,
+	open,
 	photoFile,
 	signInAs,
 	test,
@@ -504,6 +505,48 @@ test('goes back to the recipe after saving an edit, so Back leaves it in one ste
 	await page.goBack();
 	await expect(page).toHaveURL(/\/recipes$/);
 	await expect(page.getByRole('link', { name: /^Cheese omelet/ })).toBeVisible();
+});
+
+test('marks a recipe tried from its page, shown as a badge on its card', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', tags: ['Breakfast'] });
+	addRecipe(db, person.householdId, { name: 'Pancakes' });
+	const tried = () => db.prepare('select tried from dishes where id = ?').pluck().get(dishId);
+	const badges = page.locator('.recipes .badge', { hasText: /^Tried$/ });
+
+	await open(page, `/recipes/${dishId}`);
+	const box = page.getByRole('checkbox', { name: 'Tried it' });
+	await expect(box).not.toBeChecked();
+	// Saved on tap, with no Save button.
+	await box.check();
+	await expect.poll(tried).toBe(1);
+	await page.reload();
+	await expect(box).toBeChecked();
+	// Left out of the printed recipe.
+	await page.emulateMedia({ media: 'print' });
+	await expect(box).toBeHidden();
+	await page.emulateMedia({ media: 'screen' });
+
+	await page.goto('/recipes');
+	await expect(badges).toHaveCount(1);
+	await expect(page.getByRole('link', { name: /^Omelet/ })).toContainText('Tried');
+
+	await open(page, `/recipes/${dishId}`);
+	await box.uncheck();
+	await expect.poll(tried).toBe(0);
+	await page.goto('/recipes');
+	await expect(badges).toHaveCount(0);
+
+	// The same on an archived recipe and on Show archived.
+	db.prepare('update dishes set archived_at = ? where id = ?').run(Date.now(), dishId);
+	await open(page, `/recipes/${dishId}`);
+	await box.check();
+	await expect.poll(tried).toBe(1);
+	await page.goto('/recipes?archived=1');
+	await expect(page.getByRole('link', { name: /^Omelet/ })).toContainText('Tried');
 });
 
 /** Makes requests that match take a while, as on a slow phone connection. */

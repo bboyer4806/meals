@@ -332,8 +332,9 @@ Order), `status` (`to_order`, `ordered` or `received`; Q14), `note`, `created_at
 **dishes** (dishes and recipes are one table; Q2): `name` (unique per household,
 ignoring case), `servings` (at least 1), `prep_minutes`, `cook_minutes`, `steps` (text,
 one step per line), `notes`, `source` (a URL or a book), `photo_key`, `calories`,
-`protein_g`, `carbs_g`, `fat_g` (per serving, all optional; Q31b), `archived_at`,
-`created_at`, `updated_at`.
+`protein_g`, `carbs_g`, `fat_g` (per serving, all optional; Q31b), `tried` (whether the
+household has made it; false until someone checks Tried it), `archived_at`, `created_at`,
+`updated_at`.
 
 **dish_tags:** `dish_id`, `tag` (one row per tag, unique per dish ignoring case).
 
@@ -579,7 +580,7 @@ out. Help sits in the header to the left of More.
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | History          | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
 | Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, archive and restore. Shows each item's default store and when and where it was last bought. |
-| Recipes          | `/recipes`                           | Search by name, filter by tag, photo thumbnails, total time, the "No recipe" label, and New recipe.                                  |
+| Recipes          | `/recipes`                           | Search by name, filter by tag, photo thumbnails, total time, the "No recipe" label, a "Tried" badge in the bottom right of tried recipes, and New recipe. |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
 | Edit recipe      | `/recipes/new`, `/recipes/[id]/edit` | See below.                                                                                                                           |
 | Cooking view     | `/recipes/[id]/cook`                 | Large text, the screen stays on, and you tap ingredients and steps to check them off (Q36).                                          |
@@ -639,12 +640,14 @@ store, note, Mark ordered, Didn't come, Got fewer, and Delete. An item's notes (
 size) show under its name.
 
 **Recipe.** "‹ Recipes" goes to the Recipes list with no search or filters, even when the
-recipe was opened from a dinner. Photo, name, tags, prep, cook and total time, and a
-servings control (plus and minus). Ingredients grouped by section and scaled (section
+recipe was opened from a dinner. Photo, name, tags, a **Tried it** checkbox, prep, cook and
+total time, and a servings control (plus and minus). Tried it saves as soon as it's tapped,
+with no Save button, and is shared by the household (6.11); Edit recipe leaves it as it was,
+and it works the same on archived recipes. Ingredients grouped by section and scaled (section
 6.6), numbered steps with warnings when scaled (6.7), notes, source (a link when it's a
 URL), and nutrition per serving. Actions: Cook, Print, Edit, Archive ("Check pantry" is
 hidden for now; 6.8). Print uses a print layout of this page at the current servings,
-without buttons or navigation (including "‹ Recipes").
+without buttons, Tried it or navigation (including "‹ Recipes").
 
 **Edit recipe.** Name, photo (take or choose; resized on the phone), servings
 (pre-filled with the household's usual number for a new recipe), prep and cook minutes,
