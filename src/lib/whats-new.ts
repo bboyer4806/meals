@@ -14,6 +14,16 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.5',
+		released: '2026-10-21',
+		lines: [
+			"Add a dinner on a day's page to plan up to 5 dinners that day, such as one for the kids and one for the adults. Each has its own label, dishes, servings and note.",
+			'Check Tried it on a recipe once your household has made it. Tried recipes show a Tried badge on the Recipes list.',
+			"Rate a recipe from 1 to 5 stars on its page. Your household's average shows on the recipe and on its card in Recipes.",
+			'Sort Recipes by name or by rating with Sort, beside the search box.'
+		]
+	},
+	{
 		version: '1.4',
 		released: '2026-10-21',
 		lines: [
