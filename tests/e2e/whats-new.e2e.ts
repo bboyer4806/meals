@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.4 was released on 2026-10-21.
+// What's new (design 7). 1.5 was released on 2026-10-21.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -23,13 +23,21 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.4', '1.3', '1.2', '1.1']);
-	const [newest, previous, newer, older] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.5', '1.4', '1.3', '1.2', '1.1']);
+	const [latest, newest, previous, newer, older] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
 		page.locator('section').nth(2),
-		page.locator('section').nth(3)
+		page.locator('section').nth(3),
+		page.locator('section').nth(4)
 	];
+	await expect(latest.getByText('Released October 21, 2026')).toBeVisible();
+	await expect(latest.getByRole('listitem')).toHaveText([
+		"Add a dinner on a day's page to plan up to 5 dinners that day, such as one for the kids and one for the adults. Each has its own label, dishes, servings and note.",
+		'Check Tried it on a recipe once your household has made it. Tried recipes show a Tried badge on the Recipes list.',
+		"Rate a recipe from 1 to 5 stars on its page. Your household's average shows on the recipe and on its card in Recipes.",
+		'Sort Recipes by name or by rating with Sort, beside the search box.'
+	]);
 	await expect(newest.getByText('Released October 21, 2026')).toBeVisible();
 	await expect(newest.getByRole('listitem')).toHaveText([
 		'Tap Help at the top of any page to see what that page is for and how to use it.',
