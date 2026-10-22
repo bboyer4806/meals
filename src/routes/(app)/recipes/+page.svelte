@@ -96,9 +96,9 @@
 
 <p>
 	{#if data.archived}
-		<a class="link-tap" href={listAddress('', null, false)}>Show active</a>
+		<a class="link-tap" href={listAddress(data.search, data.tag, false)}>Show active</a>
 	{:else}
-		<a class="link-tap" href={listAddress('', null, true)}>Show archived</a>
+		<a class="link-tap" href={listAddress(data.search, data.tag, true)}>Show archived</a>
 	{/if}
 </p>
 

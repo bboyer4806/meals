@@ -599,7 +599,7 @@ test("rates a recipe from its page, shown with the household's average on its ca
 	await expect(cardRating).toHaveCount(0);
 });
 
-test('sorts recipes by rating, kept with the search and tag in the address', async ({
+test('sorts recipes by rating, kept with the search, tag and archived switch', async ({
 	page,
 	db,
 	person
@@ -611,8 +611,20 @@ test('sorts recipes by rating, kept with the search and tag in the address', asy
 	const browniesId = addRecipe(db, person.householdId, { name: 'Brownies', tags: ['Dessert'] });
 	addRecipe(db, person.householdId, { name: 'Chili', tags: ['Dinner'] });
 	addRecipe(db, person.householdId, { name: 'Lemon bars', tags: ['Dessert'], archived: true });
+	const cherryId = addRecipe(db, person.householdId, {
+		name: 'Cherry pie',
+		tags: ['Dessert'],
+		archived: true
+	});
+	const pecanId = addRecipe(db, person.householdId, {
+		name: 'Pecan pie',
+		tags: ['Dessert'],
+		archived: true
+	});
 	rate.run(person.householdId, pieId, person.userId, 3);
 	rate.run(person.householdId, browniesId, person.userId, 5);
+	rate.run(person.householdId, cherryId, person.userId, 2);
+	rate.run(person.householdId, pecanId, person.userId, 4);
 	const names = page.locator('.recipes .name');
 	const sort = page.getByLabel('Sort');
 
@@ -625,7 +637,7 @@ test('sorts recipes by rating, kept with the search and tag in the address', asy
 	await expect(page).toHaveURL(/\?q=&sort=rating$/);
 	await expect(names).toHaveText(['Brownies', 'Apple pie', 'Chili']);
 
-	// The tag, search and archived switch each keep the sort.
+	// Changing the tag, search or archived switch keeps the others.
 	const chips = page.getByRole('list', { name: 'Filter by tag' });
 	await chips.getByRole('link', { name: 'Dessert' }).click();
 	await expect(page).toHaveURL(/\?tag=Dessert&sort=rating$/);
@@ -637,12 +649,19 @@ test('sorts recipes by rating, kept with the search and tag in the address', asy
 	await expect(page).toHaveURL(/\?tag=Dessert&q=pie&sort=rating$/);
 	await expect(names).toHaveText(['Apple pie']);
 	await page.getByRole('link', { name: 'Show archived' }).click();
-	await expect(page).toHaveURL(/\/recipes\?archived=1&sort=rating$/);
-	await expect(names).toHaveText(['Lemon bars']);
+	await expect(page).toHaveURL(/\/recipes\?q=pie&tag=Dessert&archived=1&sort=rating$/);
+	await expect(search).toHaveValue('pie');
+	await expect(sort).toHaveValue('rating');
+	await expect(names).toHaveText(['Pecan pie', 'Cherry pie']);
+	await page.getByRole('link', { name: 'Show active' }).click();
+	await expect(page).toHaveURL(/\/recipes\?q=pie&tag=Dessert&sort=rating$/);
+	await expect(names).toHaveText(['Apple pie']);
 
-	// Back keeps it.
+	// Back keeps them.
 	await page.goBack();
 	await expect(sort).toHaveValue('rating');
+	await expect(names).toHaveText(['Pecan pie', 'Cherry pie']);
+	await page.goForward();
 	await expect(names).toHaveText(['Apple pie']);
 
 	// Back to A to Z, keeping the tag.

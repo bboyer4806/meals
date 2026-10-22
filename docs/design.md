@@ -647,9 +647,10 @@ size) show under its name.
 **Recipes.** A **Sort** dropdown beside the search box offers **Name** (A to Z, the default) and
 **Rating** (highest first). Choosing one reorders the list right away, without tapping Search.
 Rating uses the household's exact average, not the rounded one shown; unrated recipes go last,
-and equal averages fall back to name. The sort is kept in the address with the search, tag and
-archived switch, and changing any of those keeps it, so Back and shared links keep it. An
-unknown sort shows Name. Opening Recipes from the tab bar or "‹ Recipes" starts at Name.
+and equal averages fall back to name. The sort, search, tag and archived switch are kept in the
+address, so Back and shared links keep them, and changing any one keeps the others; "Show all
+recipes" clears the search and tag. An unknown sort shows Name. Opening Recipes from the tab
+bar or "‹ Recipes" starts at Name.
 
 **Recipe.** "‹ Recipes" goes to the Recipes list with no search or filters, sorted by name,
 even when the recipe was opened from a dinner. Photo, name, tags, a **Tried it** checkbox, your
