@@ -1554,7 +1554,7 @@ test('requests a dish from Recipes, linked, with who asked and the note', async 
 	person
 }) => {
 	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna' });
-	await page.goto('/menu');
+	await open(page, '/menu');
 	await openRequestSheet(page);
 	const sheet = requestSheet(page);
 	await sheet.getByRole('combobox', { name: 'Dish' }).fill('las');
@@ -1576,7 +1576,7 @@ test('requests a dish from Recipes, linked, with who asked and the note', async 
 });
 
 test('requests a new name as plain text, adding no dish', async ({ page, db, person }) => {
-	await page.goto('/menu');
+	await open(page, '/menu');
 	await openRequestSheet(page);
 	const sheet = requestSheet(page);
 	await sheet.getByRole('combobox', { name: 'Dish' }).fill('Shrimp boil');
@@ -1594,7 +1594,7 @@ test('stops the dish at 80 characters and the note at 200, typed or pasted', asy
 	page,
 	person: _
 }) => {
-	await page.goto('/menu');
+	await open(page, '/menu');
 	await openRequestSheet(page);
 	const sheet = requestSheet(page);
 	const dish = sheet.getByRole('combobox', { name: 'Dish' });
@@ -1623,7 +1623,7 @@ test('stops the dish at 80 characters and the note at 200, typed or pasted', asy
 });
 
 test('needs a dish name', async ({ page, person: _ }) => {
-	await page.goto('/menu');
+	await open(page, '/menu');
 	await openRequestSheet(page);
 	const sheet = requestSheet(page);
 	const dish = sheet.getByRole('combobox', { name: 'Dish' });
