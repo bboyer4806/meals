@@ -7,6 +7,7 @@
 	import {
 		MAX_SERVINGS,
 		formatMinutes,
+		formatRating,
 		nutritionFacts,
 		servingsLabel,
 		sourceLink,
@@ -97,6 +98,32 @@
 		<span>Tried it</span>
 	</label>
 	{#if form?.action === 'tried' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
+</form>
+
+<!-- Your own stars, saved on tap; the current star again clears them. Beside them, the
+household's average, with no names (section 7, "Recipe"). -->
+<form
+	class="rating no-print"
+	method="POST"
+	action="?/rate"
+	use:enhance={() =>
+		({ update }) =>
+			update({ reset: false })}
+>
+	<div class="stars" role="group" aria-label="Your rating">
+		{#each [1, 2, 3, 4, 5] as stars (stars)}
+			<button
+				class="star"
+				name="stars"
+				value={stars}
+				aria-label={stars === 1 ? '1 star' : `${stars} stars`}
+				aria-pressed={data.ownRating === stars}
+				>{data.ownRating !== null && stars <= data.ownRating ? '★' : '☆'}</button
+			>
+		{/each}
+	</div>
+	{#if dish.rating}<span class="average">{formatRating(dish.rating)}</span>{/if}
+	{#if form?.action === 'rate' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
 </form>
 
 {#if dish.prepMinutes !== null || dish.cookMinutes !== null}
@@ -240,6 +267,32 @@
 		align-items: center;
 		gap: 0.75rem;
 		margin-bottom: 0.75rem;
+	}
+
+	.rating {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0 0.75rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.stars {
+		display: flex;
+	}
+
+	.star {
+		width: var(--tap);
+		padding: 0;
+		border: none;
+		background: none;
+		font-size: 1.6rem;
+		line-height: 1;
+		color: var(--accent);
+	}
+
+	.average {
+		font-weight: 700;
 	}
 
 	.times,

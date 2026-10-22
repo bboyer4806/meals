@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../db/index.ts';
-import { dishes, dishIngredients, dishTags, items } from '../db/schema.ts';
+import { dishes, dishIngredients, dishRatings, dishTags, items, users } from '../db/schema.ts';
 import {
 	expectHttpError,
 	freshDb,
@@ -13,14 +13,17 @@ import {
 import {
 	createDish,
 	getDish,
+	getOwnRating,
 	listDishes,
 	listDishTags,
+	rateDish,
 	setDishArchived,
 	setDishPhoto,
 	setDishTried,
 	updateDish,
 	type DishSummary
 } from './dishes.ts';
+import { removeMember } from './households.ts';
 import { createItem, findItemByName, listCatalog, setItemArchived } from './items.ts';
 
 // Sat 2026-10-03 12:00 in Chicago.
@@ -30,10 +33,11 @@ const KEY_A = 'a'.repeat(32);
 const KEY_B = 'b'.repeat(32);
 
 let householdId: number;
+let userId: number;
 
 beforeEach(() => {
 	freshDb();
-	({ householdId } = makeHousehold());
+	({ householdId, userId } = makeHousehold());
 });
 
 function list(filter: Partial<{ search: string; tag: string | null; archived: boolean }> = {}) {
@@ -101,6 +105,7 @@ describe('saving', () => {
 			fatG: 22,
 			tried: false,
 			archivedAt: null,
+			rating: null,
 			tags: ['Dessert', 'Baking'],
 			ingredients: [
 				{ ...row(0, 'Butter'), section: 'For the cake', amount: 1, unit: 'cup', prepNote: 'softened' },
@@ -546,6 +551,7 @@ describe('listing', () => {
 				cookMinutes: 60,
 				tried: false,
 				archivedAt: null,
+				rating: null,
 				tags: ['Spicy', 'Quick'],
 				hasRecipe: false
 			} satisfies DishSummary
@@ -580,6 +586,89 @@ describe('listing', () => {
 	});
 });
 
+describe('ratings', () => {
+	function addMember(name: string): number {
+		return db()
+			.insert(users)
+			.values({
+				householdId,
+				googleSub: `sub-${name}`,
+				email: `${name}@example.com`,
+				name,
+				createdAt: 0
+			})
+			.returning({ id: users.id })
+			.get().id;
+	}
+
+	it("starts unrated, then averages and counts everyone's stars (section 7, \"Recipe\")", () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		const sam = addMember('sam');
+		expect(getDish(householdId, id).rating).toBeNull();
+		expect(list()[0]?.rating).toBeNull();
+		expect(getOwnRating(householdId, id, userId)).toBeNull();
+
+		rateDish(householdId, id, userId, 4);
+		rateDish(householdId, id, sam, 5);
+		expect(getDish(householdId, id).rating).toEqual({ average: 4.5, count: 2 });
+		expect(list()[0]?.rating).toEqual({ average: 4.5, count: 2 });
+	});
+
+	it("keeps each person's rating their own", () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		const sam = addMember('sam');
+		rateDish(householdId, id, userId, 4);
+		rateDish(householdId, id, sam, 2);
+		rateDish(householdId, id, sam, 3);
+		expect(getOwnRating(householdId, id, userId)).toBe(4);
+		expect(getOwnRating(householdId, id, sam)).toBe(3);
+		expect(getDish(householdId, id).rating).toEqual({ average: 3.5, count: 2 });
+	});
+
+	it('clears your rating when you tap your current star again', () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		const sam = addMember('sam');
+		rateDish(householdId, id, userId, 4);
+		rateDish(householdId, id, sam, 4);
+		rateDish(householdId, id, userId, 4);
+		expect(getOwnRating(householdId, id, userId)).toBeNull();
+		expect(getOwnRating(householdId, id, sam)).toBe(4);
+		expect(getDish(householdId, id).rating).toEqual({ average: 4, count: 1 });
+		rateDish(householdId, id, sam, 4);
+		expect(getDish(householdId, id).rating).toBeNull();
+	});
+
+	it("keeps a removed member's rating in the average and count", () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		const sam = addMember('sam');
+		rateDish(householdId, id, userId, 3);
+		rateDish(householdId, id, sam, 5);
+		removeMember(householdId, userId, sam);
+		expect(getDish(householdId, id).rating).toEqual({ average: 4, count: 2 });
+		expect(list()[0]?.rating).toEqual({ average: 4, count: 2 });
+	});
+
+	it("doesn't change Tried it, and works on archived recipes", () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		setDishArchived(householdId, id, true, NOW);
+		rateDish(householdId, id, userId, 2);
+		expect(getDish(householdId, id)).toMatchObject({
+			tried: false,
+			rating: { average: 2, count: 1 }
+		});
+		expect(list({ archived: true })[0]?.rating).toEqual({ average: 2, count: 1 });
+	});
+
+	it('the database allows only 1 to 5 stars', () => {
+		const dishId = makeDish(householdId, recipe('Omelet'));
+		for (const stars of [0, 6]) {
+			expect(() =>
+				db().insert(dishRatings).values({ householdId, dishId, userId, stars }).run()
+			).toThrow(/CHECK constraint/);
+		}
+	});
+});
+
 describe('households', () => {
 	it("never shows or changes another household's dishes", () => {
 		const id = makeDish(householdId, recipe('Pound cake', { tags: ['Dessert'] }));
@@ -591,6 +680,7 @@ describe('households', () => {
 		expectHttpError(() => setDishArchived(other.householdId, id, true, NOW), 404);
 		expectHttpError(() => setDishPhoto(other.householdId, id, KEY_A, NOW), 404);
 		expectHttpError(() => setDishTried(other.householdId, id, true), 404);
+		expectHttpError(() => rateDish(other.householdId, id, other.userId, 5), 404);
 		expect(getDish(householdId, id)).toMatchObject({
 			name: 'Pound cake',
 			tried: false,
@@ -598,6 +688,20 @@ describe('households', () => {
 			photoKey: null
 		});
 		expectHttpError(() => getDish(householdId, id + 1000), 404);
+	});
+
+	it("keeps ratings in their household; the database rejects another household's dish", () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		const other = makeHousehold();
+		const theirs = makeDish(other.householdId, recipe('Omelet'));
+		rateDish(householdId, id, userId, 2);
+		rateDish(other.householdId, theirs, other.userId, 5);
+		expect(getDish(householdId, id).rating).toEqual({ average: 2, count: 1 });
+		expect(getDish(other.householdId, theirs).rating).toEqual({ average: 5, count: 1 });
+		expect(getOwnRating(other.householdId, id, userId)).toBeNull();
+		expect(() =>
+			db().insert(dishRatings).values({ householdId, dishId: theirs, userId, stars: 3 }).run()
+		).toThrow(/FOREIGN KEY/);
 	});
 
 	it("uses the household's own items, never another household's", () => {

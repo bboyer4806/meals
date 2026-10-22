@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
 	MAX_SERVINGS,
 	formatMinutes,
+	formatRating,
 	groupBySection,
 	nutritionFacts,
 	parseRecipeId,
+	roundToHalfStar,
 	servingsLabel,
 	sourceLink,
 	targetServings,
@@ -155,5 +157,24 @@ describe('nutritionFacts', () => {
 
 	it('shows a zero that was entered', () => {
 		expect(nutritionFacts({ ...none, fatG: 0 })).toEqual([{ label: 'Fat', value: '0 g' }]);
+	});
+});
+
+describe('roundToHalfStar', () => {
+	it('rounds to the nearest half star, halfway up', () => {
+		expect(roundToHalfStar(4)).toBe(4);
+		expect(roundToHalfStar(4.2)).toBe(4);
+		expect(roundToHalfStar(4.25)).toBe(4.5);
+		expect(roundToHalfStar(4.5)).toBe(4.5);
+		expect(roundToHalfStar(4.7)).toBe(4.5);
+		expect(roundToHalfStar(4.75)).toBe(5);
+		expect(roundToHalfStar(10 / 3)).toBe(3.5);
+	});
+});
+
+describe('formatRating', () => {
+	it('shows the rounded average and the number of ratings', () => {
+		expect(formatRating({ average: 4, count: 1 })).toBe('★ 4 (1)');
+		expect(formatRating({ average: 4.25, count: 4 })).toBe('★ 4.5 (4)');
 	});
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatMinutes, totalMinutes } from '#lib/recipe-view.ts';
+	import { formatMinutes, formatRating, totalMinutes } from '#lib/recipe-view.ts';
 	import { foldCase } from '#lib/text.ts';
 
 	let { data } = $props();
@@ -107,7 +107,12 @@
 						{#if info}<span class="muted small">{info}</span>{/if}
 						{#if !recipe.hasRecipe}<span class="badge">No recipe</span>{/if}
 					</span>
-					{#if recipe.tried}<span class="badge tried">Tried</span>{/if}
+					{#if recipe.rating || recipe.tried}
+						<span class="corner">
+							{#if recipe.rating}<span class="rating">{formatRating(recipe.rating)}</span>{/if}
+							{#if recipe.tried}<span class="badge tried">Tried</span>{/if}
+						</span>
+					{/if}
 				</a>
 			</li>
 		{/each}
@@ -177,10 +182,26 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* In the card's bottom right corner (section 7, "Recipes"). */
+	/* The rating in the card's upper right corner, Tried in the bottom right (section 7,
+	"Recipes"). */
+	.corner {
+		flex: none;
+		align-self: stretch;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		margin-left: auto;
+		padding: 0.25rem 0;
+	}
+
+	.rating {
+		font-size: 0.9rem;
+		font-weight: 700;
+		white-space: nowrap;
+	}
+
 	.tried {
-		align-self: flex-end;
-		margin: 0 0 0.25rem auto;
+		margin-top: auto;
 	}
 
 	.empty {

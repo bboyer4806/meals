@@ -91,3 +91,13 @@ export function nutritionFacts(dish: {
 		value === null ? [] : [{ label, value: `${formatQuantity(value)}${unit}` }]
 	);
 }
+
+/** An average of 1 to 5 stars to the nearest half star; halfway rounds up, so 4.25 is 4.5. */
+export function roundToHalfStar(average: number): number {
+	return Math.round(average * 2) / 2;
+}
+
+/** The household's rating as the Recipe and Recipes pages show it: "★ 4.5 (2)" (section 7). */
+export function formatRating(rating: { average: number; count: number }): string {
+	return `★ ${roundToHalfStar(rating.average)} (${rating.count})`;
+}
