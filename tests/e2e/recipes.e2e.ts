@@ -549,6 +549,56 @@ test('marks a recipe tried from its page, shown as a badge on its card', async (
 	await expect(page.getByRole('link', { name: /^Omelet/ })).toContainText('Tried');
 });
 
+test("rates a recipe from its page, shown with the household's average on its card", async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet' });
+	addRecipe(db, person.householdId, { name: 'Pancakes' });
+	const card = page.getByRole('link', { name: /^Omelet/ });
+	const cardRating = page.locator('.recipes .rating');
+	const average = page.locator('.rating .average');
+	const fourStars = page.getByRole('button', { name: '4 stars' });
+
+	await open(page, `/recipes/${dishId}`);
+	await expect(average).toHaveCount(0);
+	// Saved on tap, with no Save button.
+	await fourStars.click();
+	await expect(average).toHaveText('★ 4 (1)');
+	await expect(fourStars).toHaveAttribute('aria-pressed', 'true');
+	await page.reload();
+	await expect(average).toHaveText('★ 4 (1)');
+	// Rating doesn't change Tried it.
+	await expect(page.getByRole('checkbox', { name: 'Tried it' })).not.toBeChecked();
+	// Left out of the printed recipe.
+	await page.emulateMedia({ media: 'print' });
+	await expect(fourStars).toBeHidden();
+	await expect(average).toBeHidden();
+	await page.emulateMedia({ media: 'screen' });
+
+	// In the upper right corner of the rated recipe's card only.
+	await page.goto('/recipes');
+	await expect(cardRating).toHaveCount(1);
+	await expect(card.locator('.rating')).toHaveText('★ 4 (1)');
+	const cardBox = await card.boundingBox();
+	const ratingBox = await cardRating.boundingBox();
+	expect(cardBox && ratingBox).toBeTruthy();
+	if (cardBox && ratingBox) {
+		expect(ratingBox.y + ratingBox.height).toBeLessThan(cardBox.y + cardBox.height / 2);
+		expect(ratingBox.x + ratingBox.width).toBeGreaterThan(cardBox.x + cardBox.width - 2);
+	}
+
+	// Tapping the current star again clears it from both pages.
+	await open(page, `/recipes/${dishId}`);
+	await fourStars.click();
+	await expect(average).toHaveCount(0);
+	await expect(fourStars).toHaveAttribute('aria-pressed', 'false');
+	await page.goto('/recipes');
+	await expect(card).toBeVisible();
+	await expect(cardRating).toHaveCount(0);
+});
+
 /** Makes requests that match take a while, as on a slow phone connection. */
 async function slow(page: Page, matches: (url: URL) => boolean, ms: number) {
 	await page.route(matches, async (route) => {

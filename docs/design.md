@@ -343,6 +343,10 @@ household has made it; false until someone checks Tried it), `archived_at`, `cre
 with an amount; a known unit code or custom text; Q32b), `item_id` (required; Q1),
 `prep_note` (such as "diced").
 
+**dish_ratings:** `dish_id`, `user_id` (who rated; one rating per person per dish; removing
+them from the household empties it and keeps the rating in the average and count), `stars`
+(1 to 5; section 7, "Recipe").
+
 **dinners:** `date` (up to 5 per household and date, in the order added; 6.9), `label`
 (set on every dinner of a date with more than one, and only then), `type` (`cook`,
 `eat_out`, `going` or `leftovers`; Q26), `note`, `servings` (at least 1; Q28), `created_at`,
@@ -364,7 +368,8 @@ the mark).
 
 How they connect: a household has users, invites, stores, items, grocery lines, dishes,
 dinners, dish requests and at most one checklist. A dish request points at the member who
-asked and sometimes a dish. A grocery line points at an item and a store. An
+asked and sometimes a dish. A rating points at a dish and, until they're removed, the member
+who rated it. A grocery line points at an item and a store. An
 ingredient points at a dish and an item. A dinner has dishes through `dinner_dishes`. A
 mark points at a checklist, an item and sometimes a grocery line.
 
@@ -580,7 +585,7 @@ out. Help sits in the header to the left of More.
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | History          | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
 | Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, archive and restore. Shows each item's default store and when and where it was last bought. |
-| Recipes          | `/recipes`                           | Search by name, filter by tag, photo thumbnails, total time, the "No recipe" label, a "Tried" badge in the bottom right of tried recipes, and New recipe. |
+| Recipes          | `/recipes`                           | Search by name, filter by tag, photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, and New recipe. |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
 | Edit recipe      | `/recipes/new`, `/recipes/[id]/edit` | See below.                                                                                                                           |
 | Cooking view     | `/recipes/[id]/cook`                 | Large text, the screen stays on, and you tap ingredients and steps to check them off (Q36).                                          |
@@ -640,14 +645,18 @@ store, note, Mark ordered, Didn't come, Got fewer, and Delete. An item's notes (
 size) show under its name.
 
 **Recipe.** "‹ Recipes" goes to the Recipes list with no search or filters, even when the
-recipe was opened from a dinner. Photo, name, tags, a **Tried it** checkbox, prep, cook and
-total time, and a servings control (plus and minus). Tried it saves as soon as it's tapped,
-with no Save button, and is shared by the household (6.11); Edit recipe leaves it as it was,
-and it works the same on archived recipes. Ingredients grouped by section and scaled (section
+recipe was opened from a dinner. Photo, name, tags, a **Tried it** checkbox, your rating,
+prep, cook and total time, and a servings control (plus and minus). Tried it saves as soon as
+it's tapped, with no Save button, and is shared by the household (6.11); Edit recipe leaves it
+as it was, and it works the same on archived recipes. Your rating is five stars under Tried
+it, your own and nobody else's: tapping a star saves it right away, and tapping your current
+star again clears it. Beside the stars is the household's average, rounded to the nearest half
+star, with the number of ratings, such as "★ 4.5 (2)", and no names. A removed member's ratings
+stay in it. Rating doesn't change Tried it, and works the same on archived recipes. Ingredients grouped by section and scaled (section
 6.6), numbered steps with warnings when scaled (6.7), notes, source (a link when it's a
 URL), and nutrition per serving. Actions: Cook, Print, Edit, Archive ("Check pantry" is
 hidden for now; 6.8). Print uses a print layout of this page at the current servings,
-without buttons, Tried it or navigation (including "‹ Recipes").
+without buttons, Tried it, ratings or navigation (including "‹ Recipes").
 
 **Edit recipe.** Name, photo (take or choose; resized on the phone), servings
 (pre-filled with the household's usual number for a new recipe), prep and cook minutes,

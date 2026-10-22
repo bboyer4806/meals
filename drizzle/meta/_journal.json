@@ -57,6 +57,13 @@
       "when": 1792626141406,
       "tag": "0007_dish-tried",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792627514429,
+      "tag": "0008_dish-ratings",
+      "breakpoints": true
     }
   ]
 }

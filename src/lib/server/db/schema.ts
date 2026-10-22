@@ -252,6 +252,31 @@ export const dishIngredients = sqliteTable(
 	]
 );
 
+// One person's 1 to 5 stars for a dish, set on the recipe page (section 7, "Recipe").
+export const dishRatings = sqliteTable(
+	'dish_ratings',
+	{
+		id: integer('id').primaryKey(),
+		householdId: integer('household_id')
+			.notNull()
+			.references(() => households.id),
+		dishId: integer('dish_id').notNull(),
+		// Who rated. Empty once they're removed from the household, so the rating still counts.
+		userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+		stars: integer('stars').notNull()
+	},
+	(t) => [
+		foreignKey({
+			columns: [t.householdId, t.dishId],
+			foreignColumns: [dishes.householdId, dishes.id]
+		}),
+		uniqueIndex('dish_ratings_dish_user').on(t.dishId, t.userId),
+		index('dish_ratings_household').on(t.householdId),
+		index('dish_ratings_user').on(t.userId),
+		check('dish_ratings_stars', sql`${t.stars} between 1 and 5`)
+	]
+);
+
 // A date's dinners, in the order they were added (by id); up to 5, and labeled only when there's
 // more than one (6.9). A date with no row isn't planned.
 export const dinners = sqliteTable(

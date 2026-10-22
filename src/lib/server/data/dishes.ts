@@ -3,7 +3,7 @@ import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { splitSteps } from '../../steps.ts';
 import { foldCase, normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
-import { dishes, dishIngredients, dishTags, items } from '../db/schema.ts';
+import { dishes, dishIngredients, dishRatings, dishTags, items } from '../db/schema.ts';
 import { createItem, findItemByName, setItemArchived } from './items.ts';
 
 // Dishes and recipes are one record, and the recipe details are optional (Q2).
@@ -54,6 +54,9 @@ export type DishIngredient = {
 	prepNote: string | null;
 };
 
+/** The household's stars for a dish: the plain average, unrounded, and how many rated it. */
+export type DishRating = { average: number; count: number };
+
 export type DishDetail = {
 	id: number;
 	name: string;
@@ -70,6 +73,8 @@ export type DishDetail = {
 	fatG: number | null;
 	tried: boolean;
 	archivedAt: number | null;
+	/** Null until someone rates it. */
+	rating: DishRating | null;
 	tags: string[];
 	ingredients: DishIngredient[];
 };
@@ -82,6 +87,8 @@ export type DishSummary = {
 	cookMinutes: number | null;
 	tried: boolean;
 	archivedAt: number | null;
+	/** Null until someone rates it. */
+	rating: DishRating | null;
 	tags: string[];
 	/** False for a dish with no ingredients and no steps, labeled "No recipe" (change 2.1.1). */
 	hasRecipe: boolean;
@@ -291,6 +298,63 @@ export function setDishTried(householdId: number, dishId: number, tried: boolean
 }
 
 /**
+ * Sets the person's own stars for the dish, or clears them when they're the stars it already
+ * has, as tapping the current star does. Nobody else's rating changes (section 7, "Recipe").
+ */
+export function rateDish(householdId: number, dishId: number, userId: number, stars: number): void {
+	transaction(() => {
+		findDish(householdId, dishId);
+		const own = and(eq(dishRatings.dishId, dishId), eq(dishRatings.userId, userId));
+		const current = db().select({ stars: dishRatings.stars }).from(dishRatings).where(own).get();
+		if (current === undefined) {
+			db().insert(dishRatings).values({ householdId, dishId, userId, stars }).run();
+		} else if (current.stars === stars) {
+			db().delete(dishRatings).where(own).run();
+		} else {
+			db().update(dishRatings).set({ stars }).where(own).run();
+		}
+	});
+}
+
+/** The person's own stars for the dish, or null when they haven't rated it. */
+export function getOwnRating(householdId: number, dishId: number, userId: number): number | null {
+	const row = db()
+		.select({ stars: dishRatings.stars })
+		.from(dishRatings)
+		.where(
+			and(
+				eq(dishRatings.householdId, householdId),
+				eq(dishRatings.dishId, dishId),
+				eq(dishRatings.userId, userId)
+			)
+		)
+		.get();
+	return row?.stars ?? null;
+}
+
+/**
+ * Every rated dish's average and count, to join on the dish id. A removed member's ratings
+ * still count (section 5, "dish_ratings").
+ */
+function ratingTotals(householdId: number) {
+	return db()
+		.select({
+			dishId: dishRatings.dishId,
+			average: sql<number>`avg(${dishRatings.stars})`.as('rating_average'),
+			count: sql<number>`count(*)`.as('rating_count')
+		})
+		.from(dishRatings)
+		.where(eq(dishRatings.householdId, householdId))
+		.groupBy(dishRatings.dishId)
+		.as('rating_totals');
+}
+
+/** The joined totals, which are empty for a dish nobody has rated. */
+function ratingOf(average: number | null, count: number | null): DishRating | null {
+	return average === null || count === null ? null : { average, count };
+}
+
+/**
  * Sets or clears the photo. Returns the previous key, so the caller can delete its files, or
  * null when there was none or it didn't change.
  */
@@ -308,12 +372,15 @@ export function setDishPhoto(
 }
 
 export function getDish(householdId: number, dishId: number): DishDetail {
-	const dish = db()
-		.select(detailFields)
+	const ratings = ratingTotals(householdId);
+	const row = db()
+		.select({ ...detailFields, ratingAverage: ratings.average, ratingCount: ratings.count })
 		.from(dishes)
+		.leftJoin(ratings, eq(ratings.dishId, dishes.id))
 		.where(and(eq(dishes.id, dishId), eq(dishes.householdId, householdId)))
 		.get();
-	if (!dish) error(404, 'Not found');
+	if (!row) error(404, 'Not found');
+	const { ratingAverage, ratingCount, ...dish } = row;
 
 	const tags = db()
 		.select({ tag: dishTags.tag })
@@ -338,7 +405,7 @@ export function getDish(householdId: number, dishId: number): DishDetail {
 		.where(eq(dishIngredients.dishId, dishId))
 		.orderBy(asc(dishIngredients.position))
 		.all();
-	return { ...dish, tags, ingredients };
+	return { ...dish, rating: ratingOf(ratingAverage, ratingCount), tags, ingredients };
 }
 
 /** Every dish's tags, in the order they were entered. */
@@ -376,6 +443,7 @@ export function listDishes(
 		.where(eq(dishIngredients.householdId, householdId))
 		.groupBy(dishIngredients.dishId)
 		.as('ingredient_counts');
+	const ratings = ratingTotals(householdId);
 
 	return db()
 		.select({
@@ -387,10 +455,13 @@ export function listDishes(
 			tried: dishes.tried,
 			archivedAt: dishes.archivedAt,
 			steps: dishes.steps,
-			ingredientCount: ingredientCounts.count
+			ingredientCount: ingredientCounts.count,
+			ratingAverage: ratings.average,
+			ratingCount: ratings.count
 		})
 		.from(dishes)
 		.leftJoin(ingredientCounts, eq(ingredientCounts.dishId, dishes.id))
+		.leftJoin(ratings, eq(ratings.dishId, dishes.id))
 		.where(
 			and(
 				eq(dishes.householdId, householdId),
@@ -405,8 +476,9 @@ export function listDishes(
 			)
 		)
 		.all()
-		.map(({ steps, ingredientCount, ...dish }) => ({
+		.map(({ steps, ingredientCount, ratingAverage, ratingCount, ...dish }) => ({
 			...dish,
+			rating: ratingOf(ratingAverage, ratingCount),
 			tags: tags.get(dish.id) ?? [],
 			// The same test as the recipe page.
 			hasRecipe: ingredientCount !== null || splitSteps(steps).length > 0
