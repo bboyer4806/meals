@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SearchBox from '#lib/components/SearchBox.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
 	import { formatQuantity } from '#lib/text.ts';
 
@@ -13,10 +14,8 @@
 
 <h1>History</h1>
 
-<form method="GET" class="row search">
-	<label class="visually-hidden" for="q">Search history</label>
-	<input class="grow" id="q" name="q" type="search" placeholder="Search" value={data.search} />
-	<button>Search</button>
+<form method="GET" class="row search" data-sveltekit-replacestate data-sveltekit-reset="false">
+	<SearchBox label="Search history" value={data.search} />
 </form>
 
 {#if data.days.length === 0}

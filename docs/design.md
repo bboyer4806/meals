@@ -647,8 +647,18 @@ circle checks it off as Received. Tapping a row opens an edit sheet: quantity, u
 store, note, Mark ordered, Didn't come, Got fewer, and Delete. An item's notes (brand,
 size) show under its name.
 
+**Search.** Recipes, History and Items search as people type (MEA-36): the list updates 300 ms
+after typing stops, and Enter, or a phone keyboard's search key, searches right away. There's no
+Search button. The box keeps focus while the list updates, so a phone's keyboard stays open, and
+what's typed meanwhile stays in the box, spaces included. Clearing the box shows the list with no
+search. Each list keeps its search in the address, so Back and shared links keep it, but typing
+replaces the address instead of adding Back steps: Back from a searched list leaves the list, and
+Back from a recipe opened from a search returns to that search. A search box only matches what
+its list already matched; there are no suggestions under it.
+
 **Recipes.** A **Sort** dropdown beside the search box offers **Name** (A to Z, the default) and
-**Rating** (highest first). Choosing one reorders the list right away, without tapping Search.
+**Rating** (highest first). Choosing one reorders the list right away, and like the search adds no
+Back step.
 Rating uses the household's exact average, not the rounded one shown; unrated recipes go last,
 and equal averages fall back to name. The sort, search, tag and archived switch are kept in the
 address, so Back and shared links keep them, and changing any one keeps the others; "Show all
