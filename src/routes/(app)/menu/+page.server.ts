@@ -12,13 +12,19 @@ import {
 	type DishRole
 } from '#lib/menu.ts';
 import { requireHousehold } from '#lib/server/auth/guards.ts';
-import { dishSuggestions, getDinners, type Dinner } from '#lib/server/data/dinners.ts';
+import {
+	dishSuggestions,
+	getDinners,
+	moveDinners,
+	type Dinner
+} from '#lib/server/data/dinners.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
 import { addRequest, listRequests, removeRequest } from '#lib/server/data/requests.ts';
 import { attempt, id, nameField, parseForm } from '#lib/server/forms.ts';
 
 // The week view (design 7, Menu): Sunday to Saturday, one row per day with its dinners. ?week=
-// can be any date in the week. Under it, the household's dish requests, the same on every week
+// can be any date in the week. Dragging a day onto another with a mouse swaps their dinners, like
+// Move to another date (2.2.2). Under it, the household's dish requests, the same on every week
 // (6.12).
 
 /** The Sunday that starts the week to show, or null when ?week= isn't a date it can show. */
@@ -100,7 +106,25 @@ const requestSchema = z.object({
 		.transform((text) => (text === '' ? null : text))
 });
 
+// The dragged day, the day it was dropped on, and a dinner the page showed on the dragged day, so
+// the move doesn't take others someone put there instead.
+const moveSchema = z.object({
+	from: z.string().refine(isDate, 'Pick a date'),
+	to: z.string().refine(isDate, 'Pick a date'),
+	dinnerId: id
+});
+
 export const actions = {
+	// Moves all of the dragged day's dinners, swapping with the other day's, and stays on the
+	// week (2.2.2, 6.9).
+	move: async ({ locals, request }) => {
+		const user = requireHousehold(locals);
+		const parsed = parseForm(moveSchema, await request.formData(), 'move');
+		if ('failure' in parsed) return parsed.failure;
+		const { from, to, dinnerId } = parsed.data;
+		return attempt('move', () => moveDinners(user.householdId, from, to, dinnerId, Date.now()));
+	},
+
 	request: async ({ locals, request }) => {
 		const user = requireHousehold(locals);
 		const parsed = parseForm(requestSchema, await request.formData(), 'request');

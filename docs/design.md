@@ -541,7 +541,8 @@ on the list. The rest of this section describes it as built.
   dinners counts as one make for each.
 - **Move to another date** (addition 2.2.2) moves all of a date's dinners, and swaps them
   with the other date's if it has any; a date's dinners can't be moved separately. Tapping
-  the date at the top of its page opens it (7).
+  the date at the top of its page opens it (7). On a computer, dragging a day onto another in
+  the week view does the same (7, Menu).
 
 ### 6.10 Archiving
 
@@ -719,7 +720,13 @@ up and down buttons, and "Add section" inserts a heading.
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, dishes by role,
 and note. A day with more than one dinner shows each one (label, type, dishes by role, note)
 in the order they were added. Today is highlighted. Previous, next and "This week" buttons. Tapping a day
-opens its dinner. ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
+opens its dinner. With a mouse or trackpad, dragging a planned day onto another day of the week
+works like Move to another date (2.2.2, 6.9): the two days swap their dinners, and the week stays
+open. The day under the pointer is outlined while dragging; "Not planned" days can't be dragged,
+and releasing on the same day or outside the days changes nothing. Touch never drags, so tapping
+still opens a day and swiping scrolls. If someone cleared or moved the dragged day's dinners
+since the week loaded, nothing moves, the week shows the menu as it is now, and it says "Someone
+cleared or moved that day's dinners, so nothing moved." ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
 **Requests** lists the dish requests (6.12), or "No requests yet.", each with Remove. "Request
 a dish" opens a sheet with Dish (with suggestions), an optional Note and Request.
 

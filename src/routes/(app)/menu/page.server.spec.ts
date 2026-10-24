@@ -1,6 +1,6 @@
-import { isRedirect } from '@sveltejs/kit';
+import { isHttpError, isRedirect } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addDinner } from '#lib/server/data/dinners.ts';
+import { addDinner, getDinners } from '#lib/server/data/dinners.ts';
 import { setDishArchived } from '#lib/server/data/dishes.ts';
 import { listMembers } from '#lib/server/data/households.ts';
 import { addRequest, listRequests } from '#lib/server/data/requests.ts';
@@ -265,5 +265,98 @@ describe('requests (6.12)', () => {
 		expect(await post('removeRequest', { id: String(ours!.id) })).toBeUndefined();
 		expect(listRequests(householdId)).toEqual([]);
 		expect(listRequests(other.householdId)).toHaveLength(1);
+	});
+});
+
+describe('dragging a day onto another (2.2.2)', () => {
+	/** Each of the week's dates with its dinners' ids, as the week shows them. */
+	function ids(): Record<string, number[]> {
+		return Object.fromEntries(
+			week().days.map((day) => [day.date, day.dinners.map((dinner) => dinner.id)])
+		);
+	}
+
+	it("swaps two days' dinners, and moves them onto a day with none", async () => {
+		const roast = makeDinner(householdId, '2026-09-28');
+		const out = makeDinner(householdId, '2026-09-30', { type: 'eat_out' });
+		const kids = addDinner(householdId, '2026-09-30', { first: 'Adults', added: 'Kids' }, NOW);
+
+		expect(
+			await post('move', { from: '2026-09-28', to: '2026-09-30', dinnerId: String(roast) })
+		).toBeUndefined();
+		expect(ids()).toMatchObject({ '2026-09-28': [out, kids], '2026-09-30': [roast] });
+
+		expect(
+			await post('move', { from: '2026-09-28', to: '2026-10-02', dinnerId: String(kids) })
+		).toBeUndefined();
+		expect(ids()).toMatchObject({ '2026-09-28': [], '2026-10-02': [out, kids] });
+	});
+
+	it('returns 404 when the dinner shown on the dragged day is gone', async () => {
+		const roast = makeDinner(householdId, '2026-09-28');
+		const out = makeDinner(householdId, '2026-09-30', { type: 'eat_out' });
+		await post('move', { from: '2026-09-28', to: '2026-10-01', dinnerId: String(roast) });
+		const result = await post('move', {
+			from: '2026-09-28',
+			to: '2026-09-30',
+			dinnerId: String(roast)
+		});
+		expect(isHttpError(result, 404)).toBe(true);
+		expect(ids()).toMatchObject({ '2026-09-28': [], '2026-09-30': [out], '2026-10-01': [roast] });
+	});
+
+	it("refuses when another dinner was moved onto the dragged day since, and moves nothing", async () => {
+		const roast = makeDinner(householdId, '2026-09-28');
+		const out = makeDinner(householdId, '2026-09-30', { type: 'eat_out' });
+		const going = makeDinner(householdId, '2026-10-01', { type: 'going' });
+		await post('move', { from: '2026-10-01', to: '2026-09-28', dinnerId: String(going) });
+		expectFailure(
+			await post('move', { from: '2026-10-01', to: '2026-09-30', dinnerId: String(going) }),
+			'move',
+			'Someone changed this dinner since you opened it.'
+		);
+		expect(ids()).toMatchObject({
+			'2026-09-28': [going],
+			'2026-09-30': [out],
+			'2026-10-01': [roast]
+		});
+	});
+
+	it("never moves another household's dinners", async () => {
+		const other = makeHousehold(TZ).householdId;
+		const theirs = makeDinner(other, '2026-09-28');
+		const ours = makeDinner(householdId, '2026-09-30');
+		const result = await post('move', {
+			from: '2026-09-28',
+			to: '2026-09-30',
+			dinnerId: String(theirs)
+		});
+		expect(isHttpError(result, 404)).toBe(true);
+		expect(getDinners(other, '2026-09-28', '2026-09-30').map((d) => [d.id, d.date])).toEqual([
+			[theirs, '2026-09-28']
+		]);
+		expect(ids()).toMatchObject({ '2026-09-28': [], '2026-09-30': [ours] });
+	});
+
+	it('needs both dates and the dinner shown', async () => {
+		const roast = makeDinner(householdId, '2026-09-28');
+		expectFailure(
+			await post('move', { from: '2026-09-28', to: '2026-02-30', dinnerId: String(roast) }),
+			'move',
+			'Pick a date'
+		);
+		expect(await post('move', { from: '2026-09-28', to: '2026-09-30' })).toMatchObject({
+			status: 400
+		});
+		expect(ids()['2026-09-28']).toEqual([roast]);
+	});
+
+	it('needs a household', async () => {
+		const body = new FormData();
+		const request = new Request('http://localhost/menu?/move', { method: 'POST', body });
+		const event = { locals: locals('setup'), request } as unknown as Parameters<
+			typeof actions.move
+		>[0];
+		await expect(actions.move(event)).rejects.toMatchObject({ status: 303, location: '/setup' });
 	});
 });
