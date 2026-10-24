@@ -16,6 +16,7 @@ import { MAX_SERVINGS } from '../../recipe-view.ts';
 import { foldCase, normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
 import { dinnerDishes, dinners, dishes } from '../db/schema.ts';
+import { findDishByName, insertDish } from './dishes.ts';
 import { getHousehold } from './households.ts';
 
 // The menu: a date's dinners (up to 5, labeled when there's more than one), their dishes and
@@ -276,25 +277,6 @@ function findDish(householdId: number, dishId: number) {
 		.get();
 	if (!dish) error(404, 'Not found');
 	return dish;
-}
-
-/** Names are unique per household ignoring case, archived dishes included (2.3, 6.10). */
-function findDishByName(householdId: number, name: string) {
-	return db()
-		.select({ id: dishes.id, name: dishes.name, archivedAt: dishes.archivedAt })
-		.from(dishes)
-		.where(and(eq(dishes.householdId, householdId), sql`fold(${dishes.name}) = fold(${name})`))
-		.get();
-}
-
-/** A dish made by name from the menu has the usual servings and no recipe yet (2.3). */
-function insertDish(householdId: number, name: string, now: number): number {
-	const servings = getHousehold(householdId).defaultServings;
-	return db()
-		.insert(dishes)
-		.values({ householdId, name, servings, createdAt: now, updatedAt: now })
-		.returning({ id: dishes.id })
-		.get().id;
 }
 
 /**

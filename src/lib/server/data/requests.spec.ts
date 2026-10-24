@@ -1,11 +1,12 @@
 import { isHttpError } from '@sveltejs/kit';
+import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../db/index.ts';
 import { dishRequests, dishes, users } from '../db/schema.ts';
 import { expectHttpError, freshDb, makeDish, makeHousehold, recipe } from '../testing.ts';
 import { setDishArchived, updateDish } from './dishes.ts';
 import { removeMember } from './households.ts';
-import { addRequest, listRequests, removeRequest } from './requests.ts';
+import { addRequest, listRequests, removeRequest, restoreAndAddRequest } from './requests.ts';
 
 const NOW = Date.UTC(2026, 9, 7, 17, 0);
 
@@ -23,7 +24,7 @@ beforeEach(() => {
 });
 
 function ask(name: string, note: string | null = null, now = NOW, user = userId) {
-	addRequest(householdId, user, { name, note }, now);
+	return addRequest(householdId, user, { name, note }, now);
 }
 
 function dishCount(): number {
@@ -41,35 +42,49 @@ function refusal(run: () => unknown): string {
 	return expect.fail('expected a refusal, but nothing was thrown');
 }
 
+function dishNamed(name: string) {
+	return db().select().from(dishes).where(eq(dishes.name, name)).get();
+}
+
 describe('addRequest', () => {
-	it('stores the asker, name and note, and creates no dish', () => {
-		ask('  Chicken   pot pie ', 'With the flaky crust');
+	it('adds a new name to Recipes at the usual servings, and links to it', () => {
+		expect(ask('  Shrimp   boil ', 'With corn')).toEqual({ kind: 'added' });
+		const dish = dishNamed('Shrimp boil');
+		expect(dish).toMatchObject({ householdId, servings: 4, archivedAt: null, createdAt: NOW });
 		expect(listRequests(householdId)).toEqual([
 			{
 				id: expect.any(Number),
-				name: 'Chicken pot pie',
-				note: 'With the flaky crust',
-				dishId: null,
+				name: 'Shrimp boil',
+				note: 'With corn',
+				dishId: dish!.id,
 				askedBy: 'Person 1'
 			}
 		]);
-		expect(dishCount()).toBe(1);
+		expect(dishCount()).toBe(2);
 	});
 
-	it('links to an active dish with the same name, ignoring case', () => {
+	it('links to an active dish with the same name, ignoring case, and adds nothing', () => {
 		ask('LASAGNA');
 		expect(listRequests(householdId)[0]).toMatchObject({
 			name: 'LASAGNA',
 			dishId: lasagna
 		});
+		expect(dishCount()).toBe(1);
 	});
 
-	it("doesn't link to an archived dish or another household's", () => {
-		setDishArchived(householdId, lasagna, true, NOW);
-		makeDish(otherId, recipe('Curry'));
-		ask('Lasagna');
+	it("makes its own dish for a name only another household's dish has", () => {
+		const curry = makeDish(otherId, recipe('Curry'));
 		ask('Curry');
-		expect(listRequests(householdId).map((request) => request.dishId)).toEqual([null, null]);
+		const [request] = listRequests(householdId);
+		expect(request!.dishId).not.toBe(curry);
+		expect(dishCount()).toBe(3);
+	});
+
+	it("offers to restore an archived dish's name and changes nothing", () => {
+		setDishArchived(householdId, lasagna, true, NOW);
+		expect(ask('lasagna')).toEqual({ kind: 'archived', dishId: lasagna, name: 'Lasagna' });
+		expect(listRequests(householdId)).toEqual([]);
+		expect(dishCount()).toBe(1);
 	});
 
 	it('keeps the link and the name as typed after the dish is renamed or archived', () => {
@@ -82,21 +97,44 @@ describe('addRequest', () => {
 		});
 	});
 
-	it('stays plain text after a dish with its name is added', () => {
-		ask('Tacos');
-		makeDish(householdId, recipe('Tacos'));
-		expect(listRequests(householdId)[0]).toMatchObject({
-			name: 'Tacos',
-			dishId: null
-		});
-	});
-
 	it('refuses a blank name and anything too long', () => {
 		expect(refusal(() => ask('   '))).toBe('Enter a dish name');
 		expect(refusal(() => ask('a'.repeat(81)))).toBe('Keep a dish name under 80 characters');
 		expect(refusal(() => ask('Pie', 'a'.repeat(201)))).toBe('Keep the note under 200 characters');
 		ask('a'.repeat(80), 'a'.repeat(200));
 		expect(listRequests(householdId)).toHaveLength(1);
+	});
+});
+
+describe('restoreAndAddRequest', () => {
+	it('restores the dish and adds the request linked to it, with the name as typed', () => {
+		setDishArchived(householdId, lasagna, true, NOW);
+		restoreAndAddRequest(householdId, userId, lasagna, { name: ' LASAGNA ', note: 'Extra' }, NOW);
+		expect(dishNamed('Lasagna')!.archivedAt).toBeNull();
+		expect(listRequests(householdId)).toEqual([
+			expect.objectContaining({ name: 'LASAGNA', note: 'Extra', dishId: lasagna })
+		]);
+	});
+
+	it("refuses another household's dish with a 404 and adds nothing", () => {
+		const curry = makeDish(otherId, recipe('Curry'));
+		setDishArchived(otherId, curry, true, NOW);
+		expectHttpError(
+			() => restoreAndAddRequest(householdId, userId, curry, { name: 'Curry', note: null }, NOW),
+			404
+		);
+		expect(dishNamed('Curry')!.archivedAt).toBe(NOW);
+		expect(listRequests(householdId)).toEqual([]);
+	});
+
+	it('refuses a blank name and restores nothing', () => {
+		setDishArchived(householdId, lasagna, true, NOW);
+		expect(
+			refusal(() =>
+				restoreAndAddRequest(householdId, userId, lasagna, { name: ' ', note: null }, NOW)
+			)
+		).toBe('Enter a dish name');
+		expect(dishNamed('Lasagna')!.archivedAt).toBe(NOW);
 	});
 });
 
@@ -116,11 +154,12 @@ describe('listRequests', () => {
 });
 
 describe('removeRequest', () => {
-	it('removes the request', () => {
+	it('removes the request and keeps its recipe', () => {
 		ask('Soup');
 		const [request] = listRequests(householdId);
 		removeRequest(householdId, request!.id);
 		expect(listRequests(householdId)).toEqual([]);
+		expect(dishNamed('Soup')).toBeDefined();
 	});
 
 	it("refuses another household's request with a 404", () => {

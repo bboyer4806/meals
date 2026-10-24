@@ -53,25 +53,73 @@
 		requestOpen = true;
 	}
 
+	/** The request is in: the sheet closes and the list shows it. */
+	async function requested() {
+		requestName = '';
+		requestNote = '';
+		requestOpen = false;
+		await tick();
+		requestButton?.focus();
+	}
+
 	const submitRequest: SubmitFunction = ({ cancel }) => {
 		if (requesting) return cancel();
 		requesting = true;
 		requestError = '';
+		const sent = { name: requestName, note: requestNote };
 		return async ({ result, update }) => {
 			try {
 				if (result.type === 'failure') {
 					requestError = failureMessage(result.data);
 					return;
 				}
+				const offer = result.type === 'success' ? archivedIn(result.data) : null;
+				if (offer) {
+					// Nothing changed, so there's nothing to reload. The Request sheet stays open
+					// under this one for Cancel.
+					archived = { ...offer, sentName: sent.name, sentNote: sent.note };
+					restoreError = '';
+					restoreOpen = true;
+					return;
+				}
 				await update({ reset: false });
-				if (result.type !== 'success') return;
-				requestName = '';
-				requestNote = '';
-				requestOpen = false;
-				await tick();
-				requestButton?.focus();
+				if (result.type === 'success') await requested();
 			} finally {
 				requesting = false;
+			}
+		};
+	};
+
+	// A request for an archived dish's name offers to restore it, since its name stays taken
+	// (6.10). The restore sends the name and note again, as the request keeps its name as typed.
+
+	type Archived = { dishId: number; name: string };
+
+	let archived = $state<(Archived & { sentName: string; sentNote: string }) | null>(null);
+	let restoreOpen = $state(false);
+	let restoreError = $state('');
+	let restoring = $state(false);
+
+	function archivedIn(data: unknown): Archived | null {
+		return (data as { archived?: Archived | null } | undefined)?.archived ?? null;
+	}
+
+	const submitRestore: SubmitFunction = ({ cancel }) => {
+		if (restoring) return cancel();
+		restoring = true;
+		restoreError = '';
+		return async ({ result, update }) => {
+			try {
+				if (result.type === 'failure') {
+					restoreError = failureMessage(result.data);
+					return;
+				}
+				await update({ reset: false });
+				if (result.type !== 'success') return;
+				restoreOpen = false;
+				await requested();
+			} finally {
+				restoring = false;
 			}
 		};
 	};
@@ -283,11 +331,7 @@
 			{#each data.requests as request (request.id)}
 				<li class="request">
 					<div class="what">
-						{#if request.dishId !== null}
-							<a class="dish" href="/recipes/{request.dishId}">{request.name}</a>
-						{:else}
-							<span class="dish">{request.name}</span>
-						{/if}
+						<a class="dish" href="/recipes/{request.dishId}">{request.name}</a>
 						{#if request.note}<span class="request-note">{request.note}</span>{/if}
 						<span class="muted">Asked by {request.askedBy}</span>
 					</div>
@@ -312,10 +356,10 @@
 			<ItemInput
 				id="request-name"
 				name="name"
-				placeholder="Search or type a dish"
+				placeholder="Search or type a new dish"
 				items={data.dishes}
 				bind:value={requestName}
-				noun={null}
+				noun="dish"
 			/>
 			{@render limitWarning(requestName, REQUEST_NAME_MAX)}
 		</div>
@@ -332,6 +376,22 @@
 		</div>
 		<button class="primary">Request</button>
 	</form>
+</Sheet>
+
+<Sheet bind:open={restoreOpen} title={archived?.name ?? ''}>
+	{#if archived}
+		<p>{archived.name} is archived. Restore it and request it?</p>
+		<form method="POST" action="?/restoreRequest" use:enhance={submitRestore}>
+			<input type="hidden" name="dishId" value={archived.dishId} />
+			<input type="hidden" name="name" value={archived.sentName} />
+			<input type="hidden" name="note" value={archived.sentNote} />
+			{#if restoreError}<p class="error" role="alert">{restoreError}</p>{/if}
+			<div class="row">
+				<button class="primary">Restore it and request</button>
+				<button type="button" onclick={() => (restoreOpen = false)}>Cancel</button>
+			</div>
+		</form>
+	{/if}
 </Sheet>
 
 <style>

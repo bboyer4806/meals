@@ -218,14 +218,15 @@ describe('requests (6.12)', () => {
 		for (const param of [undefined, '2027-03-10']) {
 			const data = week(param);
 			expect(data.requests.map((request) => request.name)).toEqual(['Soup']);
-			expect(data.dishes.map((dish) => dish.name)).toEqual(['Lasagna']);
+			// The request added Soup to Recipes.
+			expect(data.dishes.map((dish) => dish.name)).toEqual(['Lasagna', 'Soup']);
 		}
 	});
 
 	it('come from the signed-in person, with the name and note', async () => {
 		expect(
 			await post('request', { name: 'Pot pie', note: ' Extra crust ', userId: '999' })
-		).toBeUndefined();
+		).toEqual({ action: 'request', archived: null });
 		expect(listRequests(householdId)).toMatchObject([
 			{ name: 'Pot pie', note: 'Extra crust', askedBy: listMembers(householdId)[0]?.name }
 		]);
@@ -251,8 +252,28 @@ describe('requests (6.12)', () => {
 			'request',
 			'Keep the note under 200 characters'
 		);
-		expect(await post('request', { name: 'a'.repeat(80), note: 'a'.repeat(200) })).toBeUndefined();
+		expect(await post('request', { name: 'a'.repeat(80), note: 'a'.repeat(200) })).toEqual({
+			action: 'request',
+			archived: null
+		});
 		expect(listRequests(householdId)).toHaveLength(1);
+	});
+
+	it('offer to restore an archived dish, and restore it with the name and note as typed', async () => {
+		const chili = makeDish(householdId, recipe('Chili'));
+		setDishArchived(householdId, chili, true, NOW);
+		expect(await post('request', { name: 'CHILI', note: '' })).toEqual({
+			action: 'request',
+			archived: { dishId: chili, name: 'Chili' }
+		});
+		expect(listRequests(householdId)).toEqual([]);
+		expect(
+			await post('restoreRequest', { dishId: String(chili), name: 'CHILI', note: ' Spicy ' })
+		).toBeUndefined();
+		expect(listRequests(householdId)).toMatchObject([
+			{ name: 'CHILI', note: 'Spicy', dishId: chili }
+		]);
+		expect(week().dishes.map((dish) => dish.name)).toEqual(['Chili']);
 	});
 
 	it("remove one, and not another household's", async () => {

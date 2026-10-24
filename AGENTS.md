@@ -57,8 +57,10 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
 ## Database
 
 Change `src/lib/server/db/schema.ts`, then run `npm run db:generate -- --name <what-changed>`
-and commit the new files in `drizzle/`. Never edit generated migrations by hand. The app
-applies migrations when it starts. Use the existing `transaction()` helper in
+and commit the new files in `drizzle/`. Never edit generated migrations by hand. A data change
+the schema can't express goes in a custom migration: run `npm run db:generate -- --custom --name
+<what-changed>` and write its SQL in the empty file it makes, matching names with `fold()`. The
+app applies migrations when it starts. Use the existing `transaction()` helper in
 `src/lib/server/db/index.ts` for grouped writes; its immediate lock handles overlapping deploys.
 
 ## Tests

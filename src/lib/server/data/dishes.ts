@@ -4,6 +4,7 @@ import { splitSteps } from '../../steps.ts';
 import { foldCase, normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
 import { dishes, dishIngredients, dishRatings, dishTags, items } from '../db/schema.ts';
+import { getHousehold } from './households.ts';
 import { createItem, findItemByName, setItemArchived } from './items.ts';
 
 // Dishes and recipes are one record, and the recipe details are optional (Q2).
@@ -129,6 +130,19 @@ export function findDishByName(householdId: number, name: string) {
 		.from(dishes)
 		.where(and(eq(dishes.householdId, householdId), sql`fold(${dishes.name}) = fold(${name})`))
 		.get();
+}
+
+/**
+ * A dish made by name, from a dinner or a request, has the usual servings and no recipe yet, so
+ * Recipes labels it "No recipe" (2.3, 6.12). Returns its id.
+ */
+export function insertDish(householdId: number, name: string, now: number): number {
+	const servings = getHousehold(householdId).defaultServings;
+	return db()
+		.insert(dishes)
+		.values({ householdId, name, servings, createdAt: now, updatedAt: now })
+		.returning({ id: dishes.id })
+		.get().id;
 }
 
 /** The catalog item an ingredient names (Q1): an existing one, or a new one for a new name. */

@@ -17,11 +17,6 @@ export function openDb(path: string): DB {
 	sqlite.pragma('journal_mode = WAL');
 	sqlite.pragma('busy_timeout = 5000');
 	sqlite.pragma('synchronous = NORMAL');
-	// SQLite's lower() only folds A-Z, so name matching and search use this instead. It is used
-	// in queries only, never in the schema, so other tools can still read and write the file.
-	sqlite.function('fold', { deterministic: true }, (value: unknown) =>
-		typeof value === 'string' ? foldCase(value) : value
-	);
 	migrate(sqlite, 'drizzle');
 	instance = drizzle(sqlite, { schema });
 	return instance;
@@ -44,9 +39,16 @@ export function transaction<T>(fn: () => T): T {
 /**
  * Applies new migrations from `folder` in one transaction and checks foreign keys before it
  * commits, so a migration that breaks them rolls back instead of being recorded. Keeps the same
- * bookkeeping table as Drizzle's own migrator.
+ * bookkeeping table as Drizzle's own migrator. Registers fold() first, so migrations and the
+ * app's queries match names the same way.
  */
 export function migrate(sqlite: Database.Database, folder: string): void {
+	// SQLite's lower() only folds A-Z, so name matching and search use this instead. It is used
+	// in queries and migrations only, never in the schema, so other tools can still read and write
+	// the file.
+	sqlite.function('fold', { deterministic: true }, (value: unknown) =>
+		typeof value === 'string' ? foldCase(value) : value
+	);
 	sqlite.exec(
 		'CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)'
 	);

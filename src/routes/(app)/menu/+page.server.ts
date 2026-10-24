@@ -19,7 +19,12 @@ import {
 	type Dinner
 } from '#lib/server/data/dinners.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
-import { addRequest, listRequests, removeRequest } from '#lib/server/data/requests.ts';
+import {
+	addRequest,
+	listRequests,
+	removeRequest,
+	restoreAndAddRequest
+} from '#lib/server/data/requests.ts';
 import { attempt, id, nameField, parseForm } from '#lib/server/forms.ts';
 
 // The week view (design 7, Menu): Sunday to Saturday, one row per day with its dinners. ?week=
@@ -106,6 +111,10 @@ const requestSchema = z.object({
 		.transform((text) => (text === '' ? null : text))
 });
 
+// The archived dish to restore, with the name and note again, since a request keeps its name as
+// typed (6.10, 6.12).
+const restoreRequestSchema = requestSchema.extend({ dishId: id });
+
 // The dragged day, the day it was dropped on, and a dinner the page showed on the dragged day, so
 // the move doesn't take others someone put there instead.
 const moveSchema = z.object({
@@ -129,7 +138,25 @@ export const actions = {
 		const user = requireHousehold(locals);
 		const parsed = parseForm(requestSchema, await request.formData(), 'request');
 		if ('failure' in parsed) return parsed.failure;
-		return attempt('request', () => addRequest(user.householdId, user.id, parsed.data, Date.now()));
+		const added = attempt('request', () =>
+			addRequest(user.householdId, user.id, parsed.data, Date.now())
+		);
+		if (!('kind' in added)) return added;
+		// Its name stays taken, so the page offers to restore it instead (6.10).
+		if (added.kind === 'archived') {
+			return { action: 'request', archived: { dishId: added.dishId, name: added.name } };
+		}
+		return { action: 'request', archived: null };
+	},
+
+	restoreRequest: async ({ locals, request }) => {
+		const user = requireHousehold(locals);
+		const parsed = parseForm(restoreRequestSchema, await request.formData(), 'request');
+		if ('failure' in parsed) return parsed.failure;
+		const { dishId, ...fields } = parsed.data;
+		return attempt('request', () =>
+			restoreAndAddRequest(user.householdId, user.id, dishId, fields, Date.now())
+		);
 	},
 
 	removeRequest: async ({ locals, request }) => {
