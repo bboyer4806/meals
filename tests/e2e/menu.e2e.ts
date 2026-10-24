@@ -1749,3 +1749,237 @@ test('plans two dinners on a day, each with its own label, dishes, Save and Clea
 	expect(labels()).toEqual([null]);
 	expect(dinnerRow(db, person.householdId, date)?.id).not.toBe(adultsId);
 });
+
+// Dragging a day onto another in the week (design 7, Menu; 2.2.2). Only a mouse or trackpad drags,
+// so these run without touch.
+test.describe('dragging days in the week', () => {
+	test.use({ isMobile: false, hasTouch: false });
+
+	/** Presses on one day, moves over another in steps, and lets go there. */
+	async function drag(page: Page, from: string, to: { x: number; y: number } | string) {
+		const source = await day(page, from).boundingBox();
+		if (!source) throw new Error(`No row for ${from}`);
+		await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+		await page.mouse.down();
+		const end = typeof to === 'string' ? await center(page, to) : to;
+		await page.mouse.move(end.x, end.y, { steps: 8 });
+		await page.mouse.up();
+	}
+
+	async function center(page: Page, date: string) {
+		const box = await day(page, date).boundingBox();
+		if (!box) throw new Error(`No row for ${date}`);
+		return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	}
+
+	/** Next week's Sunday to Saturday, so every day shows in one week. */
+	function nextWeek() {
+		const sunday = addDays(sundayOf(today()), 7);
+		return [0, 1, 2, 3, 4, 5, 6].map((days) => addDays(sunday, days)) as [
+			string,
+			string,
+			string,
+			string,
+			string,
+			string,
+			string
+		];
+	}
+
+	const ids = (db: Database.Database, householdId: number, date: string) =>
+		db
+			.prepare('select id from dinners where household_id = ? and date = ? order by id')
+			.pluck()
+			.all(householdId, date);
+
+	test('swaps two days, moves onto a day not planned, and keeps the week open', async ({
+		page,
+		db,
+		person
+	}) => {
+		const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+		const [sun, mon, tue, wed] = nextWeek();
+		const tacosId = addDinner(db, person.householdId, mon, { dishes: [[tacos, 'main']] });
+		const pizzaId = addDinner(db, person.householdId, wed, { type: 'eat_out', note: 'Pizza' });
+
+		await open(page, `/menu?week=${sun}`);
+		const url = page.url();
+		await drag(page, mon, wed);
+		await expect(day(page, mon).locator('.type')).toHaveText('Eating out');
+		await expect(day(page, mon).locator('.note')).toHaveText('Pizza');
+		await expect(day(page, wed).locator('.names')).toHaveText(['Chicken tacos']);
+		expect(page.url()).toBe(url);
+		expect(ids(db, person.householdId, mon)).toEqual([pizzaId]);
+		expect(ids(db, person.householdId, wed)).toEqual([tacosId]);
+
+		await drag(page, wed, tue);
+		await expect(day(page, tue).locator('.names')).toHaveText(['Chicken tacos']);
+		await expect(day(page, wed)).toContainText('Not planned');
+		expect(page.url()).toBe(url);
+		expect(ids(db, person.householdId, tue)).toEqual([tacosId]);
+		expect(ids(db, person.householdId, wed)).toEqual([]);
+
+		// Menu help tells people about it.
+		await page.getByRole('banner').getByRole('button', { name: 'Help', exact: true }).click();
+		await expect(page.getByRole('dialog', { name: 'Help: Menu' })).toContainText(
+			'On a computer, drag a day onto another day to swap their dinners.'
+		);
+	});
+
+	test('moves all of a day’s dinners together, with their labels', async ({
+		page,
+		db,
+		person
+	}) => {
+		const [sun, mon, tue] = nextWeek();
+		const adults = addDinner(db, person.householdId, mon, { note: 'After bedtime' });
+		const kids = addDinner(db, person.householdId, mon, { type: 'leftovers' });
+		db.prepare('update dinners set label = ? where id = ?').run('Adults', adults);
+		db.prepare('update dinners set label = ? where id = ?').run('Kids', kids);
+
+		await open(page, `/menu?week=${sun}`);
+		await drag(page, mon, tue);
+		const row = day(page, tue);
+		await expect(row.locator('.dinner .label')).toHaveText(['Adults', 'Kids']);
+		await expect(row.locator('.dinner').nth(0)).toContainText('After bedtime');
+		await expect(row.locator('.dinner').nth(1)).toContainText('Leftovers');
+		await expect(day(page, mon)).toContainText('Not planned');
+		expect(ids(db, person.householdId, tue)).toEqual([adults, kids]);
+	});
+
+	test('outlines the day under the pointer, and only a planned day drags', async ({
+		page,
+		db,
+		person
+	}) => {
+		const [sun, mon, tue, wed] = nextWeek();
+		const tacosId = addDinner(db, person.householdId, mon);
+		await open(page, `/menu?week=${sun}`);
+
+		const source = await center(page, mon);
+		await page.mouse.move(source.x, source.y);
+		await page.mouse.down();
+		const target = await center(page, wed);
+		await page.mouse.move(target.x, target.y, { steps: 8 });
+		await expect(day(page, wed)).toHaveClass(/\btarget\b/);
+		await expect(day(page, tue)).not.toHaveClass(/\btarget\b/);
+		await expect(page.locator('a.day.target')).toHaveCount(1);
+		await page.mouse.up();
+		await expect(day(page, wed)).not.toContainText('Not planned');
+		await expect(page.locator('a.day.target')).toHaveCount(0);
+
+		// Dragging a day that isn't planned does nothing and opens nothing.
+		await drag(page, tue, wed);
+		await expect(page.locator('a.day.target')).toHaveCount(0);
+		await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sun}$`));
+		await expect(day(page, tue)).toContainText('Not planned');
+		expect(ids(db, person.householdId, wed)).toEqual([tacosId]);
+	});
+
+	test('changes nothing when let go on the same day or outside the days', async ({
+		page,
+		db,
+		person
+	}) => {
+		const [sun, mon] = nextWeek();
+		const tacosId = addDinner(db, person.householdId, mon, { note: 'Taco night' });
+		await open(page, `/menu?week=${sun}`);
+
+		// Out and back onto the same day.
+		const source = await center(page, mon);
+		await page.mouse.move(source.x, source.y);
+		await page.mouse.down();
+		await page.mouse.move(source.x, source.y + 80, { steps: 4 });
+		await page.mouse.move(source.x, source.y, { steps: 4 });
+		await page.mouse.up();
+		// Onto the page heading, outside any day.
+		const heading = await page.getByRole('heading', { level: 1 }).boundingBox();
+		if (!heading) throw new Error('No heading');
+		await drag(page, mon, { x: heading.x + 5, y: heading.y + heading.height / 2 });
+
+		await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sun}$`));
+		await expect(day(page, mon).locator('.note')).toHaveText('Taco night');
+		expect(ids(db, person.householdId, mon)).toEqual([tacosId]);
+		await expect(page.getByRole('alert')).toHaveCount(0);
+	});
+
+	test('still opens a day when it is clicked without dragging', async ({ page, db, person }) => {
+		const [sun, mon] = nextWeek();
+		addDinner(db, person.householdId, mon);
+		await open(page, `/menu?week=${sun}`);
+		await day(page, mon).click();
+		await expect(page).toHaveURL(new RegExp(`/menu/${mon}$`));
+	});
+
+	test("moves nothing when someone cleared or moved the day's dinners since the week loaded", async ({
+		page,
+		db,
+		person
+	}) => {
+		const [sun, mon, tue, wed, thu] = nextWeek();
+		const tacosId = addDinner(db, person.householdId, mon, { note: 'Taco night' });
+		const pizzaId = addDinner(db, person.householdId, wed, { type: 'eat_out', note: 'Pizza' });
+		await open(page, `/menu?week=${sun}`);
+
+		// Someone else moves Monday's dinner to Thursday.
+		db.prepare('update dinners set date = ? where id = ?').run(thu, tacosId);
+		await drag(page, mon, wed);
+		await expect(page.getByRole('alert')).toHaveText(
+			"Someone cleared or moved that day's dinners, so nothing moved."
+		);
+		await expect(day(page, mon)).toContainText('Not planned');
+		await expect(day(page, thu).locator('.note')).toHaveText('Taco night');
+		await expect(day(page, wed).locator('.note')).toHaveText('Pizza');
+		expect(ids(db, person.householdId, wed)).toEqual([pizzaId]);
+
+		// Someone else swaps another dinner onto Wednesday before it's dragged.
+		db.prepare('update dinners set date = ? where id = ?').run(tue, pizzaId);
+		db.prepare('update dinners set date = ? where id = ?').run(wed, tacosId);
+		await page.reload();
+		await expect(page.locator('html[data-started]')).toBeAttached();
+		db.prepare('update dinners set date = ? where id = ?').run(wed, pizzaId);
+		db.prepare('update dinners set date = ? where id = ?').run(tue, tacosId);
+		await drag(page, wed, thu);
+		await expect(page.getByRole('alert')).toHaveText(
+			"Someone cleared or moved that day's dinners, so nothing moved."
+		);
+		await expect(day(page, wed).locator('.note')).toHaveText('Pizza');
+		await expect(day(page, tue).locator('.note')).toHaveText('Taco night');
+		expect(ids(db, person.householdId, thu)).toEqual([]);
+	});
+});
+
+test('never drags on touch: pressing and moving on a day moves nothing', async ({
+	page,
+	db,
+	person
+}) => {
+	const sunday = addDays(sundayOf(today()), 7);
+	const [mon, tue] = [1, 2].map((days) => addDays(sunday, days)) as [string, string];
+	const tacosId = addDinner(db, person.householdId, mon, { note: 'Taco night' });
+	await open(page, `/menu?week=${sunday}`);
+
+	// Real touch input; page.mouse would send a mouse pointer even on the Pixel 7.
+	const from = await day(page, mon).boundingBox();
+	const to = await day(page, tue).boundingBox();
+	if (!from || !to) throw new Error('No rows');
+	const point = (box: typeof from) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(from)] });
+	// A long press first, as some browsers start a drag with one.
+	await page.waitForTimeout(800);
+	for (let step = 1; step <= 8; step += 1) {
+		const y = from.y + from.height / 2 + ((to.y - from.y) * step) / 8;
+		await cdp.send('Input.dispatchTouchEvent', {
+			type: 'touchMove',
+			touchPoints: [{ x: point(from).x, y }]
+		});
+	}
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+	await expect(page.locator('a.day.target')).toHaveCount(0);
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sunday}$`));
+	await expect(day(page, mon).locator('.note')).toHaveText('Taco night');
+	await expect(day(page, tue)).toContainText('Not planned');
+	expect(dinnerRow(db, person.householdId, mon)?.id).toBe(tacosId);
+});

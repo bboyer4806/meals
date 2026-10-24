@@ -76,6 +76,85 @@
 		};
 	};
 
+	// Dragging a day onto another swaps their dinners, like Move to another date (2.2.2, 6.9).
+	// Only a mouse drags (trackpads report as one), so on touch screens tapping still opens a day
+	// and swiping scrolls. A drag starts once the pointer moves a few pixels; a click without that
+	// still opens the day.
+
+	const DRAG_DISTANCE = 5;
+	const MOVED_SINCE = "Someone cleared or moved that day's dinners, so nothing moved.";
+
+	let press: { from: string; dinnerId: number; x: number; y: number } | null = null;
+	let dragging = $state<{ from: string; dinnerId: number } | null>(null);
+	let dropTarget = $state<string | null>(null);
+	// The drop's click would open the day under it.
+	let swallowClick = false;
+	let move = $state({ from: '', to: '', dinnerId: 0 });
+	let moveForm = $state<HTMLFormElement>();
+	let moveError = $state('');
+
+	function pressDay(event: PointerEvent, from: string, dinnerId: number | undefined) {
+		if (event.pointerType !== 'mouse' || event.button !== 0 || dinnerId === undefined) return;
+		press = { from, dinnerId, x: event.clientX, y: event.clientY };
+		// Keeps the drag's events coming when the pointer leaves the window.
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+	}
+
+	/** The day under the pointer, if any. */
+	function dayAt(event: PointerEvent): string | null {
+		const row = document.elementFromPoint(event.clientX, event.clientY)?.closest('a.day');
+		return row instanceof HTMLElement ? (row.dataset.date ?? null) : null;
+	}
+
+	function movePointer(event: PointerEvent) {
+		if (press && !dragging) {
+			if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < DRAG_DISTANCE) return;
+			dragging = { from: press.from, dinnerId: press.dinnerId };
+			moveError = '';
+			window.getSelection()?.removeAllRanges();
+		}
+		if (dragging) dropTarget = dayAt(event);
+	}
+
+	function release(event: PointerEvent) {
+		const drag = dragging;
+		endDrag();
+		if (!drag) return;
+		swallowClick = true;
+		const to = dayAt(event);
+		if (to === null || to === drag.from) return;
+		move = { from: drag.from, to, dinnerId: drag.dinnerId };
+		void tick().then(() => moveForm?.requestSubmit());
+	}
+
+	function endDrag() {
+		press = null;
+		dragging = null;
+		dropTarget = null;
+	}
+
+	function clickCapture(event: MouseEvent) {
+		if (!swallowClick) return;
+		swallowClick = false;
+		event.preventDefault();
+		event.stopPropagation();
+	}
+
+	// Someone may have cleared or moved the dragged day's dinners since the page loaded; the week
+	// then shows the menu as it is now (2.2.2).
+	const submitMove: SubmitFunction = () => {
+		moveError = '';
+		return async ({ result, update }) => {
+			if (result.type === 'failure' || (result.type === 'error' && result.status === 404)) {
+				moveError = MOVED_SINCE;
+				await refreshAll();
+				return;
+			}
+			// Landing on ?/move would drop ?week= and show this week instead.
+			await update({ navigate: false });
+		};
+	};
+
 	// Someone else may have removed it already, which is what was wanted.
 	const submitRemove: SubmitFunction = () => {
 		requestsError = '';
@@ -136,17 +215,39 @@
 	<span class="saved" role="status">{shown ? 'Saved' : ''}</span>
 {/snippet}
 
-<ol class="days">
+<svelte:window
+	onpointerdown={() => (swallowClick = false)}
+	onpointermove={movePointer}
+	onpointerup={release}
+	onpointercancel={endDrag}
+	onclickcapture={clickCapture}
+/>
+
+{#if moveError}<p class="error" role="alert">{moveError}</p>{/if}
+
+<form method="POST" action="?/move" hidden bind:this={moveForm} use:enhance={submitMove}>
+	<input type="hidden" name="from" value={move.from} />
+	<input type="hidden" name="to" value={move.to} />
+	<input type="hidden" name="dinnerId" value={move.dinnerId} />
+</form>
+
+<ol class="days" class:dragging={dragging !== null}>
 	{#each data.days as day (day.date)}
 		{@const isToday = day.date === data.today}
 		{@const { dinners } = day}
 		{@const only = dinners.length === 1 ? dinners[0] : undefined}
 		<li>
+			<!-- draggable="false" keeps the browser's own link drag out of the way. -->
 			<a
 				class="day card"
 				class:today={isToday}
+				class:source={dragging?.from === day.date}
+				class:target={dragging !== null && dropTarget === day.date && dropTarget !== dragging.from}
 				href="/menu/{day.date}"
 				aria-current={isToday ? 'date' : undefined}
+				data-date={day.date}
+				draggable="false"
+				onpointerdown={(event) => pressDay(event, day.date, dinners[0]?.id)}
 			>
 				<span class="when">
 					<span class="date">{formatDateLabel(day.date)}</span>
@@ -290,6 +391,25 @@
 		transform: translateY(-50%);
 		font-size: 1.4rem;
 		color: var(--muted);
+	}
+
+	/* While dragging, text doesn't get selected and the day under the pointer is outlined. */
+	.dragging {
+		user-select: none;
+		cursor: grabbing;
+	}
+
+	.dragging .day {
+		cursor: grabbing;
+	}
+
+	.day.source {
+		opacity: 0.6;
+	}
+
+	.day.target {
+		outline: 3px solid var(--accent);
+		outline-offset: 2px;
 	}
 
 	/* A thicker accent border and a label, so today doesn't rely on color alone. */
