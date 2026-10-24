@@ -16,6 +16,7 @@ test('each screen opens its own help', async ({ page, db, context, baseURL, pers
 		['/groceries/items', 'Items'],
 		['/recipes', 'Recipes'],
 		['/recipes/new', 'New recipe'],
+		['/recipes/import', 'Import recipes'],
 		[`/recipes/${recipeId}`, 'Recipe'],
 		[`/recipes/${recipeId}/edit`, 'Edit recipe'],
 		[`/recipes/${recipeId}/cook`, 'Cooking view'],

@@ -272,6 +272,8 @@ lost, so is everything. Moving backups off the server later is a small change.
 ```
 src/lib/                  used by browser and server; no database access
   amounts.ts              read "1 1/2", format kitchen fractions
+  ingredient-text.ts      split "1 1/2 cups flour, sifted" into an ingredient's parts
+  csv.ts                  read CSV files
   units.ts                known units, spellings, conversion, display ranges
   scaling.ts              scale one ingredient amount
   checklist.ts            combine ingredient amounts into checklist lines
@@ -585,7 +587,8 @@ out. Help sits in the header to the left of More.
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | History          | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
 | Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, archive and restore. Shows each item's default store and when and where it was last bought. |
-| Recipes          | `/recipes`                           | Search by name, filter by tag, sort by name or rating (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, and New recipe. |
+| Recipes          | `/recipes`                           | Search by name, filter by tag, sort by name or rating (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, Import and New recipe. |
+| Import recipes   | `/recipes/import`                    | See below.                                                                                                                           |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
 | Edit recipe      | `/recipes/new`, `/recipes/[id]/edit` | See below.                                                                                                                           |
 | Cooking view     | `/recipes/[id]/cook`                 | Large text, the screen stays on, and you tap ingredients and steps to check them off (Q36).                                          |
@@ -616,8 +619,8 @@ keeps the message. Feedback isn't stored in the app.
 the header to the left of More, which printing hides with the rest of the header. It opens a
 sheet titled "Help: " and the screen's name, such as "Help: Grocery list", that says what the
 screen is for and how to do its main tasks, in plain words and no more than about 6 short points.
-Recipe, Edit recipe (and New recipe, which shares its form), Cooking view, Dinner, History and
-Items each have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
+Recipe, Edit recipe (and New recipe, which shares its form), Import recipes, Cooking view,
+Dinner, History and Items each have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
 Opening it changes nothing on the page behind, so anything typed there and not saved stays. The
 help is fixed text in `src/lib/help.ts`, keyed by each screen's route, and the type check fails
 if a screen has none. It opens only when asked: there's no Help page or link in More, and the
@@ -651,6 +654,36 @@ and equal averages fall back to name. The sort, search, tag and archived switch 
 address, so Back and shared links keep them, and changing any one keeps the others; "Show all
 recipes" clears the search and tag. An unknown sort shows Name. Opening Recipes from the tab
 bar or "‹ Recipes" starts at Name.
+
+**Import recipes.** Households bringing recipes from elsewhere (MEA-37; Q37b assumed none) add
+many at once from a CSV file saved from a spreadsheet. Import beside New recipe opens it, with
+"‹ Recipes", Download template, a file field, Import and Cancel; its Help explains the layout.
+The template is the header row alone: Recipe, Servings, Prep (min), Cook (min), Tags,
+Ingredients, Steps, Notes, Source, Calories, Protein (g), Carbs (g), Fat (g). Columns are
+matched by name ignoring case, in any order; only Recipe is needed, and other columns are
+ignored. Each row is one recipe, and blank rows are skipped. Ingredients and Steps hold several
+entries separated by `|`, and an ingredient entry starting with `#` is a section heading. Each
+ingredient entry fills an editor row (`src/lib/ingredient-text.ts`): an amount, or a range whose
+first amount is the amount and which goes in the prep note as "2 to 3"; then a known unit (6.5)
+or a common one, such as clove, can, pinch, slice or stick, while any other word starts the
+item; then the item up to the first comma, and the rest as the prep note. "1 1/2 cups flour,
+sifted" is 1 1/2, cup, flour and sifted; "Salt, to taste" has no amount. Fields follow the
+editor's rules and limits, tags are separated by commas, and a blank Servings is the
+household's usual servings. If anything is wrong, nothing is imported, and the page lists each
+problem with its row number (the header is row 1), such as "Row 7: enter an amount like 1 1/2."
+Problems include a missing Recipe column, a row without a name, a name used twice in the file
+("Row 5: Pound cake is also on row 2."), an ingredient the editor wouldn't take ("Row 7: '2 cups'
+needs an item.") and an archived item ("Row 9: Saffron is archived. Restore it on Items first."),
+since importing never restores items. A file with no problems whose recipe names are already in
+Recipes (ignoring case, archived included) first lists those recipes, archived ones marked so,
+each with Skip (selected to start), Replace and Rename. Skip leaves the file's recipe out.
+Replace swaps the existing recipe's details for the file's, keeping its name, photo, Tried,
+ratings, dinners and archived state. Rename imports the file's recipe under a name typed there, which no
+recipe or other row may have. The chosen file stays in the form and is sent again with the
+choices; nothing is kept between the two. The whole import is checked and saved in one
+transaction. Recipes then says what it did until the next navigation, such as "Imported 9
+recipes, replaced 2 and skipped 3. Ignored columns: Step and Rating.", leaving out the parts that
+are 0 or empty. New item names join the catalog, as from the editor.
 
 **Recipe.** "‹ Recipes" goes to the Recipes list with no search or filters, sorted by name,
 even when the recipe was opened from a dinner. Photo, name, tags, a **Tried it** checkbox, your

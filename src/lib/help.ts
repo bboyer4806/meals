@@ -60,12 +60,23 @@ export const HELP: Record<HelpRouteId, Help> = {
 		points: [
 			"Your household's recipes. Tap one to open it.",
 			'Search by name, or tap a tag to see only recipes with it.',
-			'New recipe adds one.',
+			'New recipe adds one. Import adds many at once from a spreadsheet.',
 			'No recipe means a dish has a name but no ingredients or steps yet.',
 			'Show archived lists recipes you archived, so you can restore them.'
 		]
 	},
 	'/(app)/recipes/new': { title: 'New recipe', points: EDIT_RECIPE },
+	'/(app)/recipes/import': {
+		title: 'Import recipes',
+		points: [
+			'Download template gives a spreadsheet layout to fill in, one recipe per row, saved as CSV. Only the Recipe column is needed, and columns can be in any order.',
+			'Ingredients and Steps hold several entries separated by |, like 2 cups flour|1 egg|1 cup milk. An ingredient starting with #, like # Batter, is a section heading.',
+			'Each ingredient is read as an amount, a unit, an item and, after a comma, a prep note: 1 1/2 cups flour, sifted. A range like 2-3 cloves goes in the prep note.',
+			"Tags are separated by commas. A blank Servings uses your household's usual servings.",
+			'If anything is wrong, nothing is imported, and each problem is listed with its row number. The header is row 1.',
+			'For a recipe already in Recipes, choose Skip, Replace (keeping its name, photo, Tried, ratings and dinners) or Rename.'
+		]
+	},
 	'/(app)/recipes/[id]': {
 		title: 'Recipe',
 		points: [

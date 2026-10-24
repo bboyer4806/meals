@@ -241,26 +241,38 @@ function readIngredients(json: string): IngredientInput[] | string {
 	const rows = rowsSchema.safeParse(raw);
 	if (!rows.success) return UNREADABLE;
 
-	const ingredients: IngredientInput[] = [];
-	let section: string | null = null;
 	// Rows are numbered as the editor labels them: blank rows count, and headings are counted
 	// apart from ingredients.
 	let ingredientNumber = 0;
 	let sectionNumber = 0;
-	for (const row of rows.data) {
+	const labeled = rows.data.map((row) => {
 		if (row.kind === 'section') {
 			sectionNumber += 1;
+			return { row, label: `Section ${sectionNumber}` };
+		}
+		ingredientNumber += 1;
+		return { row, label: `Ingredient ${ingredientNumber}` };
+	});
+	return readRows(labeled);
+}
+
+/**
+ * The rows as ingredients, in order, each in the section of the heading above it, or the first
+ * problem with them, which starts with the row's label. Fully blank rows are left out.
+ */
+export function readRows(rows: { row: RecipeRow; label: string }[]): IngredientInput[] | string {
+	const ingredients: IngredientInput[] = [];
+	let section: string | null = null;
+	for (const { row, label } of rows) {
+		if (row.kind === 'section') {
 			const heading = normalizeName(row.heading);
-			if (heading.length > 60) {
-				return `Section ${sectionNumber}: keep the heading under 60 characters`;
-			}
+			if (heading.length > 60) return `${label}: keep the heading under 60 characters`;
 			// A blank heading ends the section above it. A heading with no ingredients after it
 			// is dropped, since sections are stored on ingredients.
 			section = orNull(heading);
 			continue;
 		}
-		ingredientNumber += 1;
-		const ingredient = readIngredient(row, `Ingredient ${ingredientNumber}`, section);
+		const ingredient = readIngredient(row, label, section);
 		if (typeof ingredient === 'string') return ingredient;
 		if (ingredient) ingredients.push(ingredient);
 	}
@@ -350,6 +362,9 @@ const recipeFields = z.object({
 		tooBig: 'Enter 100000 g of fat or less'
 	})
 });
+
+/** The editor's fields other than the ingredients, with the same checks, for Import recipes. */
+export const recipeDetailFields = recipeFields.omit({ ingredients: true });
 
 /** A file that was sent, null for none, or undefined for something that isn't a file. */
 function upload(value: FormDataEntryValue | null): File | null | undefined {

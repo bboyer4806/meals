@@ -14,3 +14,9 @@ export function foldCase(text: string): string {
 export function formatQuantity(quantity: number): string {
 	return String(Math.round(quantity * 100) / 100);
 }
+
+/** A list in words: "Salt", "Salt and Pepper", or "Salt, Pepper and Cumin". */
+export function joinAnd(parts: string[]): string {
+	if (parts.length <= 1) return parts[0] ?? '';
+	return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+}
