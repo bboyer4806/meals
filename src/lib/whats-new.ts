@@ -14,6 +14,16 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.6',
+		released: '2026-10-24',
+		lines: [
+			'Add many recipes at once from a CSV file with Import, beside New recipe. Download template gives the columns to fill in, one recipe per row.',
+			"Recipes, History and Items search as you type, so there's no Search button to tap.",
+			'On a computer, drag a day onto another day on the Menu to swap their dinners.',
+			"Requesting a dish that isn't in Recipes adds it there, ready for its recipe, and every request now links to its recipe."
+		]
+	},
+	{
 		version: '1.5',
 		released: '2026-10-21',
 		lines: [
