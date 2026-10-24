@@ -123,9 +123,9 @@ function findDish(householdId: number, dishId: number): { id: number; photoKey: 
 }
 
 /** Names are unique per household ignoring case, archived dishes included (design 2.3, 6.10). */
-function findDishByName(householdId: number, name: string) {
+export function findDishByName(householdId: number, name: string) {
 	return db()
-		.select({ id: dishes.id, archivedAt: dishes.archivedAt })
+		.select({ id: dishes.id, name: dishes.name, archivedAt: dishes.archivedAt })
 		.from(dishes)
 		.where(and(eq(dishes.householdId, householdId), sql`fold(${dishes.name}) = fold(${name})`))
 		.get();
