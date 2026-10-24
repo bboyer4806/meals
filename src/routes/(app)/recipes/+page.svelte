@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { afterNavigate, goto } from '$app/navigation';
+	import SearchBox from '#lib/components/SearchBox.svelte';
 	import { formatMinutes, formatRating, totalMinutes } from '#lib/recipe-view.ts';
 	import { foldCase, joinAnd } from '#lib/text.ts';
 
@@ -98,12 +99,11 @@
 
 {#if imported}<p class="imported" role="status">{imported}</p>{/if}
 
-<form method="GET" class="row search">
+<form method="GET" class="row search" data-sveltekit-replacestate data-sveltekit-reset="false">
 	{#if data.tag}<input type="hidden" name="tag" value={data.tag} />{/if}
 	{#if data.archived}<input type="hidden" name="archived" value="1" />{/if}
-	<label class="visually-hidden" for="q">Search recipes</label>
-	<input class="grow" id="q" name="q" type="search" placeholder="Search" value={data.search} />
-	<!-- Reorders right away, without tapping Search (section 7, "Recipes"). -->
+	<SearchBox label="Search recipes" value={data.search} />
+	<!-- Reorders right away (section 7, "Recipes"). -->
 	<label class="visually-hidden" for="sort">Sort</label>
 	<select
 		class="sort"
@@ -115,7 +115,6 @@
 		<option value="name">Name</option>
 		<option value="rating">Rating</option>
 	</select>
-	<button>Search</button>
 </form>
 
 {#if chips.length > 0}

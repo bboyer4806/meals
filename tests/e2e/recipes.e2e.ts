@@ -1297,7 +1297,6 @@ test('finds recipes by name and tag, and archives and restores one', async ({
 	await expect(page).toHaveURL(/\?q=CAKE&sort=name$/);
 	await expect(names).toHaveText(['Pound cake']);
 	await search.fill('zzz');
-	await page.getByRole('button', { name: 'Search' }).click();
 	await expect(page.getByText('No recipes matching “zzz”.')).toBeVisible();
 	await page.getByRole('link', { name: 'Show all recipes' }).click();
 	await expect(names).toHaveCount(4);

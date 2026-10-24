@@ -2,6 +2,7 @@
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
+	import SearchBox from '#lib/components/SearchBox.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
 
 	let { data } = $props();
@@ -45,11 +46,9 @@
 	from.
 </p>
 
-<form method="GET" class="row search">
+<form method="GET" class="row search" data-sveltekit-replacestate data-sveltekit-reset="false">
 	{#if data.archived}<input type="hidden" name="archived" value="1" />{/if}
-	<label class="visually-hidden" for="q">Search items</label>
-	<input class="grow" id="q" name="q" type="search" placeholder="Search" value={data.search} />
-	<button>Search</button>
+	<SearchBox label="Search items" value={data.search} />
 </form>
 
 <p>
