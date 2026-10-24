@@ -1,21 +1,24 @@
 import { error } from '@sveltejs/kit';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { REQUEST_NAME_MAX, REQUEST_NOTE_MAX } from '../../menu.ts';
 import { normalizeName } from '../../text.ts';
-import { db } from '../db/index.ts';
+import { db, transaction } from '../db/index.ts';
 import { dishRequests, dishes, users } from '../db/schema.ts';
+import { findDishByName, insertDish } from './dishes.ts';
 
 // Dish requests (design 6.12): anyone in the household asks for a dish, and anyone removes the
-// request once it's been made. Each shows who asked.
+// request once it's been made. Each shows who asked and links to its recipe.
 
 export type DishRequest = {
 	id: number;
 	name: string;
 	note: string | null;
-	/** The recipe it links to, or null for plain text. */
-	dishId: number | null;
+	/** The recipe it links to. */
+	dishId: number;
 	askedBy: string;
 };
+
+export type AddRequestResult = { kind: 'added' } | { kind: 'archived'; dishId: number; name: string };
 
 /** The household's requests, oldest first. */
 export function listRequests(householdId: number): DishRequest[] {
@@ -34,16 +37,8 @@ export function listRequests(householdId: number): DishRequest[] {
 		.all();
 }
 
-/**
- * Adds a request from the signed-in member. A name that matches an active dish, ignoring case,
- * links to it; any other name stays plain text and adds no dish.
- */
-export function addRequest(
-	householdId: number,
-	userId: number,
-	fields: { name: string; note: string | null },
-	now: number
-): void {
+/** The name as it's kept, and the note. Refuses a blank name and anything too long. */
+function checkFields(fields: { name: string; note: string | null }) {
 	const name = normalizeName(fields.name);
 	if (name === '') error(400, 'Enter a dish name');
 	if (name.length > REQUEST_NAME_MAX) {
@@ -52,30 +47,70 @@ export function addRequest(
 	if (fields.note !== null && fields.note.length > REQUEST_NOTE_MAX) {
 		error(400, `Keep the note under ${REQUEST_NOTE_MAX} characters`);
 	}
-	const dish = db()
-		.select({ id: dishes.id })
-		.from(dishes)
-		.where(
-			and(
-				eq(dishes.householdId, householdId),
-				isNull(dishes.archivedAt),
-				sql`fold(${dishes.name}) = fold(${name})`
-			)
-		)
-		.get();
+	return { name, note: fields.note };
+}
+
+function insertRequest(
+	householdId: number,
+	userId: number,
+	fields: { name: string; note: string | null },
+	dishId: number,
+	now: number
+): void {
 	db()
 		.insert(dishRequests)
-		.values({
-			householdId,
-			userId,
-			name,
-			note: fields.note,
-			dishId: dish?.id ?? null,
-			createdAt: now
-		})
+		.values({ householdId, userId, name: fields.name, note: fields.note, dishId, createdAt: now })
 		.run();
 }
 
+/**
+ * Adds a request from the signed-in member, linked to its recipe: an active dish with the name,
+ * ignoring case, or a new one with the household's usual servings, as a dish typed on a dinner
+ * is (6.9, 6.12). An archived dish with the name changes nothing and returns 'archived', so the
+ * page can offer to restore it (6.10).
+ */
+export function addRequest(
+	householdId: number,
+	userId: number,
+	fields: { name: string; note: string | null },
+	now: number
+): AddRequestResult {
+	return transaction(() => {
+		const checked = checkFields(fields);
+		const found = findDishByName(householdId, checked.name);
+		if (found && found.archivedAt !== null) {
+			return { kind: 'archived', dishId: found.id, name: found.name };
+		}
+		const dishId = found?.id ?? insertDish(householdId, checked.name, now);
+		insertRequest(householdId, userId, checked, dishId, now);
+		return { kind: 'added' };
+	});
+}
+
+/**
+ * Restores an archived dish and adds a request linked to it, in one transaction. The request
+ * keeps its name as typed (6.12).
+ */
+export function restoreAndAddRequest(
+	householdId: number,
+	userId: number,
+	dishId: number,
+	fields: { name: string; note: string | null },
+	now: number
+): void {
+	transaction(() => {
+		const checked = checkFields(fields);
+		const result = db()
+			.update(dishes)
+			.set({ archivedAt: null })
+			.where(and(eq(dishes.id, dishId), eq(dishes.householdId, householdId)))
+			.run();
+		if (result.changes === 0) error(404, 'Not found');
+		insertRequest(householdId, userId, checked, dishId, now);
+	});
+}
+
+/** Removes the request. Its recipe stays in Recipes. */
 export function removeRequest(householdId: number, requestId: number): void {
 	const result = db()
 		.delete(dishRequests)

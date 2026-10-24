@@ -358,8 +358,8 @@ them from the household empties it and keeps the rating in the average and count
 `dessert` or `other`; Q29). Only `cook` and `going` dinners have dishes.
 
 **dish_requests:** `user_id` (who asked; removing them from the household removes their
-requests), `name` (as typed), `note`, `dish_id` (optional: the recipe the name matched when it
-was asked for), `created_at` (6.12).
+requests), `name` (as typed), `note`, `dish_id` (the recipe the name matched when it was asked
+for, or the one the request made), `created_at` (6.12).
 
 **pantry_checklists:** at most one per household (Q35). Either `start_date` and
 `end_date` (from the menu), or `dish_id` and `servings` (from one recipe). `created_at`.
@@ -562,12 +562,19 @@ If two people change the same thing, the last save wins.
 - Anyone in the household can ask for a dish, see every request and remove any of them (E2).
   Requests are listed oldest first, each with the dish, the note if there is one, and "Asked by"
   with the asker's name. Showing who asked is an exception to section 12, for requests only.
-- The dish field suggests the household's active dishes, like adding a dish to a dinner (6.9),
-  but offers no new dish. A request whose name matches an active dish, ignoring case, links to
-  its recipe. Any other name stays plain text and adds no dish to Recipes.
-- The link is set when the request is made and never changes: a linked request keeps it, and
-  the name as typed, after the recipe is renamed or archived, and a plain one stays plain after
-  a recipe with its name is added.
+- The dish field suggests the household's active dishes and offers a new one, like adding a
+  dish to a dinner (6.9). Every request links to a recipe. A name that matches an active dish,
+  ignoring case, links to it. Any other name adds a dish to Recipes with that name and the
+  household's usual servings, labeled "No recipe", and links to it. A name that matches an
+  archived dish asks "Chili is archived. Restore it and request it?" with **Restore it and
+  request**, which restores it and adds the request, and **Cancel**, which adds nothing (6.10).
+- The link is set when the request is made and never changes: a request keeps it, and the name
+  as typed, after the recipe is renamed or archived. Removing a request leaves its recipe in
+  Recipes.
+- Requests made before every request had a recipe were linked once, when that change was
+  deployed: to the dish with the name, ignoring case, if there was one (an archived one stayed
+  archived), and otherwise to a new one made as above. Requests with the same name shared one
+  new dish, spelled as the oldest request typed it.
 - The dish name is required and up to 80 characters; the note is optional and up to 200. Each
   field stops taking characters at its limit, pasted text included, and says so while it's full.
   The server refuses anything longer (4.5).
@@ -728,7 +735,8 @@ still opens a day and swiping scrolls. If someone cleared or moved the dragged d
 since the week loaded, nothing moves, the week shows the menu as it is now, and it says "Someone
 cleared or moved that day's dinners, so nothing moved." ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
 **Requests** lists the dish requests (6.12), or "No requests yet.", each with Remove. "Request
-a dish" opens a sheet with Dish (with suggestions), an optional Note and Request.
+a dish" opens a sheet with Dish (with suggestions, or a new dish), an optional Note and
+Request. Each request links to its recipe.
 
 **Dinner.** "‹ Week of" goes to the dinner's week. Type (four buttons), note, servings,
 and dishes. You add a dish by searching existing dishes or typing a new name, then picking

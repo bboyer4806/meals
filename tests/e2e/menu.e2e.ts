@@ -1559,8 +1559,6 @@ test('requests a dish from Recipes, linked, with who asked and the note', async 
 	const sheet = requestSheet(page);
 	await sheet.getByRole('combobox', { name: 'Dish' }).fill('las');
 	await sheet.getByRole('option', { name: 'Lasagna' }).click();
-	// A request adds no dish, so nothing offers a new one.
-	await expect(sheet.getByRole('option')).toHaveCount(0);
 	await sheet.getByLabel('Note (optional)').fill('For Sunday, please');
 	await sheet.getByRole('button', { name: 'Request', exact: true }).click();
 	await expect(sheet).toHaveCount(0);
@@ -1573,21 +1571,67 @@ test('requests a dish from Recipes, linked, with who asked and the note', async 
 	await expect(section.getByText('For Sunday, please')).toBeVisible();
 	await expect(section.getByText(/^Asked by Person \d+$/)).toBeVisible();
 	await expect(section.getByText('No requests yet.')).toHaveCount(0);
+	expect(dishCount(db, person.householdId)).toBe(1);
 });
 
-test('requests a new name as plain text, adding no dish', async ({ page, db, person }) => {
+test('requests a new name, adding it to Recipes and linking to it', async ({
+	page,
+	db,
+	person
+}) => {
 	await open(page, '/menu');
 	await openRequestSheet(page);
 	const sheet = requestSheet(page);
 	await sheet.getByRole('combobox', { name: 'Dish' }).fill('Shrimp boil');
-	await expect(sheet.getByRole('option')).toHaveCount(0);
+	await sheet.getByRole('option', { name: 'Add “Shrimp boil” as a new dish' }).click();
 	await sheet.getByRole('button', { name: 'Request', exact: true }).click();
 	await expect(sheet).toHaveCount(0);
 
+	const dish = db
+		.prepare('select id, servings from dishes where household_id = ? and name = ?')
+		.get(person.householdId, 'Shrimp boil') as { id: number; servings: number };
+	expect(dish.servings).toBe(4);
+	const link = requestsSection(page).getByRole('link', { name: 'Shrimp boil' });
+	await expect(link).toHaveAttribute('href', `/recipes/${dish.id}`);
+	await link.click();
+	await expect(page.getByRole('heading', { name: 'Shrimp boil' })).toBeVisible();
+	await page.goto('/recipes');
+	await expect(page.getByRole('link', { name: /Shrimp boil/ })).toContainText('No recipe');
+});
+
+test('offers to restore an archived dish typed in a request', async ({ page, db, person }) => {
+	const chili = addRecipe(db, person.householdId, { name: 'Chili', archived: true });
+	const archived = () =>
+		db.prepare('select archived_at is not null from dishes where id = ?').pluck().get(chili);
+	await open(page, '/menu');
+	await openRequestSheet(page);
+	const sheet = requestSheet(page);
+	const dishField = sheet.getByRole('combobox', { name: 'Dish' });
+	await dishField.fill('chili');
+	await sheet.getByLabel('Note (optional)').fill('Extra beans');
+	await sheet.getByRole('button', { name: 'Request', exact: true }).click();
+
+	// Cancel adds nothing and goes back to the request.
+	const dialog = page.getByRole('dialog', { name: 'Chili' });
+	await expect(dialog).toContainText('Chili is archived. Restore it and request it?');
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(dishField).toHaveValue('chili');
+	await expect(requestsSection(page).getByText('No requests yet.')).toBeVisible();
+	expect(archived()).toBe(1);
+
+	await sheet.getByRole('button', { name: 'Request', exact: true }).click();
+	await dialog.getByRole('button', { name: 'Restore it and request' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(sheet).toHaveCount(0);
 	const section = requestsSection(page);
-	await expect(section.getByText('Shrimp boil', { exact: true })).toBeVisible();
-	await expect(section.getByRole('link', { name: 'Shrimp boil' })).toHaveCount(0);
-	expect(dishCount(db, person.householdId)).toBe(0);
+	await expect(section.getByRole('link', { name: 'chili' })).toHaveAttribute(
+		'href',
+		`/recipes/${chili}`
+	);
+	await expect(section.getByText('Extra beans')).toBeVisible();
+	expect(archived()).toBe(0);
+	expect(dishCount(db, person.householdId)).toBe(1);
 });
 
 test('stops the dish at 80 characters and the note at 200, typed or pasted', async ({
@@ -1614,7 +1658,9 @@ test('stops the dish at 80 characters and the note at 200, typed or pasted', asy
 	await expect(dish).toHaveValue(`${'a'.repeat(79)}x`);
 	await expect(dishFull).toBeVisible();
 
-	await note.click();
+	// The new-dish option covers the note, so Tab goes there, as when typing.
+	await page.keyboard.press('Tab');
+	await expect(note).toBeFocused();
 	await page.keyboard.insertText('n'.repeat(250));
 	await expect(note).toHaveValue('n'.repeat(200));
 	await expect(noteFull).toBeVisible();
@@ -1633,12 +1679,14 @@ test('needs a dish name', async ({ page, person: _ }) => {
 	await expect(sheet.getByRole('alert')).toHaveText('Enter a dish name');
 });
 
-test('removes a request for everyone', async ({ page, db, person }) => {
+test('removes a request for everyone, keeping its recipe', async ({ page, db, person }) => {
 	const insert = db.prepare(
-		'insert into dish_requests (household_id, user_id, name, note, dish_id, created_at) values (?, ?, ?, null, null, ?)'
+		'insert into dish_requests (household_id, user_id, name, note, dish_id, created_at) values (?, ?, ?, null, ?, ?)'
 	);
-	insert.run(person.householdId, person.userId, 'Gumbo', 1);
-	insert.run(person.householdId, person.userId, 'Chili', 2);
+	for (const [name, at] of [['Gumbo', 1], ['Chili', 2]] as const) {
+		const dishId = addRecipe(db, person.householdId, { name });
+		insert.run(person.householdId, person.userId, name, dishId, at);
+	}
 	await page.goto('/menu');
 	const section = requestsSection(page);
 	await expect(section.getByRole('listitem')).toHaveText([/^Gumbo/, /^Chili/]);
@@ -1652,6 +1700,7 @@ test('removes a request for everyone', async ({ page, db, person }) => {
 			.pluck()
 			.get(person.householdId)
 	).toBe(0);
+	expect(dishCount(db, person.householdId)).toBe(2);
 });
 
 test('plans two dinners on a day, each with its own label, dishes, Save and Clear (6.9)', async ({

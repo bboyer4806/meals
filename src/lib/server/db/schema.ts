@@ -417,8 +417,9 @@ export const dishRequests = sqliteTable(
 		// As typed, kept when the linked dish is renamed or archived.
 		name: text('name').notNull(),
 		note: text('note'),
-		// The recipe the name matched when it was asked for, if any. Nothing changes it later.
-		dishId: integer('dish_id'),
+		// The recipe the name matched when it was asked for, or the one the request made. Nothing
+		// changes it later.
+		dishId: integer('dish_id').notNull(),
 		createdAt: integer('created_at').notNull()
 	},
 	(t) => [
