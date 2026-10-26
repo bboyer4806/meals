@@ -37,6 +37,16 @@ export function listRequests(householdId: number): DishRequest[] {
 		.all();
 }
 
+/** Whether any request links to the dish, made from its recipe's page or the Menu (6.12). */
+export function hasRequest(householdId: number, dishId: number): boolean {
+	const request = db()
+		.select({ id: dishRequests.id })
+		.from(dishRequests)
+		.where(and(eq(dishRequests.householdId, householdId), eq(dishRequests.dishId, dishId)))
+		.get();
+	return request !== undefined;
+}
+
 /** The name as it's kept, and the note. Refuses a blank name and anything too long. */
 function checkFields(fields: { name: string; note: string | null }) {
 	const name = normalizeName(fields.name);
@@ -107,6 +117,31 @@ export function restoreAndAddRequest(
 			.run();
 		if (result.changes === 0) error(404, 'Not found');
 		insertRequest(householdId, userId, checked, dishId, now);
+	});
+}
+
+/**
+ * Requests the dish from its recipe's page, asked by the signed-in member, named as the dish is
+ * named now and with no note. Adds nothing when a request already links to it, from either place,
+ * so someone else's request since the page loaded doesn't make a second one (6.12).
+ */
+export function requestDish(
+	householdId: number,
+	userId: number,
+	dishId: number,
+	now: number
+): void {
+	transaction(() => {
+		const dish = db()
+			.select({ name: dishes.name, archivedAt: dishes.archivedAt })
+			.from(dishes)
+			.where(and(eq(dishes.id, dishId), eq(dishes.householdId, householdId)))
+			.get();
+		if (!dish) error(404, 'Not found');
+		// An archived recipe's page has no Request, so this one was archived after it loaded.
+		if (dish.archivedAt !== null) error(400, `Restore ${dish.name} before requesting it`);
+		if (hasRequest(householdId, dishId)) return;
+		insertRequest(householdId, userId, { name: dish.name, note: null }, dishId, now);
 	});
 }
 

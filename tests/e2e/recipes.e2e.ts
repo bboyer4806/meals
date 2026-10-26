@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import type { Dialog, Locator, Page } from '@playwright/test';
+import type Database from 'better-sqlite3';
 import {
 	addDays,
 	addDinner,
@@ -599,6 +600,111 @@ test("rates a recipe from its page, shown with the household's average on its ca
 	await expect(cardRating).toHaveCount(0);
 });
 
+// Requesting a dish from its recipe (design 6.12; section 7, "Recipe").
+
+const requestButton = (page: Page) => page.getByRole('button', { name: 'Request', exact: true });
+const requested = (page: Page) => page.getByText('Requested', { exact: true });
+
+/** The household's dish requests, oldest first. */
+function requestRows(db: Database.Database, householdId: number) {
+	return db
+		.prepare(
+			'select user_id as userId, name, note, dish_id as dishId from dish_requests where household_id = ? order by id'
+		)
+		.all(householdId);
+}
+
+/** A request as the Menu's Request a dish adds one, typed as "lasagna" with a note. */
+function addTypedRequest(
+	db: Database.Database,
+	householdId: number,
+	userId: number,
+	dishId: number
+) {
+	db.prepare(
+		'insert into dish_requests (household_id, user_id, name, note, dish_id, created_at) values (?, ?, ?, ?, ?, ?)'
+	).run(householdId, userId, 'lasagna', 'Extra cheese', dishId, Date.now());
+}
+
+test('requests a recipe at the servings shown, and a "No recipe" dish, for the Menu', async ({
+	page,
+	db,
+	person
+}) => {
+	const recipeId = addRecipe(db, person.householdId, scaled);
+	const plainId = addRecipe(db, person.householdId, { name: 'Shrimp boil' });
+
+	await open(page, `/recipes/${recipeId}`);
+	await page.getByRole('button', { name: 'More servings' }).click();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${recipeId}\\?servings=3$`));
+	// Saved on tap, and Requested takes the button's place, at the same servings.
+	await requestButton(page).click();
+	await expect(requested(page)).toBeFocused();
+	await expect(requestButton(page)).toHaveCount(0);
+	await expect(page).toHaveURL(new RegExp(`/recipes/${recipeId}\\?servings=3$`));
+	await expect(page.getByRole('status')).toHaveText('3 servings');
+
+	await open(page, `/recipes/${plainId}`);
+	await expect(page.getByText('No recipe yet.')).toBeVisible();
+	await requestButton(page).click();
+	await expect(requested(page)).toBeVisible();
+
+	// Asked by the person, named as the recipe is, with no note, and linked on the Menu.
+	expect(requestRows(db, person.householdId)).toEqual([
+		{ userId: person.userId, name: 'Scaling test', note: null, dishId: recipeId },
+		{ userId: person.userId, name: 'Shrimp boil', note: null, dishId: plainId }
+	]);
+	await open(page, '/menu');
+	const requests = page.getByRole('region', { name: 'Requests' });
+	await expect(requests.getByRole('link', { name: 'Scaling test' })).toHaveAttribute(
+		'href',
+		`/recipes/${recipeId}`
+	);
+	await expect(requests.getByRole('link', { name: 'Shrimp boil' })).toHaveAttribute(
+		'href',
+		`/recipes/${plainId}`
+	);
+
+	// Removing its request on the Menu brings the button back.
+	await requests.getByRole('button', { name: 'Remove Scaling test' }).click();
+	await expect(requests.getByRole('listitem')).toHaveText([/^Shrimp boil/]);
+	await open(page, `/recipes/${recipeId}`);
+	await expect(requestButton(page)).toBeVisible();
+	await expect(requested(page)).toHaveCount(0);
+});
+
+test('says Requested and adds nothing when the recipe was requested since the page loaded', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Lasagna' });
+	await open(page, `/recipes/${dishId}`);
+	addTypedRequest(db, person.householdId, person.userId, dishId);
+	await requestButton(page).click();
+	await expect(requested(page)).toBeVisible();
+	expect(requestRows(db, person.householdId)).toEqual([
+		{ userId: person.userId, name: 'lasagna', note: 'Extra cheese', dishId }
+	]);
+});
+
+test('has no Request on an archived recipe, and still says Requested if it has a request', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Lasagna', archived: true });
+	await open(page, `/recipes/${dishId}`);
+	await expect(page.getByText('Archived', { exact: true })).toBeVisible();
+	await expect(requestButton(page)).toHaveCount(0);
+	await expect(requested(page)).toHaveCount(0);
+
+	addTypedRequest(db, person.householdId, person.userId, dishId);
+	await page.reload();
+	await expect(requested(page)).toBeVisible();
+	await expect(requestButton(page)).toHaveCount(0);
+});
+
 test('sorts recipes by rating, kept with the search, tag and archived switch', async ({
 	page,
 	db,
@@ -1064,13 +1170,14 @@ test('prints the recipe at the servings shown, without navigation or buttons', a
 	person
 }) => {
 	const dishId = addRecipe(db, person.householdId, { ...scaled, tags: ['Dinner'] });
-	await page.goto(`/recipes/${dishId}?servings=6`);
+	await open(page, `/recipes/${dishId}?servings=6`);
 	const header = page.getByRole('banner');
 	const tabs = page.getByRole('navigation', { name: 'Main' });
 	const serves = page.getByText('Serves 6', { exact: true });
 	await expect(header).toBeVisible();
 	await expect(tabs).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Print' })).toBeVisible();
+	await expect(requestButton(page)).toBeVisible();
 	await expect(serves).toBeHidden();
 
 	await page.emulateMedia({ media: 'print' });
@@ -1085,6 +1192,14 @@ test('prints the recipe at the servings shown, without navigation or buttons', a
 	await expect(page.getByRole('heading', { name: 'Scaling test', level: 1 })).toBeVisible();
 	await expect(ingredients(page).nth(0)).toHaveText('3/4 cup Milk');
 	await expect(steps(page)).toHaveCount(2);
+
+	// Once requested, Requested is left out too, at the same servings.
+	await page.emulateMedia({ media: 'screen' });
+	await requestButton(page).click();
+	await expect(requested(page)).toBeVisible();
+	await page.emulateMedia({ media: 'print' });
+	await expect(requested(page)).toBeHidden();
+	await expect(serves).toBeVisible();
 });
 
 test('goes back to the plain Recipes list, however the recipe was opened', async ({

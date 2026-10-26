@@ -6,7 +6,14 @@ import { dishRequests, dishes, users } from '../db/schema.ts';
 import { expectHttpError, freshDb, makeDish, makeHousehold, recipe } from '../testing.ts';
 import { setDishArchived, updateDish } from './dishes.ts';
 import { removeMember } from './households.ts';
-import { addRequest, listRequests, removeRequest, restoreAndAddRequest } from './requests.ts';
+import {
+	addRequest,
+	hasRequest,
+	listRequests,
+	removeRequest,
+	requestDish,
+	restoreAndAddRequest
+} from './requests.ts';
 
 const NOW = Date.UTC(2026, 9, 7, 17, 0);
 
@@ -135,6 +142,64 @@ describe('restoreAndAddRequest', () => {
 			)
 		).toBe('Enter a dish name');
 		expect(dishNamed('Lasagna')!.archivedAt).toBe(NOW);
+	});
+});
+
+describe('requestDish', () => {
+	it('asks for the dish as it is named now, from the person, with no note', () => {
+		updateDish(householdId, lasagna, recipe('Veggie lasagna'), [], NOW);
+		requestDish(householdId, userId, lasagna, NOW);
+		expect(db().select().from(dishRequests).all()).toEqual([
+			{
+				id: expect.any(Number),
+				householdId,
+				userId,
+				name: 'Veggie lasagna',
+				note: null,
+				dishId: lasagna,
+				createdAt: NOW
+			}
+		]);
+	});
+
+	it('adds nothing when a request already links to the dish, from either place', () => {
+		ask('LASAGNA', 'Extra cheese');
+		requestDish(householdId, userId, lasagna, NOW);
+		expect(listRequests(householdId)).toEqual([
+			expect.objectContaining({ name: 'LASAGNA', note: 'Extra cheese', dishId: lasagna })
+		]);
+
+		removeRequest(householdId, listRequests(householdId)[0]!.id);
+		requestDish(householdId, userId, lasagna, NOW);
+		requestDish(householdId, userId, lasagna, NOW);
+		expect(listRequests(householdId)).toEqual([
+			expect.objectContaining({ name: 'Lasagna', note: null, dishId: lasagna })
+		]);
+	});
+
+	it('refuses an archived dish and adds nothing', () => {
+		setDishArchived(householdId, lasagna, true, NOW);
+		expect(refusal(() => requestDish(householdId, userId, lasagna, NOW))).toBe(
+			'Restore Lasagna before requesting it'
+		);
+		expect(listRequests(householdId)).toEqual([]);
+	});
+
+	it("refuses another household's dish with a 404 and adds nothing", () => {
+		const curry = makeDish(otherId, recipe('Curry'));
+		expectHttpError(() => requestDish(householdId, userId, curry, NOW), 404);
+		expect(db().select().from(dishRequests).all()).toEqual([]);
+	});
+});
+
+describe('hasRequest', () => {
+	it("says whether any request links to the dish, in the household's own requests", () => {
+		expect(hasRequest(householdId, lasagna)).toBe(false);
+		ask('lasagna');
+		expect(hasRequest(householdId, lasagna)).toBe(true);
+		expect(hasRequest(otherId, lasagna)).toBe(false);
+		removeRequest(householdId, listRequests(householdId)[0]!.id);
+		expect(hasRequest(householdId, lasagna)).toBe(false);
 	});
 });
 

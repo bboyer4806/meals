@@ -9,6 +9,7 @@ import {
 	setDishArchived,
 	setDishTried
 } from '#lib/server/data/dishes.ts';
+import { hasRequest, requestDish } from '#lib/server/data/requests.ts';
 import { attempt, parseForm } from '#lib/server/forms.ts';
 
 // A checked box sends "on"; an unchecked one sends nothing.
@@ -33,7 +34,8 @@ export function load({ locals, params }) {
 	const dishId = dishIdIn(params);
 	return {
 		dish: getDish(user.householdId, dishId),
-		ownRating: getOwnRating(user.householdId, dishId, user.id)
+		ownRating: getOwnRating(user.householdId, dishId, user.id),
+		requested: hasRequest(user.householdId, dishId)
 	};
 }
 
@@ -69,5 +71,12 @@ export const actions = {
 		const parsed = parseForm(rateSchema, await request.formData(), 'rate');
 		if ('failure' in parsed) return parsed.failure;
 		return attempt('rate', () => rateDish(user.householdId, dishId, user.id, parsed.data.stars));
+	},
+
+	// Saved as soon as it's tapped, asked by the signed-in person (6.12; section 7, "Recipe").
+	request: ({ locals, params }) => {
+		const user = requireHousehold(locals);
+		const dishId = dishIdIn(params);
+		return attempt('request', () => requestDish(user.householdId, user.id, dishId, Date.now()));
 	}
 };

@@ -358,8 +358,9 @@ them from the household empties it and keeps the rating in the average and count
 `dessert` or `other`; Q29). Only `cook` and `going` dinners have dishes.
 
 **dish_requests:** `user_id` (who asked; removing them from the household removes their
-requests), `name` (as typed), `note`, `dish_id` (the recipe the name matched when it was asked
-for, or the one the request made), `created_at` (6.12).
+requests), `name` (as typed, or the recipe's name when requested from its page), `note`,
+`dish_id` (the recipe the name matched when it was asked for, the one the request made, or the
+one whose page it was requested from), `created_at` (6.12).
 
 **pantry_checklists:** at most one per household (Q35). Either `start_date` and
 `end_date` (from the menu), or `dish_id` and `servings` (from one recipe). `created_at`.
@@ -568,8 +569,14 @@ If two people change the same thing, the last save wins.
   household's usual servings, labeled "No recipe", and links to it. A name that matches an
   archived dish asks "Chili is archived. Restore it and request it?" with **Restore it and
   request**, which restores it and adds the request, and **Cancel**, which adds nothing (6.10).
-- The link is set when the request is made and never changes: a request keeps it, and the name
-  as typed, after the recipe is renamed or archived. Removing a request leaves its recipe in
+- A recipe's page also has **Request** (MEA-41; section 7, "Recipe"), which adds a request for
+  that recipe from the signed-in person, linked to it, named as the recipe is named then, with
+  no note. A recipe with any request, from either place, shows "Requested" in its place, and
+  shows Request again once its requests are removed. Tapping Request after someone else
+  requested the recipe adds nothing, so the page never adds a second request; the Menu's sheet
+  still can. An archived recipe has no Request.
+- The link is set when the request is made and never changes: a request keeps it, and its
+  name, after the recipe is renamed or archived. Removing a request leaves its recipe in
   Recipes.
 - Requests made before every request had a recipe were linked once, when that change was
   deployed: to the dish with the name, ignoring case, if there was one (an archived one stayed
@@ -711,11 +718,14 @@ as it was, and it works the same on archived recipes. Your rating is five stars 
 it, your own and nobody else's: tapping a star saves it right away, and tapping your current
 star again clears it. Beside the stars is the household's average, rounded to the nearest half
 star, with the number of ratings, such as "★ 4.5 (2)", and no names. A removed member's ratings
-stay in it. Rating doesn't change Tried it, and works the same on archived recipes. Ingredients grouped by section and scaled (section
+stay in it. Rating doesn't change Tried it, and works the same on archived recipes. Under the
+stars, **Request** asks for the dish on the Menu's Requests (6.12), on any recipe that isn't
+archived, "No recipe" ones included. It saves as soon as it's tapped, and the page stays at the
+servings shown. A recipe with any request says "Requested" in its place. Ingredients grouped by section and scaled (section
 6.6), numbered steps with warnings when scaled (6.7), notes, source (a link when it's a
 URL), and nutrition per serving. Actions: Cook, Print, Edit, Archive ("Check pantry" is
 hidden for now; 6.8). Print uses a print layout of this page at the current servings,
-without buttons, Tried it, ratings or navigation (including "‹ Recipes").
+without buttons, Tried it, ratings, "Requested" or navigation (including "‹ Recipes").
 
 **Edit recipe.** Name, photo (take or choose; resized on the phone), servings
 (pre-filled with the household's usual number for a new recipe), prep and cook minutes,

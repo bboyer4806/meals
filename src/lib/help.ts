@@ -85,7 +85,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Cook opens a big-text view to cook from.',
 			'Print prints the recipe at the servings shown.',
 			'Edit changes the recipe. Archive hides it from Recipes, and past dinners keep it.',
-			'‹ Recipes goes back to the list.'
+			'Request adds this dish to Requests on the Menu, and then says Requested. ‹ Recipes goes back to the list.'
 		]
 	},
 	'/(app)/recipes/[id]/edit': { title: 'Edit recipe', points: EDIT_RECIPE },

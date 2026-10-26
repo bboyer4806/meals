@@ -414,11 +414,12 @@ export const dishRequests = sqliteTable(
 		userId: integer('user_id')
 			.notNull()
 			.references(() => users.id, { onDelete: 'cascade' }),
-		// As typed, kept when the linked dish is renamed or archived.
+		// As typed, or the dish's name when requested from its recipe's page. Kept when the linked
+		// dish is renamed or archived.
 		name: text('name').notNull(),
 		note: text('note'),
-		// The recipe the name matched when it was asked for, or the one the request made. Nothing
-		// changes it later.
+		// The recipe the name matched when it was asked for, the one the request made, or the one
+		// whose page it was requested from. Nothing changes it later.
 		dishId: integer('dish_id').notNull(),
 		createdAt: integer('created_at').notNull()
 	},
