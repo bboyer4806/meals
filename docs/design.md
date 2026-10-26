@@ -266,6 +266,13 @@ lost, so is everything. Moving backups off the server later is a small change.
   built-in Content Security Policy is turned on.
 - **Admin** is only the `ADMIN_EMAIL` account. It sees household names and member
   emails, not household data.
+- **Importing from a link** (7) has the server fetch a web page, so a link could aim it at the
+  server itself. Only http and https are fetched, and never from an address on this computer
+  or a private or link-local network (such as 127.0.0.1, 10.0.0.1, 192.168.1.1, ::1, or the
+  cloud's metadata service at 169.254.169.254). Every address a name resolves to is checked
+  as the connection is made, so the name can't resolve to a public address for a check and a
+  private one for the fetch. Redirects are followed one at a time, up to 5, each checked the
+  same way. A fetch stops after 10 seconds or 5 MB.
 
 ### 4.6 Code layout
 
@@ -274,6 +281,7 @@ src/lib/                  used by browser and server; no database access
   amounts.ts              read "1 1/2", format kitchen fractions
   ingredient-text.ts      split "1 1/2 cups flour, sifted" into an ingredient's parts
   csv.ts                  read CSV files
+  recipe-schema.ts        read a page's schema.org Recipe into the recipe editor's fields
   units.ts                known units, spellings, conversion, display ranges
   scaling.ts              scale one ingredient amount
   checklist.ts            combine ingredient amounts into checklist lines
@@ -291,6 +299,7 @@ src/lib/server/
                           release), which takes the person's id.
   photos.ts               save, delete and serve photos
   jira.ts                 create a feedback ticket in Jira
+  recipe-page.ts          fetch a recipe's web page (4.5) and read its JSON-LD
 src/routes/               pages and form actions; database access only through data/
 drizzle/                  generated SQL migrations
 scripts/backup.js         the nightly backup job
@@ -627,8 +636,9 @@ keeps the message. Feedback isn't stored in the app.
 the header to the left of More, which printing hides with the rest of the header. It opens a
 sheet titled "Help: " and the screen's name, such as "Help: Grocery list", that says what the
 screen is for and how to do its main tasks, in plain words and no more than about 6 short points.
-Recipe, Edit recipe (and New recipe, which shares its form), Import recipes, Cooking view,
-Dinner, History and Items each have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
+Recipe, Edit recipe (and New recipe, which shares its form and adds a point about Import from a
+link), Import recipes, Cooking view, Dinner, History and Items each have their own help. The
+sheet closes with ✕, Escape or a tap on the backdrop.
 Opening it changes nothing on the page behind, so anything typed there and not saved stays. The
 help is fixed text in `src/lib/help.ts`, keyed by each screen's route, and the type check fails
 if a screen has none. It opens only when asked: there's no Help page or link in More, and the
@@ -723,6 +733,24 @@ tags (with suggestions), ingredients, steps (one per line in a single text box),
 source, and nutrition. Each ingredient row has an amount, a unit (pick a known unit or
 type your own), an item (with suggestions, or a new one) and a prep note. Rows move with
 up and down buttons, and "Add section" inserts a heading.
+
+**Import from a link.** New recipe has a Link field and Import above the editor (MEA-47, Q37),
+so a recipe found online can be brought in on any device, a phone included. Most recipe sites
+put a schema.org Recipe in their pages as JSON-LD for search engines; Import has the server
+fetch the page (4.5) and fills in the editor from it: the name, servings, prep and cook minutes,
+ingredients, steps one per line, calories, protein, carbs and fat, with Source set to the link.
+Servings are the first whole number in the page's yield, such as 4 in "4 servings". Each
+ingredient is split as Import recipes splits one, so "1 1/2 cups flour, sifted" is 1 1/2, cups,
+flour and sifted. Steps grouped in sections keep their order without the section names, and
+HTML and character references such as `&amp;` are taken out of the text. Fields the page leaves
+out keep what a new recipe starts with, such as the household's usual servings; the photo, tags
+and notes are never imported. The page then says "Filled in from the page. Check it, then tap Save."
+Nothing is saved until Save, which checks the fields as if they were typed. A page without a
+Recipe says "Couldn't find a recipe on that page.", and one that can't be opened says
+"Couldn't open that page. Check the link and try again."; either way the link stays in its
+field and the editor stays as it was. The link must start with http:// or https:// and, like
+Source, be up to 500 characters. Pages whose sites block servers or need a sign-in can't be
+opened, and recipe data written as Microdata or RDFa rather than JSON-LD isn't read.
 
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, dishes by role,
 and note. A day with more than one dinner shows each one (label, type, dishes by role, note)
@@ -894,7 +922,8 @@ ingredients.
 
 ## 12. Not in v1
 
-- Importing recipes from a website (Q37; planned for later).
+- Importing a recipe's photo from its page, or a recipe from a site that blocks servers or
+  needs a sign-in (Q37; Import from a link covers the rest).
 - Backups off the server (Q13).
 - Merging duplicate items.
 - Showing who added or changed something, except who asked for a dish request (6.12).
