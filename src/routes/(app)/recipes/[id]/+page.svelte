@@ -36,6 +36,7 @@
 
 	let fewerButton = $state<HTMLButtonElement>();
 	let moreButton = $state<HTMLButtonElement>();
+	let requestedLabel = $state<HTMLElement>();
 
 	function setServings(next: number) {
 		servings = next;
@@ -125,6 +126,31 @@ household's average, with no names (section 7, "Recipe"). -->
 	{#if dish.rating}<span class="average">{formatRating(dish.rating)}</span>{/if}
 	{#if form?.action === 'rate' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
 </form>
+
+<!-- Asks for the dish on the Menu's Requests, saved on tap. A recipe with any request, from here
+or the Menu, says Requested in its place, and an archived one has no Request (6.12; section 7,
+"Recipe"). -->
+{#if data.requested || dish.archivedAt === null}
+	<form
+		class="request no-print"
+		method="POST"
+		action="?/request"
+		use:enhance={() =>
+			async ({ update }) => {
+				// Landing on ?/request would drop ?servings= and show the recipe's own servings.
+				await update({ navigate: false });
+				// The button is gone, which would drop focus to the page.
+				requestedLabel?.focus();
+			}}
+	>
+		{#if data.requested}
+			<span class="badge" tabindex="-1" bind:this={requestedLabel}>Requested</span>
+		{:else}
+			<button>Request</button>
+		{/if}
+		{#if form?.action === 'request' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
+	</form>
+{/if}
 
 {#if dish.prepMinutes !== null || dish.cookMinutes !== null}
 	<dl class="times">
@@ -293,6 +319,16 @@ household's average, with no names (section 7, "Recipe"). -->
 
 	.average {
 		font-weight: 700;
+	}
+
+	/* As tall as the button, so Requested takes its place without moving the page. */
+	.request {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0 0.75rem;
+		min-height: var(--tap);
+		margin-bottom: 0.5rem;
 	}
 
 	.times,
