@@ -65,7 +65,13 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Show archived lists recipes you archived, so you can restore them.'
 		]
 	},
-	'/(app)/recipes/new': { title: 'New recipe', points: EDIT_RECIPE },
+	'/(app)/recipes/new': {
+		title: 'New recipe',
+		points: [
+			'Found the recipe online? Paste its web address in Link and tap Import to fill in the recipe from the page. Check it, then tap Save.',
+			...EDIT_RECIPE
+		]
+	},
 	'/(app)/recipes/import': {
 		title: 'Import recipes',
 		points: [

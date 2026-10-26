@@ -960,12 +960,13 @@ test('shows item suggestions above the tab bar', async ({ page, db, person }) =>
 	addItem(db, person.householdId, 'Sugar');
 	await page.goto('/recipes/new');
 	const item = ingredientRow(page, 1).getByRole('combobox', { name: 'Item' });
-	// Scrolled so the field sits just above the tab bar, where its suggestions open over it.
+	// Scrolled so the field ends 20px above the tab bar. Its first suggestion starts 9px below the
+	// field (a gap, then the list's border and padding), so it crosses the tab bar's top edge.
 	const tabBarTop = await page
 		.getByRole('navigation', { name: 'Main' })
 		.evaluate((bar) => bar.getBoundingClientRect().top);
 	await item.evaluate((field, top) => {
-		window.scrollBy(0, field.getBoundingClientRect().bottom - top + 2);
+		window.scrollBy(0, field.getBoundingClientRect().bottom - (top - 20));
 	}, tabBarTop);
 	await item.fill('S');
 	const option = page.getByRole('option', { name: 'Sugar' });

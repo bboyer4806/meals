@@ -1,6 +1,10 @@
 // Helpers for data tests. Only test files import this.
+import { EventEmitter } from 'node:events';
+import http, { type ClientRequest, type IncomingMessage } from 'node:http';
+import https from 'node:https';
+import { Readable } from 'node:stream';
 import { isHttpError } from '@sveltejs/kit';
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
 import type { DinnerType, DishRole } from '../menu.ts';
 import { createDish, type DishInput, type IngredientInput } from './data/dishes.ts';
 import { db, openDb } from './db/index.ts';
@@ -126,4 +130,51 @@ export function expectHttpError(run: () => unknown, status: number): void {
 		return;
 	}
 	expect.fail(`expected HTTP ${status}, but nothing was thrown`);
+}
+
+/** How a web page answers a GET, for servePages. */
+export type PageAnswer = {
+	status: number;
+	headers?: Record<string, string>;
+	body?: string | Buffer;
+};
+
+/**
+ * Answers GETs of these links in place of the network (recipe-page.ts), and gives the links
+ * asked for, in order. A link to localhost gets the real request, which refuses it as it
+ * connects; any other link fails. vi.restoreAllMocks() puts the network back.
+ */
+export function servePages(pages: Record<string, PageAnswer>): string[] {
+	const requested: string[] = [];
+	type Answered = (response: IncomingMessage) => void;
+
+	/** The page's answer, or null for a request to localhost. */
+	function answer(url: URL, answered: Answered): ClientRequest | null {
+		requested.push(url.href);
+		const page = pages[url.href];
+		if (!page) {
+			if (url.hostname === 'localhost') return null;
+			throw new Error(`No page for ${url.href}`);
+		}
+		const response = Object.assign(Readable.from([Buffer.from(page.body ?? '')]), {
+			statusCode: page.status,
+			headers: page.headers ?? {}
+		});
+		process.nextTick(answered, response);
+		return new EventEmitter() as ClientRequest;
+	}
+
+	const { get: httpGet } = http;
+	const { get: httpsGet } = https;
+	vi.spyOn(http, 'get').mockImplementation(((
+		url: URL,
+		options: http.RequestOptions,
+		answered: Answered
+	) => answer(url, answered) ?? httpGet(url, options, answered)) as typeof http.get);
+	vi.spyOn(https, 'get').mockImplementation(((
+		url: URL,
+		options: https.RequestOptions,
+		answered: Answered
+	) => answer(url, answered) ?? httpsGet(url, options, answered)) as typeof https.get);
+	return requested;
 }
