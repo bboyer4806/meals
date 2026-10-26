@@ -21,6 +21,7 @@ import {
 import { getHousehold } from '#lib/server/data/households.ts';
 import {
 	addRequest,
+	addRestaurantRequest,
 	listRequests,
 	removeRequest,
 	restoreAndAddRequest
@@ -29,8 +30,8 @@ import { attempt, id, nameField, parseForm } from '#lib/server/forms.ts';
 
 // The week view (design 7, Menu): Sunday to Saturday, one row per day with its dinners. ?week=
 // can be any date in the week. Dragging a day onto another with a mouse swaps their dinners, like
-// Move to another date (2.2.2). Under it, the household's dish requests, the same on every week
-// (6.12).
+// Move to another date (2.2.2). Under it, the household's requests for dishes and restaurants,
+// the same on every week (6.12).
 
 /** The Sunday that starts the week to show, or null when ?week= isn't a date it can show. */
 function weekToShow(param: string | null, today: string): string | null {
@@ -115,6 +116,11 @@ const requestSchema = z.object({
 // typed (6.10, 6.12).
 const restoreRequestSchema = requestSchema.extend({ dishId: id });
 
+// A restaurant is only its name as typed, with a dish name's limit (6.12).
+const restaurantRequestSchema = requestSchema.extend({
+	name: nameField(REQUEST_NAME_MAX, 'a restaurant name')
+});
+
 // The dragged day, the day it was dropped on, and a dinner the page showed on the dragged day, so
 // the move doesn't take others someone put there instead.
 const moveSchema = z.object({
@@ -156,6 +162,16 @@ export const actions = {
 		const { dishId, ...fields } = parsed.data;
 		return attempt('request', () =>
 			restoreAndAddRequest(user.householdId, user.id, dishId, fields, Date.now())
+		);
+	},
+
+	// Adds a request to eat out at a restaurant, linked to nothing (6.12).
+	requestRestaurant: async ({ locals, request }) => {
+		const user = requireHousehold(locals);
+		const parsed = parseForm(restaurantRequestSchema, await request.formData(), 'restaurant');
+		if ('failure' in parsed) return parsed.failure;
+		return attempt('restaurant', () =>
+			addRestaurantRequest(user.householdId, user.id, parsed.data, Date.now())
 		);
 	},
 

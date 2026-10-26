@@ -78,6 +78,20 @@
       "when": 1792853984328,
       "tag": "0010_request-dish-required",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793027279531,
+      "tag": "0011_request-kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1793027292293,
+      "tag": "0012_restaurant-requests",
+      "breakpoints": true
     }
   ]
 }

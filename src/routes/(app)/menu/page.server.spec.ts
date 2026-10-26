@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addDinner, getDinners } from '#lib/server/data/dinners.ts';
 import { setDishArchived } from '#lib/server/data/dishes.ts';
 import { listMembers } from '#lib/server/data/households.ts';
-import { addRequest, listRequests } from '#lib/server/data/requests.ts';
+import { addRequest, addRestaurantRequest, listRequests } from '#lib/server/data/requests.ts';
 import { freshDb, makeDinner, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
 import { actions, load } from './+page.server.ts';
 
@@ -286,6 +286,73 @@ describe('requests (6.12)', () => {
 		expect(await post('removeRequest', { id: String(ours!.id) })).toBeUndefined();
 		expect(listRequests(householdId)).toEqual([]);
 		expect(listRequests(other.householdId)).toHaveLength(1);
+	});
+});
+
+describe('restaurant requests (6.12)', () => {
+	it('are listed with dish requests, oldest first, linked to nothing', () => {
+		addRestaurantRequest(householdId, userId, { name: 'Olive Garden', note: null }, NOW + 1);
+		addRequest(householdId, userId, { name: 'Soup', note: null }, NOW);
+		expect(week().requests).toEqual([
+			expect.objectContaining({ kind: 'dish', name: 'Soup', dishId: expect.any(Number) }),
+			{
+				id: expect.any(Number),
+				kind: 'restaurant',
+				name: 'Olive Garden',
+				note: null,
+				askedBy: listMembers(householdId)[0]?.name
+			}
+		]);
+	});
+
+	it('come from the signed-in person, with the name and note', async () => {
+		expect(
+			await post('requestRestaurant', {
+				name: ' Olive  Garden ',
+				note: ' For her birthday ',
+				userId: '999'
+			})
+		).toBeUndefined();
+		expect(listRequests(householdId)).toEqual([
+			{
+				id: expect.any(Number),
+				kind: 'restaurant',
+				name: 'Olive Garden',
+				note: 'For her birthday',
+				askedBy: listMembers(householdId)[0]?.name
+			}
+		]);
+	});
+
+	it('leave out an empty note', async () => {
+		await post('requestRestaurant', { name: 'Olive Garden', note: '  ' });
+		expect(listRequests(householdId)[0]?.note).toBeNull();
+	});
+
+	it('need a restaurant name', async () => {
+		expectFailure(
+			await post('requestRestaurant', { name: '  ', note: '' }),
+			'restaurant',
+			'Enter a restaurant name'
+		);
+		expect(listRequests(householdId)).toEqual([]);
+	});
+
+	it('refuse an 81-character name and a 201-character note', async () => {
+		expectFailure(
+			await post('requestRestaurant', { name: 'a'.repeat(81), note: '' }),
+			'restaurant',
+			'Keep a restaurant name under 80 characters'
+		);
+		expectFailure(
+			await post('requestRestaurant', { name: 'Diner', note: 'a'.repeat(201) }),
+			'restaurant',
+			'Keep the note under 200 characters'
+		);
+		expect(
+			await post('requestRestaurant', { name: 'a'.repeat(80), note: 'a'.repeat(200) })
+		).toBeUndefined();
+		expect(listRequests(householdId)).toHaveLength(1);
 	});
 });
 

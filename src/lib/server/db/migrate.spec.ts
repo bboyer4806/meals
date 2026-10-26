@@ -154,3 +154,70 @@ describe('link-requests', () => {
 		expect(sqlite.prepare('select count(*) from dishes').pluck().get()).toBe(6);
 	});
 });
+
+// The change that adds restaurant requests, in request-kind and restaurant-requests (design 6.12).
+describe('restaurant-requests', () => {
+	it('keeps every older request as a dish request, linked as before', () => {
+		const sqlite = new Database(':memory:');
+		migrate(sqlite, foldersBefore('0011_request-kind'));
+		const run = (statement: string, ...values: unknown[]) =>
+			Number(sqlite.prepare(statement).run(...values).lastInsertRowid);
+		const household = run(
+			"insert into households (name, default_servings, time_zone, created_at) values ('H', 4, 'UTC', 0)"
+		);
+		const user = run(
+			"insert into users (household_id, google_sub, email, name, created_at) values (?, 'sub', 'p@example.com', 'P', 0)",
+			household
+		);
+		const dish = (name: string, archivedAt: number | null) =>
+			run(
+				'insert into dishes (household_id, name, servings, archived_at, created_at, updated_at) values (?, ?, 2, ?, 0, 0)',
+				household,
+				name,
+				archivedAt
+			);
+		const ask = (name: string, note: string | null, dishId: number, at: number) =>
+			run(
+				'insert into dish_requests (household_id, user_id, name, note, dish_id, created_at) values (?, ?, ?, ?, ?, ?)',
+				household,
+				user,
+				name,
+				note,
+				dishId,
+				at
+			);
+		const chili = dish('Chili', null);
+		const lasagna = dish('Lasagna', 5);
+		const first = ask('CHILI', 'Extra beans', chili, 1);
+		const second = ask('lasagna', null, lasagna, 2);
+
+		migrate(sqlite, 'drizzle');
+
+		expect(
+			sqlite
+				.prepare(
+					'select id, user_id, kind, name, note, dish_id, created_at from dish_requests order by id'
+				)
+				.all()
+		).toEqual([
+			{
+				id: first,
+				user_id: user,
+				kind: 'dish',
+				name: 'CHILI',
+				note: 'Extra beans',
+				dish_id: chili,
+				created_at: 1
+			},
+			{
+				id: second,
+				user_id: user,
+				kind: 'dish',
+				name: 'lasagna',
+				note: null,
+				dish_id: lasagna,
+				created_at: 2
+			}
+		]);
+	});
+});

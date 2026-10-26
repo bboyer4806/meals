@@ -366,10 +366,12 @@ them from the household empties it and keeps the rating in the average and count
 **dinner_dishes:** `dinner_id`, `dish_id` (unique per dinner), `role` (`main`, `side`,
 `dessert` or `other`; Q29). Only `cook` and `going` dinners have dishes.
 
-**dish_requests:** `user_id` (who asked; removing them from the household removes their
-requests), `name` (as typed, or the recipe's name when requested from its page), `note`,
-`dish_id` (the recipe the name matched when it was asked for, the one the request made, or the
-one whose page it was requested from), `created_at` (6.12).
+**dish_requests** (requests for a dish or a restaurant): `user_id` (who asked; removing them
+from the household removes their requests), `kind` (`dish` or `restaurant`; requests made
+before restaurant requests are `dish`), `name` (as typed, or the recipe's name when requested
+from its page), `note`, `dish_id` (on a dish request, and only there: the recipe the name
+matched when it was asked for, the one the request made, or the one whose page it was requested
+from), `created_at` (6.12).
 
 **pantry_checklists:** at most one per household (Q35). Either `start_date` and
 `end_date` (from the menu), or `dish_id` and `servings` (from one recipe). `created_at`.
@@ -379,8 +381,8 @@ one whose page it was requested from), `created_at` (6.12).
 the mark).
 
 How they connect: a household has users, invites, stores, items, grocery lines, dishes,
-dinners, dish requests and at most one checklist. A dish request points at the member who
-asked and sometimes a dish. A rating points at a dish and, until they're removed, the member
+dinners, requests and at most one checklist. A request points at the member who asked and, for
+a dish, its recipe. A rating points at a dish and, until they're removed, the member
 who rated it. A grocery line points at an item and a store. An
 ingredient points at a dish and an item. A dinner has dishes through `dinner_dishes`. A
 mark points at a checklist, an item and sometimes a grocery line.
@@ -567,14 +569,15 @@ adding the same name offers to restore it.
 Every page reloads its data when opened and when you come back to the tab or app (Q11).
 If two people change the same thing, the last save wins.
 
-### 6.12 Dish requests
+### 6.12 Requests
 
-- Anyone in the household can ask for a dish, see every request and remove any of them (E2).
-  Requests are listed oldest first, each with the dish, the note if there is one, and "Asked by"
+- Anyone in the household can ask for a dish or a restaurant, see every request and remove any
+  of them (E2). Requests are listed oldest first, dish and restaurant requests together, each
+  with the dish (or "Eating out" and the restaurant), the note if there is one, and "Asked by"
   with the asker's name. Showing who asked is an exception to section 12, for requests only.
 - The dish field suggests the household's active dishes and offers a new one, like adding a
-  dish to a dinner (6.9). Every request links to a recipe. A name that matches an active dish,
-  ignoring case, links to it. Any other name adds a dish to Recipes with that name and the
+  dish to a dinner (6.9). Every dish request links to a recipe. A name that matches an active
+  dish, ignoring case, links to it. Any other name adds a dish to Recipes with that name and the
   household's usual servings, labeled "No recipe", and links to it. A name that matches an
   archived dish asks "Chili is archived. Restore it and request it?" with **Restore it and
   request**, which restores it and adds the request, and **Cancel**, which adds nothing (6.10).
@@ -591,9 +594,13 @@ If two people change the same thing, the last save wins.
   deployed: to the dish with the name, ignoring case, if there was one (an archived one stayed
   archived), and otherwise to a new one made as above. Requests with the same name shared one
   new dish, spelled as the oldest request typed it.
-- The dish name is required and up to 80 characters; the note is optional and up to 200. Each
-  field stops taking characters at its limit, pasted text included, and says so while it's full.
-  The server refuses anything longer (4.5).
+- A restaurant request (MEA-49) asks to eat out, at a restaurant typed by name, with no
+  suggestions. Restaurants aren't kept anywhere, and an Eating out dinner has no restaurant
+  (Q26), so the request links to nothing: it shows "Eating out" and the name as typed. Requests
+  made before restaurant requests are dish requests.
+- The dish or restaurant name is required and up to 80 characters; the note is optional and up
+  to 200. Each field stops taking characters at its limit, pasted text included, and says so
+  while it's full. The server refuses anything longer (4.5).
 - Requests have no statuses, dates or link to dinners. One stays until someone removes it,
   without being asked first. Removing a member removes their requests.
 
@@ -772,9 +779,11 @@ and releasing on the same day or outside the days changes nothing. Touch never d
 still opens a day and swiping scrolls. If someone cleared or moved the dragged day's dinners
 since the week loaded, nothing moves, the week shows the menu as it is now, and it says "Someone
 cleared or moved that day's dinners, so nothing moved." ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
-**Requests** lists the dish requests (6.12), or "No requests yet.", each with Remove. "Request
-a dish" opens a sheet with Dish (with suggestions, or a new dish), an optional Note and
-Request. Each request links to its recipe.
+**Requests** lists the dish and restaurant requests together (6.12), or "No requests yet.", each
+with Remove. "Request a dish" opens a sheet with Dish (with suggestions, or a new dish), an
+optional Note and Request. "Request a restaurant", beside it, opens a sheet with Restaurant, an
+optional Note and Request, and the week shown stays open. Each dish request links to its recipe;
+a restaurant request shows "Eating out" and the restaurant's name, not a link.
 
 **Dinner.** "‹ Week of" goes to the dinner's week. Type (four buttons), note, servings,
 and dishes. You add a dish by searching existing dishes or typing a new name, then picking
@@ -936,7 +945,7 @@ ingredients.
   needs a sign-in (Q37; Import from a link covers the rest).
 - Backups off the server (Q13).
 - Merging duplicate items.
-- Showing who added or changed something, except who asked for a dish request (6.12).
+- Showing who added or changed something, except who asked for a request (6.12).
 - Deleting a household.
 - Different servings for different dishes in the same dinner.
 - Metric units in the known list.

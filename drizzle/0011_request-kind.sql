@@ -1,0 +1,1 @@
+ALTER TABLE `dish_requests` ADD `kind` text DEFAULT 'dish' NOT NULL;

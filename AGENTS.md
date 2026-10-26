@@ -59,8 +59,10 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
 Change `src/lib/server/db/schema.ts`, then run `npm run db:generate -- --name <what-changed>`
 and commit the new files in `drizzle/`. Never edit generated migrations by hand. A data change
 the schema can't express goes in a custom migration: run `npm run db:generate -- --custom --name
-<what-changed>` and write its SQL in the empty file it makes, matching names with `fold()`. The
-app applies migrations when it starts. Use the existing `transaction()` helper in
+<what-changed>` and write its SQL in the empty file it makes, matching names with `fold()`. A new
+column needs its own migration before one that rebuilds its table (such as making a column
+optional or adding a check), since drizzle-kit's rebuild copies the new column from the old
+table and fails. The app applies migrations when it starts. Use the existing `transaction()` helper in
 `src/lib/server/db/index.ts` for grouped writes; its immediate lock handles overlapping deploys.
 
 ## Tests
