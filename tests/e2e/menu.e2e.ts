@@ -1519,7 +1519,7 @@ test('keeps what was typed on an unplanned day when a dish or a copy plans it', 
 	expect(dinnerRow(db, person.householdId, copied)).toMatchObject({ note: 'Taco night' });
 });
 
-// Dish requests (design 6.12), under the week.
+// Requests (design 6.12), under the week.
 
 function requestsSection(page: Page) {
 	return page.getByRole('region', { name: 'Requests' });
@@ -1533,6 +1533,18 @@ async function openRequestSheet(page: Page) {
 	await requestsSection(page).getByRole('button', { name: 'Request a dish' }).click();
 	await expect(requestSheet(page)).toBeVisible();
 }
+
+function restaurantSheet(page: Page) {
+	return page.getByRole('dialog', { name: 'Request a restaurant' });
+}
+
+async function openRestaurantSheet(page: Page) {
+	await requestsSection(page).getByRole('button', { name: 'Request a restaurant' }).click();
+	await expect(restaurantSheet(page)).toBeVisible();
+}
+
+const restaurantField = (page: Page) =>
+	restaurantSheet(page).getByRole('textbox', { name: 'Restaurant', exact: true });
 
 function dishCount(db: Database.Database, householdId: number): number {
 	return db
@@ -1701,6 +1713,102 @@ test('removes a request for everyone, keeping its recipe', async ({ page, db, pe
 			.get(person.householdId)
 	).toBe(0);
 	expect(dishCount(db, person.householdId)).toBe(2);
+});
+
+test('requests a restaurant by name, listed after an older dish request, and removes it', async ({
+	page,
+	db,
+	person
+}) => {
+	const gumbo = addRecipe(db, person.householdId, { name: 'Gumbo' });
+	db.prepare(
+		'insert into dish_requests (household_id, user_id, name, note, dish_id, created_at) values (?, ?, ?, null, ?, 1)'
+	).run(person.householdId, person.userId, 'Gumbo', gumbo);
+	await open(page, '/menu');
+	await openRestaurantSheet(page);
+	await restaurantField(page).fill('Olive Garden');
+	await restaurantSheet(page).getByLabel('Note (optional)').fill('For her birthday');
+	await restaurantSheet(page).getByRole('button', { name: 'Request', exact: true }).click();
+	await expect(restaurantSheet(page)).toHaveCount(0);
+
+	const section = requestsSection(page);
+	await expect(section.getByRole('listitem')).toHaveText([/^Gumbo/, /^Eating out/]);
+	const restaurant = section.getByRole('listitem').nth(1);
+	await expect(restaurant.getByText('Olive Garden', { exact: true })).toBeVisible();
+	await expect(restaurant.getByRole('link')).toHaveCount(0);
+	await expect(restaurant.getByText('For her birthday')).toBeVisible();
+	await expect(restaurant.getByText(/^Asked by Person \d+$/)).toBeVisible();
+	await expect(section.getByRole('button', { name: 'Request a restaurant' })).toBeFocused();
+	// It looks up and makes no dish.
+	expect(dishCount(db, person.householdId)).toBe(1);
+
+	await section.getByRole('button', { name: 'Remove Olive Garden' }).click();
+	await expect(section.getByRole('listitem')).toHaveText([/^Gumbo/]);
+	expect(
+		db
+			.prepare('select name from dish_requests where household_id = ?')
+			.pluck()
+			.all(person.householdId)
+	).toEqual(['Gumbo']);
+
+	// Menu help tells people about it.
+	await page.getByRole('banner').getByRole('button', { name: 'Help', exact: true }).click();
+	await expect(page.getByRole('dialog', { name: 'Help: Menu' })).toContainText(
+		'Request a dish or Request a restaurant to add one'
+	);
+});
+
+test('stops the restaurant at 80 characters and the note at 200, and needs a name', async ({
+	page,
+	person: _
+}) => {
+	await open(page, '/menu');
+	await openRestaurantSheet(page);
+	const sheet = restaurantSheet(page);
+	const name = restaurantField(page);
+	const note = sheet.getByLabel('Note (optional)');
+	const nameFull = sheet.getByText("You've reached the 80-character limit.");
+	const noteFull = sheet.getByText("You've reached the 200-character limit.");
+
+	await name.click();
+	await page.keyboard.insertText('a'.repeat(79));
+	await expect(nameFull).toHaveCount(0);
+	await page.keyboard.type('bcd');
+	await expect(name).toHaveValue(`${'a'.repeat(79)}b`);
+	await expect(nameFull).toBeVisible();
+	await page.keyboard.press('Backspace');
+	await expect(nameFull).toHaveCount(0);
+	await page.keyboard.insertText('x'.repeat(30));
+	await expect(name).toHaveValue(`${'a'.repeat(79)}x`);
+	await expect(nameFull).toBeVisible();
+
+	await note.click();
+	await page.keyboard.insertText('n'.repeat(250));
+	await expect(note).toHaveValue('n'.repeat(200));
+	await expect(noteFull).toBeVisible();
+	await page.keyboard.type('more');
+	await expect(note).toHaveValue('n'.repeat(200));
+
+	// Past the browser's own check, so the server's message shows.
+	await name.fill('   ');
+	await sheet.getByRole('button', { name: 'Request', exact: true }).click();
+	await expect(sheet.getByRole('alert')).toHaveText('Enter a restaurant name');
+	await expect(requestsSection(page).getByText('No requests yet.')).toBeVisible();
+});
+
+test('stays on the week shown after requesting a restaurant', async ({ page, person: _ }) => {
+	const sunday = sundayOf(addDays(today(), 21));
+	await open(page, `/menu?week=${sunday}`);
+	await openRestaurantSheet(page);
+	await restaurantField(page).fill('Olive Garden');
+	await restaurantSheet(page).getByRole('button', { name: 'Request', exact: true }).click();
+	await expect(restaurantSheet(page)).toHaveCount(0);
+	await expect(requestsSection(page).getByText('Olive Garden', { exact: true })).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sunday}$`));
+	await expect(page.getByRole('navigation', { name: 'Weeks' }).locator('.label')).toHaveText(
+		weekRange(sunday)
+	);
+	await expect(day(page, sunday)).toBeVisible();
 });
 
 test('plans two dinners on a day, each with its own label, dishes, Save and Clear (6.9)', async ({

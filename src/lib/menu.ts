@@ -40,7 +40,10 @@ export const DINNER_LABEL_MAX = 30;
 /** A dinner's note can hold a long plan, such as a whole evening's notes. */
 export const DINNER_NOTE_MAX = 2500;
 
-/** A dish request's name (the recipe editor's limit for a dish name) and note (6.12). */
+/**
+ * A request's dish or restaurant name (the recipe editor's limit for a dish name) and note
+ * (6.12).
+ */
 export const REQUEST_NAME_MAX = 80;
 export const REQUEST_NOTE_MAX = 200;
 

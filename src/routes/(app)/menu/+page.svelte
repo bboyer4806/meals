@@ -32,8 +32,8 @@
 		void goto(address, { shallow: true, replace: true });
 	});
 
-	// Dish requests (6.12). The fields stop taking characters at their limit, pasted text
-	// included, and say so while they're full.
+	// Requests for a dish or a restaurant (6.12). The fields stop taking characters at their limit,
+	// pasted text included, and say so while they're full.
 
 	let requestOpen = $state(false);
 	let requestName = $state('');
@@ -120,6 +120,44 @@
 				await requested();
 			} finally {
 				restoring = false;
+			}
+		};
+	};
+
+	// A restaurant request is only its name and note, linked to nothing.
+
+	let restaurantOpen = $state(false);
+	let restaurantName = $state('');
+	let restaurantNote = $state('');
+	let restaurantError = $state('');
+	let requestingRestaurant = $state(false);
+	let restaurantButton = $state<HTMLButtonElement>();
+
+	function openRestaurant() {
+		restaurantError = '';
+		restaurantOpen = true;
+	}
+
+	const submitRestaurant: SubmitFunction = ({ cancel }) => {
+		if (requestingRestaurant) return cancel();
+		requestingRestaurant = true;
+		restaurantError = '';
+		return async ({ result, update }) => {
+			try {
+				if (result.type === 'failure') {
+					restaurantError = failureMessage(result.data);
+					return;
+				}
+				// Landing on ?/requestRestaurant would drop ?week= and show this week instead.
+				await update({ navigate: false, reset: false });
+				if (result.type !== 'success') return;
+				restaurantName = '';
+				restaurantNote = '';
+				restaurantOpen = false;
+				await tick();
+				restaurantButton?.focus();
+			} finally {
+				requestingRestaurant = false;
 			}
 		};
 	};
@@ -331,7 +369,12 @@
 			{#each data.requests as request (request.id)}
 				<li class="request">
 					<div class="what">
-						<a class="dish" href="/recipes/{request.dishId}">{request.name}</a>
+						{#if request.kind === 'dish'}
+							<a class="dish" href="/recipes/{request.dishId}">{request.name}</a>
+						{:else}
+							<span class="kind">{DINNER_TYPE_LABELS.eat_out}</span>
+							<span class="restaurant">{request.name}</span>
+						{/if}
 						{#if request.note}<span class="request-note">{request.note}</span>{/if}
 						<span class="muted">Asked by {request.askedBy}</span>
 					</div>
@@ -345,7 +388,12 @@
 	{:else}
 		<p class="muted">No requests yet.</p>
 	{/if}
-	<button type="button" bind:this={requestButton} onclick={openRequest}>Request a dish</button>
+	<div class="request-buttons">
+		<button type="button" bind:this={requestButton} onclick={openRequest}>Request a dish</button>
+		<button type="button" bind:this={restaurantButton} onclick={openRestaurant}>
+			Request a restaurant
+		</button>
+	</div>
 </section>
 
 <Sheet bind:open={requestOpen} title="Request a dish">
@@ -373,6 +421,36 @@
 				bind:value={requestNote}
 			/>
 			{@render limitWarning(requestNote, REQUEST_NOTE_MAX)}
+		</div>
+		<button class="primary">Request</button>
+	</form>
+</Sheet>
+
+<Sheet bind:open={restaurantOpen} title="Request a restaurant">
+	<form method="POST" action="?/requestRestaurant" use:enhance={submitRestaurant}>
+		{#if restaurantError}<p class="error" role="alert">{restaurantError}</p>{/if}
+		<div class="field">
+			<label for="restaurant-name">Restaurant</label>
+			<input
+				id="restaurant-name"
+				name="name"
+				autocomplete="off"
+				required
+				maxlength={REQUEST_NAME_MAX}
+				bind:value={restaurantName}
+			/>
+			{@render limitWarning(restaurantName, REQUEST_NAME_MAX)}
+		</div>
+		<div class="field">
+			<label for="restaurant-note">Note (optional)</label>
+			<input
+				id="restaurant-note"
+				name="note"
+				autocomplete="off"
+				maxlength={REQUEST_NOTE_MAX}
+				bind:value={restaurantNote}
+			/>
+			{@render limitWarning(restaurantNote, REQUEST_NOTE_MAX)}
 		</div>
 		<button class="primary">Request</button>
 	</form>
@@ -584,12 +662,29 @@
 		flex-direction: column;
 	}
 
-	.dish {
+	.dish,
+	.restaurant {
 		font-weight: 700;
+	}
+
+	/* "Eating out" over a restaurant's name, styled like a dish's role on the week. */
+	.kind {
+		font-size: 0.8rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--muted);
 	}
 
 	.request-note {
 		white-space: pre-line;
+	}
+
+	/* Side by side, wrapping onto two lines when they don't fit. */
+	.request-buttons {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
 
 	/* Takes no room while empty. */

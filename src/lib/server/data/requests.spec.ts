@@ -8,6 +8,7 @@ import { setDishArchived, updateDish } from './dishes.ts';
 import { removeMember } from './households.ts';
 import {
 	addRequest,
+	addRestaurantRequest,
 	hasRequest,
 	listRequests,
 	removeRequest,
@@ -32,6 +33,25 @@ beforeEach(() => {
 
 function ask(name: string, note: string | null = null, now = NOW, user = userId) {
 	return addRequest(householdId, user, { name, note }, now);
+}
+
+function askRestaurant(name: string, note: string | null = null, now = NOW, user = userId) {
+	addRestaurantRequest(householdId, user, { name, note }, now);
+}
+
+/** Another member of the household. */
+function addMember(name: string): number {
+	return db()
+		.insert(users)
+		.values({
+			householdId,
+			googleSub: `sub-${name}`,
+			email: `${name}@example.com`,
+			name,
+			createdAt: 0
+		})
+		.returning({ id: users.id })
+		.get().id;
 }
 
 function dishCount(): number {
@@ -61,6 +81,7 @@ describe('addRequest', () => {
 		expect(listRequests(householdId)).toEqual([
 			{
 				id: expect.any(Number),
+				kind: 'dish',
 				name: 'Shrimp boil',
 				note: 'With corn',
 				dishId: dish!.id,
@@ -83,7 +104,8 @@ describe('addRequest', () => {
 		const curry = makeDish(otherId, recipe('Curry'));
 		ask('Curry');
 		const [request] = listRequests(householdId);
-		expect(request!.dishId).not.toBe(curry);
+		expect(request).toMatchObject({ kind: 'dish', dishId: expect.any(Number) });
+		expect(request).not.toMatchObject({ dishId: curry });
 		expect(dishCount()).toBe(3);
 	});
 
@@ -109,6 +131,43 @@ describe('addRequest', () => {
 		expect(refusal(() => ask('a'.repeat(81)))).toBe('Keep a dish name under 80 characters');
 		expect(refusal(() => ask('Pie', 'a'.repeat(201)))).toBe('Keep the note under 200 characters');
 		ask('a'.repeat(80), 'a'.repeat(200));
+		expect(listRequests(householdId)).toHaveLength(1);
+	});
+});
+
+describe('addRestaurantRequest', () => {
+	it('asks for the restaurant by name as typed, with the note and who asked, linked to nothing', () => {
+		askRestaurant('  Olive   Garden ', 'For her birthday', NOW, addMember('Sam'));
+		expect(listRequests(householdId)).toEqual([
+			{
+				id: expect.any(Number),
+				kind: 'restaurant',
+				name: 'Olive Garden',
+				note: 'For her birthday',
+				askedBy: 'Sam'
+			}
+		]);
+		expect(db().select().from(dishRequests).get()).toMatchObject({ dishId: null });
+	});
+
+	it("looks up and makes no dish, even for a dish's name", () => {
+		askRestaurant('LASAGNA');
+		expect(listRequests(householdId)).toEqual([
+			expect.objectContaining({ kind: 'restaurant', name: 'LASAGNA' })
+		]);
+		expect(hasRequest(householdId, lasagna)).toBe(false);
+		expect(dishCount()).toBe(1);
+	});
+
+	it('refuses a blank name and anything too long', () => {
+		expect(refusal(() => askRestaurant('   '))).toBe('Enter a restaurant name');
+		expect(refusal(() => askRestaurant('a'.repeat(81)))).toBe(
+			'Keep a restaurant name under 80 characters'
+		);
+		expect(refusal(() => askRestaurant('Diner', 'a'.repeat(201)))).toBe(
+			'Keep the note under 200 characters'
+		);
+		askRestaurant('a'.repeat(80), 'a'.repeat(200));
 		expect(listRequests(householdId)).toHaveLength(1);
 	});
 });
@@ -154,6 +213,7 @@ describe('requestDish', () => {
 				id: expect.any(Number),
 				householdId,
 				userId,
+				kind: 'dish',
 				name: 'Veggie lasagna',
 				note: null,
 				dishId: lasagna,
@@ -216,6 +276,20 @@ describe('listRequests', () => {
 		]);
 		expect(listRequests(otherId).map((request) => request.name)).toEqual(['Curry']);
 	});
+
+	it('lists dish and restaurant requests together, oldest first', () => {
+		ask('Soup', null, NOW + 2);
+		askRestaurant('Olive Garden', null, NOW);
+		ask('Pie', null, NOW + 1);
+		askRestaurant('Taco Bar', null, NOW + 3);
+		addRestaurantRequest(otherId, otherUserId, { name: 'Diner', note: null }, NOW);
+		expect(listRequests(householdId).map(({ kind, name }) => [kind, name])).toEqual([
+			['restaurant', 'Olive Garden'],
+			['dish', 'Pie'],
+			['dish', 'Soup'],
+			['restaurant', 'Taco Bar']
+		]);
+	});
 });
 
 describe('removeRequest', () => {
@@ -233,24 +307,24 @@ describe('removeRequest', () => {
 		expectHttpError(() => removeRequest(householdId, request!.id), 404);
 		expect(listRequests(otherId)).toHaveLength(1);
 	});
+
+	it('removes a restaurant request, as it does a dish request', () => {
+		askRestaurant('Olive Garden', null, NOW);
+		ask('Soup', null, NOW + 1);
+		const [restaurant] = listRequests(householdId);
+		removeRequest(householdId, restaurant!.id);
+		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Soup']);
+	});
 });
 
-it("removing a member removes their requests and keeps everyone else's", () => {
-	const memberId = db()
-		.insert(users)
-		.values({
-			householdId,
-			googleSub: 'sub-member',
-			email: 'm@example.com',
-			name: 'Sam',
-			createdAt: 0
-		})
-		.returning({ id: users.id })
-		.get().id;
+it("removing a member removes their requests, dish and restaurant, and keeps everyone else's", () => {
+	const memberId = addMember('Sam');
 	ask('Soup', null, NOW, memberId);
-	ask('Pie');
+	askRestaurant('Olive Garden', null, NOW, memberId);
+	ask('Pie', null, NOW + 1);
+	askRestaurant('Taco Bar', null, NOW + 2);
 	removeMember(householdId, userId, memberId);
-	expect(listRequests(householdId).map((request) => request.name)).toEqual(['Pie']);
+	expect(listRequests(householdId).map((request) => request.name)).toEqual(['Pie', 'Taco Bar']);
 });
 
 it('the database rejects a dish from another household', () => {
@@ -268,4 +342,15 @@ it('the database rejects a dish from another household', () => {
 			})
 			.run()
 	).toThrow(/FOREIGN KEY/);
+});
+
+it('the database refuses a restaurant request with a dish, and a dish request without one', () => {
+	const insert = (kind: 'dish' | 'restaurant', dishId: number | null) => () =>
+		db()
+			.insert(dishRequests)
+			.values({ householdId, userId, kind, name: 'Lasagna', note: null, dishId, createdAt: NOW })
+			.run();
+	expect(insert('restaurant', lasagna)).toThrow(/CHECK constraint failed: dish_requests_kind_dish/);
+	expect(insert('dish', null)).toThrow(/CHECK constraint failed: dish_requests_kind_dish/);
+	expect(listRequests(householdId)).toEqual([]);
 });

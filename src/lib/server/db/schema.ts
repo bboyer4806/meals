@@ -402,7 +402,9 @@ export const pantryMarks = sqliteTable(
 	]
 );
 
-// A dish someone asked for. It stays until someone removes it (design 6.12).
+export const REQUEST_KINDS = ['dish', 'restaurant'] as const;
+
+// A dish or a restaurant someone asked for. It stays until someone removes it (design 6.12).
 export const dishRequests = sqliteTable(
 	'dish_requests',
 	{
@@ -414,13 +416,15 @@ export const dishRequests = sqliteTable(
 		userId: integer('user_id')
 			.notNull()
 			.references(() => users.id, { onDelete: 'cascade' }),
+		// Requests made before restaurant requests are dish requests.
+		kind: text('kind', { enum: REQUEST_KINDS }).notNull().default('dish'),
 		// As typed, or the dish's name when requested from its recipe's page. Kept when the linked
 		// dish is renamed or archived.
 		name: text('name').notNull(),
 		note: text('note'),
-		// The recipe the name matched when it was asked for, the one the request made, or the one
-		// whose page it was requested from. Nothing changes it later.
-		dishId: integer('dish_id').notNull(),
+		// Only on a dish request: the recipe the name matched when it was asked for, the one the
+		// request made, or the one whose page it was requested from. Nothing changes it later.
+		dishId: integer('dish_id'),
 		createdAt: integer('created_at').notNull()
 	},
 	(t) => [
@@ -430,6 +434,8 @@ export const dishRequests = sqliteTable(
 		}),
 		index('dish_requests_household').on(t.householdId),
 		index('dish_requests_user').on(t.userId),
-		index('dish_requests_dish').on(t.dishId)
+		index('dish_requests_dish').on(t.dishId),
+		check('dish_requests_kind', sql`${t.kind} in ('dish', 'restaurant')`),
+		check('dish_requests_kind_dish', sql`(${t.kind} = 'dish') = (${t.dishId} is not null)`)
 	]
 );

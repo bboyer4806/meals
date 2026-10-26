@@ -105,7 +105,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Tap a day to plan or change its dinner.',
 			'On a computer, drag a day onto another day to swap their dinners.',
 			'Previous and Next change the week. This week comes back to today.',
-			'Requests lists dishes people in your household would like. Request a dish to add one, and Remove one when it is done.'
+			'Requests lists dishes and restaurants people in your household would like. Request a dish or Request a restaurant to add one, and Remove one when it is done.'
 		]
 	},
 	'/(app)/menu/[date]': {
