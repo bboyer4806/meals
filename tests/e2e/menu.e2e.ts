@@ -413,10 +413,11 @@ test("shows each dinner's whole note on the week, with its line breaks, on a pho
 	db,
 	person
 }) => {
-	// Each is longer than two lines, and one has a link too long for a line on a phone.
+	// Each is longer than two lines, and one has a link longer than a line on a phone, with
+	// nowhere to break.
 	const long = [
 		'Grandma and Grandpa visit at 6, so set the big table with the good plates.',
-		'Recipe: https://example.com/recipes/grandmas-famous-lasagna-with-three-cheeses-and-basil',
+		`Recipe: https://example.com/${'lasagna'.repeat(12)}`,
 		'Pick up flowers on the way home.',
 		'Dessert after the walk.'
 	].join('\n');
