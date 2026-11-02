@@ -601,8 +601,25 @@ If two people change the same thing, the last save wins.
 - The dish or restaurant name is required and up to 80 characters; the note is optional and up
   to 200. Each field stops taking characters at its limit, pasted text included, and says so
   while it's full. The server refuses anything longer (4.5).
+- A date's page (MEA-57; section 7, Dinner) lists the same requests under its dinners, with the
+  same dish link or "Eating out" and restaurant, note and "Asked by", and no Remove. A dish
+  request there has **Add**, which puts its recipe on one of the date's dinners: the only one that
+  can have dishes (Cooking at home or Bringing a dish), or, when several can, the one picked from
+  their labels. When none can, it goes on a new Cooking at home dinner at the usual servings: on
+  a date with no dinner, that plans it, and on a date with dinners, Add first asks for labels as
+  Add a dinner does (6.9). A date that already has 5 dinners gets none, and the page says why;
+  a dinner there that can have dishes still takes it. The dish is Main on a dinner without dishes
+  and Side otherwise, and its role can be changed after (6.9). The request's note, if it has one,
+  goes on the end of the dinner's note on a line of its own; when something typed in that note
+  isn't saved, it stays with the request's note on its end, for Save. The request is then
+  removed, its recipe stays in Recipes, and the page says "Added Lasagna." ("Added Lasagna to
+  Kids." on a date with more than one dinner). Nothing changes, and the page says why, when the
+  dish is already on that dinner, its recipe is archived (restore it first; 6.10), the note would
+  take the dinner's past 2,500 characters, someone changed the date's dinners meanwhile, or
+  someone removed the request (6.11). A restaurant request has nothing to add there.
 - Requests have no statuses, dates or link to dinners. One stays until someone removes it,
-  without being asked first. Removing a member removes their requests.
+  without being asked first, or adds its dish to a dinner. Removing a member removes their
+  requests.
 
 ## 7. Screens
 
@@ -803,11 +820,12 @@ note, Copy a dinner and Clear; changing one never changes another (6.9). A plann
 **Add a dinner** until it has 5. On a planned date,
 the date at the top is a button, with an icon, that opens Move to another date; on a date
 with no dinner it's plain text. A date with no dinner says "Not planned yet" and shows Cooking
-at home selected, with its servings and note ready to fill in, unsaved (6.9). The type, dishes,
-copying, moving and clearing save as soon as they're made, and keep anything typed in the
-servings and note for Save. Save on the servings and note goes to the dinner's week, where that
-dinner's line says "Saved" for 3 seconds; on a date with no dinner it plans it as the type
-shown. Leaving with something typed asks first. If someone cleared or moved the dinner
+at home selected, with its servings and note ready to fill in, unsaved (6.9). Under the dinners,
+**Requests** lists the Menu's requests, and a dish request's Add puts its dish on one of the
+date's dinners (6.12). The type, dishes, copying, moving, clearing and adding a request save as
+soon as they're made, and keep anything typed in the servings and note for Save. Save on the
+servings and note goes to the dinner's week, where that dinner's line says "Saved" for 3
+seconds; on a date with no dinner it plans it as the type shown. Leaving with something typed asks first. If someone cleared or moved the dinner
 meanwhile, Save plans the date again when it has no dinner left, and the page stays to say so
 (6.11).
 

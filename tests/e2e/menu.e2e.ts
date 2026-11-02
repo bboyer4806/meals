@@ -1811,6 +1811,289 @@ test('stays on the week shown after requesting a restaurant', async ({ page, per
 	await expect(day(page, sunday)).toBeVisible();
 });
 
+// Requests on a date's page (design 6.12; 7, Dinner), under its dinners.
+
+/** A request from the person, written straight to the database, and its id. */
+function askFor(
+	db: Database.Database,
+	person: { userId: number; householdId: number },
+	name: string,
+	fields: { dishId?: number; note?: string; at?: number } = {}
+): number {
+	return Number(
+		db
+			.prepare(
+				'insert into dish_requests (household_id, user_id, kind, name, note, dish_id, created_at) values (?, ?, ?, ?, ?, ?, ?)'
+			)
+			.run(
+				person.householdId,
+				person.userId,
+				fields.dishId === undefined ? 'restaurant' : 'dish',
+				name,
+				fields.note ?? null,
+				fields.dishId ?? null,
+				fields.at ?? 1
+			).lastInsertRowid
+	);
+}
+
+function requestIds(db: Database.Database, householdId: number) {
+	return db
+		.prepare('select id from dish_requests where household_id = ? order by id')
+		.pluck()
+		.all(householdId);
+}
+
+function labelDinner(db: Database.Database, dinnerId: number, label: string) {
+	db.prepare('update dinners set label = ? where id = ?').run(label, dinnerId);
+}
+
+test("lists the requests under a day's dinners, and adds one to the dinner that can have it", async ({
+	page,
+	db,
+	person
+}) => {
+	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna' });
+	const gumbo = addRecipe(db, person.householdId, { name: 'Gumbo' });
+	const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+	const date = addDays(today(), 1);
+	const dinnerId = addDinner(db, person.householdId, date, {
+		note: 'Grandma visits',
+		dishes: [[tacos, 'main']]
+	});
+	askFor(db, person, 'Lasagna', { dishId: lasagna, note: 'Extra cheese', at: 1 });
+	askFor(db, person, 'Olive Garden', { note: 'For her birthday', at: 2 });
+	askFor(db, person, 'Gumbo', { dishId: gumbo, at: 3 });
+	await open(page, `/menu/${date}`);
+
+	const section = requestsSection(page);
+	await expect(section.getByRole('listitem')).toHaveText([/^Lasagna/, /^Eating out/, /^Gumbo/]);
+	const first = section.getByRole('listitem').first();
+	await expect(first.getByRole('link', { name: 'Lasagna' })).toHaveAttribute(
+		'href',
+		`/recipes/${lasagna}`
+	);
+	await expect(first.getByText('Extra cheese')).toBeVisible();
+	await expect(first.getByText(/^Asked by Person \d+$/)).toBeVisible();
+	// A restaurant request shows, with nothing to add.
+	const restaurant = section.getByRole('listitem').nth(1);
+	await expect(restaurant.getByText('Olive Garden', { exact: true })).toBeVisible();
+	await expect(restaurant.getByText('For her birthday')).toBeVisible();
+	await expect(restaurant.getByRole('button')).toHaveCount(0);
+	// Under the dinner.
+	const dishesBox = await dishSection(page).boundingBox();
+	const requestsBox = await section.boundingBox();
+	expect(requestsBox!.y).toBeGreaterThan(dishesBox!.y + dishesBox!.height);
+
+	await section.getByRole('button', { name: 'Add Lasagna' }).click();
+	// It says so where the request was, and reads it out.
+	await expect(section.getByText('Added Lasagna.', { exact: true })).toBeFocused();
+	await expect(section.getByRole('listitem')).toHaveText([/^Eating out/, /^Gumbo/]);
+	await expect(dishLinks(page)).toHaveText(['Chicken tacos', 'Lasagna']);
+	await expect(page.getByLabel('Note', { exact: true })).toHaveValue(
+		'Grandma visits\nExtra cheese'
+	);
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+		id: dinnerId,
+		note: 'Grandma visits\nExtra cheese'
+	});
+
+	// The second dish is a Side, and its role can change.
+	const role = page.getByLabel('Role for Lasagna');
+	await expect(role).toHaveValue('side');
+	await role.selectOption('dessert');
+	await expect
+		.poll(() => dinnerDishes(db, dinnerId))
+		.toEqual([
+			{ name: 'Chicken tacos', role: 'main' },
+			{ name: 'Lasagna', role: 'dessert' }
+		]);
+
+	// Dinner help tells people about it.
+	await page.getByRole('banner').getByRole('button', { name: 'Help', exact: true }).click();
+	await expect(page.getByRole('dialog', { name: 'Help: Dinner' })).toContainText(
+		'Add puts a requested dish on this day'
+	);
+	await page.keyboard.press('Escape');
+
+	// Its recipe stays, and the week's list no longer has it.
+	expect(dishCount(db, person.householdId)).toBe(3);
+	await open(page, '/menu');
+	await expect(requestsSection(page).getByRole('listitem')).toHaveText([/^Eating out/, /^Gumbo/]);
+});
+
+test('asks which dinner when several can have dishes, and labels a new one when none can', async ({
+	page,
+	db,
+	person
+}) => {
+	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna' });
+	const gumbo = addRecipe(db, person.householdId, { name: 'Gumbo' });
+	askFor(db, person, 'Lasagna', { dishId: lasagna, at: 1 });
+	askFor(db, person, 'Gumbo', { dishId: gumbo, note: 'Mild', at: 2 });
+	const section = requestsSection(page);
+
+	// Two dinners that can have dishes: the person picks one.
+	const two = addDays(today(), 1);
+	const adults = addDinner(db, person.householdId, two, { type: 'going' });
+	const kids = addDinner(db, person.householdId, two);
+	labelDinner(db, adults, 'Adults');
+	labelDinner(db, kids, 'Kids');
+	await open(page, `/menu/${two}`);
+	await section.getByRole('button', { name: 'Add Lasagna' }).click();
+	const pick = page.getByRole('dialog', { name: 'Add Lasagna' });
+	await expect(pick).toContainText('Which dinner should it go on?');
+	await expect(pick.getByRole('button', { name: 'Adults' })).toBeVisible();
+	await pick.getByRole('button', { name: 'Kids' }).click();
+	await expect(pick).toBeHidden();
+	await expect(section.getByText('Added Lasagna to Kids.', { exact: true })).toBeFocused();
+	await expect(
+		page
+			.getByRole('region', { name: 'Kids' })
+			.getByRole('region', { name: 'Dishes' })
+			.getByRole('link')
+	).toHaveText(['Lasagna']);
+	expect(dinnerDishes(db, kids)).toEqual([{ name: 'Lasagna', role: 'main' }]);
+	expect(dinnerDishes(db, adults)).toEqual([]);
+
+	// One dinner that can't have dishes: a new Cooking at home dinner, asking for both labels.
+	const one = addDays(today(), 2);
+	addDinner(db, person.householdId, one, { type: 'eat_out', note: 'Pizza' });
+	await open(page, `/menu/${one}`);
+	await section.getByRole('button', { name: 'Add Gumbo' }).click();
+	const labels = page.getByRole('dialog', { name: 'Add Gumbo' });
+	await expect(labels).toContainText(
+		"This day's dinner can't have dishes, so Gumbo goes on a new Cooking at home dinner."
+	);
+	await labels.getByLabel('Label for the dinner already planned').fill('Adults');
+	await labels.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(labels.getByRole('alert')).toHaveText('Enter a label for each dinner');
+	expect(requestIds(db, person.householdId)).toHaveLength(1);
+	await labels.getByLabel('Label for the new dinner').fill('Kids');
+	await labels.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(labels).toBeHidden();
+	await expect(section.getByText('Added Gumbo to Kids.', { exact: true })).toBeFocused();
+	const newKids = page.getByRole('region', { name: 'Kids' });
+	await expect(
+		newKids.getByRole('button', { name: 'Cooking at home', exact: true })
+	).toHaveAttribute('aria-pressed', 'true');
+	await expect(newKids.getByRole('region', { name: 'Dishes' }).getByRole('link')).toHaveText([
+		'Gumbo'
+	]);
+	await expect(newKids.getByLabel('Note', { exact: true })).toHaveValue('Mild');
+	await expect(
+		page.getByRole('region', { name: 'Adults' }).getByLabel('Note', { exact: true })
+	).toHaveValue('Pizza');
+	await expect(section.getByText('No requests yet.')).toBeVisible();
+});
+
+test("plans a day with no dinner, and changes nothing when a request can't go on the day", async ({
+	page,
+	db,
+	person
+}) => {
+	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna' });
+	const request = askFor(db, person, 'Lasagna', { dishId: lasagna, note: 'Extra cheese' });
+	const section = requestsSection(page);
+
+	// Five dinners, none of which can have dishes.
+	const full = addDays(today(), 1);
+	for (const label of ['A', 'B', 'C', 'D', 'E']) {
+		labelDinner(db, addDinner(db, person.householdId, full, { type: 'eat_out' }), label);
+	}
+	await open(page, `/menu/${full}`);
+	await section.getByRole('button', { name: 'Add Lasagna' }).click();
+	await expect(section.getByRole('alert')).toHaveText(
+		'This day already has 5 dinners, and none can have dishes. Switch one to Cooking at home or Bringing a dish to add dishes.'
+	);
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+
+	// The dish is already on the day's dinner.
+	const twice = addDays(today(), 2);
+	addDinner(db, person.householdId, twice, { dishes: [[lasagna, 'main']] });
+	await open(page, `/menu/${twice}`);
+	await section.getByRole('button', { name: 'Add Lasagna' }).click();
+	await expect(section.getByRole('alert')).toHaveText('Lasagna is already on this dinner');
+	await expect(dishLinks(page)).toHaveText(['Lasagna']);
+	expect(requestIds(db, person.householdId)).toEqual([request]);
+
+	// A day with no dinner is planned as Cooking at home, at the usual servings.
+	const empty = addDays(today(), 3);
+	await open(page, `/menu/${empty}`);
+	await expect(page.getByText('Not planned yet.')).toBeVisible();
+	await section.getByRole('button', { name: 'Add Lasagna' }).click();
+	await expect(section.getByText('Added Lasagna.', { exact: true })).toBeFocused();
+	await expect(dishLinks(page)).toHaveText(['Lasagna']);
+	await expect(page.getByText('Not planned yet.')).toHaveCount(0);
+	await expect(dateButton(page)).toBeVisible();
+	expect(dinnerRow(db, person.householdId, empty)).toMatchObject({
+		type: 'cook',
+		note: 'Extra cheese',
+		servings: 4
+	});
+	await expect(section.getByText('No requests yet.')).toBeVisible();
+});
+
+test("keeps what was typed, with the request's note on the end of a typed note", async ({
+	page,
+	db,
+	person
+}) => {
+	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna' });
+	const gumbo = addRecipe(db, person.householdId, { name: 'Gumbo' });
+	askFor(db, person, 'Lasagna', { dishId: lasagna, note: 'Extra cheese', at: 1 });
+	const gumboRequest = askFor(db, person, 'Gumbo', { dishId: gumbo, at: 2 });
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { note: 'Grandma visits' });
+	await open(page, `/menu/${date}`);
+	const note = page.getByLabel('Note', { exact: true });
+	const servings = page.getByLabel('Servings', { exact: true });
+	await note.fill('Grandma and Grandpa visit');
+	await servings.fill('6');
+	const section = requestsSection(page);
+	await section.getByRole('button', { name: 'Add Lasagna' }).click();
+	await expect(dishLinks(page)).toHaveText(['Lasagna']);
+	await expect(note).toHaveValue('Grandma and Grandpa visit\nExtra cheese');
+	await expect(servings).toHaveValue('6');
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+		note: 'Grandma visits\nExtra cheese',
+		servings: 4
+	});
+
+	// Someone else removed the other request meanwhile.
+	db.prepare('delete from dish_requests where id = ?').run(gumboRequest);
+	await section.getByRole('button', { name: 'Add Gumbo' }).click();
+	await expect(section.getByRole('alert')).toHaveText(
+		'Someone removed that request, so nothing was added.'
+	);
+	await expect(section.getByText('No requests yet.')).toBeVisible();
+	await expect(dishLinks(page)).toHaveText(['Lasagna']);
+	await expect(note).toHaveValue('Grandma and Grandpa visit\nExtra cheese');
+
+	await saveToWeek(page, date);
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+		note: 'Grandma and Grandpa visit\nExtra cheese',
+		servings: 6
+	});
+});
+
+test("fits a day's requests on a phone, and shows them on a computer", async ({
+	page,
+	db,
+	person
+}) => {
+	const long = 'Grandmas'.repeat(10);
+	const dishId = addRecipe(db, person.householdId, { name: long });
+	askFor(db, person, long, { dishId, note: 'n'.repeat(200) });
+	await open(page, `/menu/${addDays(today(), 1)}`);
+	await expect(requestsSection(page).getByRole('link', { name: long })).toBeVisible();
+	expect(await sideways(page)).toBe(0);
+
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await expect(requestsSection(page).getByRole('button', { name: `Add ${long}` })).toBeVisible();
+	expect(await sideways(page)).toBe(0);
+});
+
 test('plans two dinners on a day, each with its own label, dishes, Save and Clear (6.9)', async ({
 	page,
 	db,

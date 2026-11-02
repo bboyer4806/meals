@@ -111,6 +111,11 @@
 		details?.reset();
 	}
 
+	/** Adds a request's note to the end of a note typed here and not saved (6.12). */
+	export function addNote(added: string): void {
+		details?.addNote(added);
+	}
+
 	/** "Tacos", "Tacos and Rice", "Tacos, Rice and Salad". */
 	function listNames(names: string[]): string {
 		if (names.length <= 1) return names.join('');

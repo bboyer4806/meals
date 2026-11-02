@@ -2,7 +2,13 @@
 	import { untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import { beforeNavigate, refreshAll } from '$app/navigation';
-	import { DINNER_LABEL_MAX, DINNER_NOTE_MAX, hasDishes, type DinnerType } from '../menu.ts';
+	import {
+		DINNER_LABEL_MAX,
+		DINNER_NOTE_MAX,
+		appendNote,
+		hasDishes,
+		type DinnerType
+	} from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
 	import { normalizeName } from '../text.ts';
@@ -120,6 +126,15 @@
 		dropped = null;
 		problem = '';
 		status = '';
+	}
+
+	/**
+	 * After a request's note went on the end of the saved note (6.12), a note typed here and not
+	 * saved gets it on its end too, so Save keeps it. An unchanged note already shows it.
+	 */
+	export function addNote(added: string): void {
+		if (note === savedNote) return;
+		note = appendNote(typedNote(), added);
 	}
 
 	/** Whether something typed here would be lost, and the person hasn't agreed to lose it. */
