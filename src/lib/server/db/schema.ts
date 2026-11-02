@@ -293,6 +293,9 @@ export const dinners = sqliteTable(
 		// Set on every dinner of a date with more than one, and only then; the data layer keeps it so.
 		label: text('label'),
 		type: text('type', { enum: DINNER_TYPES }).notNull(),
+		// The restaurant, as typed or as requested. Only on Eating out dinners, and optional there;
+		// the data layer keeps it so (6.9).
+		restaurantName: text('restaurant_name'),
 		note: text('note'),
 		// Starts at the household's usual servings (Q28).
 		servings: integer('servings').notNull(),

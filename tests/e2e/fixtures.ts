@@ -253,6 +253,8 @@ export function monthDay(date: string): string {
 
 export type DinnerSeed = {
 	type?: 'cook' | 'eat_out' | 'going' | 'leftovers';
+	/** Only on an Eating out dinner. */
+	restaurantName?: string | null;
 	note?: string | null;
 	servings?: number;
 	/** In the order they were added. */
@@ -270,12 +272,13 @@ export function addDinner(
 	const dinnerId = Number(
 		db
 			.prepare(
-				'insert into dinners (household_id, date, type, note, servings, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)'
+				'insert into dinners (household_id, date, type, restaurant_name, note, servings, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)'
 			)
 			.run(
 				householdId,
 				date,
 				dinner.type ?? 'cook',
+				dinner.restaurantName ?? null,
 				dinner.note ?? null,
 				dinner.servings ?? 4,
 				now,

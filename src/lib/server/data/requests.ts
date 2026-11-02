@@ -4,13 +4,19 @@ import { REQUEST_NAME_MAX, REQUEST_NOTE_MAX } from '../../menu.ts';
 import { normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
 import { dishRequests, dishes, users } from '../db/schema.ts';
-import { addRequestedDish, type DishDestination } from './dinners.ts';
+import {
+	addEatingOut,
+	addRequestedDish,
+	type DishDestination,
+	type NewDinnerLabels
+} from './dinners.ts';
 import { findDishByName, insertDish } from './dishes.ts';
 
 // Requests (design 6.12): anyone in the household asks for a dish or a restaurant, and anyone
-// removes the request once it's been made, or puts a requested dish on a dinner, which removes
-// it. Each shows who asked. A dish request links to its recipe; a restaurant request is only the
-// name typed, since restaurants aren't kept anywhere.
+// removes the request once it's been made, or adds it to a date, which removes it: a requested
+// dish goes on a dinner, and a requested restaurant becomes an Eating out dinner. Each shows who
+// asked. A dish request links to its recipe; a restaurant request is only the name typed, since
+// restaurants aren't kept anywhere.
 
 /** What every request shows: its name, the note if there is one, and who asked. */
 type Shown = { id: number; name: string; note: string | null; askedBy: string };
@@ -190,6 +196,25 @@ export function requestDish(
 }
 
 /**
+ * The household's request of this kind, as it is now. Not found when someone removed it meanwhile,
+ * or for the other kind.
+ */
+function findRequest(householdId: number, requestId: number, kind: DishRequest['kind']) {
+	const request = db()
+		.select({
+			kind: dishRequests.kind,
+			name: dishRequests.name,
+			note: dishRequests.note,
+			dishId: dishRequests.dishId
+		})
+		.from(dishRequests)
+		.where(and(eq(dishRequests.id, requestId), eq(dishRequests.householdId, householdId)))
+		.get();
+	if (!request || request.kind !== kind) error(404, 'Not found');
+	return request;
+}
+
+/**
  * Puts a dish request's recipe on one of the date's dinners, with the request's note, and removes
  * the request, in one transaction (6.12; addRequestedDish says where it goes). When that can't be
  * done, nothing changes: the request stays, and so do the date's dinners. Not found when someone
@@ -203,17 +228,35 @@ export function promoteDishRequest(
 	now: number
 ): number {
 	return transaction(() => {
-		const request = db()
-			.select({ kind: dishRequests.kind, note: dishRequests.note, dishId: dishRequests.dishId })
-			.from(dishRequests)
-			.where(and(eq(dishRequests.id, requestId), eq(dishRequests.householdId, householdId)))
-			.get();
 		// Only a dish request has a recipe to put on a dinner.
-		if (!request || request.kind !== 'dish') error(404, 'Not found');
+		const request = findRequest(householdId, requestId, 'dish');
 		// The database keeps a dish on every dish request (dish_requests_kind_dish).
 		if (request.dishId === null) throw new Error(`Dish request ${requestId} has no dish`);
 		const requested = { dishId: request.dishId, note: request.note };
 		const dinnerId = addRequestedDish(householdId, date, to, requested, now);
+		removeRequest(householdId, requestId);
+		return dinnerId;
+	});
+}
+
+/**
+ * Adds a restaurant request to the date as a new Eating out dinner at its restaurant, with its
+ * note, and removes the request, in one transaction (6.12; addEatingOut says how). The date's
+ * dinners stay as they are. When that can't be done, nothing changes: the request stays, and so
+ * do the date's dinners. Not found when someone removed the request meanwhile. Returns the new
+ * dinner's id.
+ */
+export function promoteRestaurantRequest(
+	householdId: number,
+	date: string,
+	requestId: number,
+	labels: NewDinnerLabels,
+	now: number
+): number {
+	return transaction(() => {
+		const request = findRequest(householdId, requestId, 'restaurant');
+		const eatingOut = { restaurantName: request.name, note: request.note };
+		const dinnerId = addEatingOut(householdId, date, labels, eatingOut, now);
 		removeRequest(householdId, requestId);
 		return dinnerId;
 	});

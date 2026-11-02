@@ -97,6 +97,7 @@ export function makeDinner(
 	date: string,
 	fields: {
 		type?: DinnerType;
+		restaurantName?: string | null;
 		note?: string | null;
 		servings?: number;
 		dishes?: [dishId: number, role: DishRole][];
@@ -109,6 +110,7 @@ export function makeDinner(
 			householdId,
 			date,
 			type: fields.type ?? 'cook',
+			restaurantName: fields.restaurantName ?? null,
 			note: fields.note ?? null,
 			servings: fields.servings ?? 4,
 			createdAt: now,

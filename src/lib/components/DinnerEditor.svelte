@@ -11,9 +11,10 @@
 	import DinnerDishes from './DinnerDishes.svelte';
 	import Sheet from './Sheet.svelte';
 
-	// One dinner on a date's page (design 7, Dinner; 6.9): its type, dishes, servings and note,
-	// Copy a dinner and Clear. Each of a date's dinners has its own, and a change to one never
-	// changes another. Its forms send the dinner's id, so they act on this dinner only.
+	// One dinner on a date's page (design 7, Dinner; 6.9): its type, dishes, servings or
+	// restaurant, and note, Copy a dinner and Clear. Each of a date's dinners has its own, and a
+	// change to one never changes another. Its forms send the dinner's id, so they act on this
+	// dinner only.
 	let {
 		dinner,
 		editing,
@@ -32,7 +33,9 @@
 		 * dinner shows, or a dinner someone cleared or moved while something typed here isn't
 		 * saved (6.11).
 		 */
-		editing: Pick<Dinner, 'label' | 'type' | 'note' | 'servings'> & { id: number | null };
+		editing: Pick<Dinner, 'label' | 'type' | 'restaurantName' | 'note' | 'servings'> & {
+			id: number | null;
+		};
 		/** Whether the date has more than one dinner, so each has a label (6.9). */
 		labeled: boolean;
 		suggestions: { id: number; name: string; timesAdded: number }[];

@@ -28,7 +28,11 @@ import {
 	type Dinner
 } from '#lib/server/data/dinners.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
-import { listRequests, promoteDishRequest } from '#lib/server/data/requests.ts';
+import {
+	listRequests,
+	promoteDishRequest,
+	promoteRestaurantRequest
+} from '#lib/server/data/requests.ts';
 import { attempt, id, parseForm } from '#lib/server/forms.ts';
 
 // A date's dinners (design 7, Dinner; 6.9). Each form sends only what it changes and the rest
@@ -55,7 +59,8 @@ export function load({ locals, params }) {
 		// Dinners already made, so a plan for later in the week isn't offered (assumption 1).
 		copyGroups: listCopyGroups(user.householdId, today),
 		dishes: dishSuggestions(user.householdId),
-		// The Menu's requests, under the dinners, so a requested dish can go on one (6.12).
+		// The Menu's requests, under the dinners, so a requested dish can go on one and a requested
+		// restaurant can become one (6.12).
 		requests: listRequests(user.householdId)
 	};
 }
@@ -82,13 +87,15 @@ const typeSchema = z.object({
 	dinnerId: shownDinner
 });
 
-// Eating out and Leftovers show no servings, and a date with one dinner no label, so a missing
-// field keeps what's saved. The type is the one the page shows, used only if the dinner is gone
-// by the time this is saved. The data layer checks the label (6.9).
+// Eating out and Leftovers show no servings, only Eating out shows the restaurant, and a date
+// with one dinner no label, so a missing field keeps what's saved. The type is the one the page
+// shows, used only if the dinner is gone by the time this is saved. The data layer checks the
+// label and the restaurant (6.9).
 const detailsSchema = z.object({
 	dinnerId: shownDinner,
 	label: z.string().optional(),
 	type: z.enum(DINNER_TYPES, { error: 'Pick a type' }).optional(),
+	restaurantName: z.string().optional(),
 	servings: z.coerce
 		.number()
 		.int('Enter a whole number of servings')
@@ -150,6 +157,10 @@ const promoteSchema = z.object({
 		.transform((value) => value ?? null)
 });
 
+// A restaurant request, which always goes on a new Eating out dinner, with the labels the page
+// asked for when the date has dinners (6.12, 6.9).
+const promoteRestaurantSchema = promoteSchema.omit({ dinnerId: true });
+
 const CHANGED_SINCE = 'Someone has added dishes to this dinner since you opened it.';
 
 export const actions = {
@@ -170,6 +181,8 @@ export const actions = {
 		const fields = {
 			label: dinner?.label ?? null,
 			type,
+			// Kept only while the type is Eating out (6.9).
+			restaurantName: dinner?.restaurantName ?? null,
 			note: dinner?.note ?? null,
 			// A new dinner starts at the household's usual servings (Q28).
 			servings: dinner?.servings ?? getHousehold(user.householdId).defaultServings
@@ -186,7 +199,7 @@ export const actions = {
 		const date = dinnerDate(params);
 		const parsed = parseForm(detailsSchema, await request.formData(), 'details');
 		if ('failure' in parsed) return parsed.failure;
-		const { dinnerId, label, type, servings, note } = parsed.data;
+		const { dinnerId, label, type, restaurantName, servings, note } = parsed.data;
 		const dinner = shownOn(user.householdId, date, dinnerId);
 		// No dinner yet: the page showed a date with no dinner, and Save plans it as the type the
 		// page showed. When the page showed a dinner, someone cleared or moved it since, and Save
@@ -196,12 +209,14 @@ export const actions = {
 			? {
 					label: label === undefined ? dinner.label : label,
 					type: dinner.type,
+					restaurantName: restaurantName === undefined ? dinner.restaurantName : restaurantName,
 					note: note === undefined ? dinner.note : note,
 					servings: servings ?? dinner.servings
 				}
 			: {
 					label: null,
 					type: type ?? 'cook',
+					restaurantName: restaurantName ?? null,
 					note: note ?? null,
 					servings: servings ?? getHousehold(user.householdId).defaultServings
 				};
@@ -330,6 +345,22 @@ export const actions = {
 			dinnerId === undefined ? { labels: { first: firstLabel, added: label } } : { dinnerId };
 		const promoted = attempt('request', () =>
 			promoteDishRequest(user.householdId, date, requestId, to, Date.now())
+		);
+		if (typeof promoted !== 'number') return promoted;
+		return { action: 'request', dinnerId: promoted };
+	},
+
+	// Adds a requested restaurant to the date as a new Eating out dinner and removes the request.
+	// The page uses the new dinner to say so (6.12).
+	promoteRestaurantRequest: async ({ locals, params, request }) => {
+		const user = requireHousehold(locals);
+		const date = dinnerDate(params);
+		const parsed = parseForm(promoteRestaurantSchema, await request.formData(), 'request');
+		if ('failure' in parsed) return parsed.failure;
+		const { requestId, firstLabel, label } = parsed.data;
+		const labels = { first: firstLabel, added: label };
+		const promoted = attempt('request', () =>
+			promoteRestaurantRequest(user.householdId, date, requestId, labels, Date.now())
 		);
 		if (typeof promoted !== 'number') return promoted;
 		return { action: 'request', dinnerId: promoted };

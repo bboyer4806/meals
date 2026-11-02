@@ -360,8 +360,9 @@ them from the household empties it and keeps the rating in the average and count
 
 **dinners:** `date` (up to 5 per household and date, in the order added; 6.9), `label`
 (set on every dinner of a date with more than one, and only then), `type` (`cook`,
-`eat_out`, `going` or `leftovers`; Q26), `note`, `servings` (at least 1; Q28), `created_at`,
-`updated_at`. A date with no row is not planned.
+`eat_out`, `going` or `leftovers`; Q26), `restaurant_name` (optional, up to 80 characters, on
+an `eat_out` dinner and only there; MEA-58, 6.9), `note`, `servings` (at least 1; Q28),
+`created_at`, `updated_at`. A date with no row is not planned.
 
 **dinner_dishes:** `dinner_id`, `dish_id` (unique per dinner), `role` (`main`, `side`,
 `dessert` or `other`; Q29). Only `cook` and `going` dinners have dishes.
@@ -536,6 +537,12 @@ on the list. The rest of this section describes it as built.
   one for the adults, up to 5. Each has its own type, note, servings and dishes. The types are
   Cooking at home, Eating out, Bringing a dish and Leftovers. All have a note. Cooking at home
   and Bringing a dish also have dishes and servings (Q26).
+- Eating out also has a restaurant (MEA-58): its name as typed, with extra spaces taken out, up
+  to 80 characters, or none. It's typed in the dinner's Restaurant field, saved with its note,
+  or comes from a restaurant request (6.12). Restaurants aren't kept anywhere else, so there are
+  no suggestions. Switching an Eating out dinner to another type removes its restaurant without
+  asking, and switching back starts with none. Copy a dinner sets the restaurant with the type,
+  so a copy that isn't Eating out has none.
 - A dinner has a label only when its date has more than one, and then every dinner on it
   needs one: up to 30 characters, unique within the date ignoring case. Adding the second
   dinner asks for both labels. When clearing leaves one dinner, its label is removed. A new
@@ -595,9 +602,8 @@ If two people change the same thing, the last save wins.
   archived), and otherwise to a new one made as above. Requests with the same name shared one
   new dish, spelled as the oldest request typed it.
 - A restaurant request (MEA-49) asks to eat out, at a restaurant typed by name, with no
-  suggestions. Restaurants aren't kept anywhere, and an Eating out dinner has no restaurant
-  (Q26), so the request links to nothing: it shows "Eating out" and the name as typed. Requests
-  made before restaurant requests are dish requests.
+  suggestions. Restaurants aren't kept anywhere, so the request links to nothing: it shows
+  "Eating out" and the name as typed. Requests made before restaurant requests are dish requests.
 - The dish or restaurant name is required and up to 80 characters; the note is optional and up
   to 200. Each field stops taking characters at its limit, pasted text included, and says so
   while it's full. The server refuses anything longer (4.5).
@@ -616,10 +622,21 @@ If two people change the same thing, the last save wins.
   Kids." on a date with more than one dinner). Nothing changes, and the page says why, when the
   dish is already on that dinner, its recipe is archived (restore it first; 6.10), the note would
   take the dinner's past 2,500 characters, someone changed the date's dinners meanwhile, or
-  someone removed the request (6.11). A restaurant request has nothing to add there.
+  someone removed the request (6.11).
+- A restaurant request there has **Add** too (MEA-58), which plans eating out at its restaurant
+  as a new dinner on the date and changes none of the date's dinners: Eating out, with the
+  restaurant as the request names it, the request's note as its note, and the usual servings
+  (6.9). On a date with no dinner, that plans it, and a note typed there and not saved stays,
+  with the request's note on its end, for Save, as for a dish. On a date with dinners, Add first
+  asks for labels as Add a dinner does (6.9), so the date's first dinner gets a label when this
+  is its second. A date that already has 5 dinners gets none, and the page says "This day
+  already has 5 dinners. Clear one to add another." The request is then removed, and the page
+  says "Added Olive Garden." ("Added Olive Garden to Adults." on a date with more than one
+  dinner, with the new dinner's label). Nothing changes, and the page says why, when a label
+  isn't right, someone changed the date's dinners meanwhile, or someone removed the request
+  (6.11).
 - Requests have no statuses, dates or link to dinners. One stays until someone removes it,
-  without being asked first, or adds its dish to a dinner. Removing a member removes their
-  requests.
+  without being asked first, or adds it to a date. Removing a member removes their requests.
 
 ## 7. Screens
 
@@ -794,10 +811,10 @@ field and the editor stays as it was. The link must start with http:// or https:
 Source, be up to 500 characters. Pages whose sites block servers or need a sign-in can't be
 opened, and recipe data written as Microdata or RDFa rather than JSON-LD isn't read.
 
-**Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, dishes by role,
-and note. A day with more than one dinner shows each one (label, type, dishes by role, note)
-in the order they were added. Today is highlighted. Previous, next and "This week" buttons. Tapping a day
-opens its dinner. With a mouse or trackpad, dragging a planned day onto another day of the week
+**Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, the restaurant (Eating
+out; MEA-58) or dishes by role, and note. A day with more than one dinner shows each one (label,
+type, restaurant or dishes by role, note) in the order they were added. Today is highlighted.
+Previous, next and "This week" buttons. Tapping a day opens its dinner. With a mouse or trackpad, dragging a planned day onto another day of the week
 works like Move to another date (2.2.2, 6.9): the two days swap their dinners, and the week stays
 open. The day under the pointer is outlined while dragging; "Not planned" days can't be dragged,
 and releasing on the same day or outside the days changes nothing. Touch never drags, so tapping
@@ -813,18 +830,20 @@ a restaurant request shows "Eating out" and the restaurant's name, not a link.
 **Dinner.** "‹ Week of" goes to the dinner's week. Type (four buttons), note, servings,
 and dishes. You add a dish by searching existing dishes or typing a new name, then picking
 its role. Each dish links to its
-recipe at this dinner's servings. Actions: Copy a dinner and Clear. A date with more than one
-dinner shows them all on its one page, in the order they were added, each with its own label
+recipe at this dinner's servings. Eating out has a Restaurant field, with "Where to go" as its
+hint, in place of servings and dishes (MEA-58; 6.9). Actions: Copy a dinner and Clear. A date
+with more than one dinner shows them all on its one page, in the order they were added, each with its own label
 (as a heading, and a Label field saved with its servings and note), type, dishes, servings,
 note, Copy a dinner and Clear; changing one never changes another (6.9). A planned date has
 **Add a dinner** until it has 5. On a planned date,
 the date at the top is a button, with an icon, that opens Move to another date; on a date
 with no dinner it's plain text. A date with no dinner says "Not planned yet" and shows Cooking
 at home selected, with its servings and note ready to fill in, unsaved (6.9). Under the dinners,
-**Requests** lists the Menu's requests, and a dish request's Add puts its dish on one of the
-date's dinners (6.12). The type, dishes, copying, moving, clearing and adding a request save as
-soon as they're made, and keep anything typed in the servings and note for Save. Save on the
-servings and note goes to the dinner's week, where that dinner's line says "Saved" for 3
+**Requests** lists the Menu's requests: a dish request's Add puts its dish on one of the date's
+dinners, and a restaurant request's Add makes a new Eating out dinner there (6.12). The type,
+dishes, copying, moving, clearing and adding a request save as soon as they're made, and keep
+anything typed in the servings, restaurant and note for Save. Save on the servings or
+restaurant and note goes to the dinner's week, where that dinner's line says "Saved" for 3
 seconds; on a date with no dinner it plans it as the type shown. Leaving with something typed asks first. If someone cleared or moved the dinner
 meanwhile, Save plans the date again when it has no dinner left, and the page stays to say so
 (6.11).

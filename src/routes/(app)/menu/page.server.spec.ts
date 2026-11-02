@@ -118,7 +118,7 @@ describe('the week', () => {
 });
 
 describe("each day's dinners", () => {
-	it('gives the type, the dishes by role in the order added, and the note', () => {
+	it('gives the type, the restaurant or the dishes by role in the order added, and the note', () => {
 		const dish = (name: string) => makeDish(householdId, recipe(name));
 		const [roast, beans, rolls, cake, salad] = ['Roast', 'Beans', 'Rolls', 'Cake', 'Salad'].map(
 			dish
@@ -134,6 +134,7 @@ describe("each day's dinners", () => {
 		});
 		const out = makeDinner(householdId, '2026-09-30', {
 			type: 'eat_out',
+			restaurantName: 'Taco Bar',
 			note: 'Tacos on Main St'
 		});
 		const going = makeDinner(householdId, '2026-10-01', { type: 'going' });
@@ -151,6 +152,7 @@ describe("each day's dinners", () => {
 						id: grandma,
 						label: null,
 						type: 'cook',
+						restaurantName: null,
 						note: 'Grandma visits',
 						roles: [
 							{ role: 'main', names: ['Roast'] },
@@ -163,12 +165,21 @@ describe("each day's dinners", () => {
 			{
 				date: '2026-09-30',
 				dinners: [
-					{ id: out, label: null, type: 'eat_out', note: 'Tacos on Main St', roles: [] }
+					{
+						id: out,
+						label: null,
+						type: 'eat_out',
+						restaurantName: 'Taco Bar',
+						note: 'Tacos on Main St',
+						roles: []
+					}
 				]
 			},
 			{
 				date: '2026-10-01',
-				dinners: [{ id: going, label: null, type: 'going', note: null, roles: [] }]
+				dinners: [
+					{ id: going, label: null, type: 'going', restaurantName: null, note: null, roles: [] }
+				]
 			},
 			{ date: '2026-10-02', dinners: [] },
 			{ date: '2026-10-03', dinners: [] }
@@ -179,8 +190,8 @@ describe("each day's dinners", () => {
 		const adults = makeDinner(householdId, '2026-09-29', { type: 'eat_out' });
 		const kids = addDinner(householdId, '2026-09-29', { first: 'Adults', added: 'Kids' }, NOW);
 		expect(week().days[2]?.dinners).toEqual([
-			{ id: adults, label: 'Adults', type: 'eat_out', note: null, roles: [] },
-			{ id: kids, label: 'Kids', type: 'cook', note: null, roles: [] }
+			{ id: adults, label: 'Adults', type: 'eat_out', restaurantName: null, note: null, roles: [] },
+			{ id: kids, label: 'Kids', type: 'cook', restaurantName: null, note: null, roles: [] }
 		]);
 	});
 

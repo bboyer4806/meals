@@ -20,6 +20,11 @@ export function hasDishes(type: DinnerType): boolean {
 /** Why a dish can't go on a dinner of the other types. */
 export const NO_DISHES = 'Switch to Cooking at home or Bringing a dish to add dishes';
 
+/** Only Eating out has a restaurant, an optional name as typed (6.9). */
+export function hasRestaurant(type: DinnerType): boolean {
+	return type === 'eat_out';
+}
+
 /** In the order a dinner lists its dishes (6.9). */
 export const DISH_ROLES = ['main', 'side', 'dessert', 'other'] as const;
 export type DishRole = (typeof DISH_ROLES)[number];
@@ -56,6 +61,9 @@ export function appendNote(note: string, added: string): string {
  */
 export const REQUEST_NAME_MAX = 80;
 export const REQUEST_NOTE_MAX = 200;
+
+/** An Eating out dinner's restaurant, as long as a request's, so a requested one fits (6.12). */
+export const DINNER_RESTAURANT_MAX = REQUEST_NAME_MAX;
 
 /** A pantry check from the menu covers the next 7 days unless changed (Q5), and at most 14. */
 export const DEFAULT_CHECK_DAYS = 7;

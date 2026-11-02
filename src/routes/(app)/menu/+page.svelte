@@ -282,9 +282,10 @@
 	</div>
 </nav>
 
-<!-- A dinner's type, dishes by role, and note. -->
+<!-- A dinner's type, its restaurant or dishes by role, and note. -->
 {#snippet details(dinner: (typeof data.days)[number]['dinners'][number])}
 	<span class="type">{DINNER_TYPE_LABELS[dinner.type]}</span>
+	{#if dinner.restaurantName}<span class="restaurant-name">{dinner.restaurantName}</span>{/if}
 	{#each dinner.roles as group (group.role)}
 		<span class="dishes">
 			<span class="role">{DISH_ROLE_LABELS[group.role]}</span>

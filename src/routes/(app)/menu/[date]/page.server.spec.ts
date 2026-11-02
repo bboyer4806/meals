@@ -158,6 +158,7 @@ describe('loading a date', () => {
 					date: TOMORROW,
 					label: null,
 					type: 'cook',
+					restaurantName: null,
 					note: 'Grandma visits',
 					servings: 6,
 					dishes: [
@@ -289,6 +290,19 @@ describe('picking a type', () => {
 		const dinnerId = shown(makeDinner(householdId, TOMORROW));
 		await post('type', { type: 'eat_out', dinnerId });
 		expect(dinnerOn(householdId, TOMORROW)?.type).toBe('eat_out');
+	});
+
+	it("keeps an Eating out dinner's restaurant only while it's Eating out (6.9)", async () => {
+		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'eat_out', note: 'At 7' }));
+		await post('details', { restaurantName: 'Thai Garden', note: 'At 7', dinnerId });
+		await post('type', { type: 'leftovers', dinnerId });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
+			type: 'leftovers',
+			restaurantName: null,
+			note: 'At 7'
+		});
+		await post('type', { type: 'eat_out', dinnerId });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ type: 'eat_out', restaurantName: null });
 	});
 
 	it('refuses a type that is not one', async () => {
@@ -439,6 +453,69 @@ describe('saving servings and the note', () => {
 			'Enter at least 1 serving'
 		);
 		expect(dinnerOn(householdId, TOMORROW)).toBeNull();
+	});
+});
+
+describe("saving an Eating out dinner's restaurant (6.9)", () => {
+	it('saves it with the note, as typed without extra spaces, then goes to the week', async () => {
+		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'eat_out' }));
+		expectRedirect(
+			await post('details', { restaurantName: '  Thai   Garden ', note: 'At 7', dinnerId }),
+			`/menu?week=2026-10-04&saved=${dinnerId}`
+		);
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
+			type: 'eat_out',
+			restaurantName: 'Thai Garden',
+			note: 'At 7'
+		});
+	});
+
+	it('keeps it when the form leaves it out, and removes it when it is blank', async () => {
+		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'eat_out' }));
+		await post('details', { restaurantName: 'Thai Garden', dinnerId });
+		await post('details', { note: 'At 7', dinnerId });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
+			restaurantName: 'Thai Garden',
+			note: 'At 7'
+		});
+		await post('details', { restaurantName: '   ', note: 'At 7', dinnerId });
+		expect(dinnerOn(householdId, TOMORROW)?.restaurantName).toBeNull();
+	});
+
+	it('takes up to 80 characters', async () => {
+		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'eat_out' }));
+		expectFailure(
+			await post('details', { restaurantName: 'x'.repeat(81), note: 'At 7', dinnerId }),
+			'details',
+			'Keep the restaurant under 80 characters'
+		);
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ restaurantName: null, note: null });
+		await post('details', { restaurantName: 'x'.repeat(80), dinnerId });
+		expect(dinnerOn(householdId, TOMORROW)?.restaurantName).toBe('x'.repeat(80));
+	});
+
+	it("keeps none on a dinner someone switched to another type meanwhile (6.11)", async () => {
+		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'cook' }));
+		await post('details', { type: 'eat_out', restaurantName: 'Thai Garden', dinnerId });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ type: 'cook', restaurantName: null });
+	});
+
+	it('plans a date again as Eating out there when the dinner was cleared meanwhile', async () => {
+		const cleared = shown(makeDinner(householdId, TOMORROW, { type: 'eat_out' }));
+		clearOn(TOMORROW);
+		expect(
+			await post('details', {
+				type: 'eat_out',
+				restaurantName: 'Thai Garden',
+				note: 'At 7',
+				dinnerId: cleared
+			})
+		).toEqual({ action: 'details', replanned: true });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
+			type: 'eat_out',
+			restaurantName: 'Thai Garden',
+			note: 'At 7'
+		});
 	});
 });
 
@@ -978,6 +1055,97 @@ describe('adding a requested dish (6.12)', () => {
 	});
 });
 
+describe('adding a requested restaurant (6.12)', () => {
+	/** Asks for the restaurant, and gives the request's id as the page sends it. */
+	function requestFor(name: string, note: string | null = null): string {
+		addRestaurantRequest(householdId, userId, { name, note }, NOW);
+		const request = listRequests(householdId).find((candidate) => candidate.name === name);
+		if (!request) throw new Error(`No request for ${name}`);
+		return String(request.id);
+	}
+
+	it('plans a date with no dinner as Eating out there, removes the request and says where it went', async () => {
+		const requestId = requestFor('Olive Garden', 'For her birthday');
+		requestFor('Taco Bar');
+		expect(await post('promoteRestaurantRequest', { requestId })).toEqual({
+			action: 'request',
+			dinnerId: current(TOMORROW)
+		});
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
+			label: null,
+			type: 'eat_out',
+			restaurantName: 'Olive Garden',
+			note: 'For her birthday',
+			servings: 3,
+			dishes: []
+		});
+		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Taco Bar']);
+	});
+
+	it('adds a separate dinner to a date with dinners, with the labels the page asked for', async () => {
+		makeDinner(householdId, TOMORROW, { note: 'Busy', dishes: [[tacos, 'main']] });
+		const added = await post('promoteRestaurantRequest', {
+			requestId: requestFor('Olive Garden'),
+			firstLabel: 'Kids',
+			label: 'Adults'
+		});
+		expect(added).toEqual({ action: 'request', dinnerId: getDay(householdId, TOMORROW)[1]?.id });
+		expect(getDay(householdId, TOMORROW)).toMatchObject([
+			{ label: 'Kids', type: 'cook', note: 'Busy', dishes: [{ dishId: tacos, role: 'main' }] },
+			{ label: 'Adults', type: 'eat_out', restaurantName: 'Olive Garden', note: null, dishes: [] }
+		]);
+	});
+
+	it('says what is wrong, and changes nothing', async () => {
+		makeDinner(householdId, TOMORROW, { type: 'eat_out' });
+		makeDinner(householdId, TODAY);
+		addDinner(householdId, TODAY, { first: 'A', added: 'B' }, NOW);
+		for (const label of ['C', 'D', 'E']) {
+			addDinner(householdId, TODAY, { first: null, added: label }, NOW);
+		}
+		const requestId = requestFor('Olive Garden');
+		const before = october();
+		const tries: [Record<string, string>, string, string?][] = [
+			// The page showed the date with no dinner.
+			[{ requestId }, 'Someone changed this dinner since you opened it.'],
+			[
+				{ requestId, firstLabel: 'Adults', label: 'adults' },
+				'Give each dinner on this day a different label'
+			],
+			[{ requestId, firstLabel: 'Adults', label: ' ' }, 'Enter a label for each dinner'],
+			[{ requestId }, 'This day already has 5 dinners. Clear one to add another.', TODAY]
+		];
+		for (const [fields, error, date] of tries) {
+			expectFailure(await post('promoteRestaurantRequest', fields, { date }), 'request', error);
+		}
+		expect(october()).toEqual(before);
+		expect(listRequests(householdId)).toHaveLength(1);
+
+		const invalid: Record<string, string>[] = [{}, { requestId: 'soup' }, { requestId: '0' }];
+		for (const fields of invalid) {
+			expect(await post('promoteRestaurantRequest', fields)).toMatchObject({
+				status: 400,
+				data: { action: 'request' }
+			});
+		}
+	});
+
+	it("is not found for a request someone removed, a dish request and another household's", async () => {
+		const removed = requestFor('Olive Garden');
+		removeRequest(householdId, Number(removed));
+		addRequest(householdId, userId, { name: 'Rice', note: null }, NOW);
+		const dish = String(listRequests(householdId)[0]?.id);
+		addRestaurantRequest(otherId, otherUserId, { name: 'Diner', note: null }, NOW);
+		const theirs = String(listRequests(otherId)[0]?.id);
+		for (const requestId of [removed, dish, theirs]) {
+			expectNotFound(await post('promoteRestaurantRequest', { requestId }));
+		}
+		expect(october()).toEqual([]);
+		expect(listRequests(householdId)).toHaveLength(1);
+		expect(listRequests(otherId)).toHaveLength(1);
+	});
+});
+
 describe('every action', () => {
 	const forms: Record<Action, Record<string, string>> = {
 		type: { type: 'cook' },
@@ -990,7 +1158,8 @@ describe('every action', () => {
 		copy: { sourceId: '1' },
 		move: { to: TODAY },
 		clear: {},
-		promoteDishRequest: { requestId: '1' }
+		promoteDishRequest: { requestId: '1' },
+		promoteRestaurantRequest: { requestId: '1' }
 	};
 
 	it('needs a signed-in member of a household', async () => {
