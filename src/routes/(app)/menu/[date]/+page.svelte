@@ -2,13 +2,15 @@
 	import { tick, untrack } from 'svelte';
 	import type { ActionResult } from '$app/forms';
 	import AddDinner from '#lib/components/AddDinner.svelte';
+	import DayRequests from '#lib/components/DayRequests.svelte';
 	import DinnerEditor from '#lib/components/DinnerEditor.svelte';
 	import MoveDinner from '#lib/components/MoveDinner.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
 	import { MAX_DINNERS, hasDishes, weekStart } from '#lib/menu.ts';
 
 	// A date's dinners (design 7, Dinner; 6.9), each with its own editor, in the order they were
-	// added. Move takes them all to another date, and Add a dinner adds another, up to 5.
+	// added. Move takes them all to another date, and Add a dinner adds another, up to 5. Under
+	// them, the Menu's requests, whose dishes can go on a dinner (6.12).
 	let { data, form } = $props();
 
 	type Dinner = (typeof data.dinners)[number];
@@ -202,6 +204,16 @@
 		if (last) editors[last.key]?.focus();
 	}
 
+	/**
+	 * A request's note went on the end of the dinner's saved note, so a note typed there and not
+	 * saved gets it too, and Save keeps it (6.12).
+	 */
+	function requestAdded(dinnerId: number, note: string | null): void {
+		if (note === null) return;
+		const slot = slots.find((candidate) => candidate.dinner?.id === dinnerId);
+		if (slot) editors[slot.key]?.addNote(note);
+	}
+
 	/** Moving opens the new date, so it asks about anything typed in any of the dinners. */
 	function canLeave(): boolean {
 		return slots.every((slot) => editors[slot.key]?.confirmLeave() ?? true);
@@ -275,6 +287,8 @@
 			<AddDinner count={dinners.length} {ownUpdate} onadded={added} />
 		</div>
 	{/if}
+
+	<DayRequests requests={data.requests} {dinners} {ownUpdate} onadded={requestAdded} />
 
 	{#if dinners[0]}
 		<MoveDinner

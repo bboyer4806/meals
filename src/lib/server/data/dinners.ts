@@ -1,6 +1,8 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import {
+	appendNote,
+	defaultRole,
 	DINNER_LABEL_MAX,
 	DINNER_NOTE_MAX,
 	DINNER_TYPES,
@@ -46,6 +48,15 @@ export type Dinner = {
 };
 
 export type AddDishResult = { kind: 'added' } | { kind: 'archived'; dishId: number; name: string };
+
+/**
+ * Where a requested dish goes (6.12): the dinner the page picked, which is the date's only dinner
+ * that can have dishes or the one the person chose, or a new Cooking at home dinner when none can,
+ * with the labels Add a dinner asks for (6.9).
+ */
+export type DishDestination =
+	| { dinnerId: number }
+	| { labels: { first: string | null; added: string | null } };
 
 export type CopyGroup = {
 	/** The group's most recent dinner, which Copy uses for the type and roles. */
@@ -307,7 +318,10 @@ function isOnDinner(dinnerId: number, dishId: number): boolean {
 	return row !== undefined;
 }
 
-/** Adds the dish, first making the dinner when the date has none: Cooking at home. */
+/**
+ * Adds the dish, first making the dinner when the date has none: Cooking at home. Returns the
+ * dinner's id.
+ */
 function insertDinnerDish(
 	householdId: number,
 	date: string,
@@ -315,10 +329,11 @@ function insertDinnerDish(
 	dishId: number,
 	role: DishRole,
 	now: number
-): void {
+): number {
 	const dinnerId = dinner?.id ?? insertDinner(householdId, date, 'cook', now);
 	db().insert(dinnerDishes).values({ householdId, dinnerId, dishId, role }).run();
 	touch(dinnerId, now);
+	return dinnerId;
 }
 
 /**
@@ -381,6 +396,78 @@ export function restoreAndAddDinnerDish(
 			db().update(dishes).set({ archivedAt: null }).where(eq(dishes.id, found.id)).run();
 		}
 		insertDinnerDish(householdId, date, dinner, found.id, role, now);
+	});
+}
+
+/**
+ * The new dinner a requested dish goes on when none of the date's dinners can have dishes
+ * (6.12): null on a date with no dinner, which the dish plans, and otherwise one Add a dinner
+ * adds, with its labels (6.9). Refuses when the page showed the date otherwise than it is now,
+ * and on a date that already has 5 dinners.
+ */
+function newDinnerFor(
+	householdId: number,
+	date: string,
+	labels: { first: string | null; added: string | null },
+	now: number
+): { id: number } | null {
+	requireDate(date);
+	const day = dinnersOn(householdId, date);
+	// The page offers a new dinner only when none can have dishes, so someone changed one since.
+	if (day.some((dinner) => hasDishes(dinner.type))) error(400, CHANGED);
+	if (day.length === 0) return null;
+	if (day.length >= MAX_DINNERS) {
+		error(
+			400,
+			`This day already has ${MAX_DINNERS} dinners, and none can have dishes. Switch one to Cooking at home or Bringing a dish to add dishes.`
+		);
+	}
+	// The page asks for the new dinner's label on a date that has dinners, so it showed none.
+	if (labels.added === null) error(400, CHANGED);
+	return { id: addDinner(householdId, date, { first: labels.first, added: labels.added }, now) };
+}
+
+/** The date's dinner with this id, as the page shows it. */
+function dinnerOn(householdId: number, date: string, dinnerId: number): Dinner {
+	const dinner = getDay(householdId, date).find((candidate) => candidate.id === dinnerId);
+	if (!dinner) throw new Error(`Dinner ${dinnerId} is not on ${date}`);
+	return dinner;
+}
+
+/**
+ * Adds a requested dish to the date, with the request's note on the end of the dinner's note,
+ * and returns the dinner's id (6.12). The dinner the page picked refuses what adding the dish by
+ * hand would (6.9). The dish is Main on a dinner without dishes and Side otherwise. Also refuses
+ * an archived dish and a note that would take the dinner's past its limit.
+ */
+export function addRequestedDish(
+	householdId: number,
+	date: string,
+	to: DishDestination,
+	requested: { dishId: number; note: string | null },
+	now: number
+): number {
+	return transaction(() => {
+		const dish = findDish(householdId, requested.dishId);
+		// A request keeps its recipe once it's archived (6.12), and an archived dish goes on a
+		// dinner only once it's restored (6.10).
+		if (dish.archivedAt !== null) error(400, `Restore ${dish.name} before adding it`);
+		const shown =
+			'dinnerId' in to
+				? dinnerForDish(householdId, date, to.dinnerId, dish)
+				: newDinnerFor(householdId, date, to.labels, now);
+		const dinner = shown && dinnerOn(householdId, date, shown.id);
+		const note = requested.note === null ? null : appendNote(dinner?.note ?? '', requested.note);
+		if (note !== null && note.length > DINNER_NOTE_MAX) {
+			error(
+				400,
+				`The request's note would make this dinner's note longer than ${DINNER_NOTE_MAX} characters. Shorten the dinner's note first.`
+			);
+		}
+		const role = defaultRole(dinner?.dishes.length ?? 0);
+		const dinnerId = insertDinnerDish(householdId, date, dinner, dish.id, role, now);
+		if (note !== null) db().update(dinners).set({ note }).where(eq(dinners.id, dinnerId)).run();
+		return dinnerId;
 	});
 }
 

@@ -31,6 +31,11 @@ export const DISH_ROLE_LABELS: Record<DishRole, string> = {
 	other: 'Other'
 };
 
+/** A dish added to a dinner starts as Main when it's the first, and Side after (6.9). */
+export function defaultRole(dishCount: number): DishRole {
+	return dishCount === 0 ? 'main' : 'side';
+}
+
 /** A date can have this many dinners, such as one for the kids and one for the adults (6.9). */
 export const MAX_DINNERS = 5;
 
@@ -39,6 +44,11 @@ export const DINNER_LABEL_MAX = 30;
 
 /** A dinner's note can hold a long plan, such as a whole evening's notes. */
 export const DINNER_NOTE_MAX = 2500;
+
+/** A request's note added to the end of a dinner's note, on a line of its own (6.12). */
+export function appendNote(note: string, added: string): string {
+	return note === '' ? added : `${note}\n${added}`;
+}
 
 /**
  * A request's dish or restaurant name (the recipe editor's limit for a dish name) and note

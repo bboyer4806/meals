@@ -9,6 +9,12 @@ import {
 	moveDinners
 } from '#lib/server/data/dinners.ts';
 import { getDish, setDishArchived } from '#lib/server/data/dishes.ts';
+import {
+	addRequest,
+	addRestaurantRequest,
+	listRequests,
+	removeRequest
+} from '#lib/server/data/requests.ts';
 import { db } from '#lib/server/db/index.ts';
 import { dishes, households } from '#lib/server/db/schema.ts';
 import { freshDb, makeDinner, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
@@ -22,7 +28,9 @@ const TOMORROW = '2026-10-08';
 const YESTERDAY = '2026-10-06';
 
 let householdId: number;
+let userId: number;
 let otherId: number;
+let otherUserId: number;
 let tacos: number;
 let rice: number;
 let cake: number;
@@ -31,8 +39,8 @@ beforeEach(() => {
 	vi.useFakeTimers({ toFake: ['Date'] });
 	vi.setSystemTime(NOW);
 	freshDb();
-	({ householdId } = makeHousehold(TZ));
-	({ householdId: otherId } = makeHousehold(TZ));
+	({ householdId, userId } = makeHousehold(TZ));
+	({ householdId: otherId, userId: otherUserId } = makeHousehold(TZ));
 	// Usual servings that no dinner below has, so tests can tell where servings came from.
 	db().update(households).set({ defaultServings: 3 }).where(eq(households.id, householdId)).run();
 	tacos = makeDish(householdId, recipe('Tacos'));
@@ -172,8 +180,32 @@ describe('loading a date', () => {
 			dishes: [
 				{ id: tacos, name: 'Tacos', timesAdded: 2 },
 				{ id: rice, name: 'Rice', timesAdded: 1 }
-			]
+			],
+			requests: []
 		});
+	});
+
+	it("gives the Menu's requests, dish and restaurant, oldest first, and no other household's", () => {
+		addRequest(householdId, userId, { name: 'Tacos', note: 'Fish ones' }, NOW + 1);
+		addRestaurantRequest(householdId, userId, { name: 'Olive Garden', note: null }, NOW);
+		addRequest(otherId, otherUserId, { name: 'Curry', note: null }, NOW);
+		expect((loadPage(TOMORROW) as { requests: unknown }).requests).toEqual([
+			{
+				id: expect.any(Number),
+				kind: 'restaurant',
+				name: 'Olive Garden',
+				note: null,
+				askedBy: expect.stringMatching(/^Person \d+$/)
+			},
+			{
+				id: expect.any(Number),
+				kind: 'dish',
+				name: 'Tacos',
+				note: 'Fish ones',
+				dishId: tacos,
+				askedBy: expect.stringMatching(/^Person \d+$/)
+			}
+		]);
 	});
 
 	it("gives each of the date's dinners, labeled, in the order they were added (6.9)", () => {
@@ -855,6 +887,97 @@ describe('a page left open while someone changed its date (6.11)', () => {
 	});
 });
 
+describe('adding a requested dish (6.12)', () => {
+	/** Asks for the dish, and gives the request's id as the page sends it. */
+	function requestFor(name: string, note: string | null = null): string {
+		addRequest(householdId, userId, { name, note }, NOW);
+		const request = listRequests(householdId).find((candidate) => candidate.name === name);
+		if (!request) throw new Error(`No request for ${name}`);
+		return String(request.id);
+	}
+
+	it('puts it on the dinner the page picked, removes the request and says where it went', async () => {
+		const dinnerId = makeDinner(householdId, TOMORROW, { note: 'Busy', dishes: [[tacos, 'main']] });
+		const requestId = requestFor('Rice', 'Brown, please');
+		requestFor('Pound cake');
+		expect(await post('promoteDishRequest', { requestId, dinnerId: shown(dinnerId) })).toEqual({
+			action: 'request',
+			dinnerId
+		});
+		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)', 'Rice (side)']);
+		expect(dinnerOn(householdId, TOMORROW)?.note).toBe('Busy\nBrown, please');
+		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Pound cake']);
+	});
+
+	it("plans a date with no dinner, and adds a labeled dinner when none of the date's can have dishes", async () => {
+		const planned = await post('promoteDishRequest', { requestId: requestFor('Rice') });
+		expect(planned).toEqual({ action: 'request', dinnerId: current(TOMORROW) });
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ type: 'cook', servings: 3 });
+		expect(dishesOn(TOMORROW)).toEqual(['Rice (main)']);
+
+		makeDinner(householdId, TODAY, { type: 'leftovers' });
+		const requestId = requestFor('Tacos');
+		const added = await post(
+			'promoteDishRequest',
+			{ requestId, firstLabel: 'Adults', label: 'Kids' },
+			{ date: TODAY }
+		);
+		const kids = getDay(householdId, TODAY)[1];
+		expect(added).toEqual({ action: 'request', dinnerId: kids?.id });
+		expect(getDay(householdId, TODAY)).toMatchObject([
+			{ label: 'Adults', type: 'leftovers', dishes: [] },
+			{ label: 'Kids', type: 'cook', servings: 3, dishes: [{ dishId: tacos, role: 'main' }] }
+		]);
+	});
+
+	it('says what is wrong, and changes nothing', async () => {
+		const dinnerId = shown(makeDinner(householdId, TOMORROW, { dishes: [[tacos, 'main']] }));
+		makeDinner(householdId, TODAY, { type: 'eat_out' });
+		const requestId = requestFor('Tacos');
+		const before = october();
+		const tries: [Record<string, string>, string, string?][] = [
+			[{ requestId, dinnerId }, 'Tacos is already on this dinner'],
+			[{ requestId, label: 'Kids' }, 'Someone changed this dinner since you opened it.'],
+			[
+				{ requestId, firstLabel: 'Adults', label: 'adults' },
+				'Give each dinner on this day a different label',
+				TODAY
+			],
+			[{ requestId, firstLabel: 'Adults', label: ' ' }, 'Enter a label for each dinner', TODAY]
+		];
+		for (const [fields, error, date] of tries) {
+			expectFailure(await post('promoteDishRequest', fields, { date }), 'request', error);
+		}
+		expect(october()).toEqual(before);
+		expect(listRequests(householdId)).toHaveLength(1);
+
+		const invalid: Record<string, string>[] = [
+			{},
+			{ requestId: 'soup' },
+			{ requestId, dinnerId: '0' }
+		];
+		for (const fields of invalid) {
+			expect(await post('promoteDishRequest', fields)).toMatchObject({
+				status: 400,
+				data: { action: 'request' }
+			});
+		}
+	});
+
+	it("is not found for a request someone removed, and for another household's", async () => {
+		const dinnerId = shown(makeDinner(householdId, TOMORROW));
+		const removed = requestFor('Rice');
+		removeRequest(householdId, Number(removed));
+		addRequest(otherId, otherUserId, { name: 'Curry', note: null }, NOW);
+		const theirs = String(listRequests(otherId)[0]?.id);
+		for (const requestId of [removed, theirs]) {
+			expectNotFound(await post('promoteDishRequest', { requestId, dinnerId }));
+		}
+		expect(dishesOn(TOMORROW)).toEqual([]);
+		expect(listRequests(otherId)).toHaveLength(1);
+	});
+});
+
 describe('every action', () => {
 	const forms: Record<Action, Record<string, string>> = {
 		type: { type: 'cook' },
@@ -866,7 +989,8 @@ describe('every action', () => {
 		removeDish: { dishId: '1', dinnerId: '1' },
 		copy: { sourceId: '1' },
 		move: { to: TODAY },
-		clear: {}
+		clear: {},
+		promoteDishRequest: { requestId: '1' }
 	};
 
 	it('needs a signed-in member of a household', async () => {

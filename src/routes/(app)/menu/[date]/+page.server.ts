@@ -28,6 +28,7 @@ import {
 	type Dinner
 } from '#lib/server/data/dinners.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
+import { listRequests, promoteDishRequest } from '#lib/server/data/requests.ts';
 import { attempt, id, parseForm } from '#lib/server/forms.ts';
 
 // A date's dinners (design 7, Dinner; 6.9). Each form sends only what it changes and the rest
@@ -53,7 +54,9 @@ export function load({ locals, params }) {
 		defaultServings: household.defaultServings,
 		// Dinners already made, so a plan for later in the week isn't offered (assumption 1).
 		copyGroups: listCopyGroups(user.householdId, today),
-		dishes: dishSuggestions(user.householdId)
+		dishes: dishSuggestions(user.householdId),
+		// The Menu's requests, under the dinners, so a requested dish can go on one (6.12).
+		requests: listRequests(user.householdId)
 	};
 }
 
@@ -131,6 +134,21 @@ const moveSchema = z.object({
 });
 
 const clearSchema = z.object({ dinnerId: shownDinner });
+
+// A dish request and where it goes: the dinner the page picked, or without one a new Cooking at
+// home dinner, with the labels the page asked for when the date has dinners (6.12, 6.9).
+const promoteSchema = z.object({
+	requestId: id,
+	dinnerId: id.optional(),
+	firstLabel: z
+		.string()
+		.optional()
+		.transform((value) => value ?? null),
+	label: z
+		.string()
+		.optional()
+		.transform((value) => value ?? null)
+});
 
 const CHANGED_SINCE = 'Someone has added dishes to this dinner since you opened it.';
 
@@ -298,5 +316,22 @@ export const actions = {
 		if ('failure' in parsed) return parsed.failure;
 		const { dinnerId } = parsed.data;
 		return attempt('clear', () => clearDinner(user.householdId, date, dinnerId, Date.now()));
+	},
+
+	// Puts a requested dish on one of the date's dinners and removes the request. The page uses the
+	// dinner it went on to say so (6.12).
+	promoteDishRequest: async ({ locals, params, request }) => {
+		const user = requireHousehold(locals);
+		const date = dinnerDate(params);
+		const parsed = parseForm(promoteSchema, await request.formData(), 'request');
+		if ('failure' in parsed) return parsed.failure;
+		const { requestId, dinnerId, firstLabel, label } = parsed.data;
+		const to =
+			dinnerId === undefined ? { labels: { first: firstLabel, added: label } } : { dinnerId };
+		const promoted = attempt('request', () =>
+			promoteDishRequest(user.householdId, date, requestId, to, Date.now())
+		);
+		if (typeof promoted !== 'number') return promoted;
+		return { action: 'request', dinnerId: promoted };
 	}
 };

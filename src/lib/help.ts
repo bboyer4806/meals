@@ -122,6 +122,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Set the servings and a note, then tap Save. Everything else saves as soon as you do it.',
 			"Copy a dinner reuses the dishes of a dinner you've had before.",
 			'Tap the date at the top to move this dinner to another day. If that day has a dinner, the two swap.',
+			'Requests are at the bottom. Add puts a requested dish on this day, with its note, and removes the request.',
 			'Clear removes the dinner. ‹ Week of goes back to the week.'
 		]
 	},

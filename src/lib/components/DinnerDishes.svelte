@@ -3,7 +3,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
-	import { DISH_ROLES, DISH_ROLE_LABELS, NO_DISHES, type DishRole } from '../menu.ts';
+	import { DISH_ROLES, DISH_ROLE_LABELS, NO_DISHES, defaultRole, type DishRole } from '../menu.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
 	import { normalizeName } from '../text.ts';
 	import ItemInput from './ItemInput.svelte';
@@ -161,7 +161,6 @@
 	let name = $state('');
 	// Main for the first dish and Side after (6.9). The person's pick stays, also when the page
 	// reloads, until a dish is added or the number of dishes changes.
-	const defaultRole = (count: number): DishRole => (count === 0 ? 'main' : 'side');
 	const dishCount = $derived(dishes.length);
 	let role = $state<DishRole>(untrack(() => defaultRole(dishCount)));
 	$effect(() => {
