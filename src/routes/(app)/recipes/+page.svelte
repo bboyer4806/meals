@@ -43,34 +43,39 @@
 
 	type Recipe = (typeof data.recipes)[number];
 
-	// The tag being filtered by always gets a chip, so it can be cleared, even when no active
-	// recipe has it (it's only on archived ones, or the link is old).
-	const chips = $derived.by(() => {
-		const tag = data.tag;
-		if (tag === null || data.tags.some((other) => foldCase(other) === foldCase(tag))) {
-			return data.tags;
-		}
-		return [...data.tags, tag];
-	});
+	// Every tag being filtered by gets a chip, so it can be removed, even when no active recipe
+	// has it (it's only on archived ones, or the link is old).
+	const chips = $derived([
+		...data.tags,
+		...data.selectedTags.filter(
+			(tag) => !data.tags.some((other) => foldCase(other) === foldCase(tag))
+		)
+	]);
 
-	function isCurrent(tag: string) {
-		return data.tag !== null && foldCase(tag) === foldCase(data.tag);
+	function isSelected(tag: string) {
+		return data.selectedTags.some((selected) => foldCase(selected) === foldCase(tag));
 	}
 
-	/** This list's address with the given search, tag and archived switch, keeping the sort. */
-	function listAddress(search: string, tag: string | null, archived: boolean) {
+	/** This list's address with the given search, tags and archived switch, keeping the sort. */
+	function listAddress(search: string, tags: string[], archived: boolean) {
 		const params = new URLSearchParams();
 		if (search) params.set('q', search);
-		if (tag !== null) params.set('tag', tag);
+		for (const tag of tags) params.append('tag', tag);
 		if (archived) params.set('archived', '1');
 		if (data.sort !== 'name') params.set('sort', data.sort);
 		const query = params.toString();
 		return query === '' ? '/recipes' : `/recipes?${query}`;
 	}
 
-	/** This list filtered by another tag, or by none, keeping the search and archived switch. */
-	function withTag(tag: string | null) {
-		return listAddress(data.search, tag, data.archived);
+	/**
+	 * This list with the tag added to the ones it's filtered by, or removed when it's one of
+	 * them, keeping the other tags, the search and the archived switch (section 7, "Recipes").
+	 */
+	function toggled(tag: string) {
+		const tags = isSelected(tag)
+			? data.selectedTags.filter((selected) => foldCase(selected) !== foldCase(tag))
+			: [...data.selectedTags, tag];
+		return listAddress(data.search, tags, data.archived);
 	}
 
 	function details(recipe: Recipe) {
@@ -82,7 +87,7 @@
 	const noMatches = $derived(
 		`No ${data.archived ? 'archived ' : ''}recipes` +
 			(data.search ? ` matching “${data.search}”` : '') +
-			(data.tag ? ` tagged ${data.tag}` : '') +
+			(data.selectedTags.length > 0 ? ` tagged ${joinAnd(data.selectedTags)}` : '') +
 			'.'
 	);
 </script>
@@ -100,7 +105,7 @@
 {#if imported}<p class="imported" role="status">{imported}</p>{/if}
 
 <form method="GET" class="row search" data-sveltekit-replacestate data-sveltekit-reset="false">
-	{#if data.tag}<input type="hidden" name="tag" value={data.tag} />{/if}
+	{#each data.selectedTags as tag (tag)}<input type="hidden" name="tag" value={tag} />{/each}
 	{#if data.archived}<input type="hidden" name="archived" value="1" />{/if}
 	<SearchBox label="Search recipes" value={data.search} />
 	<!-- Reorders right away (section 7, "Recipes"). -->
@@ -120,13 +125,9 @@
 {#if chips.length > 0}
 	<ul class="chips" aria-label="Filter by tag">
 		{#each chips as tag (tag)}
-			{@const current = isCurrent(tag)}
+			{@const selected = isSelected(tag)}
 			<li>
-				<a
-					class="chip"
-					href={withTag(current ? null : tag)}
-					aria-current={current ? 'true' : undefined}>{tag}</a
-				>
+				<a class="chip" href={toggled(tag)} aria-current={selected ? 'true' : undefined}>{tag}</a>
 			</li>
 		{/each}
 	</ul>
@@ -134,9 +135,9 @@
 
 <p>
 	{#if data.archived}
-		<a class="link-tap" href={listAddress(data.search, data.tag, false)}>Show active</a>
+		<a class="link-tap" href={listAddress(data.search, data.selectedTags, false)}>Show active</a>
 	{:else}
-		<a class="link-tap" href={listAddress(data.search, data.tag, true)}>Show archived</a>
+		<a class="link-tap" href={listAddress(data.search, data.selectedTags, true)}>Show archived</a>
 	{/if}
 </p>
 
@@ -173,9 +174,9 @@
 			</li>
 		{/each}
 	</ul>
-{:else if data.search || data.tag}
+{:else if data.search || data.selectedTags.length > 0}
 	<p class="muted">{noMatches}</p>
-	<a class="link-tap" href={listAddress('', null, data.archived)}>
+	<a class="link-tap" href={listAddress('', [], data.archived)}>
 		{data.archived ? 'Show all archived recipes' : 'Show all recipes'}
 	</a>
 {:else if data.archived}

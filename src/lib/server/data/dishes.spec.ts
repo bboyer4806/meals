@@ -43,7 +43,7 @@ beforeEach(() => {
 function list(filter: Partial<Parameters<typeof listDishes>[1]> = {}) {
 	return listDishes(householdId, {
 		search: '',
-		tag: null,
+		tags: [],
 		archived: false,
 		sort: 'name',
 		...filter
@@ -536,10 +536,43 @@ describe('listing', () => {
 		const roast = makeDish(householdId, recipe('Roast', { tags: ['QUICK'] }));
 		setDishArchived(householdId, roast, true, NOW);
 		makeDish(householdId, recipe('Stew'));
-		expect(names({ tag: 'QUICK' })).toEqual(['Chili', 'Salad']);
-		expect(names({ tag: 'quick', archived: true })).toEqual(['Roast']);
-		expect(names({ tag: 'Quick', search: 'sal' })).toEqual(['Salad']);
-		expect(names({ tag: 'Sweet' })).toEqual([]);
+		expect(names({ tags: ['QUICK'] })).toEqual(['Chili', 'Salad']);
+		expect(names({ tags: ['quick'], archived: true })).toEqual(['Roast']);
+		expect(names({ tags: ['Quick'], search: 'sal' })).toEqual(['Salad']);
+		expect(names({ tags: ['Sweet'] })).toEqual([]);
+	});
+
+	it('filters by several tags, needing every one, ignoring case', () => {
+		makeDish(householdId, recipe('Chili', { tags: ['Quick', 'Spicy', 'Dinner'] }));
+		makeDish(householdId, recipe('Curry', { tags: ['spicy', 'Vegetarian', 'DINNER'] }));
+		makeDish(householdId, recipe('Salad', { tags: ['Quick', 'Vegetarian'] }));
+		makeDish(householdId, recipe('Éclairs', { tags: ['Crème', 'Quick'] }));
+		const roast = makeDish(householdId, recipe('Roast', { tags: ['Quick', 'Spicy', 'Dinner'] }));
+		setDishArchived(householdId, roast, true, NOW);
+		makeDish(householdId, recipe('Stew'));
+
+		// No tags is no tag filter.
+		expect(names({ tags: [] })).toEqual(['Chili', 'Curry', 'Éclairs', 'Salad', 'Stew']);
+		expect(names({ tags: ['quick', 'SPICY'] })).toEqual(['Chili']);
+		expect(names({ tags: ['Spicy', 'Dinner'] })).toEqual(['Chili', 'Curry']);
+		expect(names({ tags: ['Vegetarian', 'dinner', 'Spicy'] })).toEqual(['Curry']);
+		expect(names({ tags: ['CRÈME', 'quick'] })).toEqual(['Éclairs']);
+		// Tags that are each on some dishes, but never all on one.
+		expect(names({ tags: ['Quick', 'Vegetarian', 'Dinner'] })).toEqual([]);
+		expect(names({ tags: ['Quick', 'Sweet'] })).toEqual([]);
+		// The same tag twice is the same as once.
+		expect(names({ tags: ['Quick', 'QUICK'] })).toEqual(['Chili', 'Éclairs', 'Salad']);
+		// With the search, the archived switch and the sort.
+		expect(names({ tags: ['Quick', 'Spicy'], search: 'chi' })).toEqual(['Chili']);
+		expect(names({ tags: ['Quick', 'Spicy'], search: 'cur' })).toEqual([]);
+		expect(names({ tags: ['quick', 'dinner'], archived: true })).toEqual(['Roast']);
+		const tacos = makeDish(householdId, recipe('Tacos', { tags: ['Dinner', 'Spicy'] }));
+		rateDish(householdId, tacos, userId, 5);
+		expect(names({ tags: ['Spicy', 'Dinner'], sort: 'rating' })).toEqual([
+			'Tacos',
+			'Chili',
+			'Curry'
+		]);
 	});
 
 	it('gives each row its photo, times and tags', () => {
@@ -704,8 +737,9 @@ describe('households', () => {
 	it("never shows or changes another household's dishes", () => {
 		const id = makeDish(householdId, recipe('Pound cake', { tags: ['Dessert'] }));
 		const other = makeHousehold();
-		const all = { search: '', tag: null, archived: false, sort: 'name' } as const;
+		const all = { search: '', tags: [], archived: false, sort: 'name' as const };
 		expect(listDishes(other.householdId, all)).toEqual([]);
+		expect(listDishes(other.householdId, { ...all, tags: ['Dessert'] })).toEqual([]);
 		expect(listDishTags(other.householdId)).toEqual([]);
 		expectHttpError(() => getDish(other.householdId, id), 404);
 		expectHttpError(() => updateDish(other.householdId, id, recipe('Mine now'), [], NOW), 404);

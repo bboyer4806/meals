@@ -1468,6 +1468,211 @@ test('finds recipes by name and tag, and archives and restores one', async ({
 	await expect(page.getByText('No archived recipes.')).toBeVisible();
 });
 
+/** The Recipes list's tag chips, one of them by name, and the ones it's filtered by. */
+function tagChips(page: Page) {
+	const list = page.getByRole('list', { name: 'Filter by tag' });
+	return {
+		list,
+		chip: (tag: string) => list.getByRole('link', { name: tag, exact: true }),
+		selected: list.locator('[aria-current="true"]')
+	};
+}
+
+// Several tags at once (section 7, "Recipes"; MEA-42).
+test('filters recipes by several tags, each tapped on and off', async ({ page, db, person }) => {
+	addRecipe(db, person.householdId, { name: 'Apple pie', tags: ['Dessert', 'Baking'] });
+	addRecipe(db, person.householdId, { name: 'Banana bread', tags: ['Baking', 'Breakfast'] });
+	addRecipe(db, person.householdId, {
+		name: 'Brownies',
+		tags: ['Dessert', 'Baking', 'Chocolate']
+	});
+	addRecipe(db, person.householdId, { name: 'Chocolate mousse', tags: ['Dessert', 'Chocolate'] });
+	addRecipe(db, person.householdId, { name: 'Hot cocoa', tags: ['Breakfast', 'Chocolate'] });
+	addRecipe(db, person.householdId, { name: 'Tacos', tags: ['Dinner'] });
+	const names = page.locator('.recipes .name');
+	const { list, chip, selected } = tagChips(page);
+
+	await open(page, '/recipes');
+	await expect(list.getByRole('link')).toHaveText([
+		'Baking',
+		'Breakfast',
+		'Chocolate',
+		'Dessert',
+		'Dinner'
+	]);
+	await expect(selected).toHaveCount(0);
+
+	// Each tag tapped narrows the list to the recipes with all of them, right away.
+	await chip('Dessert').tap();
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert$/);
+	await expect(names).toHaveText(['Apple pie', 'Brownies', 'Chocolate mousse']);
+	await chip('Baking').tap();
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert&tag=Baking$/);
+	await expect(selected).toHaveText(['Baking', 'Dessert']);
+	await expect(names).toHaveText(['Apple pie', 'Brownies']);
+	await chip('Chocolate').tap();
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert&tag=Baking&tag=Chocolate$/);
+	await expect(selected).toHaveText(['Baking', 'Chocolate', 'Dessert']);
+	await expect(names).toHaveText(['Brownies']);
+
+	// Tapping a selected tag removes only that one.
+	await chip('Baking').tap();
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert&tag=Chocolate$/);
+	await expect(selected).toHaveText(['Chocolate', 'Dessert']);
+	await expect(names).toHaveText(['Brownies', 'Chocolate mousse']);
+
+	// Back, Forward and reloading keep every tag.
+	await page.goBack();
+	await expect(selected).toHaveText(['Baking', 'Chocolate', 'Dessert']);
+	await expect(names).toHaveText(['Brownies']);
+	await page.goForward();
+	await expect(selected).toHaveText(['Chocolate', 'Dessert']);
+	await expect(names).toHaveText(['Brownies', 'Chocolate mousse']);
+	await page.reload();
+	await expect(selected).toHaveText(['Chocolate', 'Dessert']);
+	await expect(names).toHaveText(['Brownies', 'Chocolate mousse']);
+
+	// When no recipe has them all, the list says so and the chips stay, to remove one.
+	await chip('Breakfast').tap();
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert&tag=Chocolate&tag=Breakfast$/);
+	await expect(page.getByText('No recipes tagged Dessert, Chocolate and Breakfast.')).toBeVisible();
+	await expect(names).toHaveCount(0);
+	await expect(selected).toHaveText(['Breakfast', 'Chocolate', 'Dessert']);
+	await chip('Dessert').tap();
+	await expect(names).toHaveText(['Hot cocoa']);
+
+	// Removing the last one shows every recipe.
+	await chip('Chocolate').tap();
+	await expect(names).toHaveText(['Banana bread', 'Hot cocoa']);
+	await chip('Breakfast').tap();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(selected).toHaveCount(0);
+	await expect(names).toHaveText([
+		'Apple pie',
+		'Banana bread',
+		'Brownies',
+		'Chocolate mousse',
+		'Hot cocoa',
+		'Tacos'
+	]);
+});
+
+test('keeps every selected tag with the search, sort and archived switch', async ({
+	page,
+	db,
+	person
+}) => {
+	const rate = db.prepare(
+		'insert into dish_ratings (household_id, dish_id, user_id, stars) values (?, ?, ?, ?)'
+	);
+	const appleId = addRecipe(db, person.householdId, {
+		name: 'Apple pie',
+		tags: ['Dessert', 'Baking']
+	});
+	const pecanId = addRecipe(db, person.householdId, {
+		name: 'Pecan pie',
+		tags: ['Dessert', 'Baking']
+	});
+	addRecipe(db, person.householdId, { name: 'Key lime pie', tags: ['Dessert'] });
+	addRecipe(db, person.householdId, { name: 'Banana bread', tags: ['Baking'] });
+	addRecipe(db, person.householdId, {
+		name: 'Cherry pie',
+		tags: ['Dessert', 'Baking'],
+		archived: true
+	});
+	addRecipe(db, person.householdId, {
+		name: 'Pumpkin pie',
+		tags: ['Dessert', 'Holiday'],
+		archived: true
+	});
+	rate.run(person.householdId, appleId, person.userId, 3);
+	rate.run(person.householdId, pecanId, person.userId, 5);
+	const names = page.locator('.recipes .name');
+	const { list, chip, selected } = tagChips(page);
+	const search = page.getByLabel('Search recipes');
+	const sort = page.getByLabel('Sort');
+
+	// A link with one tag, like a recipe's tags, then a second tag.
+	await open(page, '/recipes?tag=Dessert');
+	await expect(selected).toHaveText(['Dessert']);
+	await expect(names).toHaveText(['Apple pie', 'Key lime pie', 'Pecan pie']);
+	await chip('Baking').tap();
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert&tag=Baking$/);
+	await expect(names).toHaveText(['Apple pie', 'Pecan pie']);
+
+	// Searching and sorting keep both tags.
+	await search.fill('pie');
+	await search.press('Enter');
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert&tag=Baking&q=pie&sort=name$/);
+	await expect(names).toHaveText(['Apple pie', 'Pecan pie']);
+	await sort.selectOption('Rating');
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert&tag=Baking&q=pie&sort=rating$/);
+	await expect(names).toHaveText(['Pecan pie', 'Apple pie']);
+	await expect(selected).toHaveText(['Baking', 'Dessert']);
+
+	// So does the archived switch, and tapping a tag keeps the search, sort and archived switch.
+	await page.getByRole('link', { name: 'Show archived' }).click();
+	await expect(page).toHaveURL(/\/recipes\?q=pie&tag=Dessert&tag=Baking&archived=1&sort=rating$/);
+	await expect(selected).toHaveText(['Baking', 'Dessert']);
+	await expect(names).toHaveText(['Cherry pie']);
+	await chip('Baking').tap();
+	await expect(page).toHaveURL(/\/recipes\?q=pie&tag=Dessert&archived=1&sort=rating$/);
+	await expect(names).toHaveText(['Cherry pie', 'Pumpkin pie']);
+	await page.getByRole('link', { name: 'Show active' }).click();
+	await expect(page).toHaveURL(/\/recipes\?q=pie&tag=Dessert&sort=rating$/);
+	await expect(search).toHaveValue('pie');
+	await expect(sort).toHaveValue('rating');
+	await expect(names).toHaveText(['Pecan pie', 'Apple pie', 'Key lime pie']);
+
+	// Nothing matching names every tag, and Show all recipes clears the search and the tags.
+	await chip('Baking').tap();
+	await expect(names).toHaveText(['Pecan pie', 'Apple pie']);
+	await search.fill('zzz');
+	await search.press('Enter');
+	await expect(page.getByText('No recipes matching “zzz” tagged Dessert and Baking.')).toBeVisible();
+	await expect(selected).toHaveText(['Baking', 'Dessert']);
+	await page.getByRole('link', { name: 'Show all recipes' }).click();
+	await expect(page).toHaveURL(/\/recipes\?sort=rating$/);
+	await expect(search).toHaveValue('');
+	await expect(selected).toHaveCount(0);
+	await expect(names).toHaveText(['Pecan pie', 'Apple pie', 'Banana bread', 'Key lime pie']);
+
+	// A shared link has each tag once ignoring case, without blank ones. A tag that only
+	// archived recipes have gets a chip, so it can be removed.
+	await open(page, '/recipes?archived=1&tag=holiday&tag=%20DESSERT%20&tag=Holiday&tag=');
+	await expect(names).toHaveText(['Pumpkin pie']);
+	await expect(list.getByRole('link')).toHaveText(['Baking', 'Dessert', 'holiday']);
+	await expect(selected).toHaveText(['Dessert', 'holiday']);
+	await chip('holiday').tap();
+	await expect(page).toHaveURL(/\/recipes\?tag=DESSERT&archived=1$/);
+	await expect(names).toHaveText(['Cherry pie', 'Pumpkin pie']);
+	await expect(list.getByRole('link')).toHaveText(['Baking', 'Dessert']);
+});
+
+test.describe('on a computer', () => {
+	test.use({ isMobile: false, hasTouch: false, viewport: { width: 1280, height: 800 } });
+
+	test('selects and removes tags with a mouse', async ({ page, db, person }) => {
+		addRecipe(db, person.householdId, { name: 'Apple pie', tags: ['Dessert', 'Baking'] });
+		addRecipe(db, person.householdId, { name: 'Banana bread', tags: ['Baking'] });
+		addRecipe(db, person.householdId, { name: 'Lemon bars', tags: ['Dessert'] });
+		const names = page.locator('.recipes .name');
+		const { chip, selected } = tagChips(page);
+
+		await open(page, '/recipes');
+		await chip('Dessert').click();
+		await expect(names).toHaveText(['Apple pie', 'Lemon bars']);
+		await chip('Baking').click();
+		await expect(page).toHaveURL(/\/recipes\?tag=Dessert&tag=Baking$/);
+		await expect(selected).toHaveText(['Baking', 'Dessert']);
+		await expect(names).toHaveText(['Apple pie']);
+		await chip('Dessert').click();
+		await expect(page).toHaveURL(/\/recipes\?tag=Baking$/);
+		await expect(selected).toHaveText(['Baking']);
+		await expect(names).toHaveText(['Apple pie', 'Banana bread']);
+	});
+});
+
 test("can't see or change another household's recipe or its photo", async ({
 	page,
 	db,

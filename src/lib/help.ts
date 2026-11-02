@@ -59,7 +59,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 		title: 'Recipes',
 		points: [
 			"Your household's recipes. Tap one to open it.",
-			'Search by name, or tap a tag to see only recipes with it.',
+			'Search by name, or tap tags to see only recipes with all of them. Tap a tag again to remove it.',
 			'New recipe adds one. Import adds many at once from a spreadsheet.',
 			'No recipe means a dish has a name but no ingredients or steps yet.',
 			'Show archived lists recipes you archived, so you can restore them.'

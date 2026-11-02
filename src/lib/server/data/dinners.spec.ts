@@ -354,7 +354,7 @@ describe('adding a dish', () => {
 			createdAt: NOW,
 			updatedAt: NOW
 		});
-		const filter = { search: 'garlic', tag: null, archived: false, sort: 'name' } as const;
+		const filter = { search: 'garlic', tags: [], archived: false, sort: 'name' as const };
 		expect(listDishes(householdId, filter)).toEqual([
 			expect.objectContaining({ name: 'Garlic bread', hasRecipe: false })
 		]);
