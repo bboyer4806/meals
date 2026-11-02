@@ -142,6 +142,16 @@ function sideways(page: Page) {
 	);
 }
 
+/** The week's notes as they read there, line breaks included, and whether any is cut off. */
+function weekNotes(page: Page) {
+	return page.locator('a.day .note').evaluateAll((notes: HTMLElement[]) =>
+		notes.map((note) => ({
+			text: note.innerText,
+			cutOff: note.scrollHeight > note.clientHeight || note.scrollWidth > note.clientWidth
+		}))
+	);
+}
+
 /** Makes requests that match take a while, as on a slow phone connection. */
 async function slow(page: Page, matches: (url: URL) => boolean, ms: number) {
 	await page.route(matches, async (route) => {
@@ -395,6 +405,39 @@ test('shows the week of any date, and turns away dates that do not exist', async
 		const response = await page.goto(path);
 		expect(response?.status(), path).toBe(404);
 	}
+});
+
+// The week shows each dinner's whole note (design 7, Menu; MEA-59).
+test("shows each dinner's whole note on the week, with its line breaks, on a phone and a computer", async ({
+	page,
+	db,
+	person
+}) => {
+	// Each is longer than two lines, and one has a link longer than a line on a phone, with
+	// nowhere to break.
+	const long = [
+		'Grandma and Grandpa visit at 6, so set the big table with the good plates.',
+		`Recipe: https://example.com/${'lasagna'.repeat(12)}`,
+		'Pick up flowers on the way home.',
+		'Dessert after the walk.'
+	].join('\n');
+	const kids = 'Early, before bath time.\nNo peas.\nApple slices after.';
+	const adults = 'After bedtime.\nOpen the red wine.\nCandles on the table.';
+	const sunday = sundayOf(today());
+	const [mon, tue] = [addDays(sunday, 1), addDays(sunday, 2)];
+	addDinner(db, person.householdId, mon, { type: 'leftovers', note: long });
+	labelDinner(db, addDinner(db, person.householdId, tue, { note: kids }), 'Kids');
+	labelDinner(db, addDinner(db, person.householdId, tue, { note: adults }), 'Adults');
+	const whole = [long, kids, adults].map((text) => ({ text, cutOff: false }));
+
+	await page.goto(`/menu?week=${sunday}`);
+	await expect(day(page, tue).locator('.dinner')).toHaveCount(2);
+	expect(await weekNotes(page)).toEqual(whole);
+	expect(await sideways(page)).toBe(0);
+
+	await page.setViewportSize({ width: 1280, height: 800 });
+	expect(await weekNotes(page)).toEqual(whole);
+	expect(await sideways(page)).toBe(0);
 });
 
 test('asks before switching a dinner with dishes to Eating out or Leftovers', async ({
