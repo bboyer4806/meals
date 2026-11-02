@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.7 was released on 2026-10-26.
+// What's new (design 7). 1.8 was released on 2026-11-02.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -23,16 +23,24 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
-	const [v17, v16, v15, v14, v13, v12, v11] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
+	const [v18, v17, v16, v15, v14, v13, v12, v11] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
 		page.locator('section').nth(2),
 		page.locator('section').nth(3),
 		page.locator('section').nth(4),
 		page.locator('section').nth(5),
-		page.locator('section').nth(6)
+		page.locator('section').nth(6),
+		page.locator('section').nth(7)
 	];
+	await expect(v18.getByText('Released November 2, 2026')).toBeVisible();
+	await expect(v18.getByRole('listitem')).toHaveText([
+		"Requests now show on a day's page too, under its dinners. Tap Add on a requested dish to put it on that day's dinner, and the request is removed.",
+		"Eating out dinners have a Restaurant field, and the Menu shows the restaurant. On a day's page, tap Add on a requested restaurant to plan eating out there as a new dinner.",
+		'On Recipes, tap more than one tag to see only recipes with all of them. Tap a tag again to remove it.',
+		"The Menu shows each dinner's whole note instead of cutting it off after two lines."
+	]);
 	await expect(v17.getByText('Released October 26, 2026')).toBeVisible();
 	await expect(v17.getByRole('listitem')).toHaveText([
 		"On New recipe, paste a recipe's web address in Link and tap Import to fill in the recipe from the page. Check it, then tap Save.",
@@ -125,7 +133,7 @@ test('shows no dot to someone who joined after the newest release', async ({
 	db,
 	person
 }) => {
-	setCreatedAt(db, person.userId, Date.UTC(2026, 9, 26, 17));
+	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 2, 17));
 	await page.goto('/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
