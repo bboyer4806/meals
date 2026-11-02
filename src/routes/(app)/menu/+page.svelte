@@ -630,15 +630,10 @@
 		min-width: 0;
 	}
 
-	/* A long note shows its start; the dinner page has all of it. */
+	/* The whole note, with its line breaks (design 7, Menu). */
 	.note {
 		color: var(--muted);
 		white-space: pre-line;
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		overflow: hidden;
 	}
 
 	.requests {

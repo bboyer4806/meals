@@ -812,8 +812,9 @@ Source, be up to 500 characters. Pages whose sites block servers or need a sign-
 opened, and recipe data written as Microdata or RDFa rather than JSON-LD isn't read.
 
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, the restaurant (Eating
-out; MEA-58) or dishes by role, and note. A day with more than one dinner shows each one (label,
-type, restaurant or dishes by role, note) in the order they were added. Today is highlighted.
+out; MEA-58) or dishes by role, and the whole note, with its line breaks (MEA-59). A day with
+more than one dinner shows each one (label, type, restaurant or dishes by role, note) in the
+order they were added. Today is highlighted.
 Previous, next and "This week" buttons. Tapping a day opens its dinner. With a mouse or trackpad, dragging a planned day onto another day of the week
 works like Move to another date (2.2.2, 6.9): the two days swap their dinners, and the week stays
 open. The day under the pointer is outlined while dragging; "Not planned" days can't be dragged,
