@@ -38,7 +38,7 @@ vi.mock('./photos.ts', async (importOriginal) => {
 });
 
 function activeDishes(householdId: number) {
-	return listDishes(householdId, { search: '', tag: null, archived: false, sort: 'name' });
+	return listDishes(householdId, { search: '', tags: [], archived: false, sort: 'name' });
 }
 
 /** The form as the editor sends it: every field, with the rows as JSON in `ingredients`. */

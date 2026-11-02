@@ -23,13 +23,13 @@ function form(csv: string, fields: Record<string, string> = {}): FormData {
 }
 
 function names(): string[] {
-	return listDishes(householdId, { search: '', tag: null, archived: false, sort: 'name' }).map(
+	return listDishes(householdId, { search: '', tags: [], archived: false, sort: 'name' }).map(
 		(dish) => dish.name
 	);
 }
 
 function dishNamed(name: string) {
-	const found = listDishes(householdId, { search: name, tag: null, archived: false, sort: 'name' });
+	const found = listDishes(householdId, { search: name, tags: [], archived: false, sort: 'name' });
 	const summary = found.find((dish) => dish.name === name);
 	if (!summary) throw new Error(`No ${name}`);
 	return getDish(householdId, summary.id);

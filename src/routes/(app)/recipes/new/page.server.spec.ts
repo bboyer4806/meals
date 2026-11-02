@@ -88,7 +88,7 @@ describe('the import action', () => {
 	it('saves nothing', async () => {
 		servePages({ [LINK]: { status: 200, body: PAGE } });
 		await importLink(LINK);
-		const filter = { search: '', tag: null, archived: false, sort: 'name' } as const;
+		const filter = { search: '', tags: [], archived: false, sort: 'name' as const };
 		expect(listDishes(householdId, filter)).toEqual([]);
 		expect(listPickerItems(householdId)).toEqual([]);
 	});

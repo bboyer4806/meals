@@ -618,7 +618,7 @@ out. Help sits in the header to the left of More.
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | History          | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
 | Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, archive and restore. Shows each item's default store and when and where it was last bought. |
-| Recipes          | `/recipes`                           | Search by name, filter by tag, sort by name or rating (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, Import and New recipe. |
+| Recipes          | `/recipes`                           | Search by name, filter by tags, sort by name or rating (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, Import and New recipe. |
 | Import recipes   | `/recipes/import`                    | See below.                                                                                                                           |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
 | Edit recipe      | `/recipes/new`, `/recipes/[id]/edit` | See below.                                                                                                                           |
@@ -692,10 +692,18 @@ its list already matched; there are no suggestions under it.
 **Rating** (highest first). Choosing one reorders the list right away, and like the search adds no
 Back step.
 Rating uses the household's exact average, not the rounded one shown; unrated recipes go last,
-and equal averages fall back to name. The sort, search, tag and archived switch are kept in the
-address, so Back and shared links keep them, and changing any one keeps the others; "Show all
-recipes" clears the search and tag. An unknown sort shows Name. Opening Recipes from the tab
-bar or "‹ Recipes" starts at Name.
+and equal averages fall back to name.
+Under the search box, the tags on active recipes are chips that filter the list (MEA-42). Tapping
+a chip selects it and fills it in, and the list shows only recipes with every selected tag,
+ignoring case. Tapping a selected chip removes just that tag, and removing the last one shows the
+list without a tag filter. Each tap updates the list right away, with no Apply button, and adds a
+Back step. A selected tag keeps its chip even when no active recipe has it, so it can be removed.
+When nothing matches, the list says so, such as "No recipes tagged Dessert and Baking.", and the
+chips stay. The address has one `tag` for each selected tag, so a link with one, such as a
+recipe's tag, still works.
+The sort, search, tags and archived switch are kept in the address, so Back and shared links keep
+them, and changing any one keeps the others; "Show all recipes" clears the search and tags. An
+unknown sort shows Name. Opening Recipes from the tab bar or "‹ Recipes" starts at Name.
 
 **Import recipes.** Households bringing recipes from elsewhere (MEA-37; Q37b assumed none) add
 many at once from a CSV file saved from a spreadsheet. Import beside New recipe opens it, with

@@ -457,11 +457,12 @@ function byRating(a: DishSummary, b: DishSummary): number {
 
 /**
  * The Recipes page: active dishes, or archived ones, sorted by name or rating. `search` matches
- * anywhere in the name and `tag` matches a tag, both ignoring case.
+ * anywhere in the name, and a dish needs every one of `tags`, both ignoring case. No tags is no
+ * tag filter (section 7, "Recipes").
  */
 export function listDishes(
 	householdId: number,
-	filter: { search: string; tag: string | null; archived: boolean; sort: DishSort }
+	filter: { search: string; tags: string[]; archived: boolean; sort: DishSort }
 ): DishSummary[] {
 	const tags = tagsByDish(householdId);
 	const ingredientCounts = db()
@@ -499,10 +500,10 @@ export function listDishes(
 				filter.search === ''
 					? undefined
 					: sql`instr(fold(${dishes.name}), fold(${filter.search})) > 0`,
-				filter.tag === null
-					? undefined
-					: sql`exists (select 1 from ${dishTags} where ${dishTags.dishId} = ${dishes.id}
-						and fold(${dishTags.tag}) = fold(${filter.tag}))`
+				...filter.tags.map(
+					(tag) => sql`exists (select 1 from ${dishTags} where ${dishTags.dishId} = ${dishes.id}
+						and fold(${dishTags.tag}) = fold(${tag}))`
+				)
 			)
 		)
 		.all()
