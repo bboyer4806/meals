@@ -90,6 +90,21 @@ function dinnerRow(db: Database.Database, householdId: number, date: string) {
 		| undefined;
 }
 
+/** The date's dinners, with their restaurants, in the order they were added. */
+function dinnerRows(db: Database.Database, householdId: number, date: string) {
+	return db
+		.prepare(
+			'select id, label, type, restaurant_name as restaurant, note from dinners where household_id = ? and date = ? order by id'
+		)
+		.all(householdId, date) as {
+		id: number;
+		label: string | null;
+		type: string;
+		restaurant: string | null;
+		note: string | null;
+	}[];
+}
+
 function dinnerDishes(db: Database.Database, dinnerId: number) {
 	return db
 		.prepare(
@@ -279,7 +294,7 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 	await day(page, sun).click();
 	await expect(dishLinks(page).first()).toHaveAttribute('href', `/recipes/${tacosId}?servings=6`);
 
-	// Monday: Eating out, which has a note but no dishes or servings.
+	// Monday: Eating out, which has a restaurant and a note but no dishes or servings.
 	const backToWeek = page.getByRole('link', { name: `‹ Week of ${monthDay(sunday)}` });
 	await backToWeek.click();
 	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sunday}$`));
@@ -290,7 +305,7 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 	await expect(page.getByLabel('Servings', { exact: true })).toHaveCount(0);
 	await expect(page.getByLabel('Note', { exact: true })).toHaveAttribute(
 		'placeholder',
-		'Where to go'
+		'Anything to remember'
 	);
 	await page.getByLabel('Note', { exact: true }).fill('Pizza at Mario’s');
 	await saveToWeek(page, mon);
@@ -1475,6 +1490,71 @@ test('asks before leaving an unplanned day with something typed', async ({ page,
 	expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
 });
 
+test("names an Eating out dinner's restaurant, shown on the week and kept after a reload", async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	const restaurant = page.getByLabel('Restaurant', { exact: true });
+	const note = page.getByLabel('Note', { exact: true });
+	const restaurantOnWeek = day(page, date).locator('.restaurant-name');
+
+	// Only Eating out has one.
+	await open(page, `/menu/${date}`);
+	await expect(restaurant).toHaveCount(0);
+	await typeButton(page, 'Eating out').click();
+	await expect(typeButton(page, 'Eating out')).toHaveAttribute('aria-pressed', 'true');
+	await expect(restaurant).toHaveValue('');
+	await expect(restaurant).toHaveAttribute('placeholder', 'Where to go');
+	await expect(restaurant).toHaveAttribute('maxlength', '80');
+	await restaurant.fill('  Thai   Garden ');
+	await note.fill('Table for 4 at 7');
+	await saveToWeek(page, date);
+	await expect(day(page, date).locator('.type')).toHaveText('Eating out');
+	await expect(restaurantOnWeek).toHaveText('Thai Garden');
+	await expect(day(page, date).locator('.note')).toHaveText('Table for 4 at 7');
+	expect(dinnerRows(db, person.householdId, date)).toMatchObject([
+		{ type: 'eat_out', restaurant: 'Thai Garden', note: 'Table for 4 at 7' }
+	]);
+
+	// It's on the dinner's page, after a reload too, and changes with Save.
+	await day(page, date).click();
+	await expect(restaurant).toHaveValue('Thai Garden');
+	await page.reload();
+	await expect(page.locator('html[data-started]')).toBeAttached();
+	await expect(restaurant).toHaveValue('Thai Garden');
+	await restaurant.fill('Olive Garden');
+	await saveToWeek(page, date);
+	await expect(restaurantOnWeek).toHaveText('Olive Garden');
+
+	// Leaving with it changed and not saved asks first.
+	const questions: string[] = [];
+	page.on('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	});
+	await day(page, date).click();
+	await restaurant.fill('Taco Bar');
+	await page.getByRole('link', { name: /^‹ Week of/ }).click();
+	await expect.poll(() => questions).toEqual([LEAVE]);
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+
+	// Another type takes it off the dinner, keeping the note.
+	await restaurant.fill('Olive Garden');
+	await typeButton(page, 'Cooking at home').click();
+	await expect(typeButton(page, 'Cooking at home')).toHaveAttribute('aria-pressed', 'true');
+	await expect(restaurant).toHaveCount(0);
+	await expect
+		.poll(() => dinnerRows(db, person.householdId, date))
+		.toMatchObject([{ type: 'cook', restaurant: null, note: 'Table for 4 at 7' }]);
+	await typeButton(page, 'Eating out').click();
+	await expect(restaurant).toHaveValue('');
+	await page.getByRole('link', { name: /^‹ Week of/ }).click();
+	await expect(restaurantOnWeek).toHaveCount(0);
+	expect(questions).toEqual([LEAVE]);
+});
+
 test('keeps what was typed on an unplanned day when a dish or a copy plans it', async ({
 	page,
 	db,
@@ -1875,11 +1955,12 @@ test("lists the requests under a day's dinners, and adds one to the dinner that 
 	);
 	await expect(first.getByText('Extra cheese')).toBeVisible();
 	await expect(first.getByText(/^Asked by Person \d+$/)).toBeVisible();
-	// A restaurant request shows, with nothing to add.
+	// A restaurant request shows too, with its own Add.
 	const restaurant = section.getByRole('listitem').nth(1);
 	await expect(restaurant.getByText('Olive Garden', { exact: true })).toBeVisible();
 	await expect(restaurant.getByText('For her birthday')).toBeVisible();
-	await expect(restaurant.getByRole('button')).toHaveCount(0);
+	await expect(restaurant.getByRole('link')).toHaveCount(0);
+	await expect(restaurant.getByRole('button')).toHaveAccessibleName('Add Olive Garden');
 	// Under the dinner.
 	const dishesBox = await dishSection(page).boundingBox();
 	const requestsBox = await section.boundingBox();
@@ -1912,7 +1993,7 @@ test("lists the requests under a day's dinners, and adds one to the dinner that 
 	// Dinner help tells people about it.
 	await page.getByRole('banner').getByRole('button', { name: 'Help', exact: true }).click();
 	await expect(page.getByRole('dialog', { name: 'Help: Dinner' })).toContainText(
-		'Add puts a requested dish on this day'
+		'Add puts a requested dish or restaurant on this day'
 	);
 	await page.keyboard.press('Escape');
 
@@ -2091,6 +2172,199 @@ test("fits a day's requests on a phone, and shows them on a computer", async ({
 
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await expect(requestsSection(page).getByRole('button', { name: `Add ${long}` })).toBeVisible();
+	expect(await sideways(page)).toBe(0);
+});
+
+test('adds a requested restaurant to a day with no dinner, as Eating out there with its note', async ({
+	page,
+	db,
+	person
+}) => {
+	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna' });
+	askFor(db, person, 'Lasagna', { dishId: lasagna, at: 1 });
+	askFor(db, person, 'Olive Garden', { note: 'For her birthday', at: 2 });
+	const date = addDays(today(), 1);
+	await open(page, `/menu/${date}`);
+	const section = requestsSection(page);
+	const note = page.getByLabel('Note', { exact: true });
+	await expect(page.getByText('Not planned yet.')).toBeVisible();
+	// Typed and not saved, so it waits for Save, with the request's note on its end.
+	await note.fill('Dress up');
+
+	await section.getByRole('button', { name: 'Add Olive Garden' }).click();
+	await expect(section.getByText('Added Olive Garden.', { exact: true })).toBeFocused();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(page.getByText('Not planned yet.')).toHaveCount(0);
+	await expect(dateButton(page)).toBeVisible();
+	await expect(typeButton(page, 'Eating out')).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.getByLabel('Restaurant', { exact: true })).toHaveValue('Olive Garden');
+	await expect(note).toHaveValue('Dress up\nFor her birthday');
+	await expect(section.getByRole('listitem')).toHaveText([/^Lasagna/]);
+	expect(dinnerRows(db, person.householdId, date)).toEqual([
+		{
+			id: expect.any(Number),
+			label: null,
+			type: 'eat_out',
+			restaurant: 'Olive Garden',
+			note: 'For her birthday'
+		}
+	]);
+
+	// Save keeps both notes, and the week shows the restaurant, without the request.
+	await saveToWeek(page, date);
+	await expect(day(page, date).locator('.restaurant-name')).toHaveText('Olive Garden');
+	await expect(day(page, date).locator('.note')).toHaveText('Dress up\nFor her birthday');
+	expect(dinnerRows(db, person.householdId, date)).toMatchObject([
+		{ restaurant: 'Olive Garden', note: 'Dress up\nFor her birthday' }
+	]);
+	await expect(requestsSection(page).getByRole('listitem')).toHaveText([/^Lasagna/]);
+});
+
+test("asks for labels to add a requested restaurant beside a day's dinners, up to 5", async ({
+	page,
+	db,
+	person
+}) => {
+	const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+	askFor(db, person, 'Olive Garden', { note: 'For her birthday', at: 1 });
+	askFor(db, person, 'Taco Bar', { at: 2 });
+	const section = requestsSection(page);
+
+	// One dinner: it keeps its type, dishes and note, and both dinners get labels.
+	const one = addDays(today(), 1);
+	const home = addDinner(db, person.householdId, one, {
+		note: 'Grandma visits',
+		dishes: [[tacos, 'main']]
+	});
+	await open(page, `/menu/${one}`);
+	await section.getByRole('button', { name: 'Add Olive Garden' }).click();
+	const labels = page.getByRole('dialog', { name: 'Add Olive Garden' });
+	await expect(labels).toContainText(
+		'Olive Garden goes on a new Eating out dinner. Give each dinner a label, such as Kids or Adults.'
+	);
+	await labels.getByLabel('Label for the dinner already planned').fill('Kids');
+	await labels.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(labels.getByRole('alert')).toHaveText('Enter a label for each dinner');
+	expect(requestIds(db, person.householdId)).toHaveLength(2);
+	await labels.getByLabel('Label for the new dinner').fill('Adults');
+	await labels.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(labels).toBeHidden();
+	await expect(section.getByText('Added Olive Garden to Adults.', { exact: true })).toBeFocused();
+	const adults = page.getByRole('region', { name: 'Adults' });
+	await expect(
+		adults.getByRole('button', { name: 'Eating out', exact: true })
+	).toHaveAttribute('aria-pressed', 'true');
+	await expect(adults.getByLabel('Restaurant', { exact: true })).toHaveValue('Olive Garden');
+	await expect(adults.getByLabel('Note', { exact: true })).toHaveValue('For her birthday');
+	const kids = page.getByRole('region', { name: 'Kids' });
+	await expect(
+		kids.getByRole('button', { name: 'Cooking at home', exact: true })
+	).toHaveAttribute('aria-pressed', 'true');
+	await expect(kids.getByRole('region', { name: 'Dishes' }).getByRole('link')).toHaveText([
+		'Chicken tacos'
+	]);
+	await expect(kids.getByLabel('Note', { exact: true })).toHaveValue('Grandma visits');
+	expect(dinnerRows(db, person.householdId, one)).toEqual([
+		{ id: home, label: 'Kids', type: 'cook', restaurant: null, note: 'Grandma visits' },
+		{
+			id: expect.any(Number),
+			label: 'Adults',
+			type: 'eat_out',
+			restaurant: 'Olive Garden',
+			note: 'For her birthday'
+		}
+	]);
+	expect(dinnerDishes(db, home)).toEqual([{ name: 'Chicken tacos', role: 'main' }]);
+
+	// Four dinners: only the new one needs a label, and it's the day's fifth.
+	const four = addDays(today(), 2);
+	for (const label of ['A', 'B', 'C', 'D']) {
+		labelDinner(db, addDinner(db, person.householdId, four, { type: 'leftovers' }), label);
+	}
+	await open(page, `/menu/${four}`);
+	await section.getByRole('button', { name: 'Add Taco Bar' }).click();
+	const fifth = page.getByRole('dialog', { name: 'Add Taco Bar' });
+	await expect(fifth).toContainText(
+		'Taco Bar goes on a new Eating out dinner. Give it a label, such as Kids or Adults.'
+	);
+	await expect(fifth.getByLabel('Label for the dinner already planned')).toHaveCount(0);
+	await fifth.getByLabel('Label for the new dinner').fill('E');
+	await fifth.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(section.getByText('Added Taco Bar to E.', { exact: true })).toBeFocused();
+	const fiveDinners = dinnerRows(db, person.householdId, four);
+	expect(fiveDinners.map(({ label, type, restaurant }) => [label, type, restaurant])).toEqual([
+		['A', 'leftovers', null],
+		['B', 'leftovers', null],
+		['C', 'leftovers', null],
+		['D', 'leftovers', null],
+		['E', 'eat_out', 'Taco Bar']
+	]);
+	await expect(page.getByRole('button', { name: 'Add a dinner' })).toHaveCount(0);
+	await expect(section.getByText('No requests yet.')).toBeVisible();
+});
+
+test("changes nothing when a requested restaurant can't go on the day", async ({
+	page,
+	db,
+	person
+}) => {
+	const kept = askFor(db, person, 'Olive Garden', { at: 1 });
+	const removed = askFor(db, person, 'Taco Bar', { at: 2 });
+	const section = requestsSection(page);
+
+	// Five dinners, the most a day can have.
+	const full = addDays(today(), 1);
+	for (const label of ['A', 'B', 'C', 'D', 'E']) {
+		labelDinner(db, addDinner(db, person.householdId, full, { type: 'eat_out' }), label);
+	}
+	const before = dinnerRows(db, person.householdId, full);
+	await open(page, `/menu/${full}`);
+	await section.getByRole('button', { name: 'Add Olive Garden' }).click();
+	await expect(section.getByRole('alert')).toHaveText(
+		'This day already has 5 dinners. Clear one to add another.'
+	);
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	expect(dinnerRows(db, person.householdId, full)).toEqual(before);
+	expect(requestIds(db, person.householdId)).toEqual([kept, removed]);
+
+	// Someone else removed it after the page opened.
+	const empty = addDays(today(), 2);
+	await open(page, `/menu/${empty}`);
+	db.prepare('delete from dish_requests where id = ?').run(removed);
+	await section.getByRole('button', { name: 'Add Taco Bar' }).click();
+	await expect(section.getByRole('alert')).toHaveText(
+		'Someone removed that request, so nothing was added.'
+	);
+	await expect(section.getByRole('listitem')).toHaveText([/^Eating out/]);
+	await expect(section.getByRole('button', { name: 'Add Olive Garden' })).toBeVisible();
+	await expect(page.getByText('Not planned yet.')).toBeVisible();
+	expect(dinnerRows(db, person.householdId, empty)).toEqual([]);
+	expect(requestIds(db, person.householdId)).toEqual([kept]);
+});
+
+test('fits a long requested restaurant on a phone and a computer, on the day and the week', async ({
+	page,
+	db,
+	person
+}) => {
+	// 80 characters without a space, the longest a restaurant can be.
+	const long = `${'Trattoria'.repeat(8)}Romanaaa`;
+	askFor(db, person, long, { note: 'n'.repeat(200) });
+	const date = addDays(today(), 1);
+	const restaurant = page.getByLabel('Restaurant', { exact: true });
+	await open(page, `/menu/${date}`);
+	await requestsSection(page).getByRole('button', { name: `Add ${long}` }).click();
+	await expect(restaurant).toHaveValue(long);
+	expect(await sideways(page)).toBe(0);
+	await page.getByRole('link', { name: /^‹ Week of/ }).click();
+	await expect(day(page, date).locator('.restaurant-name')).toHaveText(long);
+	expect(await sideways(page)).toBe(0);
+
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await expect(day(page, date).locator('.restaurant-name')).toBeVisible();
+	expect(await sideways(page)).toBe(0);
+	await day(page, date).click();
+	await expect(restaurant).toHaveValue(long);
 	expect(await sideways(page)).toBe(0);
 });
 

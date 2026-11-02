@@ -79,11 +79,18 @@ function current(date: string, household = householdId): number | null {
 /** Saves the date's first dinner as a page showing it would, or plans the date. */
 function save(
 	date: string,
-	fields: { label?: string | null; type: DinnerType; note: string | null; servings: number },
+	fields: {
+		label?: string | null;
+		type: DinnerType;
+		restaurantName?: string | null;
+		note: string | null;
+		servings: number;
+	},
 	now: number,
 	household = householdId
 ): number {
-	return saveDinner(household, date, current(date, household), { label: null, ...fields }, now);
+	const saved = { label: null, restaurantName: null, ...fields };
+	return saveDinner(household, date, current(date, household), saved, now);
 }
 
 // Changes to the date's first dinner, as a page showing it sends them.
@@ -140,13 +147,14 @@ function dinnerDishCount(): number {
 
 describe('saving a dinner', () => {
 	it('plans an unplanned date', () => {
-		save(TODAY, { type: 'eat_out', note: 'Thai place', servings: 2 }, NOW);
+		save(TODAY, { type: 'eat_out', restaurantName: 'Thai Garden', note: 'At 7', servings: 2 }, NOW);
 		expect(dinnerOn(householdId, TODAY)).toEqual({
 			id: expect.any(Number),
 			date: TODAY,
 			label: null,
 			type: 'eat_out',
-			note: 'Thai place',
+			restaurantName: 'Thai Garden',
+			note: 'At 7',
 			servings: 2,
 			dishes: []
 		});
@@ -213,6 +221,75 @@ describe('saving a dinner', () => {
 	});
 });
 
+describe("an Eating out dinner's restaurant (6.9)", () => {
+	function restaurantOn(date: string): string | null | undefined {
+		return dinnerOn(householdId, date)?.restaurantName;
+	}
+
+	it('keeps the name as typed, without extra spaces, and changes or removes it', () => {
+		save(TODAY, { type: 'eat_out', restaurantName: '  Thai   Garden ', note: null, servings: 4 }, NOW);
+		expect(restaurantOn(TODAY)).toBe('Thai Garden');
+		save(TODAY, { type: 'eat_out', restaurantName: 'Olive Garden', note: null, servings: 4 }, NOW);
+		expect(restaurantOn(TODAY)).toBe('Olive Garden');
+		save(TODAY, { type: 'eat_out', restaurantName: ' ', note: 'Somewhere', servings: 4 }, NOW);
+		expect(dinnerOn(householdId, TODAY)).toMatchObject({ restaurantName: null, note: 'Somewhere' });
+	});
+
+	it('takes up to 80 characters, and saves nothing past that', () => {
+		save(TODAY, { type: 'eat_out', restaurantName: 'a'.repeat(80), note: null, servings: 4 }, NOW);
+		expect(restaurantOn(TODAY)).toBe('a'.repeat(80));
+		const tooLong = () =>
+			save(TODAY, { type: 'eat_out', restaurantName: 'b'.repeat(81), note: 'New', servings: 4 }, NOW);
+		expect(refusal(tooLong)).toBe('Keep the restaurant under 80 characters');
+		expect(dinnerOn(householdId, TODAY)).toMatchObject({ restaurantName: 'a'.repeat(80), note: null });
+	});
+
+	it.each(['cook', 'going', 'leftovers'] as const)('is never kept on %s', (type) => {
+		save(TODAY, { type, restaurantName: 'Thai Garden', note: null, servings: 4 }, NOW);
+		expect(restaurantOn(TODAY)).toBeNull();
+	});
+
+	it('goes when the dinner becomes another type, and stays gone when it is Eating out again', () => {
+		save(TODAY, { type: 'eat_out', restaurantName: 'Thai Garden', note: 'At 7', servings: 4 }, NOW);
+		save(TODAY, { type: 'cook', restaurantName: 'Thai Garden', note: 'At 7', servings: 4 }, NOW);
+		expect(dinnerOn(householdId, TODAY)).toMatchObject({
+			type: 'cook',
+			restaurantName: null,
+			note: 'At 7'
+		});
+		save(TODAY, { type: 'eat_out', restaurantName: null, note: 'At 7', servings: 4 }, NOW);
+		expect(restaurantOn(TODAY)).toBeNull();
+	});
+
+	it('goes when Copy a dinner makes it another type, and comes with a copied Eating out dinner', () => {
+		save(TODAY, { type: 'eat_out', restaurantName: 'Thai Garden', note: 'At 7', servings: 4 }, NOW);
+		const past = makeDinner(householdId, '2026-09-30', { dishes: [[tacos, 'main']] });
+		copyOnto(TODAY, past, LATER);
+		expect(dinnerOn(householdId, TODAY)).toMatchObject({
+			type: 'cook',
+			restaurantName: null,
+			note: 'At 7'
+		});
+
+		// Copy a dinner offers only dinners with dishes, but an Eating out one copies as one.
+		const olive = { type: 'eat_out' as const, restaurantName: 'Olive Garden', note: null };
+		save('2026-10-01', { ...olive, servings: 4 }, NOW);
+		const source = current('2026-10-01') ?? 0;
+		makeDinner(householdId, TOMORROW, { dishes: [[rice, 'main']] });
+		copyOnto(TOMORROW, source, LATER);
+		copyOnto('2026-10-09', source, LATER);
+		for (const date of [TOMORROW, '2026-10-09']) {
+			expect(dinnerOn(householdId, date)).toMatchObject({ ...olive, dishes: [] });
+		}
+	});
+
+	it('moves with its dinner', () => {
+		save(TODAY, { type: 'eat_out', restaurantName: 'Thai Garden', note: null, servings: 4 }, NOW);
+		moveDinners(householdId, TODAY, TOMORROW, current(TODAY), NOW);
+		expect(restaurantOn(TOMORROW)).toBe('Thai Garden');
+	});
+});
+
 describe('reading dinners', () => {
 	it('lists the planned dates in a range by date, both ends included', () => {
 		makeDinner(householdId, '2026-10-10', { type: 'leftovers' });
@@ -227,6 +304,7 @@ describe('reading dinners', () => {
 				date: '2026-10-04',
 				label: null,
 				type: 'going',
+				restaurantName: null,
 				note: 'Picnic',
 				servings: 4,
 				dishes: []
@@ -236,6 +314,7 @@ describe('reading dinners', () => {
 				date: '2026-10-07',
 				label: null,
 				type: 'cook',
+				restaurantName: null,
 				note: null,
 				servings: 5,
 				dishes: []
@@ -245,6 +324,7 @@ describe('reading dinners', () => {
 				date: '2026-10-10',
 				label: null,
 				type: 'leftovers',
+				restaurantName: null,
 				note: null,
 				servings: 4,
 				dishes: []
@@ -617,6 +697,7 @@ describe('more than one dinner on a date (6.9)', () => {
 				date: TODAY,
 				label: 'Adults',
 				type: 'eat_out',
+				restaurantName: null,
 				note: 'Thai',
 				servings: 2,
 				dishes: []
@@ -626,6 +707,7 @@ describe('more than one dinner on a date (6.9)', () => {
 				date: TODAY,
 				label: 'Kids',
 				type: 'cook',
+				restaurantName: null,
 				note: null,
 				servings: 3,
 				dishes: []
@@ -696,7 +778,7 @@ describe('more than one dinner on a date (6.9)', () => {
 				householdId,
 				TODAY,
 				kids ?? 0,
-				{ label, type: 'eat_out', note: 'Pizza', servings: 2 },
+				{ label, type: 'eat_out', restaurantName: null, note: 'Pizza', servings: 2 },
 				LATER
 			);
 		expect(refusal(saveKids(null))).toBe('Enter a label for each dinner');
@@ -732,7 +814,13 @@ describe('more than one dinner on a date (6.9)', () => {
 		const moved = makeDinner(householdId, TODAY);
 		makeDinner(householdId, TOMORROW);
 		moveDinners(householdId, TODAY, TOMORROW, moved, NOW);
-		const fields = { label: null, type: 'cook' as const, note: 'Hi', servings: 2 };
+		const fields = {
+			label: null,
+			type: 'cook' as const,
+			restaurantName: null,
+			note: 'Hi',
+			servings: 2
+		};
 		const changed = 'Someone changed this dinner since you opened it.';
 		// A page still showing it, now that another dinner is on the date.
 		expect(refusal(() => saveDinner(householdId, TODAY, moved, fields, NOW))).toBe(changed);
@@ -820,6 +908,7 @@ describe('moving a dinner (2.2.2)', () => {
 			date: TOMORROW,
 			label: null,
 			type: 'going',
+			restaurantName: null,
 			note: 'Picnic',
 			servings: 6,
 			dishes: [{ dishId: salad, name: 'Salad', role: 'side', archived: false }]
@@ -1018,6 +1107,7 @@ describe('copying a dinner', () => {
 			date: TODAY,
 			label: null,
 			type: 'going',
+			restaurantName: null,
 			note: null,
 			servings: 3,
 			dishes: [

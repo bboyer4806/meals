@@ -210,7 +210,7 @@ test('menu screens', async ({ page, db, person }) => {
 				[rice, 'side']
 			]
 		},
-		{ type: 'eat_out', note: 'Thai place on 5th' },
+		{ type: 'eat_out', restaurantName: 'Thai Garden', note: 'Table for 4 at 7' },
 		{ type: 'going', servings: 8, note: 'Potluck at the Smiths', dishes: [[potatoSalad, 'main']] },
 		{
 			servings: 6,

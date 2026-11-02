@@ -221,3 +221,48 @@ describe('restaurant-requests', () => {
 		]);
 	});
 });
+
+// The change that gives an Eating out dinner its restaurant (design 6.9).
+describe('restaurant-name', () => {
+	it('keeps every dinner and its dishes as they were, with no restaurant', () => {
+		const sqlite = new Database(':memory:');
+		migrate(sqlite, foldersBefore('0013_restaurant-name'));
+		const run = (statement: string, ...values: unknown[]) =>
+			Number(sqlite.prepare(statement).run(...values).lastInsertRowid);
+		const household = run(
+			"insert into households (name, default_servings, time_zone, created_at) values ('H', 4, 'UTC', 0)"
+		);
+		const tacos = run(
+			"insert into dishes (household_id, name, servings, created_at, updated_at) values (?, 'Tacos', 2, 0, 0)",
+			household
+		);
+		const dinner = (date: string, type: string, label: string | null, note: string | null) =>
+			run(
+				'insert into dinners (household_id, date, label, type, note, servings, created_at, updated_at) values (?, ?, ?, ?, ?, 3, 1, 2)',
+				household,
+				date,
+				label,
+				type,
+				note
+			);
+		const kids = dinner('2026-10-01', 'cook', 'Kids', 'Busy');
+		dinner('2026-10-01', 'eat_out', 'Adults', 'Thai place');
+		dinner('2026-10-02', 'going', null, null);
+		dinner('2026-10-03', 'leftovers', null, 'Soup');
+		run(
+			"insert into dinner_dishes (household_id, dinner_id, dish_id, role) values (?, ?, ?, 'main')",
+			household,
+			kids,
+			tacos
+		);
+		const dinners = () => sqlite.prepare('select * from dinners order by id').all();
+		const before = dinners() as Record<string, unknown>[];
+
+		migrate(sqlite, 'drizzle');
+
+		expect(dinners()).toEqual(before.map((row) => ({ ...row, restaurant_name: null })));
+		expect(sqlite.prepare('select dinner_id, dish_id, role from dinner_dishes').all()).toEqual([
+			{ dinner_id: kids, dish_id: tacos, role: 'main' }
+		]);
+	});
+});

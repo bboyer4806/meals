@@ -10,8 +10,9 @@
 	// The Menu's requests on a date's page (design 6.12; 7, Dinner), under its dinners, each with
 	// its dish or restaurant, the note and who asked. Add puts a requested dish on one of the date's
 	// dinners: the only one that can have dishes, or the one the person picks when several can.
-	// When none can, it goes on a new Cooking at home dinner, with labels as Add a dinner asks on a
-	// date that has dinners (6.9). The request is then removed.
+	// When none can, it goes on a new Cooking at home dinner. A requested restaurant always becomes
+	// a new Eating out dinner. A new dinner on a date that has dinners needs labels, as Add a dinner
+	// asks for (6.9). The request is then removed.
 	let {
 		requests,
 		dinners,
@@ -22,13 +23,11 @@
 		requests: DishRequest[];
 		/** The date's dinners as they are now, in the order they were added. */
 		dinners: Dinner[];
-		/** Reloads the page after a dish is added, keeping what's typed in the dinners. */
+		/** Reloads the page after a request is added, keeping what's typed in the dinners. */
 		ownUpdate: (result: ActionResult, update: () => Promise<void>) => Promise<void>;
-		/** After a requested dish went on the dinner, with the request's note, if it has one. */
+		/** After a request went on the dinner, with the request's note, if it has one. */
 		onadded: (dinnerId: number, note: string | null) => void;
 	} = $props();
-
-	type Requested = Extract<DishRequest, { kind: 'dish' }>;
 
 	const uid = $props.id();
 	const GONE = 'Someone removed that request, so nothing was added.';
@@ -36,12 +35,39 @@
 	// The dinners a dish can go on: Cooking at home and Bringing a dish (Q26).
 	const withDishes = $derived(dinners.filter((dinner) => hasDishes(dinner.type)));
 	const only = $derived(withDishes.length === 1 ? withDishes[0] : undefined);
-	// With several to pick from, or none on a date that has room for another, Add asks first. With
-	// none on a date with no dinner, the dish plans it; on a full date, the server says why not.
-	const asks = $derived(
-		withDishes.length > 1 ||
-			(withDishes.length === 0 && dinners.length > 0 && dinners.length < MAX_DINNERS)
-	);
+	// A new dinner on a date that has room for another asks for labels first. On a date with no
+	// dinner, the request plans it; on a full date, the server says why not.
+	const asksLabels = $derived(dinners.length > 0 && dinners.length < MAX_DINNERS);
+
+	/**
+	 * Whether Add asks first: for a dish, which dinner when several can have it, or the labels for a
+	 * new one when none can; for a restaurant, the labels for its new dinner.
+	 */
+	function asks(request: DishRequest): boolean {
+		if (request.kind === 'restaurant') return asksLabels;
+		return withDishes.length > 1 || (withDishes.length === 0 && asksLabels);
+	}
+
+	/** The form action that adds the request to the date. */
+	function actionFor(request: DishRequest): string {
+		return request.kind === 'dish' ? '?/promoteDishRequest' : '?/promoteRestaurantRequest';
+	}
+
+	/** What the sheet says about the new dinner a request goes on, with the labels it asks for. */
+	function newDinnerText(request: DishRequest, count: number): string {
+		const labels =
+			count === 1
+				? 'Give each dinner a label, such as Kids or Adults.'
+				: 'Give it a label, such as Kids or Adults.';
+		if (request.kind === 'restaurant') {
+			return `${request.name} goes on a new Eating out dinner. ${labels}`;
+		}
+		const why =
+			count === 1
+				? "This day's dinner can't have dishes"
+				: "None of this day's dinners can have dishes";
+		return `${why}, so ${request.name} goes on a new Cooking at home dinner. ${labels}`;
+	}
 
 	let problem = $state('');
 	let status = $state('');
@@ -51,7 +77,7 @@
 	// What the sheet asks about, as the page showed the date when it opened, so a reload meanwhile
 	// doesn't change the question.
 	let asked = $state<{
-		request: Requested;
+		request: DishRequest;
 		choices: { id: number; label: string | null }[];
 		count: number;
 	} | null>(null);
@@ -60,10 +86,14 @@
 	let first = $state('');
 	let label = $state('');
 
-	function ask(request: Requested) {
+	function ask(request: DishRequest) {
 		asked = {
 			request,
-			choices: withDishes.map((dinner) => ({ id: dinner.id, label: dinner.label })),
+			// A restaurant never goes on a dinner the date has.
+			choices:
+				request.kind === 'dish'
+					? withDishes.map((dinner) => ({ id: dinner.id, label: dinner.label }))
+					: [],
 			count: dinners.length
 		};
 		first = '';
@@ -83,7 +113,7 @@
 		return null;
 	}
 
-	function submitFor(request: Requested): SubmitFunction {
+	function submitFor(request: DishRequest): SubmitFunction {
 		return ({ cancel }) => {
 			if (busy) return cancel();
 			busy = true;
@@ -154,20 +184,20 @@
 						{#if request.note}<span class="request-note">{request.note}</span>{/if}
 						<span class="muted">Asked by {request.askedBy}</span>
 					</div>
-					{#if request.kind === 'dish'}
-						<form method="POST" action="?/promoteDishRequest" use:enhance={submitFor(request)}>
-							<input type="hidden" name="requestId" value={request.id} />
-							{#if only}<input type="hidden" name="dinnerId" value={only.id} />{/if}
-							<button
-								aria-label="Add {request.name}"
-								onclick={(event) => {
-									if (!asks) return;
-									event.preventDefault();
-									ask(request);
-								}}>Add</button
-							>
-						</form>
-					{/if}
+					<form method="POST" action={actionFor(request)} use:enhance={submitFor(request)}>
+						<input type="hidden" name="requestId" value={request.id} />
+						{#if request.kind === 'dish' && only}
+							<input type="hidden" name="dinnerId" value={only.id} />
+						{/if}
+						<button
+							aria-label="Add {request.name}"
+							onclick={(event) => {
+								if (!asks(request)) return;
+								event.preventDefault();
+								ask(request);
+							}}>Add</button
+						>
+					</form>
 				</li>
 			{/each}
 		</ul>
@@ -178,7 +208,7 @@
 
 <Sheet bind:open title="Add {asked?.request.name ?? ''}">
 	{#if asked}
-		<form method="POST" action="?/promoteDishRequest" use:enhance={submitAsked}>
+		<form method="POST" action={actionFor(asked.request)} use:enhance={submitAsked}>
 			<input type="hidden" name="requestId" value={asked.request.id} />
 			{#if asked.choices.length > 1}
 				<p>Which dinner should it go on?</p>
@@ -188,11 +218,7 @@
 					{/each}
 				</div>
 			{:else}
-				<p>
-					{asked.count === 1
-						? `This day's dinner can't have dishes, so ${asked.request.name} goes on a new Cooking at home dinner. Give each dinner a label, such as Kids or Adults.`
-						: `None of this day's dinners can have dishes, so ${asked.request.name} goes on a new Cooking at home dinner. Give it a label, such as Kids or Adults.`}
-				</p>
+				<p>{newDinnerText(asked.request, asked.count)}</p>
 				{#if asked.count === 1}
 					<div class="field">
 						<label for="{uid}-first">Label for the dinner already planned</label>

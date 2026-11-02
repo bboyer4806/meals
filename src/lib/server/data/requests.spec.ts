@@ -12,7 +12,13 @@ import {
 	makeHousehold,
 	recipe
 } from '../testing.ts';
-import { clearDinner, getDay, setDinnerDishRole, type DishDestination } from './dinners.ts';
+import {
+	clearDinner,
+	getDay,
+	setDinnerDishRole,
+	type DishDestination,
+	type NewDinnerLabels
+} from './dinners.ts';
 import { setDishArchived, updateDish } from './dishes.ts';
 import { removeMember } from './households.ts';
 import {
@@ -21,6 +27,7 @@ import {
 	hasRequest,
 	listRequests,
 	promoteDishRequest,
+	promoteRestaurantRequest,
 	removeRequest,
 	requestDish,
 	restoreAndAddRequest
@@ -81,6 +88,32 @@ function refusal(run: () => unknown): string {
 
 function dishNamed(name: string) {
 	return db().select().from(dishes).where(eq(dishes.name, name)).get();
+}
+
+// Adding a request to a date (6.12).
+const DATE = '2026-10-08';
+const CHANGED = 'Someone changed this dinner since you opened it.';
+
+/** Dinners of these types on the date, labeled as a date with more than one needs. */
+function plan(date: string, types: DinnerType[]): number[] {
+	return types.map((type, index) => {
+		const dinnerId = makeDinner(householdId, date, { type });
+		if (types.length > 1) {
+			const label = `Dinner ${index + 1}`;
+			db().update(dinners).set({ label }).where(eq(dinners.id, dinnerId)).run();
+		}
+		return dinnerId;
+	});
+}
+
+/** Every row a refused addition must leave as it was. */
+function everything() {
+	return {
+		dinners: db().select().from(dinners).all(),
+		dinnerDishes: db().select().from(dinnerDishes).all(),
+		requests: db().select().from(dishRequests).all(),
+		dishes: db().select().from(dishes).all()
+	};
 }
 
 describe('addRequest', () => {
@@ -328,8 +361,6 @@ describe('removeRequest', () => {
 });
 
 describe('promoteDishRequest', () => {
-	const DATE = '2026-10-08';
-	const CHANGED = 'Someone changed this dinner since you opened it.';
 	let rice: number;
 
 	beforeEach(() => {
@@ -353,18 +384,6 @@ describe('promoteDishRequest', () => {
 		return { labels: { first, added } };
 	}
 
-	/** Dinners of these types on the date, labeled as a date with more than one needs. */
-	function plan(date: string, types: DinnerType[]): number[] {
-		return types.map((type, index) => {
-			const dinnerId = makeDinner(householdId, date, { type });
-			if (types.length > 1) {
-				const label = `Dinner ${index + 1}`;
-				db().update(dinners).set({ label }).where(eq(dinners.id, dinnerId)).run();
-			}
-			return dinnerId;
-		});
-	}
-
 	/** The date's dinners as "Label: type, note, dishes", in the order they were added. */
 	function day(date = DATE) {
 		return getDay(householdId, date).map(
@@ -372,16 +391,6 @@ describe('promoteDishRequest', () => {
 				`${dinner.label}: ${dinner.type}, ${dinner.note}, ` +
 				dinner.dishes.map((dish) => `${dish.name} (${dish.role})`).join(' ')
 		);
-	}
-
-	/** Every row a refused promotion must leave as it was. */
-	function everything() {
-		return {
-			dinners: db().select().from(dinners).all(),
-			dinnerDishes: db().select().from(dinnerDishes).all(),
-			requests: db().select().from(dishRequests).all(),
-			dishes: db().select().from(dishes).all()
-		};
 	}
 
 	it('puts the recipe on the dinner the page picked, as Main, and removes only that request', () => {
@@ -417,6 +426,7 @@ describe('promoteDishRequest', () => {
 				date: DATE,
 				label: null,
 				type: 'cook',
+				restaurantName: null,
 				note: 'Extra cheese',
 				servings: 4,
 				dishes: [{ dishId: lasagna, name: 'Lasagna', role: 'main', archived: false }]
@@ -563,6 +573,150 @@ describe('promoteDishRequest', () => {
 		const before = everything();
 		for (const requestId of [removed, restaurant, theirs]) {
 			expectHttpError(() => promote(requestId, { dinnerId }), 404);
+		}
+		expect(everything()).toEqual(before);
+	});
+});
+
+describe('promoteRestaurantRequest', () => {
+	/** Asks for the restaurant, and gives the request's id. */
+	function requested(name: string, note: string | null = null): number {
+		askRestaurant(name, note);
+		const request = listRequests(householdId).find((candidate) => candidate.name === name);
+		if (!request) throw new Error(`No request for ${name}`);
+		return request.id;
+	}
+
+	function promote(
+		requestId: number,
+		labels: NewDinnerLabels = { first: null, added: null },
+		date = DATE
+	): number {
+		return promoteRestaurantRequest(householdId, date, requestId, labels, NOW);
+	}
+
+	/** The date's dinners as "Label: type, restaurant, note, dishes", in the order they were added. */
+	function day(date = DATE) {
+		return getDay(householdId, date).map(
+			(dinner) =>
+				`${dinner.label}: ${dinner.type}, ${dinner.restaurantName}, ${dinner.note}, ` +
+				dinner.dishes.map((dish) => dish.name).join(' ')
+		);
+	}
+
+	it('plans a date with no dinner as Eating out there, with the note, and removes only that request', () => {
+		const request = requested('Olive Garden', 'For her birthday');
+		requested('Taco Bar');
+		ask('Soup');
+		const dinnerId = promote(request);
+		expect(getDay(householdId, DATE)).toEqual([
+			{
+				id: dinnerId,
+				date: DATE,
+				label: null,
+				type: 'eat_out',
+				restaurantName: 'Olive Garden',
+				note: 'For her birthday',
+				servings: 4,
+				dishes: []
+			}
+		]);
+		expect(db().select().from(dinners).get()).toMatchObject({ createdAt: NOW, updatedAt: NOW });
+		expect(listRequests(householdId).map((other) => other.name)).toEqual(['Taco Bar', 'Soup']);
+
+		// A request without a note makes a dinner without one.
+		promote(requested('Diner'), undefined, '2026-10-09');
+		expect(day('2026-10-09')).toEqual(['null: eat_out, Diner, null, ']);
+	});
+
+	it('adds a separate dinner to a day with one, labeling both, and leaves the first as it was', () => {
+		const first = makeDinner(householdId, DATE, { note: 'Busy', dishes: [[lasagna, 'main']] });
+		const before = getDay(householdId, DATE)[0];
+		const dinnerId = promote(requested('Olive Garden', 'At 7'), { first: ' Kids ', added: 'Adults' });
+		expect(getDay(householdId, DATE)).toEqual([
+			{ ...before, id: first, label: 'Kids' },
+			{
+				id: dinnerId,
+				date: DATE,
+				label: 'Adults',
+				type: 'eat_out',
+				restaurantName: 'Olive Garden',
+				note: 'At 7',
+				servings: 4,
+				dishes: []
+			}
+		]);
+
+		// Even an Eating out dinner with no restaurant yet stays as it is.
+		makeDinner(householdId, '2026-10-09', { type: 'eat_out', note: 'Somewhere' });
+		promote(requested('Taco Bar'), { first: 'Us', added: 'Them' }, '2026-10-09');
+		expect(day('2026-10-09')).toEqual([
+			'Us: eat_out, null, Somewhere, ',
+			'Them: eat_out, Taco Bar, null, '
+		]);
+		expect(listRequests(householdId)).toEqual([]);
+	});
+
+	it('adds a fifth dinner with its own label, but not a sixth, changing nothing', () => {
+		plan(DATE, ['cook', 'eat_out', 'going', 'leftovers']);
+		promote(requested('Olive Garden'), { first: null, added: 'Fifth' });
+		expect(day()).toHaveLength(5);
+		expect(day().at(-1)).toBe('Fifth: eat_out, Olive Garden, null, ');
+
+		const full = '2026-10-09';
+		plan(full, ['cook', 'eat_out', 'going', 'leftovers', 'cook']);
+		const request = requested('Taco Bar', 'Tuesday deal');
+		const before = everything();
+		// The page doesn't ask for labels on a full day, so it sends none.
+		for (const labels of [
+			{ first: null, added: null },
+			{ first: null, added: 'Sixth' }
+		]) {
+			expect(refusal(() => promote(request, labels, full))).toBe(
+				'This day already has 5 dinners. Clear one to add another.'
+			);
+		}
+		expect(everything()).toEqual(before);
+	});
+
+	it('needs the labels Add a dinner needs, and changes nothing until they are right', () => {
+		makeDinner(householdId, DATE, { type: 'eat_out' });
+		const request = requested('Olive Garden');
+		const before = everything();
+		const tries: [NewDinnerLabels, string][] = [
+			[{ first: 'Adults', added: '' }, 'Enter a label for each dinner'],
+			[{ first: ' ', added: 'Kids' }, 'Enter a label for each dinner'],
+			[{ first: 'Kids', added: 'KIDS' }, 'Give each dinner on this day a different label'],
+			[{ first: 'Adults', added: 'x'.repeat(31) }, 'Keep a label under 30 characters'],
+			// The page showed the date with no dinner, or with more than one.
+			[{ first: null, added: null }, CHANGED],
+			[{ first: null, added: 'Kids' }, CHANGED]
+		];
+		for (const [labels, message] of tries) {
+			expect(refusal(() => promote(request, labels))).toBe(message);
+		}
+		expect(refusal(() => promote(request, undefined, '2026-02-30'))).toBe('Pick a date');
+		expect(everything()).toEqual(before);
+	});
+
+	it('plans the date when the dinners the page showed were cleared meanwhile (6.11)', () => {
+		const cleared = makeDinner(householdId, DATE, { type: 'cook' });
+		clearDinner(householdId, DATE, cleared, NOW);
+		promote(requested('Olive Garden'), { first: 'Adults', added: 'Kids' });
+		expect(day()).toEqual(['null: eat_out, Olive Garden, null, ']);
+	});
+
+	it("is not found for a removed request, a dish request or another household's, changing nothing", () => {
+		makeDinner(householdId, DATE);
+		const removed = requested('Olive Garden');
+		removeRequest(householdId, removed);
+		ask('Soup');
+		const dish = listRequests(householdId)[0]?.id ?? 0;
+		addRestaurantRequest(otherId, otherUserId, { name: 'Diner', note: null }, NOW);
+		const theirs = listRequests(otherId)[0]?.id ?? 0;
+		const before = everything();
+		for (const requestId of [removed, dish, theirs]) {
+			expectHttpError(() => promote(requestId, { first: 'Adults', added: 'Kids' }), 404);
 		}
 		expect(everything()).toEqual(before);
 	});

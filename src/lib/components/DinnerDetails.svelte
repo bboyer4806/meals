@@ -5,23 +5,27 @@
 	import {
 		DINNER_LABEL_MAX,
 		DINNER_NOTE_MAX,
+		DINNER_RESTAURANT_MAX,
 		appendNote,
 		hasDishes,
+		hasRestaurant,
 		type DinnerType
 	} from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
 	import { normalizeName } from '../text.ts';
 
-	// A dinner's servings (types with dishes; Q28) and note (all types; Q26), saved together, and
-	// its label on a date with more than one dinner (6.9).
+	// A dinner's servings (types with dishes; Q28), restaurant (Eating out) and note (all types;
+	// Q26), saved together, and its label on a date with more than one dinner (6.9).
 	let {
 		dinner,
 		labeled,
 		servings = $bindable(null)
 	}: {
 		/** A saved dinner, or with no id the Cooking at home a date with no dinner shows (6.9). */
-		dinner: Pick<Dinner, 'label' | 'type' | 'note' | 'servings'> & { id: number | null };
+		dinner: Pick<Dinner, 'label' | 'type' | 'restaurantName' | 'note' | 'servings'> & {
+			id: number | null;
+		};
 		/** Whether the date has more than one dinner, so this one has a label. */
 		labeled: boolean;
 		/**
@@ -33,10 +37,12 @@
 
 	const uid = $props.id();
 	const withServings = $derived(hasDishes(dinner.type));
+	const withRestaurant = $derived(hasRestaurant(dinner.type));
 
+	// Eating out names where to go in its own field, so its note is for anything else.
 	const NOTE_HINTS: Record<DinnerType, string> = {
 		cook: 'Anything to remember',
-		eat_out: 'Where to go',
+		eat_out: 'Anything to remember',
 		going: 'Where, and what to bring',
 		leftovers: 'Which leftovers'
 	};
@@ -45,20 +51,25 @@
 	// shows someone else's change (Q11) without dropping what's being typed.
 	let note = $state(untrack(() => dinner.note ?? ''));
 	let label = $state(untrack(() => dinner.label ?? ''));
+	let restaurant = $state(untrack(() => dinner.restaurantName ?? ''));
 	servings = untrack(() => dinner.servings);
 	let savedNote = untrack(() => dinner.note ?? '');
 	let savedLabel = untrack(() => dinner.label ?? '');
+	let savedRestaurant = untrack(() => dinner.restaurantName ?? '');
 	let savedServings = untrack(() => dinner.servings);
 	$effect(() => {
 		const nextNote = dinner.note ?? '';
 		const nextLabel = dinner.label ?? '';
+		const nextRestaurant = dinner.restaurantName ?? '';
 		const nextServings = dinner.servings;
 		untrack(() => {
 			if (note === savedNote) note = nextNote;
 			if (label === savedLabel) label = nextLabel;
+			if (restaurant === savedRestaurant) restaurant = nextRestaurant;
 			if (servings === savedServings) servings = nextServings;
 			savedNote = nextNote;
 			savedLabel = nextLabel;
+			savedRestaurant = nextRestaurant;
 			savedServings = nextServings;
 		});
 	});
@@ -68,12 +79,22 @@
 		return labeled ? normalizeName(label) : savedLabel;
 	}
 
+	/** The restaurant as typed, as it would be stored, while it shows. */
+	function typedRestaurant(): string {
+		return withRestaurant ? normalizeName(restaurant) : savedRestaurant;
+	}
+
 	// What saving would change, or null when nothing would: the note as it's stored, and the
-	// servings and label while they show. An emptied servings field has nothing to keep.
+	// servings, label and restaurant while they show. An emptied servings field has nothing to keep.
 	function unsaved(): string | null {
 		const typedServings = withServings && servings !== null ? servings : savedServings;
-		const typed = [typedNote(), typedServings, typedLabel()];
-		if (typed[0] === savedNote && typedServings === savedServings && typed[2] === savedLabel) {
+		const typed = [typedNote(), typedServings, typedLabel(), typedRestaurant()];
+		if (
+			typed[0] === savedNote &&
+			typedServings === savedServings &&
+			typed[2] === savedLabel &&
+			typed[3] === savedRestaurant
+		) {
 			return null;
 		}
 		return JSON.stringify(typed);
@@ -111,7 +132,8 @@
 		return (
 			typedNote() === (other.note ?? '') &&
 			typedServings === other.servings &&
-			(!labeled || typedLabel() === (other.label ?? ''))
+			(!labeled || typedLabel() === (other.label ?? '')) &&
+			(!withRestaurant || typedRestaurant() === (other.restaurantName ?? ''))
 		);
 	}
 
@@ -119,9 +141,11 @@
 	export function reset(): void {
 		note = dinner.note ?? '';
 		label = dinner.label ?? '';
+		restaurant = dinner.restaurantName ?? '';
 		servings = dinner.servings;
 		savedNote = note;
 		savedLabel = label;
+		savedRestaurant = restaurant;
 		savedServings = dinner.servings;
 		dropped = null;
 		problem = '';
@@ -178,7 +202,7 @@
 		leftWhileBusy = false;
 		problem = '';
 		status = '';
-		const sent = { note, servings, label };
+		const sent = { note, servings, label, restaurant };
 		// SvelteKit moves focus to the top of the page after a form succeeds; Save (or the field
 		// Enter was pressed in) keeps it.
 		const focused = formElement.contains(document.activeElement) ? document.activeElement : null;
@@ -205,6 +229,7 @@
 					savedNote = sent.note.replace(/\r\n?/g, '\n').trim();
 					if (withServings && sent.servings !== null) savedServings = sent.servings;
 					if (labeled) savedLabel = normalizeName(sent.label);
+					if (withRestaurant) savedRestaurant = normalizeName(sent.restaurant);
 				}
 				await update({ reset: false });
 				// Still here after a save: more was typed meanwhile, and the person chose to stay with it.
@@ -216,6 +241,7 @@
 				if (note === sent.note) note = dinner.note ?? '';
 				if (servings === sent.servings) servings = dinner.servings;
 				if (label === sent.label) label = dinner.label ?? '';
+				if (restaurant === sent.restaurant) restaurant = dinner.restaurantName ?? '';
 				status =
 					'Someone had cleared or moved this dinner, so it was planned again with what you saved.';
 				if (focused instanceof HTMLElement && focused.isConnected) focused.focus();
@@ -239,6 +265,20 @@
 				maxlength={DINNER_LABEL_MAX}
 				placeholder="Such as Kids or Adults"
 				bind:value={label}
+				oninput={() => (status = '')}
+			/>
+		</div>
+	{/if}
+	{#if withRestaurant}
+		<div class="field">
+			<label for="{uid}-restaurant">Restaurant</label>
+			<input
+				id="{uid}-restaurant"
+				name="restaurantName"
+				autocomplete="off"
+				maxlength={DINNER_RESTAURANT_MAX}
+				placeholder="Where to go"
+				bind:value={restaurant}
 				oninput={() => (status = '')}
 			/>
 		</div>

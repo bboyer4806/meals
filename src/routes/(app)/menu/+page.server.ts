@@ -93,6 +93,7 @@ export function load({ locals, url }) {
 					id: dinner.id,
 					label: dinner.label,
 					type: dinner.type,
+					restaurantName: dinner.restaurantName,
 					note: dinner.note,
 					roles: byRole(dinner.dishes)
 				}))

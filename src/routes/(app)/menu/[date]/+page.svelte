@@ -10,7 +10,8 @@
 
 	// A date's dinners (design 7, Dinner; 6.9), each with its own editor, in the order they were
 	// added. Move takes them all to another date, and Add a dinner adds another, up to 5. Under
-	// them, the Menu's requests, whose dishes can go on a dinner (6.12).
+	// them, the Menu's requests, whose dishes can go on a dinner and whose restaurants can become
+	// one (6.12).
 	let { data, form } = $props();
 
 	type Dinner = (typeof data.dinners)[number];
@@ -53,6 +54,7 @@
 			id: null,
 			label: null,
 			type: 'cook' as const,
+			restaurantName: null,
 			note: null,
 			servings: data.defaultServings
 		};
