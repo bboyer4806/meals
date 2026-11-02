@@ -14,6 +14,16 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.8',
+		released: '2026-11-02',
+		lines: [
+			"Requests now show on a day's page too, under its dinners. Tap Add on a requested dish to put it on that day's dinner, and the request is removed.",
+			"Eating out dinners have a Restaurant field, and the Menu shows the restaurant. On a day's page, tap Add on a requested restaurant to plan eating out there as a new dinner.",
+			'On Recipes, tap more than one tag to see only recipes with all of them. Tap a tag again to remove it.',
+			"The Menu shows each dinner's whole note instead of cutting it off after two lines."
+		]
+	},
+	{
 		version: '1.7',
 		released: '2026-10-26',
 		lines: [
