@@ -5,6 +5,7 @@ import { requireHousehold } from '#lib/server/auth/guards.ts';
 import {
 	getDish,
 	getOwnRating,
+	listDishRatings,
 	rateDish,
 	setDishArchived,
 	setDishTried
@@ -35,6 +36,7 @@ export function load({ locals, params }) {
 	return {
 		dish: getDish(user.householdId, dishId),
 		ownRating: getOwnRating(user.householdId, dishId, user.id),
+		ratings: listDishRatings(user.householdId, dishId),
 		requested: hasRequest(user.householdId, dishId)
 	};
 }

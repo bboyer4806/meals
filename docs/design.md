@@ -779,9 +779,14 @@ it's tapped, with no Save button, and is shared by the household (6.11); Edit re
 as it was, and it works the same on archived recipes. Your rating is five stars under Tried
 it, your own and nobody else's: tapping a star saves it right away, and tapping your current
 star again clears it. Beside the stars is the household's average, rounded to the nearest half
-star, with the number of ratings, such as "★ 4.5 (2)", and no names. A removed member's ratings
-stay in it. Rating doesn't change Tried it, and works the same on archived recipes. Under the
-stars, **Request** asks for the dish on the Menu's Requests (6.12), on any recipe that isn't
+star, with the number of ratings, such as "★ 4.5 (2)". A removed member's ratings stay in it.
+Under the stars, each rating is listed with the name of the person who gave it and their stars,
+such as "Sam ★★★★☆", yours included (MEA-32): members by name ignoring case, then a removed
+member's ratings, each as "Former member" with its stars and nothing that says who they were.
+Tapping a star updates the list right away, and a recipe nobody has rated has no list. Showing
+who rated is an exception to section 12, for this list only; the Recipes list still shows only
+the household's average. Rating doesn't change Tried it, and works the same on archived recipes.
+Under the stars and the list, **Request** asks for the dish on the Menu's Requests (6.12), on any recipe that isn't
 archived, "No recipe" ones included. It saves as soon as it's tapped, and the page stays at the
 servings shown. A recipe with any request says "Requested" in its place. Ingredients grouped by section and scaled (section
 6.6), numbered steps with warnings when scaled (6.7), notes, source (a link when it's a
@@ -1004,7 +1009,8 @@ ingredients.
   needs a sign-in (Q37; Import from a link covers the rest).
 - Backups off the server (Q13).
 - Merging duplicate items.
-- Showing who added or changed something, except who asked for a request (6.12).
+- Showing who added or changed something, except who asked for a request (6.12) and who rated a
+  recipe (section 7, "Recipe").
 - Deleting a household.
 - Different servings for different dishes in the same dinner.
 - Metric units in the known list.

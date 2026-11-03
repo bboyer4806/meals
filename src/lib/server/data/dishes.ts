@@ -3,7 +3,7 @@ import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { splitSteps } from '../../steps.ts';
 import { foldCase, normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
-import { dishes, dishIngredients, dishRatings, dishTags, items } from '../db/schema.ts';
+import { dishes, dishIngredients, dishRatings, dishTags, items, users } from '../db/schema.ts';
 import { getHousehold } from './households.ts';
 import { createItem, findItemByName, setItemArchived } from './items.ts';
 
@@ -57,6 +57,9 @@ export type DishIngredient = {
 
 /** The household's stars for a dish: the plain average, unrounded, and how many rated it. */
 export type DishRating = { average: number; count: number };
+
+/** One person's stars for a dish, and who gave them: a member's name, or "Former member". */
+export type PersonRating = { name: string; stars: number };
 
 export type DishDetail = {
 	id: number;
@@ -344,6 +347,23 @@ export function getOwnRating(householdId: number, dishId: number, userId: number
 		)
 		.get();
 	return row?.stars ?? null;
+}
+
+/**
+ * Everyone's stars for the dish, the signed-in person's included: members by name ignoring case,
+ * then each removed member's as "Former member", in the order they rated. Removing a member
+ * empties who rated (section 5, "dish_ratings"), so nothing says who they were. Showing who rated
+ * is an exception to section 12, for the recipe page only (section 7, "Recipe").
+ */
+export function listDishRatings(householdId: number, dishId: number): PersonRating[] {
+	return db()
+		.select({ name: users.name, stars: dishRatings.stars })
+		.from(dishRatings)
+		.leftJoin(users, eq(users.id, dishRatings.userId))
+		.where(and(eq(dishRatings.householdId, householdId), eq(dishRatings.dishId, dishId)))
+		.orderBy(isNull(dishRatings.userId), asc(sql`lower(${users.name})`), asc(dishRatings.id))
+		.all()
+		.map(({ name, stars }) => ({ name: name ?? 'Former member', stars }));
 }
 
 /**
