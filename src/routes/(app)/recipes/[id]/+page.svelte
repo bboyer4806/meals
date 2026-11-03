@@ -87,7 +87,8 @@
 	action="?/tried"
 	use:enhance={() =>
 		({ update }) =>
-			update({ reset: false })}
+			// Landing on ?/tried would drop ?servings= and show the recipe's own servings.
+			update({ navigate: false, reset: false })}
 >
 	<label class="check-off">
 		<input
@@ -109,7 +110,8 @@ household's average, with no names (section 7, "Recipe"). -->
 	action="?/rate"
 	use:enhance={() =>
 		({ update }) =>
-			update({ reset: false })}
+			// Landing on ?/rate would drop ?servings= and show the recipe's own servings.
+			update({ navigate: false, reset: false })}
 >
 	<div class="stars" role="group" aria-label="Your rating">
 		{#each [1, 2, 3, 4, 5] as stars (stars)}
