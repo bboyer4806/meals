@@ -3044,6 +3044,15 @@ test.describe('swiping between weeks', () => {
 		await swipe(day(page, addDays(next, 3)), 200);
 		await showsWeek(page, sunday, { [mon]: 'Taco night' });
 
+		// Menu help tells people about it.
+		await page.getByRole('banner').getByRole('button', { name: 'Help', exact: true }).tap();
+		const help = page.getByRole('dialog', { name: 'Help: Menu' });
+		await expect(help).toContainText(
+			'Previous and Next change the week, or swipe the days left or right.'
+		);
+		await help.getByRole('button', { name: 'Close' }).tap();
+		await expect(help).toBeHidden();
+
 		// Tapping a day still opens it.
 		await day(page, mon).tap();
 		await expect(page).toHaveURL(new RegExp(`/menu/${mon}$`));

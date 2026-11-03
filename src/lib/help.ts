@@ -110,7 +110,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 			"The week's dinners, Sunday to Saturday. Today is highlighted.",
 			'Tap a day to plan or change its dinner.',
 			'On a computer, drag a day onto another day to swap their dinners.',
-			'Previous and Next change the week. This week comes back to today.',
+			'Previous and Next change the week, or swipe the days left or right. This week comes back to today.',
 			'Requests lists dishes and restaurants people in your household would like. Request a dish or Request a restaurant to add one, and Remove one when it is done.'
 		]
 	},
