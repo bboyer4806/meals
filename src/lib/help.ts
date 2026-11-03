@@ -118,7 +118,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 		title: 'Dinner',
 		points: [
 			'Pick the type: Cooking at home, Eating out, Bringing a dish or Leftovers.',
-			"Add a dish by searching or typing a new name, then pick its role. Each dish links to its recipe at this dinner's servings.",
+			"Type a dish and tap it in the suggestions to add it, or type a new name and tap Add. Change the role first if it isn't the one shown. Each dish links to its recipe at this dinner's servings.",
 			'Set the servings (or the restaurant when eating out) and a note, then tap Save. Everything else saves as soon as you do it.',
 			"Copy a dinner reuses the dishes of a dinner you've had before.",
 			'Tap the date at the top to move this dinner to another day. If that day has a dinner, the two swap.',

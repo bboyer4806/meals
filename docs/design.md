@@ -832,8 +832,12 @@ optional Note and Request, and the week shown stays open. Each dish request link
 a restaurant request shows "Eating out" and the restaurant's name, not a link.
 
 **Dinner.** "‹ Week of" goes to the dinner's week. Type (four buttons), note, servings,
-and dishes. You add a dish by searching existing dishes or typing a new name, then picking
-its role. Each dish links to its
+and dishes. You add a dish by searching existing dishes or typing a new name (MEA-56). Picking
+an existing dish from the suggestions, with a tap, a click or the keyboard, adds it right away
+with the role shown under the field, so a different role is picked first. A new name is added
+with Add; picking "Add ... as a new dish" only fills it in. The suggestions show in the page
+under the role and Add, about four at a time with the rest scrolling, so they never cover or
+move Add. Once a dish is added, the field is empty and ready for the next. Each dish links to its
 recipe at this dinner's servings. Eating out has a Restaurant field, with "Where to go" as its
 hint, in place of servings and dishes (MEA-58; 6.9). Actions: Copy a dinner and Clear. A date
 with more than one dinner shows them all on its one page, in the order they were added, each with its own label

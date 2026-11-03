@@ -1,4 +1,4 @@
-import type { Dialog, Page } from '@playwright/test';
+import type { Dialog, Locator, Page } from '@playwright/test';
 import {
 	addDays,
 	addDinner,
@@ -59,21 +59,44 @@ const dishField = (page: Page) => page.getByRole('combobox', { name: 'Add a dish
 const newRole = (page: Page) => page.getByLabel('Role', { exact: true });
 const addButton = (page: Page) => page.getByRole('button', { name: 'Add', exact: true });
 
-/** Adds a dish the way a person would: types, taps a suggestion or "new dish", then Add. */
+/**
+ * Adds a dish the way a person would: picks its role when it isn't the one shown, types, then
+ * taps a suggestion, which adds it, or taps "new dish" and then Add (MEA-56). Waits for the field
+ * to be ready for the next dish.
+ */
 async function addDish(
 	page: Page,
 	typed: string,
 	pick: { suggestion: string } | 'new',
 	role?: 'main' | 'side' | 'dessert' | 'other'
 ) {
-	await dishField(page).fill(typed);
-	const option =
-		pick === 'new'
-			? page.getByRole('option', { name: `Add “${typed}” as a new dish` })
-			: page.getByRole('option', { name: pick.suggestion, exact: true });
-	await option.click();
 	if (role) await newRole(page).selectOption(role);
-	await addButton(page).click();
+	await dishField(page).fill(typed);
+	if (pick === 'new') {
+		await page.getByRole('option', { name: `Add “${typed}” as a new dish` }).click();
+		await addButton(page).click();
+	} else {
+		await page.getByRole('option', { name: pick.suggestion, exact: true }).click();
+	}
+	await expect(dishField(page)).toHaveValue('');
+}
+
+/** Counts the requests that add a dish, which a tap, a click or a key can send. */
+function countAdds(page: Page): () => number {
+	let count = 0;
+	page.on('request', (request) => {
+		if (new URL(request.url()).search === '?/addDish') count += 1;
+	});
+	return () => count;
+}
+
+/** Whether nothing covers the middle of the element, so a tap there reaches it. */
+function uncovered(locator: Locator) {
+	return locator.evaluate((element) => {
+		const box = element.getBoundingClientRect();
+		const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+		return top !== null && element.contains(top);
+	});
 }
 
 /** "Tue, Oct 7", with the year when it isn't this year's, as Copy a dinner says when one was made. */
@@ -243,7 +266,6 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 	// A dish already on the dinner isn't added twice.
 	await dishField(page).fill('chicken');
 	await page.getByRole('option', { name: 'Chicken tacos', exact: true }).click();
-	await addButton(page).click();
 	await expect(dishSection(page).getByRole('alert')).toHaveText(
 		'Chicken tacos is already on this dinner'
 	);
@@ -741,7 +763,10 @@ test('offers to restore an archived dish typed by name, and keeps archived dishe
 	]);
 
 	// Its name is still taken, so adding it offers to restore it, and Cancel changes nothing.
-	await addDish(page, 'banana bread', 'new', 'dessert');
+	await newRole(page).selectOption('dessert');
+	await dishField(page).fill('banana bread');
+	await page.getByRole('option', { name: 'Add “banana bread” as a new dish' }).click();
+	await addButton(page).click();
 	const dialog = page.getByRole('dialog', { name: 'Banana bread' });
 	await expect(dialog).toContainText(
 		'Banana bread is archived. Restore it and add it to this dinner?'
@@ -796,6 +821,189 @@ test("suggests a dish typed before the page's script started", async ({ page, db
 		'Banana pudding',
 		'Add “banana” as a new dish'
 	]);
+});
+
+test('adds a suggested dish as soon as it is tapped, clicked or chosen with the keys, with the role shown', async ({
+	page,
+	db,
+	person
+}) => {
+	addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+	addRecipe(db, person.householdId, { name: 'Rice pudding' });
+	addRecipe(db, person.householdId, { name: 'Corn bread' });
+	addRecipe(db, person.householdId, { name: 'Corn salad' });
+	const date = addDays(today(), 3);
+	const adds = countAdds(page);
+	await open(page, `/menu/${date}`);
+
+	// A tap adds it without Add (MEA-56), as a Main, the first dish's role, and plans the day.
+	await dishField(page).fill('taco');
+	await page.getByRole('option', { name: 'Chicken tacos', exact: true }).tap();
+	await expect(dishLinks(page)).toHaveText(['Chicken tacos']);
+	await expect(page.getByLabel('Role for Chicken tacos')).toHaveValue('main');
+	await expect(typeButton(page, 'Cooking at home')).toHaveAttribute('aria-pressed', 'true');
+	// The field is ready for the next dish, which starts as a Side.
+	await expect(dishField(page)).toHaveValue('');
+	await expect(dishField(page)).toBeFocused();
+	await expect(newRole(page)).toHaveValue('side');
+
+	// A click adds one with the role picked before it.
+	await newRole(page).selectOption('dessert');
+	await dishField(page).fill('pud');
+	await page.getByRole('option', { name: 'Rice pudding', exact: true }).click();
+	await expect(dishLinks(page)).toHaveText(['Chicken tacos', 'Rice pudding']);
+	await expect(page.getByLabel('Role for Rice pudding')).toHaveValue('dessert');
+	await expect(dishField(page)).toHaveValue('');
+	await expect(dishField(page)).toBeFocused();
+	await expect(newRole(page)).toHaveValue('side');
+
+	// So does Enter on one reached with the arrow keys.
+	await dishField(page).fill('corn');
+	await expect(page.getByRole('listbox').getByRole('option')).toHaveText([
+		'Corn bread',
+		'Corn salad',
+		'Add “corn” as a new dish'
+	]);
+	await dishField(page).press('ArrowDown');
+	await dishField(page).press('ArrowDown');
+	await dishField(page).press('Enter');
+	await expect(dishLinks(page)).toHaveText(['Chicken tacos', 'Corn salad', 'Rice pudding']);
+	await expect(page.getByLabel('Role for Corn salad')).toHaveValue('side');
+	await expect(dishField(page)).toHaveValue('');
+	await expect(dishField(page)).toBeFocused();
+
+	// Each was sent once.
+	expect(adds()).toBe(3);
+	expect(dinnerDishes(db, dinnerRow(db, person.householdId, date)?.id ?? 0)).toEqual([
+		{ name: 'Chicken tacos', role: 'main' },
+		{ name: 'Rice pudding', role: 'dessert' },
+		{ name: 'Corn salad', role: 'side' }
+	]);
+});
+
+test('keeps Add under the dish field on a phone, never covered or moved by the suggestions', async ({
+	page,
+	db,
+	person
+}) => {
+	// The width of the phone in the feedback (MEA-56).
+	await page.setViewportSize({ width: 411, height: 839 });
+	for (const name of [
+		'Rice',
+		'Rice and beans',
+		'Rice noodles',
+		'Rice pudding',
+		'Rice salad',
+		'Brown rice',
+		'Fried rice',
+		'Wild rice'
+	]) {
+		addRecipe(db, person.householdId, { name });
+	}
+	const date = addDays(today(), 3);
+	const adds = countAdds(page);
+	await open(page, `/menu/${date}`);
+	const before = await addButton(page).boundingBox();
+
+	// The suggestions show under Add, in the page, about four at a time, and the rest scroll.
+	await dishField(page).fill('ric');
+	const list = page.getByRole('listbox');
+	await expect(list.getByRole('option')).toHaveCount(9);
+	expect(await addButton(page).boundingBox()).toEqual(before);
+	expect(await uncovered(addButton(page))).toBe(true);
+	const listBox = await list.boundingBox();
+	expect(listBox?.y).toBeGreaterThan((before?.y ?? 0) + (before?.height ?? 0));
+	expect(await list.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+	const wildRice = list.getByRole('option', { name: 'Wild rice', exact: true });
+	await expect(wildRice).not.toBeInViewport();
+	expect(await sideways(page)).toBe(0);
+
+	// One further down the list is scrolled to, and a tap adds it.
+	await wildRice.tap();
+	await expect(dishLinks(page)).toHaveText(['Wild rice']);
+	await expect(dishField(page)).toHaveValue('');
+
+	// A new name is added with Add, tapped while the suggestions still show.
+	await dishField(page).fill('Garlic bread');
+	await expect(
+		page.getByRole('option', { name: 'Add “Garlic bread” as a new dish' })
+	).toBeVisible();
+	expect(await uncovered(addButton(page))).toBe(true);
+	await addButton(page).tap();
+	await expect(dishLinks(page)).toHaveText(['Wild rice', 'Garlic bread']);
+	await expect(page.getByLabel('Role for Garlic bread')).toHaveValue('side');
+	await expect(dishField(page)).toHaveValue('');
+	await expect(dishField(page)).toBeFocused();
+
+	// Tapping "new dish" adds nothing until Add.
+	await dishField(page).fill('Sweet corn');
+	await page.getByRole('option', { name: 'Add “Sweet corn” as a new dish' }).tap();
+	await expect(list).toHaveCount(0);
+	await expect(dishField(page)).toHaveValue('Sweet corn');
+	await addButton(page).tap();
+	await expect(dishLinks(page)).toHaveText(['Wild rice', 'Garlic bread', 'Sweet corn']);
+	await expect(dishField(page)).toHaveValue('');
+	expect(adds()).toBe(3);
+});
+
+test('sends a picked dish once while it is on its way', async ({ page, db, person }) => {
+	addRecipe(db, person.householdId, { name: 'Rice' });
+	const date = addDays(today(), 3);
+	const adds = countAdds(page);
+	await open(page, `/menu/${date}`);
+	// Holds the add back, as a slow connection might.
+	let release!: () => void;
+	const released = new Promise<void>((resolve) => (release = resolve));
+	await page.route(
+		(url) => url.search === '?/addDish',
+		async (route) => {
+			await released;
+			await route.continue();
+		}
+	);
+
+	await dishField(page).fill('ric');
+	await page.getByRole('option', { name: 'Rice', exact: true }).tap();
+	await expect.poll(adds).toBe(1);
+	// Picking it again, Enter and Add send nothing more meanwhile.
+	await dishField(page).fill('ric');
+	await page.getByRole('option', { name: 'Rice', exact: true }).tap();
+	await dishField(page).press('Enter');
+	await addButton(page).tap();
+	release();
+	await expect(dishLinks(page)).toHaveText(['Rice']);
+	await expect(dishField(page)).toHaveValue('');
+	await expect(dishSection(page).getByRole('alert')).toHaveCount(0);
+	expect(adds()).toBe(1);
+	expect(dinnerDishes(db, dinnerRow(db, person.householdId, date)?.id ?? 0)).toEqual([
+		{ name: 'Rice', role: 'main' }
+	]);
+});
+
+test('offers to restore a suggested dish someone archived after the page opened', async ({
+	page,
+	db,
+	person
+}) => {
+	const bread = addRecipe(db, person.householdId, { name: 'Banana bread' });
+	const date = addDays(today(), 3);
+	await open(page, `/menu/${date}`);
+	db.prepare('update dishes set archived_at = ? where id = ?').run(Date.now(), bread);
+
+	await newRole(page).selectOption('dessert');
+	await dishField(page).fill('banana');
+	await page.getByRole('option', { name: 'Banana bread', exact: true }).tap();
+	const dialog = page.getByRole('dialog', { name: 'Banana bread' });
+	await expect(dialog).toContainText(
+		'Banana bread is archived. Restore it and add it to this dinner?'
+	);
+	await dialog.getByRole('button', { name: 'Restore it and add' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(dishLinks(page)).toHaveText(['Banana bread']);
+	await expect(page.getByLabel('Role for Banana bread')).toHaveValue('dessert');
+	await expect(dishField(page)).toHaveValue('');
+	await expect(dishField(page)).toBeFocused();
+	expect(db.prepare('select archived_at from dishes where id = ?').pluck().get(bread)).toBeNull();
 });
 
 test('copies a past dinner from the most-made list or by searching a dish name', async ({
