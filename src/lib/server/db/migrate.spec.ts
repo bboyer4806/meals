@@ -266,3 +266,54 @@ describe('restaurant-name', () => {
 		]);
 	});
 });
+
+// The change that records the newest release someone has seen on What's new by its version
+// instead of its date (design 7, MEA-25).
+describe('whats-new-seen-version', () => {
+	/** A database from just before the change, with one person per saved value, in order. */
+	function savedBefore(values: (string | null)[]): Database.Database {
+		const sqlite = new Database(':memory:');
+		migrate(sqlite, foldersBefore('0014_whats-new-seen-version'));
+		const household = sqlite
+			.prepare(
+				"insert into households (name, default_servings, time_zone, created_at) values ('H', 4, 'UTC', 0)"
+			)
+			.run().lastInsertRowid;
+		values.forEach((value, i) => {
+			sqlite
+				.prepare(
+					"insert into users (household_id, google_sub, email, name, created_at, whats_new_seen) values (?, ?, ?, 'P', 0, ?)"
+				)
+				.run(household, `sub-${i}`, `p${i}@example.com`, value);
+		});
+		return sqlite;
+	}
+
+	const seen = (sqlite: Database.Database) =>
+		sqlite.prepare('select whats_new_seen from users order by id').pluck().all();
+
+	it('changes each saved date to the newest release that day, and keeps empty ones', () => {
+		const sqlite = savedBefore([
+			'2026-10-14',
+			'2026-10-20',
+			'2026-10-21',
+			null,
+			'2026-10-24',
+			'2026-10-26',
+			'2026-11-02'
+		]);
+		migrate(sqlite, 'drizzle');
+		// 1.3, 1.4 and 1.5 all came out on 2026-10-21.
+		expect(seen(sqlite)).toEqual(['1.1', '1.2', '1.5', null, '1.6', '1.7', '1.8']);
+	});
+
+	it('stops at a date that no release has, changing nothing', () => {
+		const sqlite = savedBefore(['2026-10-21', '2026-10-22']);
+		const before = applied(sqlite);
+		expect(() => migrate(sqlite, 'drizzle')).toThrow(
+			'whats_new_seen has a date that no release has'
+		);
+		expect(seen(sqlite)).toEqual(['2026-10-21', '2026-10-22']);
+		expect(applied(sqlite)).toBe(before);
+	});
+});

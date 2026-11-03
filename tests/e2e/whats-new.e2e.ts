@@ -1,10 +1,15 @@
 import type { Page } from '@playwright/test';
 import { expect, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.8 was released on 2026-11-02.
+// What's new (design 7). 1.8 was released on 2026-11-02, after 1.7.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
+}
+
+/** The version of the newest release the person has seen. */
+function seen(db: import('better-sqlite3').Database, userId: number) {
+	return db.prepare('select whats_new_seen from users where id = ?').pluck().get(userId);
 }
 
 const more = (page: Page) => page.getByRole('banner').locator('summary');
@@ -125,6 +130,48 @@ test("shows a dot until What's new is opened, on every device", async ({
 	await phone.goto('/groceries');
 	await expect(phone.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(phone).locator('.dot')).toHaveCount(0);
+	await other.close();
+});
+
+test('shows a dot for a release newer than the one each person last saw', async ({
+	page,
+	db,
+	person,
+	browser,
+	baseURL
+}) => {
+	// Two members of the household who joined before 1.8 and have seen 1.7.
+	const joined = Date.UTC(2026, 9, 1, 17);
+	setCreatedAt(db, person.userId, joined);
+	db.prepare("update users set whats_new_seen = '1.7' where id = ?").run(person.userId);
+	const memberId = Number(
+		db
+			.prepare(
+				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.7')"
+			)
+			.run(
+				person.householdId,
+				`sub-member-${person.userId}`,
+				`member-${person.userId}@example.com`,
+				joined
+			).lastInsertRowid
+	);
+
+	await page.goto('/groceries');
+	await expect(more(page).locator('.dot')).toBeVisible();
+	await more(page).click();
+	await link(page).click();
+	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
+	await expect(more(page).locator('.dot')).toHaveCount(0);
+	expect(seen(db, person.userId)).toBe('1.8');
+
+	// Opening it cleared only their own dot.
+	const other = await browser.newContext();
+	await signInAs(db, other, baseURL, memberId);
+	const phone = await other.newPage();
+	await phone.goto('/groceries');
+	await expect(more(phone).locator('.dot')).toBeVisible();
+	expect(seen(db, memberId)).toBe('1.7');
 	await other.close();
 });
 
