@@ -2,57 +2,39 @@
 
 Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each item was found by one reviewer and confirmed by a second that tried to disprove it. It is a snapshot: line numbers drift as the code changes, so check the code before acting on an item.
 
+On 2026-11-03, 48 items became "Review:" tickets in Jira (MEA-64 to MEA-80 in Meals 1.12, MEA-81 to MEA-111 in the backlog) and #4 was dropped, so they're no longer listed here. The 125 items below keep their original numbers.
+
 ## How to use this list
 
-- Item numbers are fixed. Refer to items by number (for example #12) when we discuss them.
+- Item numbers are fixed. Refer to items by number (for example #77) when we discuss them.
 - Tick an item (`- [x]`) when its fix is merged, or when we decide not to do it; then add "Won't do:" and the reason under it.
 - **High**: wrong results, a broken flow or an outage people can hit. **Medium**: an edge-case bug, notable debt or real friction. **Low**: minor.
 - **Reopens design** means doing it changes a decision in docs/design.md, so the design is updated in the same change (AGENTS.md).
-- **MEA-n** means an open Jira ticket already covers it.
+- **MEA-n** means a Jira ticket already covers it or is related.
 - **Likely, not fully proven** marks the few items the second reviewer couldn't fully reproduce.
 
 ## Where to start
 
-1. **Limit input sizes before parsing: #1, #2, #3** (with the zod patch in #50). These are the only outage-level items: one signed-in member, or a recipe page a member imports, can freeze the app for every household.
-2. **Handle dropped connections: #69, #70.** One shared failure handler keeps the page and what was typed, instead of replacing it with "Something went wrong".
-3. **Pass `navigate: false` in the enhance updates: #77, #87 (MEA-43).** The same SvelteKit 3 behavior causes both.
-4. **Make CSV import cope with real spreadsheets: #24, #25, #26, #27, #75, #100.**
-5. **Deploy only from main, and write down a rollback: #41, #42.**
+1. **Deploy only from main: #41.** One condition in deploy.yml stops a hand-run workflow from deploying any branch to production.
+2. **Pass `navigate: false` in the enhance updates: #77, #87 (MEA-43).** The same SvelteKit 3 behavior causes both.
+3. **Stop losing typed text: #71, #72, #73, #74.** Same theme as MEA-80 and MEA-111.
+4. **Smooth the grocery list in the store: #13, #78, #79, #80, #81.**
+5. **Finish the CSV import fixes: #75, #100.** The other import fixes are MEA-71 to MEA-74 in Meals 1.12 and MEA-89 in the backlog.
 
 Items that share a cause or a fix:
 
-- Stale pages and reused ids: #12, #17, #82, #92, #93
+- Stale pages: #82, #92, #93 (MEA-67 and MEA-69 handle the server side)
 - No pending state on taps: #79, #91, #150
 - Focus after a save: #102, #114, #117
 - 320 px phones: #84, #99, #106
-- Copy a dinner cost: #52, #53, #90
-- Error pages: #37, #108, #169
+- Copy a dinner cost: #90 (with MEA-101 and MEA-102)
+- Error pages: #108, #169 (with MEA-94)
 - Outdated help: #113, #154
 
 ## 1. Backend issues and tech debt
 
 ### Security and abuse
 
-- [ ] **#1 High** Name fields are Unicode-normalized before their length check, so one long name freezes the whole app for minutes
-  - **Where:** `src/lib/text.ts:3`, `src/lib/text.ts:10`, `src/lib/server/forms.ts:13`, `src/lib/server/recipe-form.ts:191`
-  - **Problem:** Any signed-in member posts one name field (grocery item, item rename, store, household settings or setup, dish or restaurant request, recipe name, dinner label, restaurant or dish) holding about 2.6 million alternating combining marks, a 5 MB body within BODY_SIZE_LIMIT. The single Node process spends roughly 25 to 30 minutes normalizing it (extrapolated from the measured 4x per doubling) before rejecting it, and every household's pages, saves and /healthz wait the whole time. Dokku doesn't restart a live process, and one request a minute keeps the app down. The same happens for CSV import cells and rename-<row> fields inside the import's write transaction, and for Import from a link when a member imports a page whose JSON-LD holds such text, so a stranger who gets a member to import their link can do it too.
-  - **Fix:** Check the raw length before normalizing: in nameField use z.string().max(max * 4, message) ahead of .transform(normalizeName); add a max to the date page's label, firstLabel, restaurantName and dish name schemas; cap the tags string and each ingredient row field before they are normalized, each CSV cell, and fetched text in recipe-schema's plain(). As a backstop, make normalizeName and foldCase refuse or cut input over about 10,000 characters.
-  - **Verifier's correction:** Corrections: CSV cells are limited by the 1 MB file cap (recipe-import.ts:39), so about a minute, not half an hour. Ingredient row fields are limited by the 300,000-char JSON cap (recipe-form.ts:223), so about 25 s. Severity lowered from critical to high: it takes a deliberately hostile signed-in member, or a member importing a page built for this. Real text, even Zalgo text with its short runs of marks, never triggers it, and no data is lost.
-- [ ] **#2 High** Restore and save's id list has no size limit, so one 5 MB recipe save stalls the app and takes about 1.8 GB
-  - **Where:** `src/lib/server/recipe-form.ts:378`, `src/lib/server/recipe-form.ts:406`, `src/routes/(app)/recipes/new/+page.server.ts:45`, `src/routes/(app)/recipes/[id]/edit/+page.server.ts:36`
-  - **Problem:** A member sends the editor's save (new recipe or edit) by hand with restoreItems set to 5 MB of commas. Each request stalls every household for about 10 seconds and leaves the process near 2 GB. Where Node's heap limit is 1 GB or less (Node sizes it from the machine's memory; the production server's is unknown) the process crashes until Dokku restarts it, and repeating the request keeps it down.
-  - **Fix:** Refuse restoreItems longer than about 1,000 characters before splitting (a recipe has at most 100 ingredients, so at most 100 ids), or use z.array(id).max(100) together with upgrading zod to 4.6.6 or later, whose fix for GHSA-mrhx-c7xc-m3w5 is what makes .max() stop early.
-  - **Also covers:** A signed-in member can make one recipe save take about 1 GB of memory and 1.7 s, through zod 4.6.5's collection check
-- [ ] **#3 High** Every form action accepts 5 MB bodies, though only recipe saves and imports need more than a few KB
-  - **Where:** `Dockerfile:21`, `src/hooks.server.ts:21`, `src/lib/server/forms.ts:55`
-  - **Problem:** Even with the two fixes above, a member's script can post 5 MB bodies to any small action (grocery add, rating, feedback). Each costs about a second of blocked event loop and about 200 MB, so a few requests a second keep the app unusable for every household.
-  - **Fix:** In handle, answer 413 when a request's content-length is over about 64 KB (or a POST has none) unless event.route.id is the recipe save or import route, the only ones that need 5 MB.
-  - **Verifier's correction:** Far worse on Node 24, which production runs: parsing a URL-encoded body is quadratic when its fields have no '=', so a crafted 5 MB post takes about 4 minutes, and a 1.28 MB one kept another household waiting about 5 s. Every action reads the body after its guard, so it needs a signed-in member. Fix correction: apply the 64 KB cap to URL-encoded bodies on every route, recipe save and import included. Those two forms send multipart (RecipeForm.svelte:240, recipes/import/+page.svelte:62), and SvelteKit's enhance sends URL-encoded bodies for every other form.
-- [ ] **#4 Low** Nothing limits how many feedback tickets a member can create in Jira
-  - **Where:** `src/routes/(app)/feedback/+page.server.ts:31`, `src/lib/server/jira.ts:64`, `src/routes/(app)/recipes/new/+page.server.ts:51`
-  - **Problem:** A member's script, a stuck client or a compromised account sends feedback in a loop. Each request becomes a real Task in the MEA backlog, labeled user-feedback and reported by the token's account, so thousands can land in minutes, Jira's rate limits then refuse real feedback, and cleanup is manual. Import from a link has the same gap: each request makes the server fetch up to 5 MB from any public site, with no per-person limit.
-  - **Fix:** Add a small in-memory limiter keyed by user id, for example 5 feedback tickets per 10 minutes and one link import at a time, answering with a form message such as 'You've sent a lot of feedback. Try again in a few minutes.'
-  - **Also covers:** Nothing limits how many feedback tickets or link imports a member can make
 - [ ] **#5 Low** Feedback's page field accepts line breaks, so a sender can add a fake From line to the Jira ticket
   - **Where:** `src/routes/(app)/feedback/+page.server.ts:23`, `src/lib/server/jira.ts:36`, `src/lib/server/jira.ts:50`
   - **Problem:** A member hand-crafts the feedback post. Every ticket's Jira reporter is the token's account (design 7), so the description is the only record of who sent it, and the first From and Household lines in it are the forged ones, against 'The sender and household come from the session.'
@@ -62,43 +44,18 @@ Items that share a cause or a fix:
   - **Problem:** A member of one household invites people another household means to invite, or a long list of addresses. The other household is told 'already has an invite' but can't see or cancel it, and neither can the admin. When the person signs in they land in the wrong household, whose members see their name and email, and only that household can remove them. Once MEA-26 sends invite emails, the missing cap also lets a member mail any number of addresses.
   - **Fix:** Keep invites per household and email so each household's invite stands on its own; when a person signing in has several, ask which household to join (or take the oldest and say so). Cap pending invites per household (for example 20) and list every pending invite on Admin.
   - **Notes:** Reopens design: 6.1 item 4 (inviting fails if the email already has an invite from any household)
-- [ ] **#7 Low** Import's summary travels in the Recipes address, so a link can show made-up text and wide files' redirects fail
-  - **Where:** `src/routes/(app)/recipes/import/+page.server.ts:20`, `src/routes/(app)/recipes/+page.svelte:26`
-  - **Problem:** (1) Anyone who can send a member a link to /recipes?imported=0&ignored=... makes the app's own status line say whatever they wrote, such as a fake 'session expired' notice. (2) A spreadsheet with a few hundred extra named columns imports its recipes, then the person gets an error page instead of the summary (nginx's default 8 KB request line is reached at about 240 such columns), so they may import the file again.
-  - **Fix:** Put only numbers in the address (imported, replaced, skipped and how many columns were ignored, read with Number()), or pass the summary as navigation state from the import page's enhance callback; name at most a few ignored columns, such as 'Step, Rating and 12 more'.
-- [ ] **#8 Low** The app sets no HSTS, nosniff, Referrer-Policy or Permissions-Policy, and endpoint error pages have no CSP
-  - **Where:** `src/hooks.server.ts:35`, `vite.config.ts:14`
-  - **Problem:** If production's nginx doesn't add HSTS, a first visit to meals.dev.boyersoftware.com over http can be intercepted before the redirect to https, and a fake sign-in page shown. Without nosniff, Referrer-Policy and Permissions-Policy the app relies on browser defaults. Any site can frame the static error pages (nothing on them to click, so little risk).
-  - **Fix:** Check production with curl -I first. Then in handle set x-content-type-options: nosniff, referrer-policy: strict-origin-when-cross-origin, permissions-policy: camera=(), microphone=(), geolocation=() (keeping screen-wake-lock for the cooking view), strict-transport-security: max-age=31536000 if nginx doesn't send it, and content-security-policy: frame-ancestors 'none' on text/html responses that have no CSP.
-- [ ] **#9 Low** Session and sign-in cookies lack the __Host- prefix, so a sibling dev.boyersoftware.com app could plant them
-  - **Where:** `src/lib/server/auth/session.ts:7`, `src/lib/server/auth/session.ts:79`, `src/routes/login/google/+server.ts:8`
-  - **Problem:** If any other app under dev.boyersoftware.com is compromised, it can set 'session=<attacker token>; Domain=dev.boyersoftware.com; Path=/groceries'. Browsers send the longer-path cookie first, so the victim's Meals requests use the attacker's session and whatever they add lands in the attacker's household. Planting state and verifier cookies the same way lets the attacker finish their own sign-in in the victim's browser.
-  - **Fix:** When served over https, name the cookies __Host-session, __Host-google_oauth_state and __Host-google_code_verifier, so browsers refuse copies set with a Domain attribute. Keep the plain names for http://localhost development.
 - [ ] **#10 Low** Import from a link's address check lets through NAT64, 6to4 and other non-public ranges
   - **Where:** `src/lib/server/recipe-page.ts:16`, `src/lib/server/recipe-page.ts:32`, `src/lib/server/recipe-page.spec.ts:15`
   - **Problem:** On a host that reaches IPv4 through NAT64 (IPv6-only servers or subnets), a member imports http://[64:ff9b::a00:5]/ and the gateway carries the request to 10.0.0.5 on the private network, which design 4.5 says is never fetched. Where a machine's own or neighboring addresses sit in an unlisted range, as this review container's 192.0.2.2 does, its services are reachable the same way. Docker's default 172.17.0.0/16 is blocked, so today's Dokku host is likely unaffected.
   - **Fix:** Refuse every IANA special-purpose block that isn't globally reachable (for example 192.0.0.0/24, 198.18.0.0/15, 240.0.0.0/4, the TEST-NETs, multicast, ::/96, 64:ff9b::/96, 64:ff9b:1::/48, 2002::/16, 2001::/32), or check the IPv4 address embedded in NAT64 and 6to4 addresses against the IPv4 list. Add them to PRIVATE_LINKS in the spec and mention NAT64 in design 4.5.
-- [ ] **#11 Low** Import from a link reads any number of ingredients and steps, and any nesting depth, from a page
-  - **Where:** `src/lib/recipe-schema.ts:117`, `src/lib/recipe-schema.ts:131`, `src/lib/recipe-schema.ts:20`, `src/routes/(app)/recipes/new/+page.server.ts:63`
-  - **Problem:** A broken page, or one built to be slow (the kind jsonLdBlocks and plain() already guard against), holds the server for about half a second per import, during which no household's page is served, and sends the person's phone tens of thousands of editor rows that Save would refuse.
-  - **Fix:** Stop reading at the editor's limits (100 ingredient rows, 10,000 characters of steps) and say the rest was left out, cap the depth findRecipe and stepLines follow (for example 32), and answer 'Couldn't find a recipe on that page.' if reading throws.
 
 ### Data integrity and races
 
-- [ ] **#12 Medium** Deleted grocery lines and requests give their id to the next new row, so a stale page's tap changes someone else's line or request
-  - **Where:** `src/lib/server/db/schema.ts:118`, `src/lib/server/db/schema.ts:414`, `src/lib/server/db/schema.ts:63`, `src/lib/server/db/schema.ts:285`
-  - **Problem:** Alice has Groceries open in the store, and Milk is the newest line (id 50). Bob deletes Milk and adds Eggs, which gets id 50. When Alice checks off Milk, the server marks Eggs received at her store, Milk drops off her list, and Bob sees Eggs as bought. On the Menu, a stale Remove on a request that someone already removed silently deletes the next request anyone made, with no undo. A stale Add on a date's page puts the other person's dish on the dinner and removes their request, though 6.12 says nothing changes when someone removed the request. This happens whenever the table's newest row is deleted and the next insert comes from the same household. Invites have the same problem with a stale Cancel.
-  - **Fix:** Declare grocery_needs.id, dish_requests.id and invites.id as integer('id').primaryKey({ autoIncrement: true }), the same as dinners, and run db:generate (drizzle-kit rebuilds the tables and keeps the ids). Add data tests that act on a deleted id after a new row has been inserted and expect a 404.
-  - **Verifier's correction:** Scope correction: an id is reused only when the deleted row had the table's highest id across all households and the next insert comes from the same household. The script got a 404 when the next insert came from another household, and when a line that wasn't the newest was deleted. On a small install that condition is likely, and undoing Need on the pantry checklist (pantry.ts:428, deleteLineIfToOrder) also deletes the newest line. users.id (schema.ts:34) has the same pattern for a stale Remove on the Household page (household/+page.server.ts:80), though that is rarer. Medium is right.
 - [ ] **#13 Medium** Didn't come, Got fewer and Undo can leave two To Order lines for one item, and the duplicate prompt updates only one
   - **Where:** `src/lib/server/data/needs.ts:154`, `src/lib/server/data/needs.ts:349`, `src/lib/server/data/needs.ts:390`, `src/lib/server/data/needs.ts:407`
   - **Problem:** In the store, Yogurt 3 cups is on the list. Someone taps Got fewer 2, realizes they got none, and taps the Received today line to undo it. The Walmart group now has two Yogurt rows (1 and 2 cups) instead of the original line of 3. Later someone adds Yogurt, sees 'Already on the list: 1 cups' and updates it to 5, meaning 5 in total, and the list now asks for 7.
   - **Fix:** When a line goes back to To Order (undoReceived, markDidntCome, or the Got fewer remainder) and the item already has a To Order line in the same unit, add its quantity to that line and delete it in the same transaction. Undoing a Got fewer split should merge it back into its remainder. At a minimum, addNeed's duplicate prompt and Update should cover every open To Order line for the item.
   - **Verifier's correction:** Correction: the Didn't come case is a fair two-line state, since 3 gal really are needed. The defects are that addNeed's prompt and Update cover only one To Order line, and that undoing a Got fewer doesn't restore the original line. Totals stay right unless someone edits one line thinking it's the only one.
-- [ ] **#14 Medium** Mark all ordered and Mark all received also change lines added after the page loaded, beyond the confirmed count
-  - **Where:** `src/lib/server/data/needs.ts:308`, `src/lib/server/data/needs.ts:329`, `src/routes/(app)/groceries/+page.server.ts:139`, `src/routes/(app)/groceries/+page.server.ts:146`
-  - **Problem:** One partner places the Walmart order on a laptop, with the list open next to the store's site. The tab stays visible, so it never reloads (Q11). Meanwhile the other partner adds Eggs at Walmart from a phone. The first confirms 'Mark 7 Walmart items as ordered?' and 8 lines become Ordered, Eggs included, though nobody ordered eggs. When the order arrives, Mark all received moves Eggs into history, and they are never bought.
-  - **Fix:** Send the ids of the lines the confirmation counted, or the count and the page's load time, and change only those. Alternatively, refuse with 'The list changed. Check it and try again.' when the number differs. Return how many lines changed so the page can say what it did.
 - [ ] **#15 Low** Two members removing each other at the same moment leaves a household with no members
   - **Where:** `src/lib/server/data/households.ts:48`, `src/hooks.server.ts:25`, `src/routes/(app)/household/+page.server.ts:80`
   - **Problem:** Members A and B both tap Remove on each other at nearly the same time, for example on a slow phone connection. The hook checks B's session when the headers arrive, A's removal deletes B, then B's action still runs and deletes A. The household is left with no members. Nobody can open it or invite into it again, and households can't be deleted (section 12), so its data is orphaned.
@@ -110,130 +67,25 @@ Items that share a cause or a fix:
   - **Fix:** In the setup action, catch createHousehold's 400 (the person already has a household) and redirect(303, '/') instead of letting it become an error page. Optionally disable Create household while the request is in flight.
   - **Verifier's correction:** Correction: production nginx buffers each request body before forwarding it, so 'both requests pass the hook before either body arrives' doesn't happen there. The second tap has to reach Node within the few milliseconds the first takes, which only happens if the network delivers both at once. What the person sees depends on order. SvelteKit 3 applies the error in place only while the page is still on /setup (is_current_location, client.js:3015). If the redirect has already navigated away, it navigates back to /setup with the error result. I didn't watch this in a browser, so the visible effect is unverified. The data stays correct.
   - **Notes:** Likely, not fully proven
-- [ ] **#17 Low** Cancelling an invite or removing a member that someone else already handled replaces the page with Not found
-  - **Where:** `src/lib/server/data/households.ts:54`, `src/lib/server/data/households.ts:107`, `src/routes/(app)/household/+page.server.ts:73`, `src/routes/(app)/admin/+page.server.ts:37`
-  - **Problem:** Two members both have Household open and both see Sam's pending invite. One cancels it, or Sam signs in, which deletes the invite. The other taps Cancel on the still-listed invite, and the whole Household page turns into the 'Not found' error page. The same happens with Remove for a member already removed, and with Cancel on the Admin page.
-  - **Fix:** Treat an invite or member that is already gone as done: return success so the list simply reloads, or return a form message such as 'That invite was already used or cancelled.'
-- [ ] **#18 Low** Copy a dinner copies the source dinner as it is now, not the group the picker showed
-  - **Where:** `src/lib/server/data/dinners.ts:707`, `src/lib/server/data/dinners.ts:715`, `src/lib/components/CopyDinner.svelte:147`, `src/routes/(app)/menu/[date]/+page.server.ts:136`
-  - **Problem:** Groups include today's dinner, which is the one most likely to change ('we went out instead'). Someone with a date page open picks the group and confirms replacing dishes, and gets Eating out, or dishes added to the latest dinner since, instead of what was listed.
-  - **Fix:** Send the group's dish ids with the copy and copy from the most recent dinner that still has exactly that set of non-archived dishes, or refuse with a message to pick again when none does.
-- [ ] **#19 Low** Rating a recipe is a server-side toggle, so a repeated tap clears the rating just set
-  - **Where:** `src/lib/server/data/dishes.ts:321`, `src/lib/server/data/dishes.ts:328`, `src/routes/(app)/recipes/[id]/+page.server.ts:70`, `src/routes/(app)/recipes/[id]/+page.svelte:108`
-  - **Problem:** On a slow phone connection someone taps 4 stars, sees nothing change yet and taps 4 again, or double-taps. Both posts reach the server. The first sets 4 and the second clears it, so the recipe ends up unrated by them and their vote leaves the household average.
-  - **Fix:** Make the action idempotent: each star posts the result the page intends, based on the page's own ownRating (stars=4, or clear when 4 was already shown as theirs), and rateDish sets exactly that. Alternatively, disable the stars while a rating save is in flight.
-- [ ] **#20 Low** A recipe save commits its details and its photo key in two separate transactions
-  - **Where:** `src/lib/server/recipe-form.ts:501`, `src/lib/server/recipe-form.ts:506`, `src/lib/server/data/dishes.ts:276`, `src/lib/server/data/dishes.ts:290`
-  - **Problem:** If setDishPhoto fails, for example with SQLITE_BUSY after the 5 s busy_timeout while the other container holds the lock during a deploy, or with an I/O error, the action returns a 500 even though the recipe's other changes are already saved, without the photo. For a new recipe, saving again says 'A recipe is already called Chili.'
-  - **Fix:** Pass the photo change into createDish and updateDish so the details and photo_key are written in one transaction. Keep deleting the replaced photo's files only after that transaction commits.
-- [ ] **#21 Low** Requests and ratings point at users through single-column keys, so the database accepts a member of another household
-  - **Where:** `src/lib/server/db/schema.ts:265`, `src/lib/server/db/schema.ts:419`, `src/lib/server/db/schema.ts:31`, `docs/design.md:255`
-  - **Problem:** Design 4.5 says references between household-owned rows use composite keys, so the database rejects a row that points at another household's data, even if someone tampers with a form. For the person who asked for a request and the person who rated a recipe, only the code enforces this. A future bug that takes a user id from input would show another household's member under 'Asked by' or in the recipe's list of who rated it (MEA-32), and would count their stars.
-  - **Fix:** Give users a unique (household_id, id) key and make dish_requests.user_id a composite foreign key with ON DELETE CASCADE. For dish_ratings, use a composite foreign key with no action, and have removeMember clear that member's ratings' user_id in the same transaction, because SET NULL would also empty household_id. Otherwise, document the exception in 4.5.
 - [ ] **#22 Low** Undoing a check-off made through Where did you get it? keeps the picked store on the line and as the default
   - **Where:** `src/lib/server/data/needs.ts:407`, `src/lib/server/data/needs.ts:303`
   - **Problem:** In the store, someone taps the wrong store under 'Where did you get it?', sees the line under Received today and taps it again, as section 11 suggests for mis-taps. The line moves from No store to Aldi, and the next time Paper towels is added, Aldi is filled in instead of Walmart.
   - **Fix:** Keep what the check-off replaced (the line's store and the item's previous default store) so undoReceived can restore both. At a minimum, put the line back under No store when its store was picked during the check-off.
   - **Verifier's correction:** Correction: the default goes back to Walmart once the line is checked off at Walmart. The lasting effect is that the line now sits in the Aldi group, so its circle no longer asks for a store, and a second tap records Aldi in history unless someone edits the store first. Putting the line back under No store needs its earlier store saved, and the schema has no column for that.
-- [ ] **#23 Low** Items, stores, members and the admin's households list sort names that start with an accented letter after Z
-  - **Where:** `src/lib/server/data/items.ts:123`, `src/lib/server/data/stores.ts:14`, `src/lib/server/data/households.ts:43`, `src/lib/server/data/households.ts:122`
-  - **Problem:** order by lower(name) only folds A to Z and compares bytes, so any name that starts with a non-ASCII letter comes after every ASCII name. 'Éclairs' sits below 'Zucchini' on Items, and 'Épicerie' is the last store on Groceries and Household. Recipes and tags sort correctly, so the pages don't agree.
-  - **Fix:** Sort these lists in JavaScript with localeCompare or an Intl.Collator, as listDishes and listDishTags already do, instead of order by lower(name).
 
 ### CSV import and Import from a link
 
-- [ ] **#24 High** CSV files that aren't UTF-8, such as Excel's default CSV on Windows, import as garbled text and junk items
-  - **Where:** `src/lib/server/recipe-import.ts:245`, `src/lib/server/recipe-import.ts:34`, `src/routes/(app)/recipes/import/template/+server.ts:7`
-  - **Problem:** Someone downloads the template, fills it in with Excel on Windows and saves it as CSV (Comma delimited), which is Windows-1252. A file without a byte order mark is typically opened and saved that way. Every °, ½, é and ñ in names, ingredients and steps becomes �, amounts written as ½ are lost, and garbled items join the catalog and grocery suggestions. Recipes and items can only be archived (E3), so the garbled names stay taken.
-  - **Fix:** Decode with `new TextDecoder('utf-8', { fatal: true })`. When that fails, decode as windows-1252 or list a problem such as 'Save the file as CSV UTF-8, then import it again.' Start the template with a UTF-8 byte order mark so Excel keeps it UTF-8.
-  - **Verifier's correction:** Correction to the scenario: the garbled names aren't stuck. Items can be renamed on Items (groceries/items/+page.server.ts:35 updateItem), and recipes in Edit recipe. Cleanup is manual one by one, though, and renaming to a name already in the catalog is refused as taken, so those items have to be archived and the ingredient picked again.
-- [ ] **#25 Medium** A large CSV import runs for seconds to minutes inside one write transaction, freezing the whole app
-  - **Where:** `src/lib/server/recipe-import.ts:247`, `src/lib/server/recipe-import.ts:167`, `src/lib/server/recipe-import.ts:260`, `src/lib/server/data/items.ts:37`
-  - **Problem:** A member imports a spreadsheet with a few thousand short rows, or about 2,000 full recipes. importRecipeFile parses, checks and saves everything inside one immediate transaction. better-sqlite3 is synchronous, so the single Node process serves no page for any household until it finishes: about 2 minutes at 20,000 rows, growing roughly with the square of the row count. During a deploy, the other container's writes give up after the 5 s busy_timeout. Past the proxy's 60 s timeout the importer gets an error page although the import still commits. The duplicates step runs the same lookups twice.
-  - **Fix:** Parse and check the file (readFile) before taking the lock. Inside the transaction, load the household's items and dish names once into Maps keyed by foldCase and use them for the duplicate, archived-item and item lookups (or keep an indexed folded-name column), and insert rows in bulk. Cap the rows per file, and document the 1 MB and row limits in design.md section 7.
-- [ ] **#26 Medium** A stray or unclosed quote in a CSV silently merges the following rows into one cell
-  - **Where:** `src/lib/csv.ts:16`, `src/lib/csv.ts:22`, `src/lib/csv.ts:34`
-  - **Problem:** A file written by hand or exported by another recipe app has an unescaped inch mark (Use a 9" pan) or a missing closing quote. The import reports success for fewer recipes than the file has. The rest of the file ends up inside one recipe's notes or steps, the quote character is dropped, and nothing says rows were lost.
-  - **Fix:** Treat a quote as opening a quoted cell only at the start of a cell, and keep it as a literal character elsewhere, as spreadsheets do. When the file ends inside a quoted cell, report a problem on the row where the quote opened.
-- [ ] **#27 Medium** Line breaks inside an Ingredients or Steps cell are collapsed into one entry, creating a junk catalog item
-  - **Where:** `src/lib/server/recipe-import.ts:65`, `src/lib/server/recipe-import.ts:92`, `src/lib/server/recipe-import.ts:102`, `src/lib/text.ts:3`
-  - **Problem:** People who already keep recipes in a spreadsheet usually list ingredients one per line inside a cell (Alt+Enter). Importing that sheet succeeds, but each recipe has one long ingredient and one step. The catalog gains an item per recipe that appears in grocery suggestions and can only be archived (E3).
-  - **Fix:** Split Ingredients and Steps cells on line breaks as well as |, or at least report a problem such as 'Row 2: put | between ingredients' when an entry contains a line break. The Ingredients half may overlap MEA-40; Steps cells have the same problem.
-  - **Verifier's correction:** Correction: a typical 8-ingredient cell is refused instead of imported (linebreaks2.mjs), with "Row 2: '2 cups flour 1 tbsp sugar ...': keep the item under 80 characters." That message is confusing but not silent. Only short lists import as junk. Steps cells are always collapsed silently, even though the editor stores steps one per line (design 7, Edit recipe), so splitting Steps on line breaks fits the app. The Ingredients half may fall under MEA-40. The Steps half isn't tracked.
-- [ ] **#28 Medium** Ingredient splitting turns common phrasings into wrong catalog items such as 'of garlic' and '500g flour'
-  - **Where:** `src/lib/ingredient-text.ts:39`, `src/lib/ingredient-text.ts:89`, `src/lib/ingredient-text.ts:99`, `src/lib/server/recipe-import.ts:80`
-  - **Problem:** A CSV import has no review step, so each of these becomes a new catalog item ('of garlic' beside 'garlic') that shows in grocery suggestions, and a recipe whose amount was lost can't scale it. Import from a link uses the same splitter, but there the person sees the rows before saving.
-  - **Fix:** Drop a leading 'of' after a unit, read a unit attached to the number (500g, 1/2cup), and treat a parenthesized size after the amount as a prep note or the unit's size. Consider listing the new item names in the import's confirmation step so bad splits are caught before they're saved.
-  - **Also covers:** Also: Ingredient splitting turns common phrasings into wrong catalog items such as 'of garlic' and '500g flour'
-  - **Notes:** MEA-40
-- [ ] **#29 Low** Pages in a non-UTF-8 charset import with garbled text and lost amounts; compressed answers find no recipe
-  - **Where:** `src/lib/server/recipe-page.ts:95`, `src/lib/server/recipe-page.ts:68`
-  - **Problem:** Someone imports from an older recipe site that serves ISO-8859-1 or windows-1252. Every é, ° and ½ becomes �, an amount written as ½ is lost, and on Save the garbled names join the catalog. A server that compresses its answer anyway gets 'Couldn't find a recipe on that page.' though the page has one. (The CSV import's encoding problem is a separate, reported finding.)
-  - **Fix:** Decode with the charset from Content-Type, else from a meta charset or http-equiv in the first 1,024 bytes, through TextDecoder (Node's ICU knows windows-1252 and ISO-8859-x), defaulting to UTF-8. Gunzip within the 5 MB budget, or treat as not opened, when Content-Encoding isn't identity.
-- [ ] **#30 Low** A JSON-LD block with a raw line break or tab inside a string is skipped, so its recipe isn't found
-  - **Where:** `src/lib/server/recipe-page.ts:149`
-  - **Problem:** A site whose theme builds its JSON-LD by pasting the description or steps into a template leaves line breaks raw. Browsers and search engines read it, but Import says 'Couldn't find a recipe on that page.' Common JSON-LD extractors parse leniently for this reason (Python's extruct uses json.loads with strict=False).
-  - **Fix:** When JSON.parse fails, try again after replacing each character from U+0000 to U+001F with a space, which is valid both inside strings and between tokens.
-  - **Verifier's correction:** Corrections: browsers don't read JSON-LD at all, and how often real recipe sites ship raw control characters is unverified. The suggested fix is wrong as written: turning U+0000 to U+001F into spaces merged 'Mix.(LF)Bake.' into the single step 'Mix. Bake.', because stepLines splits on line breaks (recipe-schema.ts:133). Escaping control characters inside strings (LF as \n, tab as \t) keeps the steps apart.
 - [ ] **#31 Low** Imported text keeps references like &eacute; and &reg;, and &#146; becomes an invisible control character
   - **Where:** `src/lib/recipe-schema.ts:35`, `src/lib/recipe-schema.ts:62`
   - **Problem:** Someone imports a recipe whose JSON-LD escapes accented letters or symbols. The editor shows 'jalape&ntilde;o', and saved without noticing it becomes a catalog item and grocery suggestion that can only be archived. Design 7 says character references are taken out of the text.
   - **Fix:** Decode every HTML5 named reference (a complete table, or the entities package's decodeHTML) and map &#128; to &#159; to their windows-1252 characters, as the HTML spec does.
-- [ ] **#32 Low** Nutrition written with a thousands separator, such as '1,250 kcal', imports as 1
-  - **Where:** `src/lib/recipe-schema.ts:154`
-  - **Problem:** A hearty dish's page gives 1,250 calories per serving. Calories fills in as 1, a plausible-looking number that gets saved, and the recipe's nutrition is wrong from then on.
-  - **Fix:** Drop commas between digit groups (a comma followed by exactly three digits) before reading the number, and leave the field blank rather than guess for other comma forms.
-
-### Amounts and units
-
-- [ ] **#33 Medium** Units typed as 'T.', 't.', 'Tb' or 'TB' aren't read as tablespoon or teaspoon, and import makes items like 'T. butter'
-  - **Where:** `src/lib/units.ts:77`, `src/lib/units.ts:45`, `src/lib/units.ts:49`, `src/lib/ingredient-text.ts:53`
-  - **Problem:** A family recipe card typed into the editor as '1 T. butter' and '1 t. vanilla' keeps the custom units 'T.' and 't.', so at 4x the recipe shows '4 T.' instead of '1/4 cup', and the hidden checklist would show '1 tbsp + 2 T.'. In Import recipes or Import from a link, the same line has no unit and creates a catalog item named 'T. butter', which then appears in grocery suggestions. 'Tb' (Julia Child's spelling) and 'TB' behave the same. The cause is normalizeUnit, separate from the reported 'of garlic' / '500g flour' splitting finding; the import half overlaps MEA-40, but typed units are affected too.
-  - **Fix:** In normalizeUnit, drop a trailing period before the case-sensitive t/T check, so 'T.' is tbsp and 't.' is tsp, and add 'tb' to the tbsp spellings (covering Tb, TB and Tb.). Add these spellings to units.spec.ts.
-- [ ] **#34 Low** An amount with a digit after a fraction character, such as '½1', saves as 1/21 instead of being refused
-  - **Where:** `src/lib/amounts.ts:32`, `src/lib/server/recipe-form.ts:298`, `src/lib/server/recipe-form.ts:99`
-  - **Problem:** Someone edits an amount of '½' to make it 1½ but types the 1 after the glyph, giving '½1'. Instead of 'enter an amount like 1 1/2', Save accepts 1/21 cup. The recipe shows '0.048 cup Sugar', and the editor reopens with '0.047619047619047616'.
-  - **Fix:** Put a space after the expanded fraction too (` ${GLYPHS[glyph]} `), so '½1' becomes '1/2 1', which FRACTION rejects. Add '½1' to the rejected list in amounts.spec.ts.
-- [ ] **#35 Low** Got fewer and the duplicate sum use raw float math, leaving amounts like 0.19999999999999998 and a stuck 0 line
-  - **Where:** `src/lib/server/data/needs.ts:174`, `src/lib/server/data/needs.ts:373`, `src/lib/server/data/needs.ts:395`, `src/routes/(app)/groceries/+page.svelte:394`
-  - **Problem:** Turkey 1.1 lb is on the list and someone adds 2.2 lb more. The Update prompt's box reads 3.3000000000000003, and after Update the edit sheet's Quantity box shows the same. An order of 1.1 lb of beef arrives with 1 lb (Got fewer 1). On the next trip the last 0.1 lb is recorded with Got fewer 0.1, and a 'Beef 0 lb' line stays on the list until someone deletes it. Typing the amount the list shows into Got fewer gives 'Enter an amount less than 0.19999999999999998'.
-  - **Fix:** Round the result of quantity arithmetic in the data layer, for example with a shared helper that rounds to 3 decimals, in markGotFewer and in the duplicate sum. Treat a remainder that rounds to 0 as fully received, and format the quantity in the Got fewer error with formatQuantity. formatQuantity could also refuse to show 0 for a positive amount, as exactAmount in amounts.ts already does.
-- [ ] **#36 Low** The duplicate sum only matches identically spelled units, so 2 lb plus 1 lbs is not summed
-  - **Where:** `src/lib/server/data/needs.ts:119`, `src/lib/units.ts:73`
-  - **Problem:** Someone adds Butter 1 lbs while 2 lb is already on the list. The prompt offers 'Change it to 1 lbs' instead of 3 lb, and tapping Update drops the 2 lb already listed.
-  - **Fix:** Compare normalizeUnit(a) with normalizeUnit(b) in sameUnit, ignoring case for custom units, and pre-fill the existing line's unit when they match.
-
-### Sign-in and sessions
-
-- [ ] **#37 Medium** Every sign-in failure ends on SvelteKit's bare, unstyled error page with no way back to sign in
-  - **Where:** `src/routes/login/google/callback/+server.ts:14`, `src/routes/login/google/callback/+server.ts:23`, `src/routes/login/google/callback/+server.ts:25`, `src/routes/login/+page.svelte:1`
-  - **Problem:** Someone taps Cancel on Google's consent screen, takes more than 10 minutes at Google (the state cookie's Max-Age=600), gets a Google error, or presses Back after signing in and picks their account again. Because the callback is a +server.ts, error() skips +error.svelte and shows a plain '400 | Sign-in was cancelled...' page with nothing to tap. On a phone this is a dead end, even for someone who is in fact already signed in.
-  - **Fix:** In the callback, redirect(303, '/login?error=cancelled|failed|unverified') instead of calling error(), and show the matching message above 'Sign in with Google' on the login page. If the state cookie is missing but the person already has a valid session, redirect to '/'.
-- [ ] **#38 Low** The Google token exchange has no timeout, so a slow Google holds the sign-in page for up to five minutes
-  - **Where:** `src/lib/server/auth/google.ts:62`
-  - **Problem:** Google's token endpoint accepts the connection but stalls. The callback request hangs for up to 5 minutes, and the person stares at a blank loading page before getting the failure page.
-  - **Fix:** Pass signal: AbortSignal.timeout(10_000) to the token fetch. The callback's existing catch already turns the abort into 'Google sign-in failed. Please try again.'
-  - **Verifier's correction:** Correction: in production, Dokku's nginx proxy_read_timeout (60 s by default) ends the request first with nginx's own 504 page. So the person waits about a minute and then sees a non-app error page, not five minutes followed by the callback's message. AbortSignal.timeout(10_000), matching the 10 s limit design 4.5 sets for import fetches, would show 'Google sign-in failed. Please try again.' through the existing catch. Google's token endpoint rarely stalls, so low.
-- [ ] **#39 Low** Expired sessions are never deleted, because the browser drops the cookie when the session expires
-  - **Where:** `src/lib/server/auth/session.ts:55`, `src/lib/server/auth/session.ts:83`, `src/routes/login/google/callback/+server.ts:40`
-  - **Problem:** The cookie's Expires equals the row's expiresAt, so at expiry the browser stops sending the token and the 'expired, delete it' branch effectively never runs. Every session that ends without Sign out (a phone no longer used, cleared browser data, signing in again) stays in the sessions table and every nightly backup forever.
-  - **Fix:** Delete expired rows (delete from sessions where expires_at <= now) when a session is created at sign-in, or once at startup.
 
 ### Database, migrations, deploy and operations
 
-- [ ] **#40 Medium** A whats_new_seen version this build doesn't list makes every signed-in page fail with a 500
-  - **Where:** `src/lib/server/data/whats-new.ts:14`, `src/lib/server/data/whats-new.ts:31`, `src/routes/(app)/+layout.server.ts:14`, `src/lib/server/data/whats-new.spec.ts:102`
-  - **Problem:** A release is rolled back, or an older image redeployed, after people opened What's new on it, so their whats_new_seen holds a version the running build doesn't list. The (app) layout load throws for each of them on every page, so Groceries, Menu, Recipes and the rest show the bare error page, which has no More menu leading to What's new.
-  - **Fix:** Treat a seen version that isn't listed as having seen every listed release (no dot) instead of throwing, and change the spec to expect that, so the layout's dot check can never fail a page.
-  - **Notes:** MEA-63
 - [ ] **#41 Medium** Running the Deploy workflow by hand on any branch deploys that branch to production
   - **Where:** `.github/workflows/deploy.yml:13`, `.github/workflows/deploy.yml:49`, `.github/workflows/deploy.yml:56`
   - **Problem:** Someone, or an agent with the GitHub Actions tool, clicks Run workflow on claude/mea-63 to re-run the checks. When the checks pass, that unmerged branch is built, tagged latest and deployed, and its migrations run on the production database. The branch stays live until the next push to main. Its migration is already recorded, so if review later changes that migration, the merged version never applies (see the reported 'migrate() skips a migration whose timestamp is older... and never notices an edited migration').
   - **Fix:** Add "&& github.ref == 'refs/heads/main'" to the deploy job's if, or put the job in a 'production' environment whose deployment rule only allows main.
-- [ ] **#42 Medium** No safe rollback: README has no steps, nothing is copied before migrating, and rolling back over 0014 breaks pages after the next deploy
-  - **Where:** `.github/workflows/deploy.yml:71`, `src/lib/server/db/index.ts:20`, `drizzle/0014_whats-new-seen-version.sql:13`, `src/lib/server/data/whats-new.ts:14`
-  - **Problem:** 1.9 ships a bug, and someone redeploys the 1.8 image as the comment suggests. On 1.8 everyone sees the What's new dot, because '2026-11-02' > '1.8' as strings. A member opens What's new, which saves a date. When the fix deploys as 1.9.1, 0014 does not run again, and every page fails for that member. A data migration that goes wrong can only be undone from the last nightly backup, which can lose up to a day of every household's changes.
-  - **Fix:** Before applying pending migrations, have migrate() copy the database with SQLite's online backup into backups/pre-migrate-<time>/, kept apart from the 14 nightly copies. Add a README 'Rolling back' section: redeploy an older image only when no migration landed in between; otherwise stop the app, restore that pre-migrate copy, then deploy the older image. MEA-63 would make this particular roll-forward harmless.
 - [ ] **#43 Low** migrate() skips a migration whose timestamp is older than the newest applied one, and never notices an edited migration
   - **Where:** `src/lib/server/db/index.ts:55`, `src/lib/server/db/index.ts:59`, `src/lib/server/db/index.ts:69`, `src/lib/server/db/migrate.spec.ts:41`
   - **Problem:** Two sprint tickets are built in parallel sessions, and both run db:generate. B merges and deploys first. A then merges main, settles the drizzle/meta conflict by renumbering its entry after B's, and keeps the when value it was generated with. Every test passes because freshDb applies the whole journal, and /healthz only runs select 1, so the deploy goes green. Production never gets A's column or table, and the pages that use it fail with 'no such column'. In the same way, a fix to a hand-written custom migration (like 0009 or 0014) after it deployed changes fresh databases but never production.
@@ -248,10 +100,6 @@ Items that share a cause or a fix:
   - **Problem:** During the deploy that added 0014, someone opens What's new on the old container after the new one has already changed dates to versions. Their row gets '2026-11-02' again. From then on, the (app) layout load throws on every page they open, including What's new itself, so it can't fix itself without a database edit. Rolling back to an older image is the same kind of problem: the old image's migrate() applies nothing, so the old code runs against the newer schema.
   - **Fix:** Add a rule to the Database section of AGENTS.md: a migration must leave the previous release working (add things first, and convert or drop them in a later release), and a data conversion ships with code that still reads the old form. Note rollback limits in README. MEA-63 covers making the What's new check accept unknown values.
   - **Verifier's correction:** Corrections: the exposure is only the seconds between the new container's startup migration and Dokku's traffic switch, and the 0014 deploy is already past. 'Can't fix itself without a database edit' is overstated. SvelteKit 3.0.0 starts every server load before awaiting any (node_modules/@sveltejs/kit/src/runtime/server/page/index.js:168), so a visit to /whats-new runs that page's load (whats-new/+page.server.ts:9), which records '1.9', and the next page works. A member wouldn't know to type that URL, though, because the root +error.svelte only links to /. MEA-63 (open) covers tolerating an unknown version.
-- [ ] **#46 Low** /healthz passes when the database can't be written to, and doesn't say which version is answering
-  - **Where:** `src/routes/healthz/+server.ts:7`, `src/hooks.server.ts:17`, `.github/workflows/deploy.yml:121`
-  - **Problem:** After restoring a backup onto a new server, meals.db is left owned by root because README's chown step was skipped. The app starts and passes both Dokku's check and the deploy's curl. Then every save in every household fails with a 500.
-  - **Fix:** In init, refuse to start unless DATA_DIR, meals.db and photos/ are writable (fs.accessSync with W_OK; this works because the app runs as uid 1000, not root). Have /healthz return the commit it was built from, passed in as a build arg, so the deploy step can check that the new version is the one answering.
 - [ ] **#47 Low** Server errors are logged as bare stack traces with no page or person, and nothing tells anyone they happened
   - **Where:** `src/hooks.server.ts:13`, `src/routes/+error.svelte:7`, `src/routes/(app)/+layout.svelte:59`
   - **Problem:** A member hits a 500, for example the What's new crash in the rollback finding. dokku logs shows a stack trace with no path, method, person or household, and nobody is told. The member has no reference to quote and no Feedback button on that page, so the error is likely never reported.
@@ -262,78 +110,28 @@ Items that share a cause or a fix:
   - **Problem:** Suppose one of those tags is repointed to a malicious commit, as happened to tj-actions/changed-files in March 2025. Its post step can read the deploy key. That key can run dokku git:from-image, so it can deploy any image to meals.dev.boyersoftware.com, with every household's data and the Google and Jira secrets inside.
   - **Fix:** Pin each action to a full commit SHA, with the version in a comment, and let Dependabot's github-actions updates bump them. Remove the key when the step ends (trap 'rm -f ~/.ssh/id_ed25519' EXIT), or load it into ssh-agent instead of writing a file.
   - **Verifier's correction:** Correction: the repo has no .github/dependabot.yml (.github holds only workflows/), so 'let Dependabot bump them' means adding one. This part of the workflow is unchanged from the shared placeholder pipeline (01bb5f7), so the sibling dev.boyersoftware.com projects have it too.
-- [ ] **#49 Low** The deploy trusts whatever SSH host key the server's address presents on each run
-  - **Where:** `.github/workflows/deploy.yml:92`
-  - **Problem:** Anyone who can intercept the runner's connection to the server's IP can answer as Dokku with their own host key. The run 'deploys' to them, the final curl reaches the real site and gets the old version's ok, and the workflow goes green with nothing deployed. The deploy key's signature can't be replayed against the real server, so this is a silently skipped deploy, not a takeover.
-  - **Fix:** Save the server's ed25519 host key line as a DOKKU_KNOWN_HOSTS secret or variable, write it to known_hosts instead of scanning, and add it to README's secrets table.
 - [ ] **#50 Low** Routine updates are pending, including vite's dev-server advisories, and nothing like Dependabot surfaces them
   - **Where:** `package.json:27`, `package.json:40`, `package.json:22`
   - **Problem:** Advisories such as zod's and vite's stay in the lockfile until someone runs npm audit by hand. Today nothing in CI or the repo would raise them.
   - **Fix:** Run npm update (only package-lock.json changes), run the three checks, and commit. Playwright 1.64 brings a new Chromium, so watch the touch tests. Hold TypeScript at 6.x until svelte-check supports 7, and keep @types/node on 24 to match the Node 24 runtime. Add .github/dependabot.yml for npm, github-actions and docker.
   - **Verifier's correction:** corrections. npm outdated (read-only) matches the list. It also shows zod 4.6.5 to 4.6.7 and @types/node 24.19.2, all within the existing ranges. npm audit without fix (saved to (review script)) reports vite 8.3.0-8.3.2 with one high advisory, GHSA-587h-7wmj-h5pm (launch-editor, Windows only), plus moderate and low ones, all fixed in 8.3.5. These live in the dev server. /__open-in-editor is mounted in createServer (node_modules/vite/dist/node/chunks/node.js:24891) but not in preview() (:35414 on, static serving only), so the `vite preview` the browser tests use is mostly not exposed.
-- [ ] **#51 Low** package.json allows Node 22.17 and 25, but the browser tests need 22.18 or later and vitest refuses 25
-  - **Where:** `package.json:7`, `playwright.config.ts:25`, `.npmrc:1`, `AGENTS.md:9`
-  - **Problem:** On Node 22.17, npm ci passes but npm run test:e2e fails at startup. On Node 25, npm ci refuses to install vitest, although package.json says anything from 22.17 up is fine.
-  - **Fix:** Declare the range the repo really supports (for example '^22.18 || ^24'). Add a .node-version file with 24, use node-version-file in setup-node, and update AGENTS.md's 22.17 line. A later Node upgrade is then one file plus the Dockerfile.
-
-### Performance
-
-- [ ] **#52 Low** Recipes, the Menu and each date's page read every household's ingredients or dinner dishes on every load
-  - **Where:** `src/lib/server/data/dishes.ts:488`, `src/lib/server/data/dinners.ts:755`, `src/lib/server/db/schema.ts:239`, `src/lib/server/db/schema.ts:325`
-  - **Problem:** Neither table has an index that starts with household_id, so the per-household counts read every household's rows. The cost lands on the Recipes page (every search and tag tap), the Menu page and every date page, and it grows with all households' data rather than with the household's own data.
-  - **Fix:** Add index('dish_ingredients_household_dish').on(t.householdId, t.dishId) and index('dinner_dishes_household_dish').on(t.householdId, t.dishId), then run db:generate.
-- [ ] **#53 Low** Every date page load, and the reload after each change on it, sends every past Copy a dinner group
-  - **Where:** `src/routes/(app)/menu/[date]/+page.server.ts:60`, `src/lib/server/data/dinners.ts:645`
-  - **Problem:** A household that has planned for a few years: every tap on a date's page (type, add a dish, role, copy, request) reloads about 130 KB, mostly a list nobody opened, and it grows every week. On a phone over cellular each tap waits for it.
-  - **Fix:** Send only what the picker first shows (for example the 30 most-made groups) and search the rest on the server as the person types, or fetch the groups when Copy a dinner opens, so they stay out of the data that reloads after every change.
-- [ ] **#54 Low** dateIn builds a new Intl.DateTimeFormat on every call, slowing the Items and History loads as data grows
-  - **Where:** `src/lib/dates.ts:3`, `src/routes/(app)/groceries/items/+page.server.ts:18`, `src/routes/(app)/groceries/history/+page.server.ts:20`
-  - **Problem:** After a few years of use, each Items page load, and each History load after several Show older taps, blocks the single Node process for about 100 ms. Pages reload every time someone returns to the tab (Q11).
-  - **Fix:** Cache one Intl.DateTimeFormat per time zone in a Map in dates.ts and call formatToParts on the cached formatter.
 
 ### Tests and tooling
 
-- [ ] **#55 Medium** The swipe test at menu.e2e.ts:3082 fails on full Chrome because its two-finger stroke leaves a phantom finger down
-  - **Where:** `tests/e2e/menu.e2e.ts:3082`, `tests/e2e/menu.e2e.ts:3103`, `tests/e2e/menu.e2e.ts:3114`, `src/routes/(app)/menu/+page.svelte:176`
-  - **Problem:** Run npm run test:e2e with PW_CHROMIUM_PATH=/opt/pw-browsers/chromium (the setup AGENTS.md offers) or Playwright's channel 'chromium'. After the two-finger stroke at line 3103, full Chrome's CDP touch emulation keeps finger 1 down at its last point for the rest of the page, so every later one-finger gesture reports touches.length 2. The heading and scroll checks then pass only because they look like pinches, and the final real swipe at line 3114 is ignored: 8 of 8 runs fail. Real phones get each finger from the OS and can't produce the phantom, and a swipe right after a fling works, so people are not affected; the app's swipe code is fine. CI is green only because it uses chrome-headless-shell.
-  - **Fix:** Move the two-finger case into its own test (each test gets a fresh page, the only thing that clears the phantom) or make it the last gesture of this test, after the real swipe, with a comment saying why. No app change.
-  - **Verifier's correction:** Correction: the heading and slanted-scroll checks would pass even without the phantom. The heading is outside ol.days, and 70 across by 300 up fails the 2x rule, so the phantom only stops them from testing the pinch rule. live-menu-recipes-18 has the same root cause. I did not run npx playwright test (not allowed), but the replay fails the same way every time.
-- [ ] **#56 Low** The sign-in callback's refusals (bad state, unverified email) and its success path have no tests
-  - **Where:** `src/routes/login/google/callback/server.spec.ts:1`, `src/routes/login/google/callback/+server.ts:14`, `src/routes/login/google/callback/+server.ts:25`
-  - **Problem:** A refactor that drops 'if (!claims.email_verified)' or loosens the state comparison passes all 682 tests, and the push to main deploys it. An unverified address could then match an invite, or a forged callback could sign someone in.
-  - **Fix:** Add callback tests for: state mismatch or missing cookies (400, both cookies deleted), email_verified false (403, no user row created), and an invited sign-in (session cookie set, 303 to /).
-  - **Verifier's correction:** Correction: tests/e2e/items.e2e.ts:91-95 does cover a forged callback with no cookies (400 and the message), so removing the whole state check would fail a test. Not covered: a state cookie that is present but different (the state !== storedState comparison alone), email_verified false (403 with no user row created), a failed Google exchange (400), and the success path that sets the session cookie and redirects to '/'. google.spec.ts covers exchangeCode's iss, aud and exp checks, and sign-in.spec.ts covers the invite rules, but nothing ties them to the callback.
 - [ ] **#57 Low** Nothing in CI checks that the migrations in drizzle/ still match schema.ts
   - **Where:** `.github/workflows/deploy.yml:41`, `src/lib/server/db/schema.ts:1`, `drizzle.config.ts:4`
   - **Problem:** Someone adds an index or a CHECK to schema.ts and forgets npm run db:generate. The code type-checks and every test passes, because tests build their database from drizzle/. Production never gets the change, and the next unrelated db:generate pulls it into someone else's migration.
   - **Fix:** Add a Vitest spec that builds the schema from schema.ts with drizzle-kit's API (or generates it into a temporary folder) and compares it with freshDb()'s tables, indexes and constraints, the same way compare-schema.mjs does.
-- [ ] **#58 Low** CI tests SvelteKit's preview server and its own build, never the Docker image or adapter-node server that production runs
-  - **Where:** `playwright.config.ts:31`, `Dockerfile:21`, `Dockerfile:3`, `Dockerfile:15`
-  - **Problem:** Someone drops or mistypes ENV BODY_SIZE_LIMIT=5M in the Dockerfile. The type check, unit tests, browser tests and Dokku's /healthz all pass, and in production every recipe save with a photo over 512 KB fails.
-  - **Fix:** In CI, build the Docker image once and run it with the test settings and an empty DATA_DIR. Point the browser tests at it, or at least a smoke set (/healthz, a session sign-in, a 3 MB photo save). Then push and deploy that same image. Pin node:24-slim by digest and let Dependabot's docker updates move it.
-- [ ] **#59 Low** A test.only left in a browser test would let CI pass and deploy with the rest of the suite skipped
-  - **Where:** `playwright.config.ts:10`
-  - **Problem:** A test.only is left in menu.e2e.ts after debugging one test. CI's e2e step runs that one test and reports success, and the deploy job ships with the other 164 browser tests skipped.
-  - **Fix:** Add forbidOnly: !!process.env.CI to playwright.config.ts.
 - [ ] **#60 Low** CI throws away the traces of failed browser tests and the visual-review screenshots it spends time making
   - **Where:** `.github/workflows/deploy.yml:45`, `playwright.config.ts:19`, `tests/e2e/screens.e2e.ts:14`
   - **Problem:** A browser test fails only on CI, like the touch test that fails only on full Chrome. The only record is a one-line annotation, so nobody can open the trace. The screens test runs in every pipeline and produces nothing anyone can see.
   - **Fix:** After the e2e step, add actions/upload-artifact (pinned by SHA) with if: ${{ !cancelled() }}, path test-results/ and a short retention. Either skip screens.e2e.ts on CI or keep its screenshots in that artifact.
   - **Verifier's correction:** correction: the 'github' reporter (playwright/lib/runner/index.js:3295-3376) emits each failure's header, error message and stack as an error annotation, so it is more than one line. What is lost is the trace (DOM snapshots, network, console) and the screenshots. Low.
-- [ ] **#61 Low** No test checks that another household's store or item can't be renamed or archived
-  - **Where:** `src/lib/server/data/stores.ts:58`, `src/lib/server/data/stores.ts:72`, `src/lib/server/data/items.ts:139`, `src/lib/server/data/items.ts:154`
-  - **Problem:** A refactor drops or moves the getStore/getItem call. A member could then rename or archive another household's store or item by posting its id, and no test would fail.
-  - **Fix:** Add stores.spec.ts and items.spec.ts with cross-household cases: expectHttpError(..., 404) and the row unchanged. Also add householdId to those four WHERE clauses.
-  - **Verifier's correction:** correction. stores.ts:58,72 and items.ts:139,154 update by id only, after getStore/getItem (stores.ts:19, items.ts:22) have checked the household. A copy of the reviewer's probe ((review script), run with openDb(':memory:')) returns 404 for all four today. No stores.spec.ts or items.spec.ts exists, though every other data module has a spec. There is also no route spec for household/+page.server.ts or groceries/items/+page.server.ts, and no test calls these four functions with another household's id. Correction: groceries.e2e.ts:150 is not the only grocery-side cross-household test.
 - [ ] **#62 Low** About 120 page.goto calls in browser tests still tap or type before the page's script has started
   - **Where:** `tests/e2e/groceries.e2e.ts:89`, `tests/e2e/recipes.e2e.ts:948`, `tests/e2e/items.e2e.ts:3`
   - **Problem:** On a slow runner, the first fill happens before the script starts. The add form then posts without JavaScript, and the test fails although the app works.
   - **Fix:** Switch the remaining gotos that are followed by a tap or typing to open(page, path).
   - **Notes:** MEA-22
-- [ ] **#63 Low** The .claude read hook blocks viewing any screenshot or PDF over 40 KB, with advice meant for text files
-  - **Where:** `.claude/hooks/large-read.mjs:10`, `tests/e2e/screens.e2e.ts:14`
-  - **Problem:** An agent checking a UI change opens test-results/screens/groceries.png and is told to grep it. To see any real screenshot or PDF, it has to know to pass a meaningless limit.
-  - **Fix:** Let image and PDF reads through, for example exit 0 when the path ends in .png, .jpg, .jpeg, .gif, .webp or .pdf, and keep the size check for text files.
 
 ### Docs and code health
 
@@ -346,17 +144,6 @@ Items that share a cause or a fix:
   - **Problem:** An agent following 4.6 or AGENTS.md to add a per-person setting can't tell where it belongs, or 'fixes' tour.ts to take householdId first. Someone looking for the form helpers or fold() won't find them in the layout.
   - **Fix:** Update 4.6's tree and its exceptions sentence. Add the tour to AGENTS.md's list, for example: 'a person's tour and What's new state take the person's id'.
   - **Also covers:** design.md 4.6 says data functions take householdId first except What's new, but tour.ts also takes the person's id
-- [ ] **#66 Low** README's 'Changing the database' says to commit 'the new file', but a migration only runs if drizzle/meta/_journal.json lists it
-  - **Where:** `README.md:185`, `AGENTS.md:59`
-  - **Problem:** Someone following README commits only drizzle/0015_x.sql. The journal doesn't list it, so it never runs, and the tests fail with 'no such column' even though the SQL file is in drizzle/.
-  - **Fix:** Change README to 'commit the new files in drizzle/ and drizzle/meta/' and point to AGENTS.md's Database section instead of repeating part of it.
-  - **Verifier's correction:** Correction to the scenario: locally the uncommitted journal still lists the file, so the failure appears in CI, and CI runs before deploy. A migration that no code reads yet would pass CI and never run. The missing snapshot would also make the next db:generate repeat the change. AGENTS.md:59-60 already says 'new files', so pointing README there is a good fix.
-- [ ] **#67 Low** Copy a dinner leaves out future dinners by an 'assumption 1' that design.md doesn't have
-  - **Where:** `src/routes/(app)/menu/[date]/+page.server.ts:59`, `src/lib/server/data/dinners.ts:642`, `src/lib/server/data/dinners.ts:660`, `docs/design.md:558`
-  - **Problem:** Someone reading 6.9 expects next week's planned dinners in the picker and finds them missing, and the comment cites a rule that isn't written anywhere.
-  - **Fix:** Record the today-or-earlier rule in 6.9 and cite that, or settle the rule with MEA-12.
-  - **Verifier's correction:** Correction: the rule itself has a design basis. Q3 says 'copy a past dinner' and Q30 is 'Finding past dinners' (design.md:106, :136, and Phase 3), so a reader expecting next week's dinners is a weak scenario. What's missing is the right citation (Q3, Q30) and a line in 6.9 saying past means today or earlier. The same dangling '(assumption 1)' is in dinners.spec.ts:1037 and page.server.spec.ts:171. '(assumption 4)' in pantry.spec.ts:678 and checklist.spec.ts:201 points at A4 (US units), which is unrelated. MEA-12 (Allow copying a dinner from any date that has a dinner) will change this rule, so this fix can go with it.
-  - **Notes:** MEA-12
 - [ ] **#68 Low** The hidden pantry check keeps about 1,750 lines and 61 tests that nothing reaches, and they've drifted
   - **Where:** `src/lib/server/data/pantry.ts:147`, `src/lib/checklist.ts:112`, `src/lib/server/data/needs.ts:211`, `src/lib/server/data/pantry.spec.ts:1`
   - **Problem:** Every change to dinners, dishes, items or grocery lines must keep this unused code compiling and its 61 tests passing, and it still falls behind: if the check returns, its lines can't tell a date's Kids and Adults dinners apart.
@@ -367,17 +154,6 @@ Items that share a cause or a fix:
 
 ### Network failures and lost typing
 
-- [ ] **#69 High** A grocery action that can't reach the server replaces the list with 'Something went wrong' and loses typing
-  - **Where:** `src/routes/(app)/groceries/+page.svelte:129`, `src/routes/(app)/groceries/+page.svelte:147`, `src/routes/(app)/groceries/+page.svelte:93`, `src/routes/(app)/groceries/+page.svelte:112`
-  - **Problem:** In a store with one bar of signal, someone taps Bread's circle. The whole list is replaced by 'Something went wrong / Internal Error' with no tabs, and Back to Meals needs the network too. Bread isn't checked off, and anything typed in the add bar or an open sheet (such as a substitution note) is gone. A brief 502 while a deploy switches containers does the same.
-  - **Fix:** Add one shared submit helper in $lib for these callbacks. For an error result other than a 404 (fetch failure or 5xx), it does what Feedback does: keeps the page and any open sheet, shows 'Couldn't reach Meals. Check your connection and try again.' by the form, and leaves the inputs as typed. The grocery, Items and Household sheet callbacks are near-copies with different fallback text, so the helper also removes that duplication. Add a browser test that aborts an action with page.route.
-  - **Verifier's correction:** Corrections: the deploy-502 scenario is overstated, since README says Dokku checks /healthz before switching traffic, though any proxy 5xx behaves the same. The fix should tell a fetch failure (no status) apart from a real server 500 instead of calling every non-404 error a connection problem.
-  - **Also covers:** Tapping Tried it, a star or Request with a dropped connection replaces the recipe with a bare 'Internal Error' page
-- [ ] **#70 High** Coming back to the app, or typing a search, without signal replaces the page on screen with 'Something went wrong'
-  - **Where:** `src/routes/+layout.svelte:15`, `src/routes/+layout.svelte:17`, `src/lib/components/SearchBox.svelte:69`
-  - **Problem:** A parent opens the list at home and drives to the store. In an aisle with no signal they switch to Messages to read what their partner wants, then come back to Meals. The list they were shopping from is gone, replaced by an error page whose only link needs the network, and what they had typed is lost. Under Q10 the list can't update offline, but the copy already on screen was still usable.
-  - **Fix:** Refresh only when the server can be reached. Skip the refresh when navigator.onLine is false; otherwise check /healthz with a short timeout first. If that fails, keep the current page (optionally with a small 'Couldn't refresh' line) and try again on the next return or on the online event. SearchBox should likewise not auto-submit while offline.
-  - **Verifier's correction:** Corrections: SearchBox.svelte:69 doesn't exist (the file has 55 lines; the 300 ms auto-submit is SearchBox.svelte:30). The search case is an ordinary GET navigation failing offline, like tapping any link, so that part is weak; the visibility refresh is the real defect.
 - [ ] **#71 Medium** A recipe filled in by Import from a link is dropped without asking if the person leaves before saving
   - **Where:** `src/routes/(app)/recipes/new/+page.svelte:70`, `src/lib/components/RecipeForm.svelte:67`, `src/lib/components/RecipeForm.svelte:85`
   - **Problem:** On a phone, someone imports a recipe from a link, then switches to Groceries to check an item before tapping Save. The filled-in recipe and the link are gone, with no warning.
