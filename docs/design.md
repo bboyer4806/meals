@@ -320,9 +320,12 @@ Q28), `time_zone` (an IANA name such as `America/Chicago`), `created_at`.
 
 **users:** `household_id` (empty only until household setup is done), `google_sub`
 (Google's permanent account ID, unique), `email` (unique, lowercase), `name`,
-`created_at`, `whats_new_seen` (the date of the newest release they've seen on What's new;
-empty until they first open it; section 7), `tour_seen` (when they finished or skipped the
-first-time tour; empty until then; section 7). One household per person (E1).
+`created_at`, `whats_new_seen` (the version, such as `1.5`, of the newest release they've seen
+on What's new; empty until they first open it; section 7), `tour_seen` (when they finished or
+skipped the first-time tour; empty until then; section 7). One household per person (E1).
+Until MEA-25, `whats_new_seen` held the release's date. Each saved date then became the newest
+release of that day, so someone who had seen 2026-10-21, when 1.3, 1.4 and 1.5 came out, counts
+as having seen 1.5.
 
 **sessions:** `id` (SHA-256 of the token), `user_id`, `expires_at`.
 
@@ -854,12 +857,13 @@ app; every household sees the same page. Each release's heading is its version, 
 for the "Meals 1.2" sprint, then "Released" with its date and one line per change people will
 notice. Internal changes, such as tests or instruction files, aren't listed, and the page never
 says "sprint". Releases live in `src/lib/whats-new.ts`, and when a sprint closes, one pull
-request adds its release. When the newest release's date is later than both the person's
-`whats_new_seen` and the day their account was created (in the household's time zone), a dot,
-read by screen readers as "new", shows on More and on What's new. Opening the page records the
-newest release as seen, which clears the dot on every device. Releases on the same day share a
-date, so someone who saw the earlier one gets no dot for the later one (MEA-25). The link doesn't preload on
-hover, as that would run the page's load and clear the dot without anyone opening it.
+request adds its release. When the person hasn't seen the newest release and it came out after
+the day their account was created (in the household's time zone), a dot, read by screen readers
+as "new", shows on More and on What's new. What they've seen is the release in their
+`whats_new_seen` and every release below it in the list, which tells apart releases on the same
+day: someone who saw 1.3 still gets a dot for 1.4 (MEA-25). Opening the page records the newest
+release's version, which clears the dot on every device. The link doesn't preload on hover, as
+that would run the page's load and clear the dot without anyone opening it.
 
 ## 8. Look and feel
 

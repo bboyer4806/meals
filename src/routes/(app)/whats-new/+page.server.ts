@@ -6,6 +6,6 @@ import { RELEASES } from '#lib/whats-new.ts';
 // so hovering it doesn't count as opening it.
 export function load({ locals }) {
 	const user = requireHousehold(locals);
-	recordReleaseSeen(user.id, RELEASES[0].released);
+	recordReleaseSeen(user.id, RELEASES[0]);
 	return { releases: RELEASES };
 }
