@@ -818,11 +818,16 @@ opened, and recipe data written as Microdata or RDFa rather than JSON-LD isn't r
 out; MEA-58) or dishes by role, and the whole note, with its line breaks (MEA-59). A day with
 more than one dinner shows each one (label, type, restaurant or dishes by role, note) in the
 order they were added. Today is highlighted.
-Previous, next and "This week" buttons. Tapping a day opens its dinner. With a mouse or trackpad, dragging a planned day onto another day of the week
+Previous, next and "This week" buttons. On a touch screen, swiping the days sideways changes the
+week as the buttons do, address included (MEA-45): to the left for the next week and to the right
+for the previous one, one week per swipe however far it goes. A swipe takes one finger going at
+least 60 pixels across and twice as far across as up or down, so a short, slanted or two-finger
+swipe, or scrolling, changes nothing, and a swipe never opens a day. Swiping elsewhere on the page
+doesn't change the week. Tapping a day opens its dinner. With a mouse or trackpad, dragging a planned day onto another day of the week
 works like Move to another date (2.2.2, 6.9): the two days swap their dinners, and the week stays
 open. The day under the pointer is outlined while dragging; "Not planned" days can't be dragged,
 and releasing on the same day or outside the days changes nothing. Touch never drags, so tapping
-still opens a day and swiping scrolls. If someone cleared or moved the dragged day's dinners
+still opens a day and swiping up and down scrolls. If someone cleared or moved the dragged day's dinners
 since the week loaded, nothing moves, the week shows the menu as it is now, and it says "Someone
 cleared or moved that day's dinners, so nothing moved." ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
 **Requests** lists the dish and restaurant requests together (6.12), or "No requests yet.", each
