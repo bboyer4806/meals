@@ -11,6 +11,6 @@ export function load({ locals, depends }) {
 	return {
 		user: { id: user.id, name: user.name, isAdmin: user.isAdmin },
 		householdName: household.name,
-		whatsNew: isReleaseNew(user.id, RELEASES[0].released, household.timeZone)
+		whatsNew: isReleaseNew(user.id, RELEASES[0], household.timeZone)
 	};
 }

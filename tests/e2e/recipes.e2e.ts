@@ -600,6 +600,86 @@ test("rates a recipe from its page, shown with the household's average on its ca
 	await expect(cardRating).toHaveCount(0);
 });
 
+/** The scaling test recipe at 3 servings: in the address, on the control and in its amounts. */
+async function expectThreeServings(page: Page, dishId: number) {
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}\\?servings=3$`));
+	await expect(page.getByRole('status')).toHaveText('3 servings');
+	await expect(ingredients(page).nth(6)).toHaveText('3 cloves Garlic');
+	await expect(ingredients(page).nth(7)).toHaveText('1 1/2 Eggs');
+}
+
+test('keeps the servings shown when marking a recipe tried and rating it', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, scaled);
+	const tried = () => db.prepare('select tried from dishes where id = ?').pluck().get(dishId);
+	const box = page.getByRole('checkbox', { name: 'Tried it' });
+	const average = page.locator('.rating .average');
+	const fourStars = page.getByRole('button', { name: '4 stars' });
+	const twoStars = page.getByRole('button', { name: '2 stars' });
+
+	await open(page, `/recipes/${dishId}`);
+	await page.getByRole('button', { name: 'More servings' }).click();
+	await expectThreeServings(page, dishId);
+
+	await box.check();
+	await expect.poll(tried).toBe(1);
+	await expectThreeServings(page, dishId);
+	await box.uncheck();
+	await expect.poll(tried).toBe(0);
+	await expectThreeServings(page, dishId);
+
+	// Adding, changing and clearing your stars.
+	await fourStars.click();
+	await expect(average).toHaveText('★ 4 (1)');
+	await expectThreeServings(page, dishId);
+	await twoStars.click();
+	await expect(average).toHaveText('★ 2 (1)');
+	await expect(twoStars).toHaveAttribute('aria-pressed', 'true');
+	await expectThreeServings(page, dishId);
+	await twoStars.click();
+	await expect(average).toHaveCount(0);
+	await expectThreeServings(page, dishId);
+});
+
+test("keeps the servings shown when Tried it or a star isn't saved", async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, scaled);
+	const alert = page.getByRole('alert');
+
+	await open(page, `/recipes/${dishId}`);
+	await page.getByRole('button', { name: 'More servings' }).click();
+	await expectThreeServings(page, dishId);
+
+	// The page only sends what the server takes, so each is changed on the way to something it
+	// turns down. Its message shows, and nothing is saved.
+	await page.route(
+		(url) => url.search === '?/tried',
+		(route) => route.continue({ postData: 'tried=yes' })
+	);
+	await page.getByRole('checkbox', { name: 'Tried it' }).check();
+	await expect(alert).toHaveText('Invalid input: expected "on"');
+	await expectThreeServings(page, dishId);
+
+	await page.route(
+		(url) => url.search === '?/rate',
+		(route) => route.continue({ postData: 'stars=6' })
+	);
+	await page.getByRole('button', { name: '4 stars' }).click();
+	await expect(alert).toHaveText('Too big: expected number to be <=5');
+	await expectThreeServings(page, dishId);
+
+	expect(db.prepare('select tried from dishes where id = ?').pluck().get(dishId)).toBe(0);
+	expect(
+		db.prepare('select count(*) from dish_ratings where dish_id = ?').pluck().get(dishId)
+	).toBe(0);
+});
+
 // Requesting a dish from its recipe (design 6.12; section 7, "Recipe").
 
 const requestButton = (page: Page) => page.getByRole('button', { name: 'Request', exact: true });

@@ -43,7 +43,7 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
   Derive household identity from the signed-in session, never from request input.
 - Household data goes through `src/lib/server/data/`, one module per area. Operations on
   household-owned data take `householdId` first; household creation, administrative
-  listing and a person's What's new seen date have different signatures. Preserve household
+  listing and a person's What's new seen release have different signatures. Preserve household
   isolation in reads and writes.
 - Routes use that data layer rather than querying the database. Sign-in and sessions live
   in `src/lib/server/auth/`, photo files in `src/lib/server/photos.ts`. The `/healthz`

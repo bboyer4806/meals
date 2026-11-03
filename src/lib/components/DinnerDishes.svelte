@@ -10,9 +10,10 @@
 	import Sheet from './Sheet.svelte';
 
 	// A dinner's dishes (design 7, Dinner; 6.9). Each links to its recipe at the dinner's servings
-	// and has its role and Remove. A dish is added by name, an existing one or a new one, with a
-	// role: Main for the first, Side after. Adding one to a date with no dinner plans it as
-	// Cooking at home. The forms post to the dinner page's actions, with the dinner's id.
+	// and has its role and Remove. A dish is added by name with the role shown: Main for the
+	// first, Side after. An existing one is added as soon as it's picked from the suggestions,
+	// and a new one with Add (MEA-56). Adding one to a date with no dinner plans it as Cooking at
+	// home. The forms post to the dinner page's actions, with the dinner's id.
 	let {
 		dinner,
 		suggestions,
@@ -168,6 +169,7 @@
 	});
 	let adding = $state(false);
 	let addError = $state('');
+	let addForm: HTMLFormElement;
 	let nameField: HTMLElement;
 
 	function nameInput(): HTMLInputElement | null {
@@ -321,10 +323,13 @@
 		<p class="muted">No dishes yet.</p>
 	{/if}
 
-	<form class="add" method="POST" action="?/addDish" use:enhance={submitAdd}>
+	<form class="add" method="POST" action="?/addDish" use:enhance={submitAdd} bind:this={addForm}>
 		{@render shownDinner()}
 		<label for="{uid}-name">Add a dish</label>
 		<div bind:this={nameField}>
+			<!-- A dish picked from the suggestions is added right away with the role shown, which
+			     sits with Add between the field and the suggestions, so they never cover Add or
+			     move it as they come and go (MEA-56). -->
 			<ItemInput
 				id="{uid}-name"
 				name="name"
@@ -332,16 +337,18 @@
 				items={suggestions}
 				bind:value={name}
 				noun="dish"
-			/>
-		</div>
-		<div class="row">
-			<label class="visually-hidden" for="{uid}-new-role">Role</label>
-			<select class="grow" id="{uid}-new-role" name="role" bind:value={role}>
-				{#each DISH_ROLES as option (option)}
-					<option value={option}>{DISH_ROLE_LABELS[option]}</option>
-				{/each}
-			</select>
-			<button class="primary">Add</button>
+				onchoose={() => addForm.requestSubmit()}
+			>
+				<div class="row">
+					<label class="visually-hidden" for="{uid}-new-role">Role</label>
+					<select class="grow" id="{uid}-new-role" name="role" bind:value={role}>
+						{#each DISH_ROLES as option (option)}
+							<option value={option}>{DISH_ROLE_LABELS[option]}</option>
+						{/each}
+					</select>
+					<button class="primary">Add</button>
+				</div>
+			</ItemInput>
 		</div>
 		{#if addError}<p class="error" role="alert">{addError}</p>{/if}
 	</form>

@@ -38,7 +38,7 @@ export const users = sqliteTable(
 		email: text('email').notNull().unique(),
 		name: text('name').notNull(),
 		createdAt: integer('created_at').notNull(),
-		// The release date (YYYY-MM-DD) of the newest release they've seen on What's new.
+		// The version, such as "1.5", of the newest release they've seen on What's new (design 7).
 		whatsNewSeen: text('whats_new_seen'),
 		// When they finished or skipped the first-time tour; empty until then (design 7, "Tour").
 		tourSeen: integer('tour_seen')

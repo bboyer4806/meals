@@ -1,13 +1,14 @@
 <script lang="ts" generics="T extends { id: number; name: string; timesAdded: number }">
-	import { onMount } from 'svelte';
+	import { onMount, tick, type Snippet } from 'svelte';
 	import { foldCase, normalizeName } from '../text.ts';
 
 	// A text field that suggests existing items as you type: names that start with the text
 	// first, then names that contain it, most often added first within each. A name that
 	// matches no item offers "Add as a new item" (design 6.4). The recipe editor turns off
 	// `required`, since a blank ingredient row is left out rather than refused. The dinner
-	// editor suggests dishes, so its new option says "new dish". A dish request adds nothing, so
-	// it offers no new option (6.12).
+	// editor suggests dishes, so its new option says "new dish", and it adds a dish picked from
+	// them right away, with its role and Add under the field (MEA-56). A dish request adds
+	// nothing, so it offers no new option (6.12).
 	let {
 		items,
 		value = $bindable(''),
@@ -15,7 +16,9 @@
 		name,
 		placeholder,
 		required = true,
-		noun = 'item'
+		noun = 'item',
+		onchoose,
+		children
 	}: {
 		items: T[];
 		value?: string;
@@ -25,6 +28,14 @@
 		required?: boolean;
 		/** What a name that matches nothing would be added as; null offers nothing for it. */
 		noun?: string | null;
+		/** Called once the field shows an existing item someone chose from the suggestions. */
+		onchoose?: () => void;
+		/**
+		 * Shown under the field, such as the button that adds what's typed. The suggestions then
+		 * show in the page under it, about four at a time, so they never cover or move it.
+		 * Without it, they show over the page, under the field.
+		 */
+		children?: Snippet;
 	} = $props();
 
 	type Option = { kind: 'item'; item: T } | { kind: 'new' };
@@ -34,6 +45,7 @@
 	let active = $state(-1);
 
 	const typed = $derived(normalizeName(value));
+	const inline = $derived(children !== undefined);
 
 	const options = $derived.by((): Option[] => {
 		if (typed === '') return [];
@@ -62,20 +74,32 @@
 		if (document.activeElement === input) open = true;
 	});
 
-	function choose(option: Option) {
-		if (option.kind === 'item') value = option.item.name;
+	async function choose(option: Option) {
 		open = false;
 		active = -1;
+		if (option.kind === 'new') return;
+		value = option.item.name;
+		if (!onchoose) return;
+		// Once the field shows the name, so a form sent from here sends it.
+		await tick();
+		onchoose();
+	}
+
+	function moveTo(index: number) {
+		active = index;
+		// The suggestions in the page scroll, so the one the arrow keys reach is scrolled to.
+		if (!inline) return;
+		document.getElementById(`${listId}-${index}`)?.scrollIntoView({ block: 'nearest' });
 	}
 
 	function onkeydown(event: KeyboardEvent) {
 		if (!showList) return;
 		if (event.key === 'ArrowDown') {
 			event.preventDefault();
-			active = (active + 1) % options.length;
+			moveTo((active + 1) % options.length);
 		} else if (event.key === 'ArrowUp') {
 			event.preventDefault();
-			active = active <= 0 ? options.length - 1 : active - 1;
+			moveTo(active <= 0 ? options.length - 1 : active - 1);
 		} else if (event.key === 'Enter' && active >= 0) {
 			event.preventDefault();
 			const option = options[active];
@@ -86,7 +110,7 @@
 	}
 </script>
 
-<div class="combo">
+<div class="combo" class:inline>
 	<input
 		bind:this={input}
 		{id}
@@ -111,6 +135,7 @@
 		onblur={() => (open = false)}
 		{onkeydown}
 	/>
+	{@render children?.()}
 	{#if showList}
 		<ul id={listId} role="listbox">
 			{#each options as option, i (option.kind === 'item' ? option.item.id : 'new')}
@@ -156,6 +181,19 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		box-shadow: var(--shadow);
+	}
+
+	/* Under what's shown below the field, in the page. About four and a half suggestions show,
+	   so it's clear the rest scroll. */
+	.inline {
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	.inline ul {
+		position: static;
+		max-height: 13rem;
+		overflow-y: auto;
 	}
 
 	li {

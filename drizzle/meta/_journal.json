@@ -99,6 +99,13 @@
       "when": 1793653239174,
       "tag": "0013_restaurant-name",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1793672976475,
+      "tag": "0014_whats-new-seen-version",
+      "breakpoints": true
     }
   ]
 }
