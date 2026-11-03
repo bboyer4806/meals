@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.8 was released on 2026-11-02, after 1.7.
+// What's new (design 7). 1.9 was released on 2026-11-03, after 1.8.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -28,8 +28,8 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
-	const [v18, v17, v16, v15, v14, v13, v12, v11] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
+	const [v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
 		page.locator('section').nth(2),
@@ -37,8 +37,16 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 		page.locator('section').nth(4),
 		page.locator('section').nth(5),
 		page.locator('section').nth(6),
-		page.locator('section').nth(7)
+		page.locator('section').nth(7),
+		page.locator('section').nth(8)
 	];
+	await expect(v19.getByText('Released November 3, 2026')).toBeVisible();
+	await expect(v19.getByRole('listitem')).toHaveText([
+		"On a dinner's page, tap a dish in the suggestions to add it right away, with the role shown beside Add. The suggestions now show below the role and Add instead of covering them.",
+		"Tapping Tried it or a star on a recipe's page keeps the servings you picked instead of resetting them.",
+		'On the Menu, swipe the days left for the next week or right for the previous one.',
+		"Under the stars on a recipe's page, see who rated it and how many stars each person gave."
+	]);
 	await expect(v18.getByText('Released November 2, 2026')).toBeVisible();
 	await expect(v18.getByRole('listitem')).toHaveText([
 		"Requests now show on a day's page too, under its dinners. Tap Add on a requested dish to put it on that day's dinner, and the request is removed.",
@@ -140,14 +148,14 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	browser,
 	baseURL
 }) => {
-	// Two members of the household who joined before 1.8 and have seen 1.7.
+	// Two members of the household who joined before 1.9 and have seen 1.8.
 	const joined = Date.UTC(2026, 9, 1, 17);
 	setCreatedAt(db, person.userId, joined);
-	db.prepare("update users set whats_new_seen = '1.7' where id = ?").run(person.userId);
+	db.prepare("update users set whats_new_seen = '1.8' where id = ?").run(person.userId);
 	const memberId = Number(
 		db
 			.prepare(
-				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.7')"
+				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.8')"
 			)
 			.run(
 				person.householdId,
@@ -163,7 +171,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	await link(page).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
-	expect(seen(db, person.userId)).toBe('1.8');
+	expect(seen(db, person.userId)).toBe('1.9');
 
 	// Opening it cleared only their own dot.
 	const other = await browser.newContext();
@@ -171,7 +179,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	const phone = await other.newPage();
 	await phone.goto('/groceries');
 	await expect(more(phone).locator('.dot')).toBeVisible();
-	expect(seen(db, memberId)).toBe('1.7');
+	expect(seen(db, memberId)).toBe('1.8');
 	await other.close();
 });
 
@@ -180,7 +188,7 @@ test('shows no dot to someone who joined after the newest release', async ({
 	db,
 	person
 }) => {
-	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 2, 17));
+	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 3, 17));
 	await page.goto('/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);

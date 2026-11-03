@@ -14,6 +14,16 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.9',
+		released: '2026-11-03',
+		lines: [
+			"On a dinner's page, tap a dish in the suggestions to add it right away, with the role shown beside Add. The suggestions now show below the role and Add instead of covering them.",
+			"Tapping Tried it or a star on a recipe's page keeps the servings you picked instead of resetting them.",
+			'On the Menu, swipe the days left for the next week or right for the previous one.',
+			"Under the stars on a recipe's page, see who rated it and how many stars each person gave."
+		]
+	},
+	{
 		version: '1.8',
 		released: '2026-11-02',
 		lines: [
