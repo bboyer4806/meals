@@ -162,10 +162,43 @@
 		};
 	};
 
+	// Swiping the week's days sideways changes the week, like Previous and Next (design 7, Menu):
+	// to the left for the next week, to the right for the previous one, one week per swipe however
+	// far it goes. It takes one finger going at least SWIPE_DISTANCE pixels across, and at least
+	// twice as far across as up or down, so taps, pinches, scrolling and slanted swipes change
+	// nothing. Nothing here stops the browser scrolling, and a swipe moves too far to be a tap, so
+	// the browser sends no click and the day it started on doesn't open.
+
+	const SWIPE_DISTANCE = 60;
+
+	let swipeStart: { x: number; y: number } | null = null;
+
+	function startSwipe(event: TouchEvent) {
+		const touch = event.touches[0];
+		swipeStart =
+			touch && event.touches.length === 1 ? { x: touch.clientX, y: touch.clientY } : null;
+	}
+
+	// A second finger, even off the days, makes it a pinch.
+	function moveSwipe(event: TouchEvent) {
+		if (event.touches.length > 1) swipeStart = null;
+	}
+
+	function endSwipe(event: TouchEvent) {
+		const start = swipeStart;
+		const end = event.changedTouches[0];
+		swipeStart = null;
+		if (!start || !end) return;
+		const across = end.clientX - start.x;
+		const down = end.clientY - start.y;
+		if (Math.abs(across) < SWIPE_DISTANCE || Math.abs(across) < 2 * Math.abs(down)) return;
+		void goto(`/menu?week=${across < 0 ? data.next : data.previous}`);
+	}
+
 	// Dragging a day onto another swaps their dinners, like Move to another date (2.2.2, 6.9).
 	// Only a mouse drags (trackpads report as one), so on touch screens tapping still opens a day
-	// and swiping scrolls. A drag starts once the pointer moves a few pixels; a click without that
-	// still opens the day.
+	// and swiping scrolls or changes the week (above). A drag starts once the pointer moves a few
+	// pixels; a click without that still opens the day.
 
 	const DRAG_DISTANCE = 5;
 	const MOVED_SINCE = "Someone cleared or moved that day's dinners, so nothing moved.";
@@ -318,7 +351,13 @@
 	<input type="hidden" name="dinnerId" value={move.dinnerId} />
 </form>
 
-<ol class="days" class:dragging={dragging !== null}>
+<ol
+	class="days"
+	class:dragging={dragging !== null}
+	ontouchstart={startSwipe}
+	ontouchmove={moveSwipe}
+	ontouchend={endSwipe}
+>
 	{#each data.days as day (day.date)}
 		{@const isToday = day.date === data.today}
 		{@const { dinners } = day}

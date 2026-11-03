@@ -1,4 +1,4 @@
-import type { Dialog, Page } from '@playwright/test';
+import type { Dialog, Locator, Page } from '@playwright/test';
 import {
 	addDays,
 	addDinner,
@@ -2739,4 +2739,163 @@ test('never drags on touch: pressing and moving on a day moves nothing', async (
 	await expect(day(page, mon).locator('.note')).toHaveText('Taco night');
 	await expect(day(page, tue)).toContainText('Not planned');
 	expect(dinnerRow(db, person.householdId, mon)?.id).toBe(tacosId);
+});
+
+// Swiping the week's days sideways changes the week, like Previous and Next (design 7, Menu;
+// MEA-45). These send real touch input, as a phone does; page.mouse would send a mouse pointer
+// even on the Pixel 7.
+test.describe('swiping between weeks', () => {
+	type Stroke = { from: { x: number; y: number }; to: { x: number; y: number } };
+
+	/** Fingers pressed at their starts, moved to their ends together in steps, then lifted. */
+	async function touch(page: Page, ...fingers: Stroke[]) {
+		const at = (step: number) =>
+			fingers.map(({ from, to }, id) => ({
+				id,
+				x: from.x + ((to.x - from.x) * step) / 8,
+				y: from.y + ((to.y - from.y) * step) / 8
+			}));
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+		for (let step = 1; step <= 8; step += 1) {
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(step) });
+		}
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		await cdp.detach();
+	}
+
+	/**
+	 * A finger's way across the middle of what's there: `across` pixels to the right (negative
+	 * is to the left) and `down` pixels down (negative is up).
+	 */
+	async function stroke(on: Locator, across: number, down = 0): Promise<Stroke> {
+		const box = await on.boundingBox();
+		if (!box) throw new Error('Nothing there to swipe');
+		const x = box.x + box.width / 2;
+		const y = box.y + box.height / 2;
+		return {
+			from: { x: x - across / 2, y: y - down / 2 },
+			to: { x: x + across / 2, y: y + down / 2 }
+		};
+	}
+
+	/** One finger across the middle of what's there, as `stroke` describes. */
+	async function swipe(on: Locator, across: number, down = 0) {
+		await touch(on.page(), await stroke(on, across, down));
+	}
+
+	/**
+	 * The week from that Sunday is showing: its address, heading and dates, and on each day the
+	 * note of its dinner, or "Not planned".
+	 */
+	async function showsWeek(page: Page, sunday: string, notes: Record<string, string> = {}) {
+		const dates = Array.from({ length: 7 }, (_, index) => addDays(sunday, index));
+		await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sunday}$`));
+		await expect(page.getByRole('navigation', { name: 'Weeks' }).locator('.label')).toHaveText(
+			weekRange(sunday)
+		);
+		await expect(page.locator('a.day .date')).toHaveText(dates.map((date) => dayLabel(date)));
+		await expect(page.locator('a.day')).toHaveText(
+			dates.map((date) => new RegExp(notes[date] ?? 'Not planned'))
+		);
+	}
+
+	test('goes a week on for each swipe left, and a week back for each swipe right', async ({
+		page,
+		db,
+		person
+	}) => {
+		const sunday = sundayOf(today());
+		const next = addDays(sunday, 7);
+		const after = addDays(sunday, 14);
+		const [mon, nextTue, afterThu] = [addDays(sunday, 1), addDays(next, 2), addDays(after, 4)];
+		addDinner(db, person.householdId, mon, { note: 'Taco night' });
+		addDinner(db, person.householdId, nextTue, { note: 'Pizza' });
+		addDinner(db, person.householdId, afterThu, { note: 'Soup' });
+		await open(page, '/menu');
+		const weeks = page.getByRole('navigation', { name: 'Weeks' });
+
+		// One week however far the swipe goes, without opening the day it crossed.
+		await swipe(day(page, addDays(sunday, 3)), -300);
+		await showsWeek(page, next, { [nextTue]: 'Pizza' });
+		await swipe(day(page, addDays(next, 3)), -80);
+		await showsWeek(page, after, { [afterThu]: 'Soup' });
+		await swipe(day(page, addDays(after, 3)), 300);
+		await showsWeek(page, next, { [nextTue]: 'Pizza' });
+		await swipe(day(page, addDays(next, 3)), 80);
+		await showsWeek(page, sunday, { [mon]: 'Taco night' });
+		await expect(weeks.getByRole('link', { name: 'This week' })).toHaveAttribute(
+			'aria-current',
+			'page'
+		);
+		await expect(day(page, today()).locator('.today-badge')).toHaveText('Today');
+
+		// The buttons go on from a week swiped to, and swiping from theirs.
+		await weeks.getByRole('link', { name: 'Next' }).tap();
+		await showsWeek(page, next, { [nextTue]: 'Pizza' });
+		await swipe(day(page, addDays(next, 3)), 200);
+		await showsWeek(page, sunday, { [mon]: 'Taco night' });
+
+		// Tapping a day still opens it.
+		await day(page, mon).tap();
+		await expect(page).toHaveURL(new RegExp(`/menu/${mon}$`));
+		await expect(page.getByLabel('Note', { exact: true })).toHaveValue('Taco night');
+	});
+
+	test('swipes from December into January of the next year, and back', async ({
+		page,
+		db,
+		person
+	}) => {
+		addDinner(db, person.householdId, '2026-12-31', { note: "New Year's Eve" });
+		addDinner(db, person.householdId, '2027-01-01', { note: "New Year's Day" });
+		const newYear = { '2026-12-31': "New Year's Eve", '2027-01-01': "New Year's Day" };
+		await open(page, '/menu?week=2026-12-20');
+
+		await swipe(day(page, '2026-12-23'), -200);
+		await showsWeek(page, '2026-12-27', newYear);
+		await swipe(day(page, '2026-12-30'), -200);
+		await showsWeek(page, '2027-01-03');
+		await swipe(day(page, '2027-01-06'), 200);
+		await showsWeek(page, '2026-12-27', newYear);
+		await swipe(day(page, '2026-12-30'), 200);
+		await showsWeek(page, '2026-12-20');
+	});
+
+	test('keeps the week for scrolling, short, slanted and two-finger swipes, and swipes off the days', async ({
+		page,
+		person: _
+	}) => {
+		const sunday = sundayOf(today());
+		await open(page, '/menu');
+		// The weeks the page loads, to show at the end that only the last swipe loaded one.
+		const loads: (string | null)[] = [];
+		page.on('request', (request) => {
+			const url = new URL(request.url());
+			if (url.pathname === '/menu/__data.json') loads.push(url.searchParams.get('week'));
+		});
+		// Wednesday in whichever week shows, so a wrong week change fails at the end, not here.
+		const wednesday = page.locator('a.day').nth(3);
+		const heading = page.getByRole('navigation', { name: 'Weeks' }).locator('.label');
+
+		// Less than 60 pixels across.
+		await swipe(wednesday, -50);
+		// More than half as far down as across.
+		await swipe(wednesday, -160, 100);
+		// With a second finger, off the days, as in a pinch.
+		await touch(page, await stroke(wednesday, -200), await stroke(heading, -200));
+		// Across the week's heading rather than its days.
+		await swipe(heading, -200);
+		// Up the screen, which scrolls the page as before, even straying 70 pixels sideways.
+		await swipe(wednesday, 70, -300);
+		await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+		// Once the page stops moving, a real swipe still goes a week on from the week shown, and
+		// that's the only week loaded. (A tap would leave a mouse pointer over a link, which
+		// loads its page ahead of time.)
+		await wednesday.scrollIntoViewIfNeeded();
+		await swipe(wednesday, -200);
+		await showsWeek(page, addDays(sunday, 7));
+		expect(loads).toEqual([addDays(sunday, 7)]);
+	});
 });
