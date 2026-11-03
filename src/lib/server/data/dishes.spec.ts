@@ -15,6 +15,7 @@ import {
 	getDish,
 	getOwnRating,
 	listDishes,
+	listDishRatings,
 	listDishTags,
 	rateDish,
 	setDishArchived,
@@ -56,6 +57,11 @@ function names(filter: Parameters<typeof list>[0] = {}) {
 
 function catalog() {
 	return listCatalog(householdId, false, '').map((item) => item.name);
+}
+
+/** A person's name, as a recipe's list of ratings shows it. */
+function nameOf(id: number): string | undefined {
+	return db().select({ name: users.name }).from(users).where(eq(users.id, id)).get()?.name;
 }
 
 function timestamps(dishId: number) {
@@ -662,6 +668,10 @@ describe('ratings', () => {
 		expect(getOwnRating(householdId, id, userId)).toBe(4);
 		expect(getOwnRating(householdId, id, sam)).toBe(3);
 		expect(getDish(householdId, id).rating).toEqual({ average: 3.5, count: 2 });
+		expect(listDishRatings(householdId, id)).toEqual([
+			{ name: nameOf(userId), stars: 4 },
+			{ name: 'sam', stars: 3 }
+		]);
 	});
 
 	it('clears your rating when you tap your current star again', () => {
@@ -673,8 +683,50 @@ describe('ratings', () => {
 		expect(getOwnRating(householdId, id, userId)).toBeNull();
 		expect(getOwnRating(householdId, id, sam)).toBe(4);
 		expect(getDish(householdId, id).rating).toEqual({ average: 4, count: 1 });
+		expect(listDishRatings(householdId, id)).toEqual([{ name: 'sam', stars: 4 }]);
 		rateDish(householdId, id, sam, 4);
 		expect(getDish(householdId, id).rating).toBeNull();
+		expect(listDishRatings(householdId, id)).toEqual([]);
+	});
+
+	it('lists who rated, yours included, by name ignoring case (section 7, "Recipe")', () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		expect(listDishRatings(householdId, id)).toEqual([]);
+
+		rateDish(householdId, id, addMember('sam'), 5);
+		rateDish(householdId, id, userId, 4);
+		// Before your name, "Person …", only when case is ignored.
+		rateDish(householdId, id, addMember('kim'), 2);
+		expect(listDishRatings(householdId, id)).toEqual([
+			{ name: 'kim', stars: 2 },
+			{ name: nameOf(userId), stars: 4 },
+			{ name: 'sam', stars: 5 }
+		]);
+	});
+
+	it("lists a removed member's ratings as Former member, after everyone else's", () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		const sam = addMember('sam');
+		const kim = addMember('kim');
+		const zoe = addMember('zoe');
+		rateDish(householdId, id, sam, 5);
+		rateDish(householdId, id, zoe, 4);
+		rateDish(householdId, id, kim, 1);
+		rateDish(householdId, id, userId, 3);
+		removeMember(householdId, userId, sam);
+		removeMember(householdId, userId, kim);
+
+		const ratings = listDishRatings(householdId, id);
+		expect(ratings).toEqual([
+			{ name: nameOf(userId), stars: 3 },
+			{ name: 'zoe', stars: 4 },
+			// Each on its own, in the order they rated.
+			{ name: 'Former member', stars: 5 },
+			{ name: 'Former member', stars: 1 }
+		]);
+		expect(JSON.stringify(ratings)).not.toMatch(/sam|kim/);
+		// Still in the average and count.
+		expect(getDish(householdId, id).rating).toEqual({ average: 13 / 4, count: 4 });
 	});
 
 	it("keeps a removed member's rating in the average and count", () => {
@@ -696,6 +748,7 @@ describe('ratings', () => {
 			rating: { average: 2, count: 1 }
 		});
 		expect(list({ archived: true })[0]?.rating).toEqual({ average: 2, count: 1 });
+		expect(listDishRatings(householdId, id)).toEqual([{ name: nameOf(userId), stars: 2 }]);
 	});
 
 	it('sorts by exact average, then unrated, ties by name (section 7, "Recipes")', () => {
@@ -765,6 +818,13 @@ describe('households', () => {
 		expect(getDish(householdId, id).rating).toEqual({ average: 2, count: 1 });
 		expect(getDish(other.householdId, theirs).rating).toEqual({ average: 5, count: 1 });
 		expect(getOwnRating(other.householdId, id, userId)).toBeNull();
+		expect(listDishRatings(householdId, id)).toEqual([{ name: nameOf(userId), stars: 2 }]);
+		expect(listDishRatings(other.householdId, theirs)).toEqual([
+			{ name: nameOf(other.userId), stars: 5 }
+		]);
+		// Each household's dish id gets nothing from the other household.
+		expect(listDishRatings(other.householdId, id)).toEqual([]);
+		expect(listDishRatings(householdId, theirs)).toEqual([]);
 		expect(() =>
 			db().insert(dishRatings).values({ householdId, dishId: theirs, userId, stars: 3 }).run()
 		).toThrow(/FOREIGN KEY/);

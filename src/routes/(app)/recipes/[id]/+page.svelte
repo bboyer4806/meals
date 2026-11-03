@@ -11,6 +11,8 @@
 		nutritionFacts,
 		servingsLabel,
 		sourceLink,
+		starsLabel,
+		starsText,
 		targetServings
 	} from '#lib/recipe-view.ts';
 	import { scaleFactor } from '#lib/scaling.ts';
@@ -103,7 +105,7 @@
 </form>
 
 <!-- Your own stars, saved on tap; the current star again clears them. Beside them, the
-household's average, with no names (section 7, "Recipe"). -->
+household's average (section 7, "Recipe"). -->
 <form
 	class="rating no-print"
 	method="POST"
@@ -119,7 +121,7 @@ household's average, with no names (section 7, "Recipe"). -->
 				class="star"
 				name="stars"
 				value={stars}
-				aria-label={stars === 1 ? '1 star' : `${stars} stars`}
+				aria-label={starsLabel(stars)}
 				aria-pressed={data.ownRating === stars}
 				>{data.ownRating !== null && stars <= data.ownRating ? '★' : '☆'}</button
 			>
@@ -128,6 +130,22 @@ household's average, with no names (section 7, "Recipe"). -->
 	{#if dish.rating}<span class="average">{formatRating(dish.rating)}</span>{/if}
 	{#if form?.action === 'rate' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
 </form>
+
+<!-- Everyone's stars and who gave them, yours included, reloaded with the page's data when a star
+is tapped. A removed member's show as Former member, and with no ratings there's no list
+(section 7, "Recipe"). -->
+{#if data.ratings.length > 0}
+	<ul class="ratings no-print" aria-label="Ratings">
+		{#each data.ratings as rating, index (index)}
+			<li>
+				<span>{rating.name}</span>
+				<span class="rated" role="img" aria-label={starsLabel(rating.stars)}
+					>{starsText(rating.stars)}</span
+				>
+			</li>
+		{/each}
+	</ul>
+{/if}
 
 <!-- Asks for the dish on the Menu's Requests, saved on tap. A recipe with any request, from here
 or the Menu, says Requested in its place, and an archived one has no Request (6.12; section 7,
@@ -321,6 +339,30 @@ or the Menu, says Requested in its place, and an archived one has no Request (6.
 
 	.average {
 		font-weight: 700;
+	}
+
+	/* Names in one column and stars in the next, lined up from row to row. */
+	.ratings {
+		display: grid;
+		grid-template-columns: auto auto;
+		justify-content: start;
+		gap: 0.1rem 0.75rem;
+		margin: 0 0 0.5rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.ratings li {
+		display: grid;
+		grid-column: 1 / -1;
+		grid-template-columns: subgrid;
+		align-items: baseline;
+		overflow-wrap: anywhere;
+	}
+
+	.rated {
+		color: var(--accent);
+		white-space: nowrap;
 	}
 
 	/* As tall as the button, so Requested takes its place without moving the page. */

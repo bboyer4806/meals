@@ -9,6 +9,8 @@ import {
 	roundToHalfStar,
 	servingsLabel,
 	sourceLink,
+	starsLabel,
+	starsText,
 	targetServings,
 	totalMinutes
 } from './recipe-view.ts';
@@ -176,5 +178,20 @@ describe('formatRating', () => {
 	it('shows the rounded average and the number of ratings', () => {
 		expect(formatRating({ average: 4, count: 1 })).toBe('★ 4 (1)');
 		expect(formatRating({ average: 4.25, count: 4 })).toBe('★ 4.5 (4)');
+	});
+});
+
+describe('starsLabel', () => {
+	it('says the stars in words', () => {
+		expect(starsLabel(1)).toBe('1 star');
+		expect(starsLabel(4)).toBe('4 stars');
+	});
+});
+
+describe('starsText', () => {
+	it('shows filled stars, then empty ones up to 5', () => {
+		expect(starsText(1)).toBe('★☆☆☆☆');
+		expect(starsText(4)).toBe('★★★★☆');
+		expect(starsText(5)).toBe('★★★★★');
 	});
 });

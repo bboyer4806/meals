@@ -101,3 +101,13 @@ export function roundToHalfStar(average: number): number {
 export function formatRating(rating: { average: number; count: number }): string {
 	return `★ ${roundToHalfStar(rating.average)} (${rating.count})`;
 }
+
+/** 1 to 5 stars in words, for screen readers: "1 star", "4 stars". */
+export function starsLabel(stars: number): string {
+	return stars === 1 ? '1 star' : `${stars} stars`;
+}
+
+/** One person's 1 to 5 stars as the Recipe page lists them, filled then empty: "★★★★☆". */
+export function starsText(stars: number): string {
+	return '★'.repeat(stars) + '☆'.repeat(5 - stars);
+}

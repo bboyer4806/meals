@@ -600,6 +600,75 @@ test("rates a recipe from its page, shown with the household's average on its ca
 	await expect(cardRating).toHaveCount(0);
 });
 
+test('lists who rated a recipe, with a removed member as Former member', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet' });
+	const unratedId = addRecipe(db, person.householdId, { name: 'Pancakes' });
+	const you = db.prepare('select name from users where id = ?').pluck().get(person.userId) as string;
+	const addMember = db.prepare(
+		'insert into users (household_id, google_sub, email, name, created_at) values (?, ?, ?, ?, 0)'
+	);
+	function member(name: string): number {
+		const tag = `${name}-${person.userId}`;
+		return Number(
+			addMember.run(person.householdId, tag, `${tag}@example.com`, name).lastInsertRowid
+		);
+	}
+	const rate = db.prepare(
+		'insert into dish_ratings (household_id, dish_id, user_id, stars) values (?, ?, ?, ?)'
+	);
+	rate.run(person.householdId, dishId, member('Robin'), 5);
+	const quinn = member('Quinn');
+	rate.run(person.householdId, dishId, quinn, 3);
+	// Removing a member, as the Household page does, keeps their rating without them.
+	db.prepare('delete from users where id = ?').run(quinn);
+
+	const list = page.getByRole('list', { name: 'Ratings' });
+	const ratings = list.getByRole('listitem');
+	const average = page.locator('.rating .average');
+	const fourStars = page.getByRole('button', { name: '4 stars' });
+
+	await open(page, `/recipes/${unratedId}`);
+	await expect(page.getByRole('heading', { name: 'Pancakes' })).toBeVisible();
+	await expect(list).toHaveCount(0);
+
+	await open(page, `/recipes/${dishId}`);
+	await expect(average).toHaveText('★ 4 (2)');
+	await expect(ratings).toHaveText(['Robin ★★★★★', 'Former member ★★★☆☆']);
+	await expect(ratings.first().getByRole('img')).toHaveAccessibleName('5 stars');
+	expect(await page.content()).not.toContain('Quinn');
+
+	// Adding, changing and clearing your stars updates the list right away, and nobody else's.
+	await fourStars.click();
+	await expect(ratings).toHaveText([`${you} ★★★★☆`, 'Robin ★★★★★', 'Former member ★★★☆☆']);
+	await expect(average).toHaveText('★ 4 (3)');
+	await page.getByRole('button', { name: '2 stars' }).click();
+	await expect(ratings).toHaveText([`${you} ★★☆☆☆`, 'Robin ★★★★★', 'Former member ★★★☆☆']);
+	await page.getByRole('button', { name: '2 stars' }).click();
+	await expect(ratings).toHaveText(['Robin ★★★★★', 'Former member ★★★☆☆']);
+	await expect(average).toHaveText('★ 4 (2)');
+
+	// Left out of the printed recipe.
+	await page.emulateMedia({ media: 'print' });
+	await expect(list).toBeHidden();
+	await page.emulateMedia({ media: 'screen' });
+
+	// The same on an archived recipe.
+	db.prepare('update dishes set archived_at = ? where id = ?').run(Date.now(), dishId);
+	await open(page, `/recipes/${dishId}`);
+	await page.getByRole('button', { name: '1 star' }).click();
+	await expect(ratings).toHaveText([`${you} ★☆☆☆☆`, 'Robin ★★★★★', 'Former member ★★★☆☆']);
+
+	// The card on Recipes shows only the household's average.
+	await page.goto('/recipes?archived=1');
+	const card = page.getByRole('link', { name: /^Omelet/ });
+	await expect(card.locator('.rating')).toHaveText('★ 3 (3)');
+	await expect(card).not.toContainText('Robin');
+});
+
 /** The scaling test recipe at 3 servings: in the address, on the control and in its amounts. */
 async function expectThreeServings(page: Page, dishId: number) {
 	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}\\?servings=3$`));
@@ -1770,11 +1839,16 @@ test("can't see or change another household's recipe or its photo", async ({
 		steps: 'Simmer.',
 		ingredients: [{ item: 'Beef', amount: 1, unit: 'lb' }]
 	});
+	db.prepare(
+		'insert into dish_ratings (household_id, dish_id, user_id, stars) values (?, ?, ?, 4)'
+	).run(other.householdId, dishId, other.userId);
+	const rater = db.prepare('select name from users where id = ?').pluck().get(other.userId) as string;
 
 	for (const path of [`/recipes/${dishId}`, `/recipes/${dishId}/edit`, `/recipes/${dishId}/cook`]) {
 		const response = await page.goto(path);
 		expect(response?.status(), path).toBe(404);
 		await expect(page.getByText('Secret stew')).toHaveCount(0);
+		await expect(page.getByText(rater, { exact: true })).toHaveCount(0);
 	}
 	for (const path of [`/photos/${key}.jpg`, `/photos/${key}-thumb.jpg`]) {
 		expect((await page.request.get(path)).status(), path).toBe(404);
@@ -1798,6 +1872,9 @@ test("can't see or change another household's recipe or its photo", async ({
 	await signInAs(db, context, baseURL, other.userId);
 	await page.goto(`/recipes/${dishId}`);
 	await expect(page.getByRole('heading', { name: 'Secret stew' })).toBeVisible();
+	await expect(page.getByRole('list', { name: 'Ratings' }).getByRole('listitem')).toHaveText([
+		`${rater} ★★★★☆`
+	]);
 	await expectJpeg(page, `/photos/${key}.jpg`);
 	await expectJpeg(page, `/photos/${key}-thumb.jpg`);
 });
