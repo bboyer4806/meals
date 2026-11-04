@@ -31,6 +31,18 @@ describe('splitIngredient', () => {
 		expect(splitIngredient('4 fl oz cream')).toMatchObject({ unit: 'fl oz', item: 'cream' });
 	});
 
+	it('takes T., t., Tb and TB as known units (MEA-77)', () => {
+		expect(splitIngredient('1 T. butter')).toEqual({
+			amount: '1',
+			unit: 'T.',
+			item: 'butter',
+			prepNote: ''
+		});
+		expect(splitIngredient('1 t. vanilla')).toMatchObject({ unit: 't.', item: 'vanilla' });
+		expect(splitIngredient('2 Tb flour')).toMatchObject({ unit: 'Tb', item: 'flour' });
+		expect(splitIngredient('2 TB flour')).toMatchObject({ unit: 'TB', item: 'flour' });
+	});
+
 	it('leaves out an "of" after the unit (MEA-74)', () => {
 		expect(splitIngredient('2 cloves of garlic')).toEqual({
 			amount: '2',
