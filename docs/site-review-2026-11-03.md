@@ -2,7 +2,7 @@
 
 Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each item was found by one reviewer and confirmed by a second that tried to disprove it. It is a snapshot: line numbers drift as the code changes, so check the code before acting on an item.
 
-53 items have become "Review:" tickets in Jira (MEA-64 to MEA-116, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 120 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
+62 items have become "Review:" tickets in Jira (MEA-64 to MEA-125, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 111 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
 
 ## How to use this list
 
@@ -16,7 +16,7 @@ Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each ite
 ## Where to start
 
 1. **Pass `navigate: false` in the enhance updates: #77, #87 (MEA-43).** The same SvelteKit 3 behavior causes both.
-2. **Stop losing typed text: #71, #72, #73, #74.** Same theme as MEA-80 and MEA-111.
+2. **Stop losing typed text: #72, #73, #74.** Same theme as MEA-80 and MEA-111.
 3. **Smooth the grocery list in the store: #78, #79, #80, #81.**
 4. **Finish the CSV import fixes: #75, #100.** The other import fixes are MEA-71 to MEA-74 in Meals 1.12 and MEA-89 in the backlog.
 
@@ -66,65 +66,22 @@ Items that share a cause or a fix:
   - **Where:** `src/lib/server/db/index.ts:55`, `src/lib/server/db/index.ts:59`, `src/lib/server/db/index.ts:69`, `src/lib/server/db/migrate.spec.ts:41`
   - **Problem:** Two sprint tickets are built in parallel sessions, and both run db:generate. B merges and deploys first. A then merges main, settles the drizzle/meta conflict by renumbering its entry after B's, and keeps the when value it was generated with. Every test passes because freshDb applies the whole journal, and /healthz only runs select 1, so the deploy goes green. Production never gets A's column or table, and the pages that use it fail with 'no such column'. In the same way, a fix to a hand-written custom migration (like 0009 or 0014) after it deployed changes fresh databases but never production.
   - **Fix:** Decide what is pending from what is recorded: apply, in journal order, every journal entry whose created_at or hash is missing from __drizzle_migrations. Refuse to start, or at least log, when a recorded migration's hash differs from its file. Add a migrate.spec case for an entry that is out of timestamp order.
+  - **Notes:** Skipped in triage
 - [ ] **#44 Low** Two app processes starting at once both run the same pending migrations, and one crashes with 'table already exists'
   - **Where:** `src/lib/server/db/index.ts:55`, `src/lib/server/db/index.ts:66`, `src/lib/server/db/index.ts:78`
   - **Problem:** Two app processes can start together on a database with pending migrations: dokku ps:scale web=2, a restart that overlaps a deploy, or a one-off dokku run of the app. Both compute the same pending list, one waits for the lock, then it re-runs the first migration and dies at startup. A data-only custom migration such as 0009 or 0014 could instead be applied twice. AGENTS.md says the immediate lock handles overlapping deploys, but that applies to transaction(), not to migrate().
   - **Fix:** Read the bookkeeping table and compute pending inside the migration transaction, and run it with .immediate(), so a second process waits and then finds nothing to do. Also restore foreign_keys = ON in a finally block.
   - **Verifier's correction:** Correction: with only the data migration 0014 pending (stage-0014.mjs), the second process does not apply it twice. 0014's own guard trigger aborts it ('whats_new_seen has a date that no release has') and the value stays '1.5'. Severity stays low. Only hooks.server.ts:18 migrates, scripts/backup.js opens its own connection without migrating, the app runs as a single web container, and a Dokku deploy starts one new container while the old, already migrated one serves. So the race needs ps:scale web=2 or a one-off run of the server, and the failed process's restart then finds nothing pending.
-- [ ] **#45 Low** Migrations aren't required to keep the previous release working, though both releases use the database during a deploy
-  - **Where:** `drizzle/0014_whats-new-seen-version.sql:13`, `src/lib/server/data/whats-new.ts:12`, `src/routes/(app)/+layout.server.ts:14`, `AGENTS.md:59`
-  - **Problem:** During the deploy that added 0014, someone opens What's new on the old container after the new one has already changed dates to versions. Their row gets '2026-11-02' again. From then on, the (app) layout load throws on every page they open, including What's new itself, so it can't fix itself without a database edit. Rolling back to an older image is the same kind of problem: the old image's migrate() applies nothing, so the old code runs against the newer schema.
-  - **Fix:** Add a rule to the Database section of AGENTS.md: a migration must leave the previous release working (add things first, and convert or drop them in a later release), and a data conversion ships with code that still reads the old form. Note rollback limits in README. MEA-63 covers making the What's new check accept unknown values.
-  - **Verifier's correction:** Corrections: the exposure is only the seconds between the new container's startup migration and Dokku's traffic switch, and the 0014 deploy is already past. 'Can't fix itself without a database edit' is overstated. SvelteKit 3.0.0 starts every server load before awaiting any (node_modules/@sveltejs/kit/src/runtime/server/page/index.js:168), so a visit to /whats-new runs that page's load (whats-new/+page.server.ts:9), which records '1.9', and the next page works. A member wouldn't know to type that URL, though, because the root +error.svelte only links to /. MEA-63 (open) covers tolerating an unknown version.
-- [ ] **#47 Low** Server errors are logged as bare stack traces with no page or person, and nothing tells anyone they happened
-  - **Where:** `src/hooks.server.ts:13`, `src/routes/+error.svelte:7`, `src/routes/(app)/+layout.svelte:59`
-  - **Problem:** A member hits a 500, for example the What's new crash in the rollback finding. dokku logs shows a stack trace with no path, method, person or household, and nobody is told. The member has no reference to quote and no Feedback button on that page, so the error is likely never reported.
-  - **Fix:** Add handleError to hooks.server.ts. It should log one line with an error id, the method, route id, status, user id and household id (no email), return { message, id }, and show the id on +error.svelte. To get errors noticed, optionally open one Jira ticket per new error signature through the existing jira.ts, rate-limited.
-  - **Verifier's correction:** Correction: Dokku's nginx access log records each request's method, path, status and time, so a 500 can be matched to its stack trace by time. What is really missing is the person, the household and any alert. Design 7 puts Feedback on the screens from Grocery list to Admin and says nothing about error pages. With a few invited households, this is a useful improvement but low, not medium.
-- [ ] **#48 Low** The deploy job runs actions by movable tags, and their post steps run after the deploy key is written to disk
-  - **Where:** `.github/workflows/deploy.yml:56`, `.github/workflows/deploy.yml:58`, `.github/workflows/deploy.yml:60`, `.github/workflows/deploy.yml:67`
-  - **Problem:** Suppose one of those tags is repointed to a malicious commit, as happened to tj-actions/changed-files in March 2025. Its post step can read the deploy key. That key can run dokku git:from-image, so it can deploy any image to meals.dev.boyersoftware.com, with every household's data and the Google and Jira secrets inside.
-  - **Fix:** Pin each action to a full commit SHA, with the version in a comment, and let Dependabot's github-actions updates bump them. Remove the key when the step ends (trap 'rm -f ~/.ssh/id_ed25519' EXIT), or load it into ssh-agent instead of writing a file.
-  - **Verifier's correction:** Correction: the repo has no .github/dependabot.yml (.github holds only workflows/), so 'let Dependabot bump them' means adding one. This part of the workflow is unchanged from the shared placeholder pipeline (01bb5f7), so the sibling dev.boyersoftware.com projects have it too.
-- [ ] **#50 Low** Routine updates are pending, including vite's dev-server advisories, and nothing like Dependabot surfaces them
-  - **Where:** `package.json:27`, `package.json:40`, `package.json:22`
-  - **Problem:** Advisories such as zod's and vite's stay in the lockfile until someone runs npm audit by hand. Today nothing in CI or the repo would raise them.
-  - **Fix:** Run npm update (only package-lock.json changes), run the three checks, and commit. Playwright 1.64 brings a new Chromium, so watch the touch tests. Hold TypeScript at 6.x until svelte-check supports 7, and keep @types/node on 24 to match the Node 24 runtime. Add .github/dependabot.yml for npm, github-actions and docker.
-  - **Verifier's correction:** corrections. npm outdated (read-only) matches the list. It also shows zod 4.6.5 to 4.6.7 and @types/node 24.19.2, all within the existing ranges. npm audit without fix (saved to (review script)) reports vite 8.3.0-8.3.2 with one high advisory, GHSA-587h-7wmj-h5pm (launch-editor, Windows only), plus moderate and low ones, all fixed in 8.3.5. These live in the dev server. /__open-in-editor is mounted in createServer (node_modules/vite/dist/node/chunks/node.js:24891) but not in preview() (:35414 on, static serving only), so the `vite preview` the browser tests use is mostly not exposed.
-
-### Tests and tooling
-
-- [ ] **#57 Low** Nothing in CI checks that the migrations in drizzle/ still match schema.ts
-  - **Where:** `.github/workflows/deploy.yml:41`, `src/lib/server/db/schema.ts:1`, `drizzle.config.ts:4`
-  - **Problem:** Someone adds an index or a CHECK to schema.ts and forgets npm run db:generate. The code type-checks and every test passes, because tests build their database from drizzle/. Production never gets the change, and the next unrelated db:generate pulls it into someone else's migration.
-  - **Fix:** Add a Vitest spec that builds the schema from schema.ts with drizzle-kit's API (or generates it into a temporary folder) and compares it with freshDb()'s tables, indexes and constraints, the same way compare-schema.mjs does.
-- [ ] **#60 Low** CI throws away the traces of failed browser tests and the visual-review screenshots it spends time making
-  - **Where:** `.github/workflows/deploy.yml:45`, `playwright.config.ts:19`, `tests/e2e/screens.e2e.ts:14`
-  - **Problem:** A browser test fails only on CI, like the touch test that fails only on full Chrome. The only record is a one-line annotation, so nobody can open the trace. The screens test runs in every pipeline and produces nothing anyone can see.
-  - **Fix:** After the e2e step, add actions/upload-artifact (pinned by SHA) with if: ${{ !cancelled() }}, path test-results/ and a short retention. Either skip screens.e2e.ts on CI or keep its screenshots in that artifact.
-  - **Verifier's correction:** correction: the 'github' reporter (playwright/lib/runner/index.js:3295-3376) emits each failure's header, error message and stack as an error annotation, so it is more than one line. What is lost is the trace (DOM snapshots, network, console) and the screenshots. Low.
-- [ ] **#62 Low** About 120 page.goto calls in browser tests still tap or type before the page's script has started
-  - **Where:** `tests/e2e/groceries.e2e.ts:89`, `tests/e2e/recipes.e2e.ts:948`, `tests/e2e/items.e2e.ts:3`
-  - **Problem:** On a slow runner, the first fill happens before the script starts. The add form then posts without JavaScript, and the test fails although the app works.
-  - **Fix:** Switch the remaining gotos that are followed by a tap or typing to open(page, path).
-  - **Notes:** MEA-22
+  - **Notes:** Skipped in triage
 
 ### Docs and code health
 
-- [ ] **#64 Low** design.md 6.1 doesn't describe how an invite treats an account that signed in but has no household
-  - **Where:** `src/lib/server/data/households.ts:63`, `src/lib/server/data/households.ts:77`, `docs/design.md:410`
-  - **Problem:** Someone changing invites or setup reads 6.1, the source of truth, and doesn't learn that a household invite instantly moves a no-household account in, or that the admin can't re-invite one. They may 'fix' the code back to the documented rule or miss the case in tests.
-  - **Fix:** Add to 6.1 (3) and (4): an account that signed in but has no household joins right away when a member invites it, and the admin's household invite to such an account is refused as an existing account.
 - [ ] **#65 Low** Design 4.6's code layout and AGENTS.md's signature exceptions leave out tour.ts and several server and lib modules
   - **Where:** `docs/design.md:296`, `docs/design.md:280`, `AGENTS.md:44`, `src/lib/server/data/tour.ts:10`
   - **Problem:** An agent following 4.6 or AGENTS.md to add a per-person setting can't tell where it belongs, or 'fixes' tour.ts to take householdId first. Someone looking for the form helpers or fold() won't find them in the layout.
   - **Fix:** Update 4.6's tree and its exceptions sentence. Add the tour to AGENTS.md's list, for example: 'a person's tour and What's new state take the person's id'.
   - **Also covers:** design.md 4.6 says data functions take householdId first except What's new, but tour.ts also takes the person's id
-- [ ] **#68 Low** The hidden pantry check keeps about 1,750 lines and 61 tests that nothing reaches, and they've drifted
-  - **Where:** `src/lib/server/data/pantry.ts:147`, `src/lib/checklist.ts:112`, `src/lib/server/data/needs.ts:211`, `src/lib/server/data/pantry.spec.ts:1`
-  - **Problem:** Every change to dinners, dishes, items or grocery lines must keep this unused code compiling and its 61 tests passing, and it still falls behind: if the check returns, its lines can't tell a date's Kids and Adults dinners apart.
-  - **Fix:** Either remove pantry.ts, checklist.ts, their specs and the two needs.ts helpers (git keeps them; leave the tables and always_have so stored checks survive) and say in 6.8 that the code will be rebuilt, or keep it and list in 6.8 what it doesn't yet cover, such as several labeled dinners on a date.
-  - **Notes:** Reopens design: 6.8: 'It may come back, so its data and code stay'
+  - **Notes:** Skipped in triage
 
 ## 2. Frontend issues
 
@@ -134,6 +91,7 @@ Items that share a cause or a fix:
   - **Where:** `src/routes/(app)/recipes/new/+page.svelte:70`, `src/lib/components/RecipeForm.svelte:67`, `src/lib/components/RecipeForm.svelte:85`
   - **Problem:** On a phone, someone imports a recipe from a link, then switches to Groceries to check an item before tapping Save. The filled-in recipe and the link are gone, with no warning.
   - **Fix:** Compare against a new recipe's starting values rather than the imported ones (pass the page's own data.values as the baseline), or mark the editor changed after a successful import.
+  - **Notes:** Skipped in triage
 - [ ] **#72 Medium** With two dinners, Save on one asks an unnamed 'Leave without saving?' about the other, so that dinner's typing is easily lost
   - **Where:** `src/lib/components/DinnerDetails.svelte:103`, `src/lib/components/DinnerDetails.svelte:111`, `src/lib/components/DinnerDetails.svelte:173`, `src/lib/components/DinnerDetails.svelte:224`
   - **Problem:** On a Kids and Adults day, type a note in each and tap Save under Kids. The page goes to the week and asks 'Leave without saving?' right after Save, without saying it means Adults. OK seems like the obvious answer after a Save, and it drops the Adults note. Tapping '‹ Week of' asks the same question twice in a row.
