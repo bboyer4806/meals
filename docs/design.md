@@ -692,7 +692,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Import recipes   | `/recipes/import`                    | See below.                                                                                                                           |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
 | Edit recipe      | `/recipes/new`, `/recipes/[id]/edit` | See below.                                                                                                                           |
-| Cooking view     | `/recipes/[id]/cook`                 | Large text, the screen stays on, and you tap ingredients and steps to check them off (Q36).                                          |
+| Cooking view     | `/recipes/[id]/cook`                 | Large text, the screen stays on, and you tap ingredients and steps to check them off (Q36). Back to recipe returns to the recipe at the servings shown without adding a Back step, as the editor's Cancel does (MEA-156). |
 | Menu             | `/menu`                              | See below.                                                                                                                           |
 | Dinner           | `/menu/[date]`                       | See below.                                                                                                                           |
 | Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
@@ -780,6 +780,7 @@ unknown sort shows Name. Opening Recipes from the tab bar or "‹ Recipes" start
 **Import recipes.** Households bringing recipes from elsewhere (MEA-37; Q37b assumed none) add
 many at once from a CSV file saved from a spreadsheet. Import beside New recipe opens it, with
 "‹ Recipes", Download template, a file field, Import and Cancel; its Help explains the layout.
+Cancel returns to Recipes without adding a Back step, as the editor's does (MEA-156).
 The template is the header row alone: Recipe, Servings, Prep (min), Cook (min), Tags,
 Ingredients, Steps, Notes, Source, Calories, Protein (g), Carbs (g), Fat (g). It starts with a
 UTF-8 byte order mark, so Excel opens it as CSV UTF-8 and saves it that way (MEA-71). Columns are
@@ -847,6 +848,11 @@ tags (with suggestions), ingredients, steps (one per line in a single text box),
 source, and nutrition. Each ingredient row has an amount, a unit (pick a known unit or
 type your own), an item (with suggestions, or a new one) and a prep note. Rows move with
 up and down buttons, and "Add section" inserts a heading.
+Save opens the saved recipe. Cancel returns to the recipe at the servings it was shown at,
+which Edit passes on, or to Recipes from a new recipe. Neither adds a Back step (MEA-156):
+when the page before the editor is the one they go to, they go back to it as it was left, such
+as Recipes with its search; otherwise that page takes the editor's place, so Back from it
+doesn't open the editor again.
 
 **Import from a link.** New recipe has a Link field and Import above the editor (MEA-47, Q37),
 so a recipe found online can be brought in on any device, a phone included. Most recipe sites

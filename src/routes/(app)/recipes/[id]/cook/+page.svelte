@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import IngredientList from '#lib/components/IngredientList.svelte';
 	import { servingsLabel, targetServings } from '#lib/recipe-view.ts';
+	import { returnOnClick } from '#lib/return-to.ts';
 	import { scaleFactor } from '#lib/scaling.ts';
 	import { splitSteps, stepHasUnscaledAmount } from '#lib/steps.ts';
 
@@ -64,7 +65,10 @@
 </svelte:head>
 
 <div class="cook">
-	<a class="link-tap" href="/recipes/{dish.id}?servings={servings}">Back to recipe</a>
+	<!-- Back at the servings shown, without adding a Back step (MEA-156). -->
+	<a class="link-tap" href="/recipes/{dish.id}?servings={servings}" onclick={returnOnClick}
+		>Back to recipe</a
+	>
 	<h1>{dish.name} <span class="for">· {servingsLabel(servings)}</span></h1>
 	{#if screenMayTurnOff}
 		<p class="muted note">
