@@ -175,8 +175,8 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
 `.github/workflows/deploy.yml` on every push to `main` (E4). Changes:
 
 1. **Checks before deploying.** A new check job runs the type check, unit tests and
-   end-to-end tests on pull requests and on pushes to `main`. The deploy job needs it,
-   so code that fails never deploys.
+   end-to-end tests on pull requests and on pushes to `main`. The build job needs it,
+   and the deploy job needs the build, so code that fails never deploys.
 2. **One-time server setup.** The server limits which commands the deploy key can run, so
    these are done once on the server by hand (README, "One-time server setup"):
    - create a storage directory owned by uid 1000 (the image's `node` user) and mount

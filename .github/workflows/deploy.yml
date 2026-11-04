@@ -6,6 +6,10 @@ name: Deploy
 # deploy key may run, so the app's storage, settings and ports are set once on
 # the server instead (README, "One-time server setup"). Pull requests only run
 # the checks.
+#
+# Each action is pinned to a full commit SHA, with its version in a comment, so
+# moving a tag can't change the code that runs here. Dependabot proposes new
+# versions as pull requests (.github/dependabot.yml).
 on:
   push:
     branches: [main]
@@ -30,9 +34,9 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
@@ -44,7 +48,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
 
-  deploy:
+  build:
     needs: check
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -53,18 +57,18 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           push: true
@@ -75,6 +79,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Kept apart from build and given no actions, so no action's code ever shares
+  # a runner with the deploy key: a job's runner only gets the secrets it uses.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: {}
+
+    steps:
       - name: Deploy to Dokku
         env:
           SSH_KEY: ${{ secrets.DOKKU_SSH_KEY }}
@@ -85,6 +97,9 @@ jobs:
           : "${SSH_KEY:?Add the DOKKU_SSH_KEY secret under Settings > Secrets and variables > Actions}"
           : "${HOST:?Add the DOKKU_HOST secret under Settings > Secrets and variables > Actions}"
           mkdir -p ~/.ssh
+          # Delete the key when this step ends, even if it fails, so no later
+          # step can read it.
+          trap 'rm -f ~/.ssh/id_ed25519' EXIT
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           # The runner starts with no known hosts, so trust the key the
