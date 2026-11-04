@@ -774,7 +774,8 @@ unknown sort shows Name. Opening Recipes from the tab bar or "‹ Recipes" start
 many at once from a CSV file saved from a spreadsheet. Import beside New recipe opens it, with
 "‹ Recipes", Download template, a file field, Import and Cancel; its Help explains the layout.
 The template is the header row alone: Recipe, Servings, Prep (min), Cook (min), Tags,
-Ingredients, Steps, Notes, Source, Calories, Protein (g), Carbs (g), Fat (g). Columns are
+Ingredients, Steps, Notes, Source, Calories, Protein (g), Carbs (g), Fat (g). It starts with a
+UTF-8 byte order mark, so Excel opens it as CSV UTF-8 and saves it that way (MEA-71). Columns are
 matched by name ignoring case, in any order; only Recipe is needed, and other columns are
 ignored. Each row is one recipe, and blank rows are skipped. As in a spreadsheet, a quote opens a
 quoted cell only at the start of a cell and is text anywhere else, so Use a 9" pan keeps its inch
@@ -796,6 +797,10 @@ needs an item.") and an archived item ("Row 9: Saffron is archived. Restore it o
 since importing never restores items. A quote that starts a cell and is never closed would put
 the rest of the file in that cell, so it's the only problem listed, on the row where the quote
 opens ("Row 4: a cell starts with a quote that isn't closed.").
+The file must be UTF-8, as CSV UTF-8 saves it. One that isn't, such as one Excel saved as CSV
+(Comma delimited), which is windows-1252, imports nothing and says "Save the file as CSV UTF-8,
+then import it again." rather than garbling its é, ° and ½ (MEA-71). Another encoding isn't
+guessed, since a wrong guess would garble them without a word.
 A file with no problems whose recipe names are already in
 Recipes (ignoring case, archived included) first lists those recipes, archived ones marked so,
 each with Skip (selected to start), Replace and Rename. Skip leaves the file's recipe out.

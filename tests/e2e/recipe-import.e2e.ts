@@ -33,8 +33,9 @@ test('Download template gives the header row', async ({ page, person: _signedIn 
 	await page.getByRole('link', { name: 'Download template' }).click();
 	const file = await download;
 	expect(file.suggestedFilename()).toBe('recipes.csv');
+	// A byte order mark starts it, so Excel keeps it UTF-8 (MEA-71).
 	expect(readFileSync(await file.path(), 'utf8')).toBe(
-		'Recipe,Servings,Prep (min),Cook (min),Tags,Ingredients,Steps,Notes,Source,Calories,Protein (g),Carbs (g),Fat (g)\r\n'
+		'\uFEFFRecipe,Servings,Prep (min),Cook (min),Tags,Ingredients,Steps,Notes,Source,Calories,Protein (g),Carbs (g),Fat (g)\r\n'
 	);
 });
 
