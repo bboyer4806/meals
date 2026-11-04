@@ -31,6 +31,57 @@ describe('splitIngredient', () => {
 		expect(splitIngredient('4 fl oz cream')).toMatchObject({ unit: 'fl oz', item: 'cream' });
 	});
 
+	it('leaves out an "of" after the unit (MEA-74)', () => {
+		expect(splitIngredient('2 cloves of garlic')).toEqual({
+			amount: '2',
+			unit: 'cloves',
+			item: 'garlic',
+			prepNote: ''
+		});
+		expect(splitIngredient('1 Cup Of milk').item).toBe('milk');
+		// Only right after the unit.
+		expect(splitIngredient('2 cups cream of mushroom soup').item).toBe('cream of mushroom soup');
+	});
+
+	it('reads a unit written onto the amount (MEA-74)', () => {
+		expect(splitIngredient('500g flour')).toEqual({
+			amount: '500',
+			unit: 'g',
+			item: 'flour',
+			prepNote: ''
+		});
+		expect(splitIngredient('1/2cup sugar')).toMatchObject({ amount: '1/2', unit: 'cup' });
+		expect(splitIngredient('1 1/2cups flour')).toMatchObject({ amount: '1 1/2', unit: 'cups' });
+		expect(splitIngredient('2-3tbsp oil')).toMatchObject({ unit: 'tbsp', prepNote: '2 to 3' });
+		// Letters that aren't a unit aren't split off.
+		expect(splitIngredient('7UP soda')).toEqual({
+			amount: '',
+			unit: '',
+			item: '7UP soda',
+			prepNote: ''
+		});
+	});
+
+	it('puts text in parentheses after the amount or the unit in the prep note (MEA-74)', () => {
+		expect(splitIngredient('1 (14 oz) can of diced tomatoes, drained')).toEqual({
+			amount: '1',
+			unit: 'can',
+			item: 'diced tomatoes',
+			prepNote: '14 oz, drained'
+		});
+		expect(splitIngredient('2 (6 oz) salmon fillets')).toEqual({
+			amount: '2',
+			unit: '',
+			item: 'salmon fillets',
+			prepNote: '6 oz'
+		});
+		expect(splitIngredient('1 cup (240 ml) milk')).toMatchObject({
+			unit: 'cup',
+			item: 'milk',
+			prepNote: '240 ml'
+		});
+	});
+
 	it('reads no amount or unit without a number first', () => {
 		expect(splitIngredient('Salt, to taste')).toEqual({
 			amount: '',
