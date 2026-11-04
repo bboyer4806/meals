@@ -3035,6 +3035,8 @@ test('plans two dinners on a day, each with its own label, dishes, Save and Clea
 	const adults = page.getByRole('region', { name: 'Adults' });
 	const kids = page.getByRole('region', { name: 'Kids' });
 	await expect(kids.getByRole('heading', { name: 'Kids' })).toBeFocused();
+	// A line above the second dinner sets it apart from the first.
+	await expect(kids).toHaveCSS('border-top-style', 'solid');
 	await expect(adults.getByRole('region', { name: 'Dishes' }).getByRole('link')).toHaveText([
 		'Chicken tacos'
 	]);
