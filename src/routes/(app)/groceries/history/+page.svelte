@@ -24,7 +24,7 @@
 
 {#each data.days as day (day.date)}
 	<section class="card">
-		<h2>{formatDateLabel(day.date)}</h2>
+		<h2>{formatDateLabel(day.date, { today: data.today })}</h2>
 		<ul class="list">
 			{#each day.lines as line (line.id)}
 				<li class="row">
