@@ -1,7 +1,11 @@
 # Opens a pull request when an action the workflows pin has a new version.
+# The cooldown waits until a release is a week old (GitHub's default is 3 days),
+# so a bad release is likely caught and pulled before it is proposed.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
