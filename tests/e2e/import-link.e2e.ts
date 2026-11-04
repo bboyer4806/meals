@@ -232,3 +232,30 @@ test("drops a failed save's message once an import replaces the recipe", async (
 	await expect(name(page)).toHaveValue('Cinnamon toast');
 	await expect(problem).toHaveCount(0);
 });
+
+test("drops a failed save's problems beside the fields once an import replaces the recipe", async ({
+	page,
+	person: _signedIn
+}) => {
+	await answerImport(page, toast);
+	await open(page, '/recipes/new');
+	await name(page).fill(' ');
+	await amount(page, 1).fill('lots');
+	await item(page, 1).fill('Apples');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(name(page)).toHaveAccessibleDescription('Enter a recipe name');
+	await expect(amount(page, 1)).toHaveAccessibleDescription(
+		'Ingredient 1: enter an amount like 1 1/2'
+	);
+
+	page.once('dialog', (dialog) => {
+		expect(dialog.message()).toBe(REPLACE);
+		void dialog.accept();
+	});
+	await link(page).fill(toast.source);
+	await importButton(page).click();
+	await expect(name(page)).toHaveValue('Cinnamon toast');
+	await expect(amount(page, 1)).toHaveValue('2');
+	await expect(page.locator('[aria-invalid]')).toHaveCount(0);
+	await expect(page.locator('.field-problem')).toHaveCount(0);
+});

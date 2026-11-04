@@ -78,7 +78,7 @@
 	tags={data.tags}
 	items={data.items}
 	cancelHref="/recipes"
-	failure={form?.error === undefined ? null : form}
+	failure={form?.action === 'recipe' ? form : null}
 />
 
 <style>

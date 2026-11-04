@@ -446,6 +446,84 @@ test('asks before restoring archived items a recipe names, restoring only those 
 	await expect(page.getByRole('option', { name: 'Cardamom' })).toBeVisible();
 });
 
+test('shows every problem beside its field at once, and focuses the first (MEA-207)', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishCount = () =>
+		db.prepare('select count(*) from dishes where household_id = ?').pluck().get(person.householdId);
+	await open(page, '/recipes/new');
+	const name = page.getByLabel('Name', { exact: true });
+	const tags = page.getByLabel('Tags');
+	const item = (row: number) => ingredientRow(page, row).getByRole('combobox', { name: 'Item' });
+	const amount = (row: number) => ingredientRow(page, row).getByLabel('Amount', { exact: true });
+
+	// Blank once trimmed, so the browser lets it through and the server refuses it.
+	await name.fill('   ');
+	await tags.fill(Array.from({ length: 11 }, (_, i) => `Tag ${i}`).join(', '));
+	await fillIngredient(ingredientRow(page, 1), { amount: '2-3', unit: 'cloves', item: 'Garlic' });
+	await page.getByRole('button', { name: 'Add ingredient' }).click();
+	await fillIngredient(ingredientRow(page, 2), { amount: '1', unit: 'cup', item: '' });
+	await page.getByRole('button', { name: 'Save' }).click();
+
+	// Each problem shows under its field, which is marked invalid and described by it, and the
+	// first one has focus. Nothing shows above the form, and nothing is saved.
+	await expect(name).toBeFocused();
+	await expect(name).toHaveAttribute('aria-invalid', 'true');
+	await expect(name).toHaveAccessibleDescription('Enter a recipe name');
+	await expect(tags).toHaveAttribute('aria-invalid', 'true');
+	await expect(tags).toHaveAccessibleDescription(
+		'Use 10 tags or fewer Separate them with commas, like Dinner, Quick.'
+	);
+	const range = 'Ingredient 1: enter one amount, and put a range like 2 to 3 in the prep note';
+	await expect(amount(1)).toHaveAttribute('aria-invalid', 'true');
+	await expect(amount(1)).toHaveAccessibleDescription(range);
+	await expect(ingredientRow(page, 1).getByText(range)).toBeVisible();
+	await expect(item(2)).toHaveAttribute('aria-invalid', 'true');
+	await expect(item(2)).toHaveAccessibleDescription('Ingredient 2 needs an item');
+	await expect(ingredientRow(page, 2).getByText('Ingredient 2 needs an item')).toBeVisible();
+	for (const field of [
+		page.getByLabel('Servings'),
+		item(1),
+		ingredientRow(page, 1).getByLabel('Unit', { exact: true }),
+		amount(2),
+		page.getByLabel('Steps')
+	]) {
+		await expect(field).not.toHaveAttribute('aria-invalid');
+	}
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await expect(page).toHaveURL(/\/recipes\/new$/);
+	expect(dishCount()).toBe(0);
+
+	// A row's problems move with it, and go when it's removed.
+	await page.getByRole('button', { name: 'Move ingredient 2 up' }).click();
+	await expect(item(1)).toHaveAccessibleDescription('Ingredient 2 needs an item');
+	await expect(amount(2)).toHaveAccessibleDescription(range);
+	await page.getByRole('button', { name: 'Remove ingredient 1' }).click();
+	await page.getByRole('button', { name: 'Add ingredient' }).click();
+	await expect(item(2)).not.toHaveAttribute('aria-invalid');
+	await expect(ingredientRow(page, 2).locator('.field-problem')).toHaveCount(0);
+
+	// Saving again checks everything again: what's fixed is no longer marked, and focus goes to
+	// the first problem left.
+	await name.fill('Garlic bread');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(tags).toBeFocused();
+	await expect(name).not.toHaveAttribute('aria-invalid');
+	await expect(name).toHaveAccessibleDescription('');
+	await expect(amount(1)).toHaveAccessibleDescription(range);
+	expect(dishCount()).toBe(0);
+
+	await tags.fill('Bread');
+	await amount(1).fill('2');
+	await ingredientRow(page, 1).getByLabel('Prep note', { exact: true }).fill('2 to 3, minced');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page).toHaveURL(/\/recipes\/\d+$/);
+	await expect(page.getByRole('heading', { name: 'Garlic bread', level: 1 })).toBeVisible();
+	await expect(ingredients(page)).toHaveText(['2 cloves Garlic, 2 to 3, minced']);
+});
+
 test('asks before leaving the editor with changes, and leaves it behind once saved', async ({
 	page,
 	person: _

@@ -3,7 +3,12 @@
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import { beforeNavigate, refreshAll } from '$app/navigation';
 	import { returnOnClick, returnTo } from '../return-to.ts';
-	import type { RecipeFailure, RecipeFormValues, RecipeRow } from '../server/recipe-form.ts';
+	import type {
+		RecipeFailure,
+		RecipeField,
+		RecipeFormValues,
+		RecipeRow
+	} from '../server/recipe-form.ts';
 	import RecipeIngredients, { blankIngredient, type EditorRow } from './RecipeIngredients.svelte';
 	import RecipePhoto, { type PhotoChoice } from './RecipePhoto.svelte';
 	import RecipeTags from './RecipeTags.svelte';
@@ -134,13 +139,40 @@
 		};
 	};
 
-	let problem = $state<RecipeFailure | null>(untrack(() => failure));
+	// The last failed save's problems (MEA-207). One that isn't about one field shows above the
+	// form. Each field's shows beside it, and an ingredient row's stay with the row as it moves.
+	// They all stay until the next save, or until an import replaces the recipe.
+	let problem = $state<RecipeFailure | null>(null);
 	let problemElement = $state<HTMLElement>();
+	let formElement: HTMLFormElement;
+	const fieldProblems = $derived(problem?.fields ?? {});
 
-	async function show(next: RecipeFailure) {
-		problem = next;
+	/** Shows a failed save's problems, each row's with the row it was sent as. */
+	function setProblems(failure: RecipeFailure, sent: EditorRow[]) {
+		problem = failure;
+		for (const { row, field, message } of failure.rows ?? []) {
+			const target = sent[row];
+			if (target) target.problems = { ...target.problems, [field]: message };
+		}
+	}
+
+	// A save without the page's script: its rows' problems go on the rows the editor starts with.
+	untrack(() => {
+		if (failure) setProblems(failure, rows);
+	});
+
+	/** Shows a failed save's problems, and focuses the first one on the page. */
+	async function show(failure: RecipeFailure, sent: EditorRow[]) {
+		setProblems(failure, sent);
 		await tick();
-		problemElement?.focus();
+		if (failure.error !== undefined) problemElement?.focus();
+		else formElement.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+	}
+
+	/** Marks a field invalid and described by its problem, when it has one. */
+	function problemAttributes(field: RecipeField) {
+		if (fieldProblems[field] === undefined) return {};
+		return { 'aria-invalid': true, 'aria-describedby': `${field}-problem` };
 	}
 
 	const REPLACE = "Replace what you typed with the page's recipe? The photo, tags and notes stay.";
@@ -171,10 +203,15 @@
 			cancel();
 			return;
 		}
-		// The rows go as one field, in order, without their keys. The item fields are named only
-		// because ItemInput needs a name.
+		// The rows go as one field, in order, without their keys or problems. A problem with one
+		// comes back with its place in them. The item fields are named only because ItemInput
+		// needs a name.
+		const sent = [...rows];
 		formData.delete('ingredientItem');
-		formData.set('ingredients', JSON.stringify(rows.map(({ key: _, ...row }) => row)));
+		formData.set(
+			'ingredients',
+			JSON.stringify(sent.map(({ key: _, problems: __, ...row }) => row))
+		);
 		if (photo.kind === 'new') {
 			formData.set('photo', photo.photo, 'photo.jpg');
 			formData.set('thumb', photo.thumb, 'thumb.jpg');
@@ -183,6 +220,7 @@
 		}
 		saving = true;
 		problem = null;
+		for (const row of rows) row.problems = undefined;
 
 		return async ({ result, update }) => {
 			const signedOut =
@@ -193,19 +231,17 @@
 			// Nothing here clears or reloads the form, so everything typed and the picked photo
 			// stay for another try.
 			if (result.type === 'failure') {
-				await show(result.data as RecipeFailure);
+				await show(result.data as RecipeFailure, sent);
 			} else if (result.type === 'error') {
 				// The action never ran, the connection dropped, or something broke on the server.
 				const error =
 					result.status === 413
 						? 'That photo is too large. Try another one.'
 						: "The recipe couldn't be saved. Check your connection and try again.";
-				await show({ action: 'recipe', error });
+				await show({ action: 'recipe', error }, sent);
 			} else if (signedOut) {
-				await show({
-					action: 'recipe',
-					error: "You've been signed out. Sign in again in another tab, then save."
-				});
+				const error = "You've been signed out. Sign in again in another tab, then save.";
+				await show({ action: 'recipe', error }, sent);
 			} else {
 				await update({ reset: false });
 			}
@@ -228,7 +264,7 @@
 	}
 </script>
 
-{#if problem}
+{#if problem?.error !== undefined}
 	<div class="problem card">
 		<p class="error" role="alert" tabindex="-1" bind:this={problemElement}>{problem.error}</p>
 		{#if problem.archivedId}
@@ -263,6 +299,7 @@
 	enctype="multipart/form-data"
 	use:enhance={submit}
 	onkeydown={nextOnEnter}
+	bind:this={formElement}
 >
 	<section class="card">
 		<div class="field">
@@ -275,7 +312,9 @@
 				autocomplete="off"
 				autocapitalize="sentences"
 				bind:value={fields.name}
+				{...problemAttributes('name')}
 			/>
+			{@render fieldProblem('name')}
 		</div>
 
 		<div class="field" role="group" aria-labelledby="photo-label">
@@ -283,52 +322,61 @@
 			<RecipePhoto savedKey={photoKey} bind:choice={photo} bind:busy={preparingPhoto} />
 		</div>
 
-		<div class="numbers">
-			<div class="field">
-				<label for="servings">Servings</label>
-				<input
-					id="servings"
-					name="servings"
-					type="number"
-					inputmode="numeric"
-					min="1"
-					max="100"
-					step="1"
-					required
-					bind:value={fields.servings}
-				/>
+		<div class="field">
+			<div class="numbers">
+				<div>
+					<label for="servings">Servings</label>
+					<input
+						id="servings"
+						name="servings"
+						type="number"
+						inputmode="numeric"
+						min="1"
+						max="100"
+						step="1"
+						required
+						bind:value={fields.servings}
+						{...problemAttributes('servings')}
+					/>
+				</div>
+				<div>
+					<label for="prepMinutes">Prep (min)</label>
+					<input
+						id="prepMinutes"
+						name="prepMinutes"
+						type="number"
+						inputmode="numeric"
+						min="0"
+						max="10000"
+						step="1"
+						bind:value={fields.prepMinutes}
+						{...problemAttributes('prepMinutes')}
+					/>
+				</div>
+				<div>
+					<label for="cookMinutes">Cook (min)</label>
+					<input
+						id="cookMinutes"
+						name="cookMinutes"
+						type="number"
+						inputmode="numeric"
+						min="0"
+						max="10000"
+						step="1"
+						bind:value={fields.cookMinutes}
+						{...problemAttributes('cookMinutes')}
+					/>
+				</div>
 			</div>
-			<div class="field">
-				<label for="prepMinutes">Prep (min)</label>
-				<input
-					id="prepMinutes"
-					name="prepMinutes"
-					type="number"
-					inputmode="numeric"
-					min="0"
-					max="10000"
-					step="1"
-					bind:value={fields.prepMinutes}
-				/>
-			</div>
-			<div class="field">
-				<label for="cookMinutes">Cook (min)</label>
-				<input
-					id="cookMinutes"
-					name="cookMinutes"
-					type="number"
-					inputmode="numeric"
-					min="0"
-					max="10000"
-					step="1"
-					bind:value={fields.cookMinutes}
-				/>
-			</div>
+			<!-- Under the three fields, which are too narrow for them. -->
+			{@render fieldProblem('servings')}
+			{@render fieldProblem('prepMinutes')}
+			{@render fieldProblem('cookMinutes')}
 		</div>
 
 		<div class="field last">
 			<label for="tags">Tags</label>
-			<RecipeTags id="tags" bind:value={tagText} {tags} />
+			<RecipeTags id="tags" bind:value={tagText} {tags} problem={fieldProblems.tags} />
 		</div>
 	</section>
 
@@ -346,14 +394,25 @@
 				name="steps"
 				rows="8"
 				maxlength="10000"
-				aria-describedby="steps-help"
+				aria-invalid={fieldProblems.steps === undefined ? undefined : true}
+				aria-describedby={fieldProblems.steps === undefined
+					? 'steps-help'
+					: 'steps-help steps-problem'}
 				bind:value={fields.steps}
 			></textarea>
+			{@render fieldProblem('steps')}
 		</div>
 		<div class="field">
 			<label for="notes">Notes</label>
-			<textarea id="notes" name="notes" rows="3" maxlength="2000" bind:value={fields.notes}
+			<textarea
+				id="notes"
+				name="notes"
+				rows="3"
+				maxlength="2000"
+				bind:value={fields.notes}
+				{...problemAttributes('notes')}
 			></textarea>
+			{@render fieldProblem('notes')}
 		</div>
 		<div class="field last">
 			<label for="source">Source</label>
@@ -364,7 +423,9 @@
 				autocomplete="off"
 				placeholder="A web address or a book"
 				bind:value={fields.source}
+				{...problemAttributes('source')}
 			/>
+			{@render fieldProblem('source')}
 		</div>
 	</section>
 
@@ -406,8 +467,17 @@
 			max="100000"
 			step="any"
 			bind:value={fields[name]}
+			{...problemAttributes(name)}
 		/>
+		{@render fieldProblem(name)}
 	</div>
+{/snippet}
+
+{#snippet fieldProblem(field: RecipeField)}
+	{@const message = fieldProblems[field]}
+	{#if message !== undefined}
+		<p class="error field-problem" id="{field}-problem">{message}</p>
+	{/if}
 {/snippet}
 
 <style>

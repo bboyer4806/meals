@@ -5,11 +5,13 @@
 	// A recipe's tags as comma-separated text, with the household's other tags to tap (design 7).
 	// Tapping one finishes the tag being typed when it starts the same way, or adds it after the
 	// others. The server reads the text the same way: trimmed, and each tag once ignoring case.
+	// A problem from a failed save shows under the field (MEA-207).
 	let {
 		value = $bindable(''),
 		tags,
-		id
-	}: { value?: string; tags: string[]; id: string } = $props();
+		id,
+		problem
+	}: { value?: string; tags: string[]; id: string; problem?: string } = $props();
 
 	// The server's limit; past it, suggestions would only lead to an error.
 	const MAX_TAGS = 10;
@@ -55,8 +57,10 @@
 	maxlength="400"
 	autocomplete="off"
 	autocapitalize="sentences"
-	aria-describedby="{uid}-help"
+	aria-invalid={problem === undefined ? undefined : true}
+	aria-describedby={problem === undefined ? `${uid}-help` : `${uid}-problem ${uid}-help`}
 />
+{#if problem !== undefined}<p class="error field-problem" id="{uid}-problem">{problem}</p>{/if}
 <p class="muted help" id="{uid}-help">Separate them with commas, like Dinner, Quick.</p>
 {#if suggestions.length > 0}
 	<ul class="chips" aria-label="Add a tag" bind:this={list}>

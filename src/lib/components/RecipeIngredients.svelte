@@ -1,8 +1,14 @@
 <script lang="ts" module>
-	import type { RecipeRow } from '../server/recipe-form.ts';
+	import type { RecipeRow, RowField } from '../server/recipe-form.ts';
 
-	/** A row of the editor, with a key that stays with it when rows move. */
-	export type EditorRow = RecipeRow & { key: number };
+	/**
+	 * A row of the editor, with a key that stays with it when rows move, as do the problems a
+	 * failed save found with its fields (MEA-207).
+	 */
+	export type EditorRow = RecipeRow & {
+		key: number;
+		problems?: Partial<Record<RowField, string>>;
+	};
 
 	export function blankIngredient(key: number): EditorRow {
 		return { kind: 'ingredient', amount: '', unit: '', item: '', prepNote: '', key };
@@ -17,6 +23,7 @@
 	// A recipe's ingredient rows (design 7, Edit recipe): amount, unit, item and prep note, and
 	// section headings between them. A heading applies to the rows after it, up to the next one.
 	// Rows move with up and down buttons. The server leaves out rows with nothing typed in them.
+	// A failed save's problems with a row show under its fields (MEA-207).
 	let {
 		rows = $bindable(),
 		items
@@ -39,6 +46,16 @@
 
 	function fieldId(key: number, field: string) {
 		return `${uid}-${key}-${field}`;
+	}
+
+	function problemId(row: EditorRow, field: RowField) {
+		return fieldId(row.key, `${field}-problem`);
+	}
+
+	/** Marks a row's field invalid and described by its problem, when it has one. */
+	function problemAttributes(row: EditorRow, field: RowField) {
+		if (row.problems?.[field] === undefined) return {};
+		return { 'aria-invalid': true, 'aria-describedby': problemId(row, field) };
 	}
 
 	function nextKey() {
@@ -144,7 +161,9 @@
 						autocomplete="off"
 						autocapitalize="sentences"
 						placeholder="Heading, like For the sauce"
+						{...problemAttributes(row, 'heading')}
 					/>
+					{@render problem(row, 'heading')}
 				{:else}
 					<label class="visually-hidden" for={fieldId(row.key, 'item')}>Item</label>
 					<ItemInput
@@ -154,7 +173,9 @@
 						{items}
 						bind:value={row.item}
 						required={false}
+						problemId={row.problems?.item === undefined ? undefined : problemId(row, 'item')}
 					/>
+					{@render problem(row, 'item')}
 					<div class="amounts">
 						<label class="visually-hidden" for={fieldId(row.key, 'amount')}>Amount</label>
 						<input
@@ -166,6 +187,7 @@
 							autocapitalize="off"
 							spellcheck="false"
 							placeholder="Amount"
+							{...problemAttributes(row, 'amount')}
 						/>
 						<label class="visually-hidden" for={fieldId(row.key, 'unit')}>Unit</label>
 						<input
@@ -178,6 +200,7 @@
 							autocapitalize="off"
 							spellcheck="false"
 							placeholder="Unit"
+							{...problemAttributes(row, 'unit')}
 						/>
 						<label class="visually-hidden" for={fieldId(row.key, 'prep')}>Prep note</label>
 						<input
@@ -187,8 +210,13 @@
 							maxlength="80"
 							autocomplete="off"
 							placeholder="Prep note"
+							{...problemAttributes(row, 'prepNote')}
 						/>
 					</div>
+					<!-- Under the three fields, which are too narrow for them. -->
+					{@render problem(row, 'amount')}
+					{@render problem(row, 'unit')}
+					{@render problem(row, 'prepNote')}
 				{/if}
 			</div>
 		</li>
@@ -207,6 +235,13 @@
 		<option value={unit.code}></option>
 	{/each}
 </datalist>
+
+{#snippet problem(row: EditorRow, field: RowField)}
+	{@const message = row.problems?.[field]}
+	{#if message !== undefined}
+		<p class="error field-problem" id={problemId(row, field)}>{message}</p>
+	{/if}
+{/snippet}
 
 <style>
 	.rows {
