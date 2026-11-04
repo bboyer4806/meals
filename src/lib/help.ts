@@ -76,7 +76,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 		title: 'Import recipes',
 		points: [
 			'Download template gives a spreadsheet layout to fill in, one recipe per row, saved as CSV. Only the Recipe column is needed, and columns can be in any order.',
-			'Ingredients and Steps hold several entries separated by |, like 2 cups flour|1 egg|1 cup milk. An ingredient starting with #, like # Batter, is a section heading.',
+			'Ingredients and Steps hold several entries, each on its own line in the cell or separated by |, like 2 cups flour|1 egg|1 cup milk. An ingredient starting with #, like # Batter, is a section heading.',
 			'Each ingredient is read as an amount, a unit, an item and, after a comma, a prep note: 1 1/2 cups flour, sifted. A range like 2-3 cloves goes in the prep note.',
 			"Tags are separated by commas. A blank Servings uses your household's usual servings.",
 			'If anything is wrong, nothing is imported, and each problem is listed with its row number. The header is row 1.',
