@@ -99,6 +99,16 @@ function uncovered(locator: Locator) {
 	});
 }
 
+/** Whether the dish suggestions reach the middle of the element, over it or under it. */
+function suggestionsAt(locator: Locator) {
+	return locator.evaluate((element) => {
+		const box = element.getBoundingClientRect();
+		return document
+			.elementsFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+			.some((found) => found.matches('[role=listbox]'));
+	});
+}
+
 /** "Tue, Oct 7", with the year when it isn't this year's, as Copy a dinner says when one was made. */
 function madeOn(date: string): string {
 	const year = date.slice(0, 4);
@@ -964,6 +974,63 @@ test('keeps Add under the dish field on a phone, never covered or moved by the s
 	await expect(dishLinks(page)).toHaveText(['Wild rice', 'Garlic bread', 'Sweet corn']);
 	await expect(dishField(page)).toHaveValue('');
 	expect(adds()).toBe(3);
+});
+
+test('keeps the dish suggestions under the header, tab bar and feedback button, so tapping those does what it says (MEA-143)', async ({
+	page,
+	db,
+	person
+}) => {
+	// A few dishes put the field low enough on a phone that, with the keyboard closed, the
+	// suggestions reach the feedback button and the tab bar.
+	const date = addDays(today(), 3);
+	addDinner(db, person.householdId, date, {
+		dishes: [
+			[addRecipe(db, person.householdId, { name: 'Roast chicken' }), 'main'],
+			[addRecipe(db, person.householdId, { name: 'Green salad' }), 'side'],
+			[addRecipe(db, person.householdId, { name: 'Mashed potatoes' }), 'side'],
+			[addRecipe(db, person.householdId, { name: 'Apple pie' }), 'dessert']
+		]
+	});
+	for (const name of ['Cranberry sauce', 'Creamed corn', 'Crispy potatoes', 'Croissants']) {
+		addRecipe(db, person.householdId, { name });
+	}
+	const adds = countAdds(page);
+	const help = page.getByRole('banner').getByRole('button', { name: 'Help', exact: true });
+	const more = page.getByRole('banner').getByText('More', { exact: true });
+	const feedback = page.getByRole('button', { name: 'Send feedback' });
+	const recipesTab = page
+		.getByRole('navigation', { name: 'Main' })
+		.getByRole('link', { name: 'Recipes' });
+	await open(page, `/menu/${date}`);
+	await dishField(page).fill('Cr');
+	const list = page.getByRole('listbox');
+	await expect(list.getByRole('option')).toHaveCount(5);
+
+	// Scrolled up, the suggestions pass under Help and More, which stay on top.
+	await list.evaluate((element) => window.scrollBy(0, element.getBoundingClientRect().top));
+	for (const control of [help, more]) {
+		expect(await suggestionsAt(control)).toBe(true);
+		expect(await uncovered(control)).toBe(true);
+	}
+
+	// Back at the top, they pass under the feedback button and the tab bar.
+	await page.evaluate(() => window.scrollTo(0, 0));
+	for (const control of [feedback, recipesTab]) {
+		expect(await suggestionsAt(control)).toBe(true);
+		expect(await uncovered(control)).toBe(true);
+	}
+
+	// Tapping Recipes goes there, asking first about the name typed (MEA-127), and adds nothing.
+	const questions: string[] = [];
+	page.once('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.accept();
+	});
+	await recipesTab.tap();
+	await expect(page).toHaveURL(/\/recipes$/);
+	expect(questions).toEqual([leaveDish('Cr')]);
+	expect(adds()).toBe(0);
 });
 
 test('sends a picked dish once while it is on its way', async ({ page, db, person }) => {
