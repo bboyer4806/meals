@@ -139,7 +139,7 @@ test('splits off what arrived when an order comes up short', async ({ page, db, 
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('button', { name: 'Got fewer' }).click();
 	await dialog.getByLabel('How many did you get?').fill('2');
-	await dialog.getByRole('button', { name: 'Save' }).last().click();
+	await dialog.getByRole('button', { name: 'Save received' }).click();
 	await expect(dialog).toHaveCount(0);
 
 	await expect(walmart.getByRole('button', { name: /^Yogurt\s*1 cups/ })).toBeVisible();
@@ -272,6 +272,19 @@ test('records Got fewer when Enter is pressed in the amount', async ({ page, db,
 	await expect(walmart.getByRole('button', { name: /^Yogurt\s*1 cups/ })).toBeVisible();
 });
 
+test('shows a Got fewer error beside the amount', async ({ page, db, person }) => {
+	addStore(db, person.householdId, 'Walmart');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Yogurt', quantity: '3', unit: 'cups', store: 'Walmart' });
+	await group(page, 'Walmart').getByRole('button', { name: /^Yogurt/ }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'Got fewer' }).click();
+	await dialog.getByLabel('How many did you get?').fill('3');
+	await dialog.getByRole('button', { name: 'Save received' }).click();
+	await expect(dialog.locator('.fewer + [role="alert"]')).toHaveText('Enter an amount less than 3');
+	await expect(dialog.getByRole('alert')).toHaveCount(1);
+});
+
 test('keeps working for a line whose store was archived', async ({ page, db, person }) => {
 	const costco = addStore(db, person.householdId, 'Costco');
 	await page.goto('/groceries');
@@ -372,7 +385,7 @@ test("saves the sheet edits with Didn't come and Got fewer", async ({ page, db, 
 	await dialog.getByLabel('Quantity').fill('5');
 	await dialog.getByRole('button', { name: 'Got fewer' }).click();
 	await dialog.getByLabel('How many did you get?').fill('1');
-	await dialog.getByRole('button', { name: 'Save' }).last().click();
+	await dialog.getByRole('button', { name: 'Save received' }).click();
 	await expect(dialog).toHaveCount(0);
 	await expect(walmart.getByRole('button', { name: /^Yogurt\s*4 cups\s*vanilla/ })).toBeVisible();
 	await expect(walmart.locator('.done')).toContainText('1 cups');
