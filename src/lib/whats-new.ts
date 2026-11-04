@@ -14,6 +14,30 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.10',
+		released: '2026-11-04',
+		lines: [
+			"Coming back to Meals without a connection keeps the page and what you typed instead of showing Something went wrong. The page says Couldn't refresh at the bottom and reloads once you're back online.",
+			'Saving a dinner now scrolls the week to that day, so you can see it say Saved.',
+			'Mark all ordered and Mark all received now say how many items they marked, and change only the items they asked about, so an item added meanwhile waits for the next order.',
+			"When a recipe can't be saved, every problem shows at once, each under its field, instead of only the first one at the top.",
+			"On a dinner's page, the servings, label, restaurant and note you typed come back if your phone reloads the page while you're in another app. Leaving with a dish name typed but not added asks first.",
+			'Tap outside the More menu, or press Escape, to close it.',
+			'Scrolling in a panel, such as the one a grocery line opens, no longer moves the page behind it.',
+			"In Request a dish, the suggestions show under Dish instead of covering Note and Request. A requested dish's name is also easier to tap to open its recipe.",
+			'Cancel in the recipe editor or Import recipes, and Back to recipe in the cooking view, return to where you were, as you left it. Going back from there no longer opens them again.',
+			'On New recipe, importing from a link keeps the photo, tags and notes you added and asks before replacing anything else you typed. Leaving after an import, before Save, asks first.',
+			'In Got fewer on a grocery line, the button is now Save received, and a problem shows right under it instead of at the top.',
+			"On a dinner's page, dish suggestions scroll under the header and tabs, so tapping Help, More or a tab no longer adds a dish. A line now separates the dinners on a day with several.",
+			'History shows the year on dates from earlier years, and moving a dinner shows the year when the new date is in another year.',
+			'On a slow connection, quick changes on a day with no dinner yet all go through, instead of saying someone put another dinner on this date.',
+			'Imports read ingredients such as 2 cloves of garlic, 500g flour and 1 (14 oz) can of tomatoes correctly. Import from a link also keeps é, ° and ½ from older sites and reads nutrition such as 1,250 kcal in full.',
+			"T., Tb and TB now count as tablespoons and t. as teaspoons. A step with a time such as 1 1\u20442 hours no longer says its amounts aren't scaled.",
+			'Import recipes reads ingredients and steps on their own lines in a cell, and an inch mark like 9" no longer merges rows. A file not saved as CSV UTF-8 is refused with how to fix it, instead of garbling é, ½ and °.',
+			'When a page still shows a grocery line, request, invite or member someone else already removed, tapping it no longer changes a newer one or shows Not found.'
+		]
+	},
+	{
 		version: '1.9',
 		released: '2026-11-03',
 		lines: [
