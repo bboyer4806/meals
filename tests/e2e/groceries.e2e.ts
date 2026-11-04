@@ -1,5 +1,5 @@
-import type { Page } from '@playwright/test';
-import { addStore, expect, test } from './fixtures.ts';
+import type { Locator, Page } from '@playwright/test';
+import { addStore, expect, open, test } from './fixtures.ts';
 
 function addForm(page: Page) {
 	return page.getByRole('form', { name: 'Add to the list' });
@@ -29,6 +29,28 @@ function group(page: Page, name: string) {
 async function confirm(page: Page, button: string) {
 	await page.getByRole('dialog').getByRole('button', { name: button, exact: true }).click();
 	await expect(page.getByRole('dialog')).toHaveCount(0);
+}
+
+/**
+ * A finger pressed, moved `down` pixels (negative is up) in steps across the middle of what's
+ * there, then lifted. Real touch input, as a phone sends it; page.mouse would send a mouse pointer
+ * even on the Pixel 7.
+ */
+async function drag(on: Locator, down: number) {
+	const box = await on.boundingBox();
+	if (!box) throw new Error('Nothing there to drag');
+	const x = box.x + box.width / 2;
+	const y = box.y + box.height / 2 - down / 2;
+	const cdp = await on.page().context().newCDPSession(on.page());
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+	for (let step = 1; step <= 8; step += 1) {
+		await cdp.send('Input.dispatchTouchEvent', {
+			type: 'touchMove',
+			touchPoints: [{ x, y: y + (down * step) / 8 }]
+		});
+	}
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await cdp.detach();
 }
 
 test('orders and receives a store, then suggests that store next time', async ({
@@ -376,6 +398,55 @@ test("saves the sheet edits with Didn't come and Got fewer", async ({ page, db, 
 	await expect(dialog).toHaveCount(0);
 	await expect(walmart.getByRole('button', { name: /^Yogurt\s*4 cups\s*vanilla/ })).toBeVisible();
 	await expect(walmart.locator('.done')).toContainText('1 cups');
+});
+
+// While a sheet is open, dragging scrolls only the sheet (design 8; MEA-164).
+test('scrolls only the edit sheet when dragged, and the list behind stays where it was', async ({
+	page,
+	db,
+	person
+}) => {
+	// A list longer than the screen.
+	const addItemRow = db.prepare(
+		'insert into items (household_id, name, created_at) values (?, ?, 0)'
+	);
+	const addLine = db.prepare(
+		"insert into grocery_needs (household_id, item_id, quantity, status, created_at) values (?, ?, 1, 'to_order', 0)"
+	);
+	for (let number = 10; number < 50; number += 1) {
+		const item = addItemRow.run(person.householdId, `Item ${number}`).lastInsertRowid;
+		addLine.run(person.householdId, item);
+	}
+	await page.setViewportSize({ width: 412, height: 520 });
+	await open(page, '/groceries');
+	const line = page.getByRole('button', { name: /^Item 30/ });
+	await line.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+	const scrollY = () => page.evaluate(() => window.scrollY);
+	const scrolled = await scrollY();
+	expect(scrolled).toBeGreaterThan(0);
+	const where = await line.boundingBox();
+
+	// On this short screen, with Got fewer showing, the sheet is taller than it can show at once.
+	await line.click();
+	const sheet = page.getByRole('dialog', { name: 'Item 30' });
+	await sheet.getByRole('button', { name: 'Got fewer' }).click();
+	const below = () =>
+		sheet.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop);
+	expect(await below()).toBeGreaterThan(0);
+
+	// Up the sheet to its end, where Delete is, then on up from there.
+	await drag(sheet, -300);
+	await expect.poll(below).toBeLessThan(1);
+	await expect(sheet.getByRole('button', { name: 'Delete' })).toBeInViewport();
+	await drag(sheet, -300);
+	await page.keyboard.press('Escape');
+	await expect(sheet).toBeHidden();
+	expect(await scrollY()).toBe(scrolled);
+	expect(await line.boundingBox()).toEqual(where);
+
+	// Once the sheet is closed, the list scrolls again.
+	await drag(line, -300);
+	await expect.poll(scrollY).toBeGreaterThan(scrolled);
 });
 
 // Every page reloads its data when opened (design 6.11), so Back never shows a stored copy.
