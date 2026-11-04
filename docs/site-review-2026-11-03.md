@@ -2,7 +2,7 @@
 
 Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each item was found by one reviewer and confirmed by a second that tried to disprove it. It is a snapshot: line numbers drift as the code changes, so check the code before acting on an item.
 
-On 2026-11-03, 48 items became "Review:" tickets in Jira (MEA-64 to MEA-80 in Meals 1.12, MEA-81 to MEA-111 in the backlog) and #4 was dropped, so they're no longer listed here. The 125 items below keep their original numbers.
+53 items have become "Review:" tickets in Jira (MEA-64 to MEA-116, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 120 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
 
 ## How to use this list
 
@@ -15,11 +15,10 @@ On 2026-11-03, 48 items became "Review:" tickets in Jira (MEA-64 to MEA-80 in Me
 
 ## Where to start
 
-1. **Deploy only from main: #41.** One condition in deploy.yml stops a hand-run workflow from deploying any branch to production.
-2. **Pass `navigate: false` in the enhance updates: #77, #87 (MEA-43).** The same SvelteKit 3 behavior causes both.
-3. **Stop losing typed text: #71, #72, #73, #74.** Same theme as MEA-80 and MEA-111.
-4. **Smooth the grocery list in the store: #13, #78, #79, #80, #81.**
-5. **Finish the CSV import fixes: #75, #100.** The other import fixes are MEA-71 to MEA-74 in Meals 1.12 and MEA-89 in the backlog.
+1. **Pass `navigate: false` in the enhance updates: #77, #87 (MEA-43).** The same SvelteKit 3 behavior causes both.
+2. **Stop losing typed text: #71, #72, #73, #74.** Same theme as MEA-80 and MEA-111.
+3. **Smooth the grocery list in the store: #78, #79, #80, #81.**
+4. **Finish the CSV import fixes: #75, #100.** The other import fixes are MEA-71 to MEA-74 in Meals 1.12 and MEA-89 in the backlog.
 
 Items that share a cause or a fix:
 
@@ -39,15 +38,7 @@ Items that share a cause or a fix:
   - **Where:** `src/routes/(app)/feedback/+page.server.ts:23`, `src/lib/server/jira.ts:36`, `src/lib/server/jira.ts:50`
   - **Problem:** A member hand-crafts the feedback post. Every ticket's Jira reporter is the token's account (design 7), so the description is the only record of who sent it, and the first From and Household lines in it are the forged ones, against 'The sender and household come from the session.'
   - **Fix:** Refuse whitespace and control characters in page (a path and query from the browser has none), for example with .regex(/^\/\S*$/), and put the session's From and Household lines before anything the form sent.
-- [ ] **#6 Low** One household can claim any email with an invite, blocking other households and pulling the person in on sign-in
-  - **Where:** `src/lib/server/data/households.ts:81`, `src/lib/server/data/households.ts:93`, `src/lib/server/auth/sign-in.ts:28`, `src/routes/(app)/household/+page.server.ts:52`
-  - **Problem:** A member of one household invites people another household means to invite, or a long list of addresses. The other household is told 'already has an invite' but can't see or cancel it, and neither can the admin. When the person signs in they land in the wrong household, whose members see their name and email, and only that household can remove them. Once MEA-26 sends invite emails, the missing cap also lets a member mail any number of addresses.
-  - **Fix:** Keep invites per household and email so each household's invite stands on its own; when a person signing in has several, ask which household to join (or take the oldest and say so). Cap pending invites per household (for example 20) and list every pending invite on Admin.
-  - **Notes:** Reopens design: 6.1 item 4 (inviting fails if the email already has an invite from any household)
-- [ ] **#10 Low** Import from a link's address check lets through NAT64, 6to4 and other non-public ranges
-  - **Where:** `src/lib/server/recipe-page.ts:16`, `src/lib/server/recipe-page.ts:32`, `src/lib/server/recipe-page.spec.ts:15`
-  - **Problem:** On a host that reaches IPv4 through NAT64 (IPv6-only servers or subnets), a member imports http://[64:ff9b::a00:5]/ and the gateway carries the request to 10.0.0.5 on the private network, which design 4.5 says is never fetched. Where a machine's own or neighboring addresses sit in an unlisted range, as this review container's 192.0.2.2 does, its services are reachable the same way. Docker's default 172.17.0.0/16 is blocked, so today's Dokku host is likely unaffected.
-  - **Fix:** Refuse every IANA special-purpose block that isn't globally reachable (for example 192.0.0.0/24, 198.18.0.0/15, 240.0.0.0/4, the TEST-NETs, multicast, ::/96, 64:ff9b::/96, 64:ff9b:1::/48, 2002::/16, 2001::/32), or check the IPv4 address embedded in NAT64 and 6to4 addresses against the IPv4 list. Add them to PRIVATE_LINKS in the spec and mention NAT64 in design 4.5.
+  - **Notes:** Skipped in triage
 
 ### Data integrity and races
 
@@ -56,29 +47,13 @@ Items that share a cause or a fix:
   - **Problem:** In the store, Yogurt 3 cups is on the list. Someone taps Got fewer 2, realizes they got none, and taps the Received today line to undo it. The Walmart group now has two Yogurt rows (1 and 2 cups) instead of the original line of 3. Later someone adds Yogurt, sees 'Already on the list: 1 cups' and updates it to 5, meaning 5 in total, and the list now asks for 7.
   - **Fix:** When a line goes back to To Order (undoReceived, markDidntCome, or the Got fewer remainder) and the item already has a To Order line in the same unit, add its quantity to that line and delete it in the same transaction. Undoing a Got fewer split should merge it back into its remainder. At a minimum, addNeed's duplicate prompt and Update should cover every open To Order line for the item.
   - **Verifier's correction:** Correction: the Didn't come case is a fair two-line state, since 3 gal really are needed. The defects are that addNeed's prompt and Update cover only one To Order line, and that undoing a Got fewer doesn't restore the original line. Totals stay right unless someone edits one line thinking it's the only one.
-- [ ] **#15 Low** Two members removing each other at the same moment leaves a household with no members
-  - **Where:** `src/lib/server/data/households.ts:48`, `src/hooks.server.ts:25`, `src/routes/(app)/household/+page.server.ts:80`
-  - **Problem:** Members A and B both tap Remove on each other at nearly the same time, for example on a slow phone connection. The hook checks B's session when the headers arrive, A's removal deletes B, then B's action still runs and deletes A. The household is left with no members. Nobody can open it or invite into it again, and households can't be deleted (section 12), so its data is orphaned.
-  - **Fix:** Wrap removeMember in transaction() and first check that actingUserId still belongs to householdId (error 404 if not). The immediate lock serializes the two removals, so the second one finds its own account gone and stops.
-  - **Verifier's correction:** Correction: production runs behind Dokku's nginx, which buffers request bodies by default (proxy_request_buffering on), so a slow phone upload doesn't widen the window. The two removals would have to reach Node within a few milliseconds of each other. If that happens the result is as described: Admin shows 'No members', the data can't be reached, and the UI offers no way to recover. It is very unlikely, so low rather than medium. The proposed fix (do it in transaction() and check the acting user's membership) is right.
+  - **Notes:** Skipped in triage
 - [ ] **#16 Low** A double-tapped Create household on a slow connection shows the error page 'You already belong to a household'
   - **Where:** `src/routes/setup/+page.server.ts:13`, `src/lib/server/data/households.ts:17`, `src/routes/setup/+page.svelte:35`
   - **Problem:** On a weak phone connection someone taps Create household twice, since enhance doesn't block a second submit and the button stays enabled. Both requests pass the hook before either body arrives. The data stays correct (one household), but the second result is an error that enhance renders as 'Something went wrong / You already belong to a household'. The same happens if a member's invite joins this account while the person is submitting setup.
   - **Fix:** In the setup action, catch createHousehold's 400 (the person already has a household) and redirect(303, '/') instead of letting it become an error page. Optionally disable Create household while the request is in flight.
   - **Verifier's correction:** Correction: production nginx buffers each request body before forwarding it, so 'both requests pass the hook before either body arrives' doesn't happen there. The second tap has to reach Node within the few milliseconds the first takes, which only happens if the network delivers both at once. What the person sees depends on order. SvelteKit 3 applies the error in place only while the page is still on /setup (is_current_location, client.js:3015). If the redirect has already navigated away, it navigates back to /setup with the error result. I didn't watch this in a browser, so the visible effect is unverified. The data stays correct.
-  - **Notes:** Likely, not fully proven
-- [ ] **#22 Low** Undoing a check-off made through Where did you get it? keeps the picked store on the line and as the default
-  - **Where:** `src/lib/server/data/needs.ts:407`, `src/lib/server/data/needs.ts:303`
-  - **Problem:** In the store, someone taps the wrong store under 'Where did you get it?', sees the line under Received today and taps it again, as section 11 suggests for mis-taps. The line moves from No store to Aldi, and the next time Paper towels is added, Aldi is filled in instead of Walmart.
-  - **Fix:** Keep what the check-off replaced (the line's store and the item's previous default store) so undoReceived can restore both. At a minimum, put the line back under No store when its store was picked during the check-off.
-  - **Verifier's correction:** Correction: the default goes back to Walmart once the line is checked off at Walmart. The lasting effect is that the line now sits in the Aldi group, so its circle no longer asks for a store, and a second tap records Aldi in history unless someone edits the store first. Putting the line back under No store needs its earlier store saved, and the schema has no column for that.
-
-### CSV import and Import from a link
-
-- [ ] **#31 Low** Imported text keeps references like &eacute; and &reg;, and &#146; becomes an invisible control character
-  - **Where:** `src/lib/recipe-schema.ts:35`, `src/lib/recipe-schema.ts:62`
-  - **Problem:** Someone imports a recipe whose JSON-LD escapes accented letters or symbols. The editor shows 'jalape&ntilde;o', and saved without noticing it becomes a catalog item and grocery suggestion that can only be archived. Design 7 says character references are taken out of the text.
-  - **Fix:** Decode every HTML5 named reference (a complete table, or the entities package's decodeHTML) and map &#128; to &#159; to their windows-1252 characters, as the HTML spec does.
+  - **Notes:** Likely, not fully proven. Skipped in triage
 
 ### Database, migrations, deploy and operations
 
@@ -86,6 +61,7 @@ Items that share a cause or a fix:
   - **Where:** `.github/workflows/deploy.yml:13`, `.github/workflows/deploy.yml:49`, `.github/workflows/deploy.yml:56`
   - **Problem:** Someone, or an agent with the GitHub Actions tool, clicks Run workflow on claude/mea-63 to re-run the checks. When the checks pass, that unmerged branch is built, tagged latest and deployed, and its migrations run on the production database. The branch stays live until the next push to main. Its migration is already recorded, so if review later changes that migration, the merged version never applies (see the reported 'migrate() skips a migration whose timestamp is older... and never notices an edited migration').
   - **Fix:** Add "&& github.ref == 'refs/heads/main'" to the deploy job's if, or put the job in a 'production' environment whose deployment rule only allows main.
+  - **Notes:** Skipped in triage
 - [ ] **#43 Low** migrate() skips a migration whose timestamp is older than the newest applied one, and never notices an edited migration
   - **Where:** `src/lib/server/db/index.ts:55`, `src/lib/server/db/index.ts:59`, `src/lib/server/db/index.ts:69`, `src/lib/server/db/migrate.spec.ts:41`
   - **Problem:** Two sprint tickets are built in parallel sessions, and both run db:generate. B merges and deploys first. A then merges main, settles the drizzle/meta conflict by renumbering its entry after B's, and keeps the when value it was generated with. Every test passes because freshDb applies the whole journal, and /healthz only runs select 1, so the deploy goes green. Production never gets A's column or table, and the pages that use it fail with 'no such column'. In the same way, a fix to a hand-written custom migration (like 0009 or 0014) after it deployed changes fresh databases but never production.
