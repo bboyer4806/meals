@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { isRedirect } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { listDishes } from '#lib/server/data/dishes.ts';
@@ -112,6 +113,33 @@ describe('the import action', () => {
 				steps: 'Toast the bread.',
 				source: 'https://recipes.example/toast',
 				rows: [{ kind: 'ingredient', amount: '1', unit: 'slice', item: 'bread', prepNote: '' }]
+			}
+		});
+	});
+
+	it('reads a page in windows-1252 that the server gzips', async () => {
+		const brulee = {
+			'@type': 'Recipe',
+			name: 'Crème brûlée',
+			recipeIngredient: ['½ cup sugar'],
+			recipeInstructions: 'Bake at 325°F.'
+		};
+		const link = 'https://recipes.example/brulee';
+		servePages({
+			[link]: {
+				status: 200,
+				headers: { 'content-type': 'text/html; charset=windows-1252', 'content-encoding': 'gzip' },
+				body: gzipSync(Buffer.from(pageWith(brulee), 'latin1'))
+			}
+		});
+		expect(await importLink(link)).toEqual({
+			action: 'import',
+			values: {
+				...newRecipeValues(4),
+				name: 'Crème brûlée',
+				steps: 'Bake at 325°F.',
+				source: link,
+				rows: [{ kind: 'ingredient', amount: '½', unit: 'cup', item: 'sugar', prepNote: '' }]
 			}
 		});
 	});
