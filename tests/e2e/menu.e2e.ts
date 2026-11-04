@@ -3288,7 +3288,7 @@ test.describe('swiping between weeks', () => {
 	}) => {
 		const sunday = sundayOf(today());
 		await open(page, '/menu');
-		// The weeks the page loads, to show at the end that only the last swipe loaded one.
+		// The weeks the page loads, to show that only the real swipe loaded one.
 		const loads: (string | null)[] = [];
 		page.on('request', (request) => {
 			const url = new URL(request.url());
@@ -3302,8 +3302,6 @@ test.describe('swiping between weeks', () => {
 		await swipe(wednesday, -50);
 		// More than half as far down as across.
 		await swipe(wednesday, -160, 100);
-		// With a second finger, off the days, as in a pinch.
-		await touch(page, await stroke(wednesday, -200), await stroke(heading, -200));
 		// Across the week's heading rather than its days.
 		await swipe(heading, -200);
 		// Up the screen, which scrolls the page as before, even straying 70 pixels sideways.
@@ -3315,6 +3313,13 @@ test.describe('swiping between weeks', () => {
 		// loads its page ahead of time.)
 		await wednesday.scrollIntoViewIfNeeded();
 		await swipe(wednesday, -200);
+		await showsWeek(page, addDays(sunday, 7));
+		expect(loads).toEqual([addDays(sunday, 7)]);
+
+		// With a second finger, off the days, as in a pinch. It goes last because full Chrome's
+		// touch emulation, unlike the headless shell CI runs, then holds the second finger down
+		// for the rest of the page, so every later swipe would be a pinch too (MEA-79).
+		await touch(page, await stroke(wednesday, -200), await stroke(heading, -200));
 		await showsWeek(page, addDays(sunday, 7));
 		expect(loads).toEqual([addDays(sunday, 7)]);
 	});
