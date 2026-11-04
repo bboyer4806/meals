@@ -2276,6 +2276,13 @@ function requestsSection(page: Page) {
 	return page.getByRole('region', { name: 'Requests' });
 }
 
+/** The shorter side of the element's box, which on a tap target is at least 44 px (design 8). */
+async function tapSize(locator: Locator): Promise<number> {
+	const box = await locator.boundingBox();
+	if (!box) throw new Error('Nothing there to tap');
+	return Math.min(box.width, box.height);
+}
+
 function requestSheet(page: Page) {
 	return page.getByRole('dialog', { name: 'Request a dish' });
 }
@@ -2327,10 +2334,10 @@ test('requests a dish from Recipes, linked, with who asked and the note', async 
 	await expect(sheet).toHaveCount(0);
 
 	const section = requestsSection(page);
-	await expect(section.getByRole('link', { name: 'Lasagna' })).toHaveAttribute(
-		'href',
-		`/recipes/${lasagna}`
-	);
+	const link = section.getByRole('link', { name: 'Lasagna' });
+	await expect(link).toHaveAttribute('href', `/recipes/${lasagna}`);
+	// A full-size tap target, so a tap meant for it doesn't land on the note (MEA-170).
+	expect(await tapSize(link)).toBeGreaterThanOrEqual(44);
 	await expect(section.getByText('For Sunday, please')).toBeVisible();
 	await expect(section.getByText(/^Asked by Person \d+$/)).toBeVisible();
 	await expect(section.getByText('No requests yet.')).toHaveCount(0);
@@ -2754,10 +2761,10 @@ test("lists the requests under a day's dinners, and adds one to the dinner that 
 	const section = requestsSection(page);
 	await expect(section.getByRole('listitem')).toHaveText([/^Lasagna/, /^Eating out/, /^Gumbo/]);
 	const first = section.getByRole('listitem').first();
-	await expect(first.getByRole('link', { name: 'Lasagna' })).toHaveAttribute(
-		'href',
-		`/recipes/${lasagna}`
-	);
+	const link = first.getByRole('link', { name: 'Lasagna' });
+	await expect(link).toHaveAttribute('href', `/recipes/${lasagna}`);
+	// A full-size tap target, as on the week (MEA-170).
+	expect(await tapSize(link)).toBeGreaterThanOrEqual(44);
 	await expect(first.getByText('Extra cheese')).toBeVisible();
 	await expect(first.getByText(/^Asked by Person \d+$/)).toBeVisible();
 	// A restaurant request shows too, with its own Add.

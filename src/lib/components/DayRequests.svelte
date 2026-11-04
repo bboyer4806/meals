@@ -176,7 +176,7 @@
 				<li class="request">
 					<div class="what">
 						{#if request.kind === 'dish'}
-							<a class="dish" href="/recipes/{request.dishId}">{request.name}</a>
+							<a class="dish link-tap" href="/recipes/{request.dishId}">{request.name}</a>
 						{:else}
 							<span class="kind">{DINNER_TYPE_LABELS.eat_out}</span>
 							<span class="restaurant">{request.name}</span>
