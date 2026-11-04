@@ -259,7 +259,7 @@ lost, so is everything. Moving backups off the server later is a small change.
   household.
 - **Sessions** use a random token in an `httpOnly`, `Secure`, `SameSite=Lax` cookie, and
   only a SHA-256 hash of the token is stored. Sessions last 30 days and are extended when
-  used. Signing out deletes the session.
+  used. Signing out deletes the session, and each sign-in deletes every expired one.
 - **Forms:** SvelteKit's origin check blocks cross-site form posts. All input is validated
   with Zod.
 - **No raw HTML** from user input is ever rendered (no `{@html}`), and SvelteKit's
