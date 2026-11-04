@@ -48,7 +48,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
 
-  deploy:
+  build:
     needs: check
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -79,6 +79,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Kept apart from build and given no actions, so no action's code ever shares
+  # a runner with the deploy key: a job's runner only gets the secrets it uses.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: {}
+
+    steps:
       - name: Deploy to Dokku
         env:
           SSH_KEY: ${{ secrets.DOKKU_SSH_KEY }}
@@ -89,8 +97,8 @@ jobs:
           : "${SSH_KEY:?Add the DOKKU_SSH_KEY secret under Settings > Secrets and variables > Actions}"
           : "${HOST:?Add the DOKKU_HOST secret under Settings > Secrets and variables > Actions}"
           mkdir -p ~/.ssh
-          # The actions above run post steps after this one, so the key is
-          # deleted when this step ends, even if it fails.
+          # Delete the key when this step ends, even if it fails, so no later
+          # step can read it.
           trap 'rm -f ~/.ssh/id_ed25519' EXIT
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
