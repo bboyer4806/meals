@@ -748,7 +748,9 @@ many at once from a CSV file saved from a spreadsheet. Import beside New recipe 
 The template is the header row alone: Recipe, Servings, Prep (min), Cook (min), Tags,
 Ingredients, Steps, Notes, Source, Calories, Protein (g), Carbs (g), Fat (g). Columns are
 matched by name ignoring case, in any order; only Recipe is needed, and other columns are
-ignored. Each row is one recipe, and blank rows are skipped. Ingredients and Steps hold several
+ignored. Each row is one recipe, and blank rows are skipped. As in a spreadsheet, a quote opens a
+quoted cell only at the start of a cell and is text anywhere else, so Use a 9" pan keeps its inch
+mark (MEA-72). Ingredients and Steps hold several
 entries separated by `|`, and an ingredient entry starting with `#` is a section heading. Each
 ingredient entry fills an editor row (`src/lib/ingredient-text.ts`): an amount, or a range whose
 first amount is the amount and which goes in the prep note as "2 to 3"; then a known unit (6.5)
@@ -761,7 +763,10 @@ problem with its row number (the header is row 1), such as "Row 7: enter an amou
 Problems include a missing Recipe column, a row without a name, a name used twice in the file
 ("Row 5: Pound cake is also on row 2."), an ingredient the editor wouldn't take ("Row 7: '2 cups'
 needs an item.") and an archived item ("Row 9: Saffron is archived. Restore it on Items first."),
-since importing never restores items. A file with no problems whose recipe names are already in
+since importing never restores items. A quote that starts a cell and is never closed would put
+the rest of the file in that cell, so it's the only problem listed, on the row where the quote
+opens ("Row 4: a cell starts with a quote that isn't closed.").
+A file with no problems whose recipe names are already in
 Recipes (ignoring case, archived included) first lists those recipes, archived ones marked so,
 each with Skip (selected to start), Replace and Rename. Skip leaves the file's recipe out.
 Replace swaps the existing recipe's details for the file's, keeping its name, photo, Tried,
