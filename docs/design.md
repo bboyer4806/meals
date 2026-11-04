@@ -577,7 +577,15 @@ adding the same name offers to restore it.
 ### 6.11 Freshness
 
 Every page reloads its data when opened and when you come back to the tab or app (Q11).
-If two people change the same thing, the last save wins.
+Coming back reloads only once the server answers, because a reload that can't reach it would
+put an error page in place of the page and lose what was typed (MEA-80). The page doesn't ask
+while the device says it's offline, and otherwise waits up to 3 seconds for `/healthz` to answer
+OK. Without that answer, the page stays as it is, with what was typed, and "Couldn't refresh"
+shows at the bottom left, level with the feedback button. It tries again the next time you come
+back, and when the device's connection comes back. The line goes once the page gets new data from
+the server, from a later return, a save or another page, and an earlier check that gives up
+afterward doesn't bring it back. A page that did reload doesn't reload again when the connection
+comes back. If two people change the same thing, the last save wins.
 
 ### 6.12 Requests
 
@@ -723,7 +731,9 @@ what's typed meanwhile stays in the box, spaces included. Clearing the box shows
 search. Each list keeps its search in the address, so Back and shared links keep it, but typing
 replaces the address instead of adding Back steps: Back from a searched list leaves the list, and
 Back from a recipe opened from a search returns to that search. A search box only matches what
-its list already matched; there are no suggestions under it.
+its list already matched; there are no suggestions under it. While the device says it's offline,
+typing doesn't search, so the list and what's typed stay on screen; Enter still searches
+(MEA-80).
 
 **Recipes.** A **Sort** dropdown beside the search box offers **Name** (A to Z, the default) and
 **Rating** (highest first). Choosing one reorders the list right away, and like the search adds no

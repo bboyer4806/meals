@@ -102,6 +102,36 @@ test('keeps what is typed while the list is updating', async ({ page, db, person
 	await expect(search).toBeFocused();
 });
 
+test('keeps the list and what is typed when typing offline', async ({
+	page,
+	context,
+	db,
+	person
+}) => {
+	addRecipe(db, person.householdId, { name: 'Apple pie' });
+	addRecipe(db, person.householdId, { name: 'Tacos' });
+	const search = page.getByLabel('Search recipes');
+	const names = page.locator('.recipes .name');
+
+	await open(page, '/recipes');
+	const loads = countLoads(page);
+	await context.setOffline(true);
+	await search.pressSequentially('pie', { delay: 100 });
+	// Longer than the wait after typing stops.
+	await page.waitForTimeout(500);
+	await expect(names).toHaveText(['Apple pie', 'Tacos']);
+	await expect(search).toHaveValue('pie');
+	await expect(search).toBeFocused();
+	await expect(page).toHaveURL(/\/recipes$/);
+	expect(loads.count).toBe(0);
+
+	// Back online, typing searches again.
+	await context.setOffline(false);
+	await search.press('Backspace');
+	await expect(names).toHaveText(['Apple pie']);
+	await expect(page).toHaveURL(/\?q=pi&sort=name$/);
+});
+
 test('goes Back from a recipe to the search it was opened from', async ({ page, db, person }) => {
 	addRecipe(db, person.householdId, { name: 'Pound cake' });
 	addRecipe(db, person.householdId, { name: 'Tacos' });
