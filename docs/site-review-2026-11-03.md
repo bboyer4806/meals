@@ -2,7 +2,7 @@
 
 Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each item was found by one reviewer and confirmed by a second that tried to disprove it. It is a snapshot: line numbers drift as the code changes, so check the code before acting on an item.
 
-95 items have become "Review:" tickets in Jira (MEA-64 to MEA-157, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 78 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
+119 items have become "Review:" tickets in Jira (MEA-64 to MEA-180, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 54 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
 
 ## How to use this list
 
@@ -19,10 +19,8 @@ Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each ite
 Items that share a cause or a fix:
 
 - No pending state on taps: #150 (with MEA-133, MEA-145)
-- Focus after a save: #114, #117 (with MEA-155)
-- 320 px phones: #106 (with MEA-138, MEA-152)
-- Error pages: #108, #169 (with MEA-94)
-- Outdated help: #113, #154
+- Error pages: #169 (with MEA-161) (with MEA-94)
+- Outdated help: #154 (with MEA-166)
 
 ## 1. Backend issues and tech debt
 
@@ -87,125 +85,13 @@ Items that share a cause or a fix:
   - **Fix:** Compare against a new recipe's starting values rather than the imported ones (pass the page's own data.values as the baseline), or mark the editor changed after a successful import.
   - **Notes:** Skipped in triage
 
-### Recipes
-
-- [ ] **#105 Low** A Source with words after its web address becomes a broken link, since the whole text is the href
-  - **Where:** `src/lib/recipe-view.ts:46`, `src/routes/(app)/recipes/[id]/+page.svelte:261`
-  - **Problem:** Someone pastes a recipe's address into Source and adds a few words after it, such as '(we halve the sugar)' or '- Grandma's version'. The Recipe page shows it as a link, and tapping it opens the site's not-found page.
-  - **Fix:** Link only a source that is a single address (/^https?:\/\/\S+$/i), or link just the leading address and show the rest as text. Add the case to recipe-view.spec.ts.
-- [ ] **#106 Low** At 320 px wide, the Recipes heading runs under the Import button, and an ingredient's prep-note field shrinks to 74 px
-  - **Where:** `src/routes/(app)/recipes/+page.svelte:99`, `src/lib/components/RecipeIngredients.svelte:271`, `src/lib/components/RecipeIngredients.svelte:281`
-  - **Problem:** On a small phone the page title is clipped by its own buttons ('Archived recipes' even more), and typing 'finely chopped' in a prep note scrolls inside a field about eight characters wide.
-  - **Fix:** Let the title row wrap (or put Import and New recipe on their own row below about 360 px), and below that width put the prep note on its own line or let amount and unit shrink.
-
-### Shell, sheets, help and static pages
-
-- [ ] **#107 Medium** The More menu stays open until More is tapped again; tapping elsewhere or Escape doesn't close it
-  - **Where:** `src/routes/(app)/+layout.svelte:35`, `src/routes/(app)/+layout.svelte:12`
-  - **Problem:** A person opens More, decides they don't need it and taps the page to dismiss it: the menu stays over the add bar, and their next tap there lands on History, Admin or Sign out instead of Add.
-  - **Fix:** While the menu is open, close it on a pointerdown outside it and on Escape (a small document listener), returning focus to the summary.
-- [ ] **#108 Low** Opening /feedback in the browser crashes with a 500 because Help has no entry for that route
-  - **Where:** `src/lib/components/Help.svelte:10`, `src/lib/help.ts:158`, `src/routes/(app)/feedback/+page.server.ts:30`
-  - **Problem:** Someone who reaches /feedback (an autocompleted URL, a bookmark, or a feedback form submitted before the page's script started) gets an error page; in the no-JS case the ticket was created, so they retry and send duplicates.
-  - **Fix:** Give the feedback route a load that redirects to /groceries, so GET and post-action renders leave the route, or have Help render nothing for routes that HelpRouteId excludes instead of throwing.
-  - **Verifier's correction:** Correction to the scenario: the sheet's form sits in a closed dialog that opens only through showModal after the script starts, and enhance never puts /feedback in the address bar or history. So a submit before the script starts, an autocompleted URL or a bookmark cannot reach it, and the duplicate-ticket path cannot happen from the UI. Only someone who types /feedback sees the 500. The fix is tiny (a load that redirects, or Help tolerating the route), and very few people will ever see it.
-- [ ] **#109 Low** On a computer, a text selection that ends over the backdrop closes the sheet and discards edits
-  - **Where:** `src/lib/components/Sheet.svelte:25`
-  - **Problem:** On a laptop, someone edits a line's note, drags to select a word and lets go just outside the sheet: the sheet closes and what they typed is gone. Every Sheet in the app shares this.
-  - **Fix:** Close on the backdrop only when the pointerdown also started on the dialog itself (remember the pointerdown target).
-  - **Verifier's correction:** correction: the Feedback sheet closes too but keeps its message, since `message` is component state that survives closing (Feedback.svelte:16, 23, 70). So typed text is lost only in sheets rebuilt on open: the grocery edit sheet and duplicate prompt, Items edit (items/+page.svelte:20, 89) and Household's store edit (household/+page.svelte:20, 163). It happens only with a mouse, since touch selection doesn't fire this click. Design 7 (Help) says the sheet closes on a tap on the backdrop, and a drag that ends there is not a tap. Not MEA-43, which covers Escape and the Menu's jumps. Output is in (review script)
-- [ ] **#110 Low** Admin's household 'Since' dates render in the server's locale and time zone, then change after load
-  - **Where:** `src/routes/(app)/admin/+page.svelte:7`, `src/routes/(app)/admin/+page.svelte:66`
-  - **Problem:** The admin opens Admin and the dates flicker to another format and, for evening sign-ups, to a different day; none match the date style used elsewhere.
-  - **Fix:** Format on the server with formatDateLabel(dateIn(createdAt, household time zone)) and send the string, as Items does for its last-bought date.
-- [ ] **#111 Low** Open sheets don't stop the page behind from scrolling
-  - **Where:** `src/lib/components/Sheet.svelte:42`
-  - **Problem:** On a phone, someone drags on the edit sheet to reach its Delete button. The list behind slides instead, and when the sheet closes, the list is somewhere else or jumps back as focus returns to the row.
-  - **Fix:** While any sheet is open, lock the page with `:root:has(dialog[open]) { overflow: hidden; }` and give the dialog `overscroll-behavior: contain`.
-- [ ] **#112 Low** The privacy page's 'Last updated' date is stale and it doesn't mention ratings shown by name
-  - **Where:** `src/routes/privacy/+page.svelte:7`, `src/routes/privacy/+page.svelte:22`
-  - **Problem:** A member reading the privacy page sees a date older than its content and isn't told that their ratings are stored and shown to the household by name.
-  - **Fix:** Add ratings and who gave them to 'What Meals stores', and update the date whenever the text changes.
-  - **Also covers:** The privacy page leaves out the Google ID, browser storage and what survives removal, and says backups last 14 days
-- [ ] **#113 Low** Help for Recipe says nothing about Tried it, stars or the ratings list, and Help for Recipes leaves out Sort
-  - **Where:** `src/lib/help.ts:86`, `src/lib/help.ts:58`
-  - **Problem:** Someone opens Help on a recipe to learn what the stars and the names under them mean, or whether their stars are shared, and finds nothing. Help on Recipes doesn't say the list can be sorted by rating.
-  - **Fix:** Add a point to Help: Recipe, such as 'Tried it and your stars save as soon as you tap them. Tap your star again to clear it. Everyone's ratings are listed under them.' Drop the ‹ Recipes clause to stay near 6 points. Mention Sort in Help: Recipes.
-  - **Also covers:** Help for Recipe and Recipes predates ratings, Tried it and Sort, and mentions none of them
-
 ### Accessibility
 
-- [ ] **#114 Medium** After a keyboard check-off, star, Tried it or Add store, focus jumps to the top of the page
-  - **Where:** `src/routes/(app)/groceries/+page.svelte:136`, `src/routes/(app)/groceries/+page.svelte:147`, `src/routes/(app)/groceries/+page.svelte:335`, `src/routes/(app)/recipes/[id]/+page.svelte:90`
-  - **Problem:** A keyboard or screen reader user checks off eight groceries. After each Enter on a circle, focus is back at the start of the page, so reaching the next item means tabbing through Meals, Help, More, Items, History and the whole add bar again. A screen reader that follows focus jumps to the top each time. The same happens with a recipe's stars and Tried it, and when adding several stores on Household.
-  - **Fix:** After `update()`, focus the matching control, as the dinner page does. Give each line's check button a stable id (such as `check-<line id>`) and focus it, or the next line's, once the list re-renders. On the recipe page, focus the tapped star or the Tried it box again, and on Household, the store field. A shared enhance helper could cover all of these: it remembers the focused element's id and restores it when focus ends up on body.
-  - **Also covers:** Checking off, undoing or marking a line ordered sends keyboard focus to the top of the page
-- [ ] **#115 Medium** Keyboard focus lands hidden under the fixed tab bar or sticky header when tabbing through long pages
-  - **Where:** `src/app.css:55`, `src/routes/(app)/+layout.svelte:88`, `src/routes/(app)/+layout.svelte:199`, `src/lib/components/Feedback.svelte:87`
-  - **Problem:** A keyboard user on a computer, or on a phone with a keyboard, tabs down Groceries. When the next row is in the bottom 56 px, it's still inside the viewport, so the browser doesn't scroll, and the focused row and its ring stay behind the tab bar (WCAG 2.2 2.4.11 Focus Not Obscured). Going back up with Shift+Tab, rows land behind the header.
-  - **Fix:** Add scroll padding to the root in app.css, for example `html { scroll-padding-top: calc(3.5rem + env(safe-area-inset-top)); scroll-padding-bottom: calc(var(--tabs-height) + var(--feedback-size) + 1.5rem + env(safe-area-inset-bottom)); }`. Focus scrolling and scrollIntoView then keep elements clear of the header, tab bar and feedback button.
 - [ ] **#116 Low** In Windows high contrast mode, the chosen type, current tab, selected tag and active suggestion look unselected
   - **Where:** `src/lib/components/DinnerEditor.svelte:302`, `src/routes/(app)/+layout.svelte:226`, `src/app.css:281`, `src/lib/components/ItemInput.svelte:213`
   - **Problem:** With a Windows contrast theme, someone opens a dinner. Cooking at home, Eating out, Bringing a dish and Leftovers look the same, so they can't see which type is set. On Recipes they can't see which tags filter the list, the tab bar doesn't show which tab they're on, and arrowing through suggestions shows no highlight.
   - **Fix:** Add `@media (forced-colors: active)` rules that mark these states with system colors, for example `button[aria-pressed='true'], .chip[aria-current='true'], li[aria-selected='true'] { forced-color-adjust: none; background: SelectedItem; color: SelectedItemText; }`. Draw the current tab's bar with `border-top` instead of box-shadow.
-- [ ] **#117 Low** After Send, the Feedback sheet drops focus and its Thanks message isn't announced to screen readers
-  - **Where:** `src/lib/components/Feedback.svelte:58`, `src/lib/components/Feedback.svelte:72`, `src/lib/components/Feedback.svelte:79`
-  - **Problem:** A screen reader user sends feedback, and nothing is spoken after Send. They can't tell whether it went, so they may send it again. Typing past 2,000 characters stops without a word.
-  - **Fix:** Keep an always-present `role="status"` element in the sheet, and put the thanks line and the limit warning in it. Alternatively, focus the thanks message (tabindex=-1) or Close once the feedback is sent.
-  - **Also covers:** After Send, focus drops to the page and 'Thanks, your feedback was sent.' is never announced; After Send, focus drops out of the feedback sheet and 'Thanks, your feedback was sent.' isn't announced
-- [ ] **#118 Low** Requested dish links on the Menu and a date's page are 25 px tall, under the 44 px tap target
-  - **Where:** `src/routes/(app)/menu/+page.svelte:413`, `src/lib/components/DayRequests.svelte:179`, `src/routes/(app)/menu/+page.svelte:700`, `src/lib/components/DayRequests.svelte:284`
-  - **Problem:** On a phone, someone taps a requested dish's name to open its recipe and hits the note or the 'Asked by' line instead. On the Menu, the miss lands near Remove, which deletes the request at once.
-  - **Fix:** Give these links the app's `link-tap` class (inline-flex with min-height var(--tap)), as DinnerDishes.svelte does for its dish links.
-  - **Verifier's correction:** Correction: Remove sits beside the text column (.request is a row, 687-691), not under the link, so a vertical miss lands on the note or the 'Asked by' text, which does nothing. The scenario's claim that a miss can delete the request is overstated. The link does pass WCAG 2.5.8's 24 px minimum.
-- [ ] **#119 Low** Searching Recipes, Items, History or Copy a dinner updates the list with nothing announced to screen readers
-  - **Where:** `src/lib/components/SearchBox.svelte:45`, `src/routes/(app)/recipes/+page.svelte:178`, `src/routes/(app)/groceries/items/+page.svelte:63`, `src/routes/(app)/groceries/history/+page.svelte:22`
-  - **Problem:** A screen reader user types 'pie' in Recipes. The list narrows to two recipes, or to 'No recipes matching pie.', but nothing is spoken (WCAG 4.1.3 Status Messages). To find out whether anything matched, they have to leave the box and explore.
-  - **Fix:** Give each searchable list an always-present, visually hidden role="status" region. After each search, it says the result, such as '12 recipes' or the no-matches sentence.
-  - **Verifier's correction:** Correction: Copy a dinner (CopyDinner.svelte:130-164) filters on every keystroke rather than 300 ms after typing stops; it also has no live region. This fails WCAG 4.1.3.
-  - **Also covers:** Search results on History and Items are never announced; the first search only announces the page name
-- [ ] **#120 Low** Saved and Invited messages appear in live regions created with their text, which screen readers often skip
-  - **Where:** `src/routes/(app)/household/+page.svelte:40`, `src/routes/(app)/household/+page.svelte:108`, `src/routes/(app)/admin/+page.svelte:42`, `src/routes/(app)/recipes/+page.svelte:105`
-  - **Problem:** A screen reader user saves the household's settings or invites someone. The confirmation shows, but its live region is inserted together with the text while focus jumps to the start of the page, and VoiceOver and NVDA commonly say nothing in that case.
-  - **Fix:** Render these status elements always, empty until there's a message, as the Menu's savedStatus snippet does, and set only their text after the save.
-  - **Notes:** Likely, not fully proven
-- [ ] **#121 Low** Body text is fixed at 17px, so a larger browser font size grows headings but not list text or fields
-  - **Where:** `src/app.css:63`
-  - **Problem:** Someone with low vision has set their browser's font size to Large or Very large and opens Meals on a computer. Headings and padding grow, but grocery lines, recipe text and form fields stay at 17px.
-  - **Fix:** Use a relative size, `font: 1.0625rem/1.5 var(--font-body)` (17px at the default 16px), so body text follows the font size setting like the rest of the page.
-- [ ] **#122 Low** Each sheet's title row is a header element, so screen readers find a banner landmark inside every sheet
-  - **Where:** `src/lib/components/Sheet.svelte:31`
-  - **Problem:** With a sheet open, a screen reader user lists landmarks and gets a 'banner' that is only the sheet's title and Close button. On the Help sheet, it's a banner inside the page's banner.
-  - **Fix:** Use a plain `<div class="head">` for the title row in Sheet.svelte.
-- [ ] **#123 Low** The rating '★ 4.5 (2)' has no spoken form, so screen readers hear 'black star 4.5, 2'
-  - **Where:** `src/lib/recipe-view.ts:101`, `src/routes/(app)/recipes/[id]/+page.svelte:130`, `src/routes/(app)/recipes/+page.svelte:169`
-  - **Problem:** A screen reader user browsing Recipes hears 'black star 2, 1' for each rated recipe, and can't tell that it means an average of 2 from one rating.
-  - **Fix:** Mark the visual '★ 4.5 (2)' aria-hidden and add visually hidden words such as 'Rated 4.5 by 2 people', for example in a small component used where formatRating is shown.
-  - **Also covers:** The '★ 4.5 (2)' rating has no accessible text, so screen readers can't tell it's an average of 2 ratings
-- [ ] **#124 Low** The edit sheet has two buttons both named Save, one for the edits and one for Got fewer
-  - **Where:** `src/routes/(app)/groceries/+page.svelte:511`, `src/routes/(app)/groceries/+page.svelte:538`
-  - **Problem:** With Got fewer open, a screen reader user hears two 'Save' buttons, and a tired shopper taps the big primary Save, which saves the edits but records nothing as received.
-  - **Fix:** Name the second button for what it does, such as 'Save received', and show its error beside the How many did you get? field.
-- [ ] **#125 Low** Store group headers announce the decorative triangle and an unlabeled count
-  - **Where:** `src/routes/(app)/groceries/+page.svelte:276`, `src/routes/(app)/groceries/+page.svelte:605`
-  - **Problem:** A screen reader reads each store as 'black right-pointing small triangle, Aldi, 5' without saying what the 5 counts.
-  - **Fix:** Use content: '▸' / '' (or an aria-hidden element) for the triangle, and give the count words, such as a visually hidden 'left to get'.
-- [ ] **#126 Low** Every day link's accessible name ends with the decorative › arrow
-  - **Where:** `src/routes/(app)/menu/+page.svelte:564`
-  - **Problem:** A screen reader user moving through the week hears every day end with the arrow glyph read out (for example 'single right-pointing angle quotation mark'), seven times per week.
-  - **Fix:** Give the generated content empty alt text (content: '›' / '';) or draw the arrow with an aria-hidden element.
-- [ ] **#127 Low** Remove gives no confirmation: focus jumps to Request a dish, and same-name requests share one label
-  - **Where:** `src/routes/(app)/menu/+page.svelte:278`, `src/routes/(app)/menu/+page.svelte:289`, `src/routes/(app)/menu/+page.svelte:423`
-  - **Problem:** A screen reader user removes a request and hears 'Request a dish, button' with nothing saying it was removed, then has to go back up the list for the next one. If Sam and Brian both asked for Lasagna, both buttons are 'Remove Lasagna'.
-  - **Fix:** Announce 'Removed Lasagna.' in a status line, move focus to the next request's Remove (or the Requests heading when none are left), and include the asker in the label ('Remove Lasagna, asked by Sam').
-- [ ] **#128 Low** Arrow keys on a dish's role select save only the first step and snap the select back
-  - **Where:** `src/lib/components/DinnerDishes.svelte:302`, `src/lib/components/DinnerDishes.svelte:131`, `src/lib/components/DinnerDishes.svelte:140`
-  - **Problem:** A keyboard user on Windows or Linux presses Down twice to change a dish from Side to Other. Only Dessert is saved, the select jumps back to Dessert, and the row moves away while they're using it.
-  - **Fix:** Save the role on blur or after a short pause rather than on every change event, or keep the latest value and send it when the request in flight finishes, instead of dropping it.
-- [ ] **#129 Low** On a date with several dinners, each 'Dishes' heading is at the same level as its dinner's label
-  - **Where:** `src/lib/components/DinnerDishes.svelte:279`, `src/lib/components/DinnerEditor.svelte:198`
-  - **Problem:** A screen reader user moving through headings hears Kids, Dishes, Adults, Requests as equals, so it isn't clear which dinner each Dishes list belongs to.
-  - **Fix:** Give DinnerDishes a heading-level prop and render 'Dishes' as h3 when the dinner is labeled (h2 otherwise).
+  - **Notes:** Skipped in triage
 - [ ] **#130 Low** The dish combobox doesn't announce an added dish, and Down Arrow can't reopen the suggestions
   - **Where:** `src/lib/components/DinnerDishes.svelte:183`, `src/lib/components/ItemInput.svelte:96`, `src/lib/components/ItemInput.svelte:140`
   - **Problem:** A screen reader user picks a dish with Enter. The field just empties, with no 'Added Chicken tacos'. After pressing Escape, they have to retype to get the suggestions back.
