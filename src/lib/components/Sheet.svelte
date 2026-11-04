@@ -50,6 +50,8 @@
 		background: var(--surface);
 		color: var(--text);
 		box-shadow: var(--shadow);
+		/* Dragging past the end of a long sheet doesn't carry on to the page behind (design 8). */
+		overscroll-behavior: contain;
 	}
 
 	dialog::backdrop {

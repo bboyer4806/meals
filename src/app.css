@@ -56,6 +56,12 @@ html {
 	-webkit-text-size-adjust: 100%;
 }
 
+/* While a sheet or the tour is open, the page behind doesn't scroll, so it's still where it was
+   when they close (design 8). */
+:root:has(dialog[open]) {
+	overflow: hidden;
+}
+
 body {
 	margin: 0;
 	background: var(--bg);

@@ -909,7 +909,8 @@ Warmer and food-themed (Q39), following the phone's light or dark setting:
 - Type: Fraunces, a soft serif, for headings, and Nunito, a rounded sans serif, for
   everything else. Both are self-hosted.
 - Phone details: tap targets at least 44 px, edit sheets that slide up from the bottom,
-  and nothing that depends on hovering.
+  and nothing that depends on hovering. Dragging on an open sheet scrolls only the sheet,
+  and the page behind stays where it was (MEA-164).
 
 Colors and fonts are defined once as variables, so changes after you see the first
 deploy are quick.
