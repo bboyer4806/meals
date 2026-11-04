@@ -285,7 +285,6 @@ src/lib/                  used by browser and server; no database access
   recipe-schema.ts        read a page's schema.org Recipe into the recipe editor's fields
   units.ts                known units, spellings, conversion, display ranges
   scaling.ts              scale one ingredient amount
-  checklist.ts            combine ingredient amounts into checklist lines
   steps.ts                find numbers in steps that won't scale
   dates.ts                "today" and weeks in a time zone
   whats-new.ts            the releases listed on What's new, newest first
@@ -295,7 +294,7 @@ src/lib/server/
   db/index.ts             connection, settings, migrations at startup
   auth/                   Google sign-in, sessions, invites
   data/                   one module per area: households, stores, items, needs,
-                          dishes, dinners, requests, pantry. Every function takes
+                          dishes, dinners, requests. Every function takes
                           householdId first, except whats-new (a person's seen
                           release), which takes the person's id.
   photos.ts               save, delete and serve photos
@@ -516,10 +515,11 @@ minutes" (Q34, change 2.1.3).
 
 **Hidden for now.** The pantry check is too much functionality for the value it gives right
 now, so nothing leads to it: no "Check pantry" on the menu or a recipe, no link in the More
-menu, and `/pantry` and its actions are not found. It may come back, so its data and code
-stay, and a household's check in progress stays stored. While it's hidden, the Items page
-doesn't show or change Always have (addition 2.2.1), and grocery lines that Need added stay
-on the list. The rest of this section describes it as built.
+menu, and `/pantry` and its actions are not found. Its code and tests were removed (MEA-125)
+and will be rebuilt if the check comes back. Its tables and each item's Always have stay, so
+a household's check in progress stays stored. While it's hidden, the Items page doesn't show
+or change Always have (addition 2.2.1), and grocery lines that Need added stay on the list.
+The rest of this section describes it as built.
 
 - A household has at most one checklist. It's shared by the household's members, and its
   check marks are saved (Q35).
@@ -995,11 +995,10 @@ ingredients.
 ## 10. Testing
 
 - **Unit tests (Vitest)** for the logic in `src/lib`: reading and formatting amounts,
-  unit conversion, scaling, checklist totals, step warnings, and dates in a time zone.
+  unit conversion, scaling, step warnings, and dates in a time zone.
 - **Data tests (Vitest)** against a temporary database built from the real migrations:
   status changes and default stores, duplicates, Got fewer, invite and sign-up rules,
-  rejection of cross-household references, Copy a dinner grouping, and checklist marks
-  and the lines they create.
+  rejection of cross-household references, and Copy a dinner grouping.
 - **End-to-end tests (Playwright, Chromium, phone-sized screen)** for the main flow of
   each phase. Tests sign in by writing a session straight into the test database, so the
   app has no test-only way to sign in.

@@ -28,7 +28,7 @@ export function showAmount(
 
 /**
  * A volume in tsp or a weight in oz, in the unit whose range contains it (6.6) and rounded to
- * kitchen fractions: "1 1/8 cups". Checklist totals always use this.
+ * kitchen fractions: "1 1/8 cups".
  */
 export function showInBestUnit(kind: UnitKind, base: number): string {
 	let unit = bestUnit(kind, base);
