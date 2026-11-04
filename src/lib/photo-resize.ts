@@ -69,7 +69,8 @@ function jpeg(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
 	});
 }
 
-function dataUrl(blob: Blob): Promise<string> {
+/** The image as a data: URL, which the Content Security Policy allows an img to show. */
+export function dataUrl(blob: Blob): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
 		reader.onload = () => resolve(String(reader.result));

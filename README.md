@@ -51,8 +51,8 @@ needs none of them.
 ## Feedback in Jira
 
 The feedback button creates a Task in the MEA project's backlog, labeled `user-feedback`, as
-the account in `JIRA_EMAIL`. That account needs permission to create issues in MEA. To create
-its API token:
+the account in `JIRA_EMAIL`, and attaches the screenshot sent with it, if any. That account
+needs permission to create issues and attachments in MEA. To create its API token:
 
 1. Sign in to Atlassian as that account and open
    [API tokens](https://id.atlassian.com/manage-profile/security/api-tokens).
@@ -131,9 +131,9 @@ The storage folder belongs to uid 1000, the image's `node` user, and the app lis
 `ports:set` points the site at port 3000 straight away, so run it just before a deploy: the site
 shows an error until the deploy finishes.
 
-`nginx:set` raises nginx's upload limit from 1 MB to 5 MB, so recipe photos get through. The
-app's own limit is `BODY_SIZE_LIMIT` in the Dockerfile. On an app that's already deployed, also
-run `dokku proxy:build-config meals` so nginx uses the new limit.
+`nginx:set` raises nginx's upload limit from 1 MB to 5 MB, so recipe photos and feedback
+screenshots get through. The app's own limit is `BODY_SIZE_LIMIT` in the Dockerfile. On an app
+that's already deployed, also run `dokku proxy:build-config meals` so nginx uses the new limit.
 
 If a deploy fails, its log shows the app's error. "Invalid environment variables" means a setting
 is missing, "DATA_DIR /data does not exist" means the mount is missing, and "unable to open

@@ -53,7 +53,7 @@ function steps(page: Page) {
 	return section(page, 'Steps').getByRole('listitem');
 }
 
-const photoInput = (page: Page) => page.locator('input[type="file"]');
+const photoInput = (page: Page) => page.getByRole('main').locator('input[type="file"]');
 
 /** The preview the editor shows once a picked photo has been resized. */
 async function expectPreview(page: Page) {

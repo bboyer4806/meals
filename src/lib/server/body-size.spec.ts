@@ -9,7 +9,8 @@ const MULTIPART = 'multipart/form-data; boundary=----WebKitFormBoundaryq3TqUvBbV
 const FILE_ROUTES: RouteId[] = [
 	'/(app)/recipes/new',
 	'/(app)/recipes/[id]/edit',
-	'/(app)/recipes/import'
+	'/(app)/recipes/import',
+	'/(app)/feedback'
 ];
 const PHOTO_SAVE = 5 * 1024 * 1024;
 
@@ -35,7 +36,7 @@ function refusal(request: Request, routeId: RouteId | null): number | null {
 describe('checkBodySize', () => {
 	it('reads a body up to 64 KB on any route', () => {
 		expect(refusal(post(MAX_BODY_BYTES, URL_ENCODED), '/(app)/groceries')).toBeNull();
-		expect(refusal(post(MAX_BODY_BYTES, MULTIPART), '/(app)/feedback')).toBeNull();
+		expect(refusal(post(MAX_BODY_BYTES, MULTIPART), '/(app)/menu/[date]')).toBeNull();
 		expect(refusal(post(MAX_BODY_BYTES, URL_ENCODED), '/(app)/recipes/new')).toBeNull();
 		expect(refusal(post(0, null), '/logout')).toBeNull();
 		expect(refusal(post(MAX_BODY_BYTES, URL_ENCODED), null)).toBeNull();
@@ -48,13 +49,13 @@ describe('checkBodySize', () => {
 		expect(refusal(post(MAX_BODY_BYTES + 1, MULTIPART), null)).toBe(413);
 	});
 
-	it('reads a larger multipart body on the recipe editor and Import recipes', () => {
+	it('reads a larger multipart body on the recipe editor, Import recipes and feedback', () => {
 		for (const route of FILE_ROUTES) {
 			expect(refusal(post(PHOTO_SAVE, MULTIPART), route), route).toBeNull();
 		}
 	});
 
-	it('refuses a larger body to the recipe editor and Import recipes unless it is multipart', () => {
+	it('refuses a larger body to the routes that take files unless it is multipart', () => {
 		for (const route of FILE_ROUTES) {
 			expect(refusal(post(MAX_BODY_BYTES + 1, URL_ENCODED), route), route).toBe(413);
 			expect(refusal(post(PHOTO_SAVE, 'text/plain'), route), route).toBe(413);
