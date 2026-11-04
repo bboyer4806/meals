@@ -441,6 +441,8 @@
 		{#if requestError}<p class="error" role="alert">{requestError}</p>{/if}
 		<div class="field">
 			<label for="request-name">Dish</label>
+			<!-- The suggestions show in the sheet under the field and its limit warning, so they never
+			     cover Note or Request (MEA-151). -->
 			<ItemInput
 				id="request-name"
 				name="name"
@@ -448,8 +450,9 @@
 				items={data.dishes}
 				bind:value={requestName}
 				noun="dish"
-			/>
-			{@render limitWarning(requestName, REQUEST_NAME_MAX)}
+			>
+				{@render limitWarning(requestName, REQUEST_NAME_MAX)}
+			</ItemInput>
 		</div>
 		<div class="field">
 			<label for="request-note">Note (optional)</label>

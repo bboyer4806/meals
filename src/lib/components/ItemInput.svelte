@@ -7,8 +7,9 @@
 	// matches no item offers "Add as a new item" (design 6.4). The recipe editor turns off
 	// `required`, since a blank ingredient row is left out rather than refused. The dinner
 	// editor suggests dishes, so its new option says "new dish", and it adds a dish picked from
-	// them right away, with its role and Add under the field (MEA-56). A dish request adds
-	// nothing, so it offers no new option (6.12).
+	// them right away, with its role and Add under the field (MEA-56). The dish request sheet
+	// suggests dishes too, with the name's limit warning under the field, so they show in the
+	// sheet rather than over its Note and Request (6.12, MEA-151).
 	let {
 		items,
 		value = $bindable(''),
@@ -74,6 +75,24 @@
 		if (document.activeElement === input) open = true;
 	});
 
+	// A press outside the field, what's under it and its suggestions takes focus from the field as
+	// it starts, but suggestions in the page close only once it's let go. Closing them moves
+	// what's after them, and everything in a sheet centered on a computer, so the press would
+	// land on whatever moved under it rather than what it was aimed at, such as the dish request
+	// sheet's Note or Request (MEA-151).
+	let combo: HTMLDivElement;
+	let closeOnRelease = false;
+
+	function press(event: MouseEvent) {
+		if (inline && showList && !combo.contains(event.target as Node)) closeOnRelease = true;
+	}
+
+	function release() {
+		if (!closeOnRelease) return;
+		closeOnRelease = false;
+		if (document.activeElement !== input) open = false;
+	}
+
 	async function choose(option: Option) {
 		open = false;
 		active = -1;
@@ -110,7 +129,9 @@
 	}
 </script>
 
-<div class="combo" class:inline>
+<svelte:window onmousedowncapture={press} onmouseupcapture={release} />
+
+<div class="combo" class:inline bind:this={combo}>
 	<input
 		bind:this={input}
 		{id}
@@ -131,13 +152,21 @@
 			open = true;
 			active = -1;
 		}}
-		onfocus={() => (open = true)}
-		onblur={() => (open = false)}
+		onfocus={() => {
+			closeOnRelease = false;
+			open = true;
+		}}
+		onblur={() => {
+			if (!closeOnRelease) open = false;
+		}}
 		{onkeydown}
 	/>
 	{@render children?.()}
 	{#if showList}
-		<ul id={listId} role="listbox">
+		<!-- Out of the Tab order, so Tab from the field goes past the suggestions. In the page they
+		     scroll, and the browser would otherwise stop on them just as they close, leaving focus
+		     nowhere (MEA-151). -->
+		<ul id={listId} role="listbox" tabindex="-1">
 			{#each options as option, i (option.kind === 'item' ? option.item.id : 'new')}
 				<li
 					id="{listId}-{i}"
