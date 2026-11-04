@@ -180,6 +180,18 @@
 		pickOpen = true;
 	}
 
+	// A store's Mark all sends the ids of the lines its confirmation counts, since the list may
+	// be out of date (Q11), and then says how many lines it changed (6.2).
+
+	function lineIds(lines: Line[]) {
+		return lines.map((line) => line.id).join(',');
+	}
+
+	/** "Marked 7 Walmart items as ordered." */
+	function markedMessage(count: number, storeName: string, marked: 'ordered' | 'received') {
+		return `Marked ${count} ${storeName} ${count === 1 ? 'item' : 'items'} as ${marked}.`;
+	}
+
 	// Collapsed groups are remembered on this device only.
 
 	const COLLAPSED_KEY = 'collapsedGroups';
@@ -287,6 +299,7 @@
 				{#if group.toOrder.length > 0}
 					<form method="POST" action="?/orderAll" use:enhance>
 						<input type="hidden" name="storeId" value={group.storeId} />
+						<input type="hidden" name="ids" value={lineIds(group.toOrder)} />
 						<ConfirmButton
 							label="Mark all ordered"
 							message={`Mark ${group.toOrder.length} ${group.name} ${group.toOrder.length === 1 ? 'item' : 'items'} as ordered?`}
@@ -297,6 +310,7 @@
 				{#if group.ordered.length > 0}
 					<form method="POST" action="?/receiveAll" use:enhance>
 						<input type="hidden" name="storeId" value={group.storeId} />
+						<input type="hidden" name="ids" value={lineIds(group.ordered)} />
 						<ConfirmButton
 							label="Mark all received"
 							message={`Mark ${group.ordered.length} ordered ${group.name} ${group.ordered.length === 1 ? 'item' : 'items'} as received?`}
@@ -305,6 +319,9 @@
 					</form>
 				{/if}
 			</div>
+		{/if}
+		{#if form?.action === 'group' && form.storeId === group.storeId && form.marked}
+			<p role="status">{markedMessage(form.count, group.name, form.marked)}</p>
 		{/if}
 
 		{#if group.toOrder.length > 0}

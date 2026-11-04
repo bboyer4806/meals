@@ -19,7 +19,7 @@ import {
 } from '#lib/server/data/needs.ts';
 import { listStores } from '#lib/server/data/stores.ts';
 import { needsTour, recordTourSeen } from '#lib/server/data/tour.ts';
-import { attempt, id, nameField, optionalText, parseForm, quantity } from '#lib/server/forms.ts';
+import { attempt, id, idList, nameField, optionalText, parseForm, quantity } from '#lib/server/forms.ts';
 
 type LineGroup = {
 	key: string;
@@ -101,6 +101,9 @@ function sheetChanges(data: z.output<typeof updateSchema>) {
 	return { quantity, unit, storeId: store === 'none' ? null : store, note };
 }
 
+// A store's Mark all sends the lines its confirmation counted, and changes only those (6.2).
+const markAllSchema = z.object({ storeId: id, ids: idList });
+
 export const actions = {
 	add: async ({ locals, request }) => {
 		const user = requireHousehold(locals);
@@ -138,16 +141,20 @@ export const actions = {
 
 	orderAll: async ({ locals, request }) => {
 		const user = requireHousehold(locals);
-		const parsed = parseForm(z.object({ storeId: id }), await request.formData(), 'group');
+		const parsed = parseForm(markAllSchema, await request.formData(), 'group');
 		if ('failure' in parsed) return parsed.failure;
-		markAllOrdered(user.householdId, parsed.data.storeId, Date.now());
+		const { storeId, ids } = parsed.data;
+		const count = markAllOrdered(user.householdId, storeId, ids, Date.now());
+		return { action: 'group', storeId, marked: 'ordered' as const, count };
 	},
 
 	receiveAll: async ({ locals, request }) => {
 		const user = requireHousehold(locals);
-		const parsed = parseForm(z.object({ storeId: id }), await request.formData(), 'group');
+		const parsed = parseForm(markAllSchema, await request.formData(), 'group');
 		if ('failure' in parsed) return parsed.failure;
-		markAllReceived(user.householdId, parsed.data.storeId, Date.now());
+		const { storeId, ids } = parsed.data;
+		const count = markAllReceived(user.householdId, storeId, ids, Date.now());
+		return { action: 'group', storeId, marked: 'received' as const, count };
 	},
 
 	didntCome: async ({ locals, request }) => {

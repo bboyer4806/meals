@@ -7,6 +7,12 @@ import { normalizeName } from '../text.ts';
 
 export const id = z.coerce.number().int().positive();
 
+/** Ids sent in one field, joined by commas, such as "7,12". */
+export const idList = z.preprocess(
+	(value) => (typeof value === 'string' ? value.split(',') : value),
+	z.array(id)
+);
+
 export function nameField(max: number, what: string) {
 	return z
 		.string()
