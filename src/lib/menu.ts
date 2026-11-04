@@ -65,10 +65,6 @@ export const REQUEST_NOTE_MAX = 200;
 /** An Eating out dinner's restaurant, as long as a request's, so a requested one fits (6.12). */
 export const DINNER_RESTAURANT_MAX = REQUEST_NAME_MAX;
 
-/** A pantry check from the menu covers the next 7 days unless changed (Q5), and at most 14. */
-export const DEFAULT_CHECK_DAYS = 7;
-export const MAX_CHECK_DAYS = 14;
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function utcDay(date: string): Date {
