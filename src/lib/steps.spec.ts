@@ -47,6 +47,8 @@ describe('stepHasUnscaledAmount', () => {
 	it('finds amounts', () => {
 		expect(stepHasUnscaledAmount('Add 2 eggs.')).toBe(true);
 		expect(stepHasUnscaledAmount('Stir in 1 1/2 cups of milk.')).toBe(true);
+		expect(stepHasUnscaledAmount('Stir in 1 1\u20442 cups of milk.')).toBe(true);
+		expect(stepHasUnscaledAmount('Stir in 1 1 / 2 cups of milk.')).toBe(true);
 		expect(stepHasUnscaledAmount('Season with ½ tsp salt.')).toBe(true);
 		expect(stepHasUnscaledAmount('Add 1½ cups of stock.')).toBe(true);
 		expect(stepHasUnscaledAmount('Fold in .5 cup of nuts.')).toBe(true);
@@ -100,6 +102,12 @@ describe('stepHasUnscaledAmount', () => {
 		expect(stepHasUnscaledAmount('Simmer 1.5 hours.')).toBe(false);
 		expect(stepHasUnscaledAmount('Simmer 1 1/2 hours.')).toBe(false);
 		expect(stepHasUnscaledAmount('Simmer 1-1/2 to 2 hours.')).toBe(false);
+		// The fraction slash, U+2044, that some recipe sites use, and fractions with spaces.
+		expect(stepHasUnscaledAmount('Simmer 1 1\u20442 hours.')).toBe(false);
+		expect(stepHasUnscaledAmount('Simmer 1-1\u20442 to 2 hours.')).toBe(false);
+		expect(stepHasUnscaledAmount('Rest 1\u20442 hour.')).toBe(false);
+		expect(stepHasUnscaledAmount('Simmer 1 1 / 2 hours.')).toBe(false);
+		expect(stepHasUnscaledAmount('Simmer 1 1 \u2044 2 to 2 hours.')).toBe(false);
 		expect(stepHasUnscaledAmount('Rest ½ hour.')).toBe(false);
 		expect(stepHasUnscaledAmount('Rest 1½ hours.')).toBe(false);
 		expect(stepHasUnscaledAmount('Rest 1 ½ hours.')).toBe(false);
