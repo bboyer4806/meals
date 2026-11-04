@@ -12,6 +12,7 @@
 	// date at the top of the page opens it (7).
 	let {
 		date,
+		today,
 		count,
 		dinnerId,
 		canLeave,
@@ -19,6 +20,8 @@
 		onlost
 	}: {
 		date: string;
+		/** So a new date in another year says its year (MEA-150). */
+		today: string;
 		/** How many dinners the date has. */
 		count: number;
 		/** A dinner the page shows, so the move doesn't take others someone put there instead. */
@@ -95,7 +98,7 @@
 		</p>
 		{#if problem}<p class="error" role="alert">{problem}</p>{/if}
 		<div class="row">
-			<button class="primary">{isDate(to) ? `Move to ${formatDateLabel(to)}` : 'Move'}</button>
+			<button class="primary">{isDate(to) ? `Move to ${formatDateLabel(to, { today })}` : 'Move'}</button>
 			<button type="button" onclick={() => (open = false)}>Cancel</button>
 		</div>
 	</form>

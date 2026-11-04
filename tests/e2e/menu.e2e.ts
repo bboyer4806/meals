@@ -1400,6 +1400,34 @@ test('moves a dinner to an empty date, and swaps it with a planned one', async (
 	expect(dinnerRow(db, person.householdId, wed)?.id).toBe(tacosId);
 });
 
+test('says the year on Move when the new date is in another year', async ({
+	page,
+	db,
+	person
+}) => {
+	// This year's New Year's Eve, whose next day is in the next year (MEA-150).
+	const year = Number(today().slice(0, 4));
+	const eve = `${year}-12-31`;
+	const newYearsDay = `${year + 1}-01-01`;
+	const dayBefore = `${year}-12-30`;
+	const nextEve = `${year + 1}-12-31`;
+	addDinner(db, person.householdId, eve, { note: "New Year's Eve" });
+
+	await open(page, `/menu/${eve}`);
+	await dateButton(page).click();
+	const sheet = page.getByRole('dialog', { name: 'Move to another date' });
+	const newDate = sheet.getByLabel('New date');
+	const move = sheet.getByRole('button', { name: /^Move/ });
+	await expect(newDate).toHaveValue(newYearsDay);
+	await expect(move).toHaveText(`Move to ${dayLabel(newYearsDay)}, ${year + 1}`);
+	// A date this year doesn't say its year.
+	await newDate.fill(dayBefore);
+	await expect(move).toHaveText(`Move to ${dayLabel(dayBefore)}`);
+	// A slip in the year field, so the date isn't taken for this year's.
+	await newDate.fill(nextEve);
+	await expect(move).toHaveText(`Move to ${dayLabel(nextEve)}, ${year + 1}`);
+});
+
 test('clears a dinner after asking, and shows the date as not planned', async ({
 	page,
 	db,

@@ -259,7 +259,7 @@ lost, so is everything. Moving backups off the server later is a small change.
   household.
 - **Sessions** use a random token in an `httpOnly`, `Secure`, `SameSite=Lax` cookie, and
   only a SHA-256 hash of the token is stored. Sessions last 30 days and are extended when
-  used. Signing out deletes the session.
+  used. Signing out deletes the session, and each sign-in deletes every expired one.
 - **Forms:** SvelteKit's origin check blocks cross-site form posts. All input is validated
   with Zod.
 - **No raw HTML** from user input is ever rendered (no `{@html}`), and SvelteKit's
@@ -806,7 +806,10 @@ so a recipe found online can be brought in on any device, a phone included. Most
 put a schema.org Recipe in their pages as JSON-LD for search engines; Import has the server
 fetch the page (4.5) and fills in the editor from it: the name, servings, prep and cook minutes,
 ingredients, steps one per line, calories, protein, carbs and fat, with Source set to the link.
-Servings are the first whole number in the page's yield, such as 4 in "4 servings". Each
+Servings are the first whole number in the page's yield, such as 4 in "4 servings". Calories,
+protein, carbs and fat are the number each value starts with, such as 12.5 in "12.5 g". A comma
+before exactly three digits separates thousands, so "1,250 kcal" is 1250 (MEA-76); a value with
+any other comma in its number, such as "12,5 g", is left blank rather than guessed. Each
 ingredient is split as Import recipes splits one, so "1 1/2 cups flour, sifted" is 1 1/2, cups,
 flour and sifted. Steps grouped in sections keep their order without the section names, and
 HTML and character references such as `&amp;` are taken out of the text. Fields the page leaves
