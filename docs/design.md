@@ -421,6 +421,9 @@ mark points at a checklist, an item and sometimes a grocery line.
    can be invited again.
 5. The admin invites new households from the Admin page, which also lists households and
    the last backup date. The admin is also a normal member of their own household.
+6. An invite or member that's already gone counts as done (MEA-69). Cancel on an invite that
+   was used or cancelled after the page opened, on the Household or Admin page, and Remove on
+   a member someone else removed meanwhile, show the page as it is now (6.11).
 
 ### 6.2 Grocery line statuses
 

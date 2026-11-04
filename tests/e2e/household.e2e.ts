@@ -1,4 +1,4 @@
-import { adminId, expect, signInAs, test } from './fixtures.ts';
+import { adminId, expect, open, signInAs, test } from './fixtures.ts';
 
 test('sends signed-out people to the sign-in page', async ({ page }) => {
 	await page.goto('/groceries');
@@ -71,6 +71,39 @@ test('manages stores and invites', async ({ page, person: _ }) => {
 	await expect(page.getByText(friend, { exact: true })).toHaveCount(0);
 });
 
+test('keeps the Household page for a member or invite that is already gone (6.1)', async ({
+	page,
+	db,
+	person
+}) => {
+	const tag = `${test.info().workerIndex}-${Date.now()}`;
+	const sam = `sam-${tag}@example.com`;
+	const addMember = db.prepare(
+		'insert into users (household_id, google_sub, email, name, created_at) values (?, ?, ?, ?, 0)'
+	);
+	const kim = addMember.run(person.householdId, `kim-${tag}`, `kim-${tag}@example.com`, 'Kim');
+	db.prepare('insert into invites (email, household_id, created_at) values (?, ?, 0)').run(
+		sam,
+		person.householdId
+	);
+	await open(page, '/household');
+
+	// Someone else removes Kim meanwhile.
+	db.prepare('delete from users where id = ?').run(kim.lastInsertRowid);
+	await page.getByRole('button', { name: 'Remove' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
+	await expect(page.getByText('Kim', { exact: true })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
+
+	// Sam signs in meanwhile, which uses the invite.
+	addMember.run(person.householdId, `sam-${tag}`, sam, 'Sam');
+	db.prepare('delete from invites where email = ?').run(sam);
+	const invite = page.getByRole('listitem').filter({ hasText: sam });
+	await invite.getByRole('button', { name: 'Cancel' }).click();
+	await expect(page.getByText('Sam', { exact: true })).toBeVisible();
+	await expect(page.getByText('Waiting for them to sign in:')).toHaveCount(0);
+});
+
 test('keeps the admin page from everyone but the admin', async ({ page, person: _ }) => {
 	const response = await page.goto('/admin');
 	expect(response?.status()).toBe(404);
@@ -90,6 +123,25 @@ test('lets the admin invite a household', async ({ page, db, context, baseURL })
 	expect(db.prepare('select household_id from invites where email = ?').get(email)).toEqual({
 		household_id: null
 	});
+});
+
+test('keeps the Admin page for an invite that is already gone (6.1)', async ({
+	page,
+	db,
+	context,
+	baseURL
+}) => {
+	await signInAs(db, context, baseURL, adminId(db));
+	const email = `gone-${test.info().workerIndex}-${Date.now()}@example.com`;
+	db.prepare('insert into invites (email, created_at) values (?, 0)').run(email);
+	await open(page, '/admin');
+
+	// The admin cancels it in another tab meanwhile.
+	db.prepare('delete from invites where email = ?').run(email);
+	const invite = page.getByRole('listitem').filter({ hasText: email });
+	await invite.getByRole('button', { name: 'Cancel' }).click();
+	await expect(page.getByText(email, { exact: true })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Admin', level: 1 })).toBeVisible();
 });
 
 test('shows the privacy page to anyone, linked from the sign-in page', async ({ page }) => {
