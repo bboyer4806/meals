@@ -2,7 +2,7 @@
 
 Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each item was found by one reviewer and confirmed by a second that tried to disprove it. It is a snapshot: line numbers drift as the code changes, so check the code before acting on an item.
 
-79 items have become "Review:" tickets in Jira (MEA-64 to MEA-142, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 94 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
+95 items have become "Review:" tickets in Jira (MEA-64 to MEA-157, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 78 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
 
 ## How to use this list
 
@@ -15,15 +15,12 @@ Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each ite
 
 ## Where to start
 
-1. **Finish the CSV import fixes: #100 (with MEA-129).** The other import fixes are MEA-71 to MEA-74 in Meals 1.12 and MEA-89 in the backlog.
 
 Items that share a cause or a fix:
 
-- Stale pages: #92, #93 (with MEA-136) (MEA-67 and MEA-69 handle the server side)
-- No pending state on taps: #91, #150 (with MEA-133)
-- Focus after a save: #102, #114, #117
-- 320 px phones: #99, #106 (with MEA-138)
-- Copy a dinner cost: #90 (with MEA-101 and MEA-102)
+- No pending state on taps: #150 (with MEA-133, MEA-145)
+- Focus after a save: #114, #117 (with MEA-155)
+- 320 px phones: #106 (with MEA-138, MEA-152)
 - Error pages: #108, #169 (with MEA-94)
 - Outdated help: #113, #154
 
@@ -90,76 +87,8 @@ Items that share a cause or a fix:
   - **Fix:** Compare against a new recipe's starting values rather than the imported ones (pass the page's own data.values as the baseline), or mark the editor changed after a successful import.
   - **Notes:** Skipped in triage
 
-### Menu and the dinner page
-
-- [ ] **#89 Medium** On a date's page, open dish suggestions cover the header, tab bar and feedback button, so a tap there adds a dish
-  - **Where:** `src/lib/components/ItemInput.svelte:173`, `src/lib/components/ItemInput.svelte:189`, `src/lib/components/ItemInput.svelte:193`, `src/lib/components/DinnerDishes.svelte:333`
-  - **Problem:** On a dinner's page, someone types 'Cr' in Add a dish. They close the phone keyboard (Android's back gesture keeps the field focused) or type on a tablet keyboard, then tap Recipes in the tab bar. The suggestion under their finger is added to the dinner, and the page stays. With the list open, scrolling up covers Help and More in the same way.
-  - **Fix:** Set `z-index: auto` in `.inline ul`, so the in-page list stays under the sticky header, tab bar and feedback button. Keep z-index 30 only for the overlay list.
-- [ ] **#90 Medium** Each dinner editor renders the whole Copy a dinner list into its closed sheet, making a date's page slow to render
-  - **Where:** `src/lib/components/CopyDinner.svelte:141`, `src/lib/components/CopyDinner.svelte:65`, `src/lib/components/Sheet.svelte:5`, `src/lib/components/DinnerEditor.svelte:240`
-  - **Problem:** Opening a two-dinner date after three years of use: the server spends about 0.3 s rendering two lists nobody opened, the phone parses and hydrates about 1,400 buttons, and every reload after a change re-renders them, formatting every date again.
-  - **Fix:** Render the group list only while the sheet is open (or share one picker for the date's dinners), and cache Intl.DateTimeFormat instances in dates.ts instead of building one per call.
-  - **Verifier's correction:** Correction: the server render is about 0.15 s; the bigger cost is the client re-render after every tap. The seed's high share of unique groups (about 80%) is an upper estimate. Related to menu-data-2: both come from the same unbounded list.
-- [ ] **#91 Low** A second type tap while the first is still saving is silently dropped, and the type buttons show no progress
-  - **Where:** `src/lib/components/DinnerEditor.svelte:145`, `src/lib/components/DinnerEditor.svelte:210`
-  - **Problem:** On a slow connection the person taps Eating out and sees nothing change, so they tap Leftovers. The dinner ends up Eating out, and nothing says the second tap was ignored.
-  - **Fix:** Show the tapped type as pending right away (for example pressed with aria-busy and a spinner), and either send the latest tap after the first finishes or visibly disable the other types until it does.
-- [ ] **#92 Low** The Add a dinner and request label sheets keep failing after someone else changes the day's dinners
-  - **Where:** `src/lib/components/AddDinner.svelte:33`, `src/lib/components/AddDinner.svelte:46`, `src/lib/components/AddDinner.svelte:68`, `src/lib/components/DayRequests.svelte:89`
-  - **Problem:** Two people add a second dinner to the same day at about the same time. The slower person's sheet refuses every try with a message about 'this dinner' and never updates its question. Only closing and reopening the sheet works.
-  - **Fix:** After a failure, rebuild the sheet's question from the reloaded dinners (asked = count, and choices for DayRequests) and say that the day's dinners changed, so the next try can succeed.
-- [ ] **#93 Low** After a 'someone changed' refusal, the label sheets keep resending the refused labels until closed and reopened
-  - **Where:** `src/lib/components/AddDinner.svelte:30`, `src/lib/components/AddDinner.svelte:46`, `src/lib/components/DayRequests.svelte:79`, `src/lib/components/DayRequests.svelte:128`
-  - **Problem:** A opens Add a dinner on a date with one dinner, so it asks for both labels. B adds a second dinner meanwhile. A taps Add dinner and is refused; the page now shows two dinners, but the sheet still asks for the first dinner's label, and every retry gets the same refusal. A request's Add sheet behaves the same.
-  - **Fix:** After a refusal, ask again from the date as it is now (take the refreshed count into the sheet, or close it and say why), and give Add a dinner a message that fits ('This day's dinners changed. Check the labels and try again.').
-- [ ] **#94 Low** The drag's 'nothing moved' error stays on screen on every week the person goes to afterwards
-  - **Where:** `src/routes/(app)/menu/+page.svelte:213`, `src/routes/(app)/menu/+page.svelte:346`, `src/routes/(app)/menu/+page.svelte:232`, `src/routes/(app)/menu/+page.svelte:406`
-  - **Problem:** A drag fails because someone else changed the day. The person taps Next: the red alert still says that day's dinners were moved, on a week where nothing happened, and it stays through Previous, This week and swipes until they drag again.
-  - **Fix:** Clear moveError and requestsError in the existing afterNavigate callback on non-shallow navigations, or key them to the week shown.
-- [ ] **#95 Low** A dropped day shows nothing until the move returns, and a repeat drag then blames 'someone' for the person's own move
-  - **Where:** `src/routes/(app)/menu/+page.svelte:238`, `src/routes/(app)/menu/+page.svelte:245`, `src/routes/(app)/menu/+page.svelte:264`, `src/lib/server/data/dinners.ts:630`
-  - **Problem:** On a slow connection someone drags Monday onto Wednesday, sees nothing change, and drags again. The second move fails the shown-dinner check and the page says someone else changed the day, though it was their own first drag.
-  - **Fix:** Keep a moving state from release until submitMove finishes: mark both days (aria-busy on the list, dimmed rows) and ignore new drags meanwhile, or show the swap at once and roll it back on failure.
-- [ ] **#96 Low** Two quick swipes while the next week loads move only one week, with nothing showing the first swipe was taken
-  - **Where:** `src/routes/(app)/menu/+page.svelte:195`, `src/routes/(app)/menu/+page.svelte:310`, `src/routes/(app)/menu/+page.svelte:314`
-  - **Problem:** On a weak phone signal someone swipes twice to look two weeks ahead. Nothing moves for a moment, then only next week shows, against 'one week per swipe'.
-  - **Fix:** Track the week being shown or loaded on the client, set it on each swipe and compute the next target from it, and show that a week is loading (for example dim the days while navigating from $app/state is set).
-- [ ] **#97 Low** Move to another date's button leaves out the year, so Dec 31 next year reads 'Move to Fri, Dec 31'
-  - **Where:** `src/lib/components/MoveDinner.svelte:98`, `src/lib/dates.ts:19`
-  - **Problem:** Moving New Year's Eve dinner, a slip in the date input's year field sends it a year away, and the button confirming it looks like this year's date.
-  - **Fix:** Use formatDateLabel(to, { today }) with the page's today (or the dinner's date) so a date in another year shows its year.
-- [ ] **#98 Low** In the Request a dish sheet, the suggestions cover the Note field and the Request button and overflow the sheet
-  - **Where:** `src/routes/(app)/menu/+page.svelte:444`, `src/lib/components/ItemInput.svelte:171`
-  - **Problem:** On a phone with the keyboard up, a person types part of a dish name and wants to add a note or tap Request; the list hides both, and a tap where Request was picks a different dish instead.
-  - **Fix:** Give the sheet's ItemInput a children snippet so its list shows in the sheet under the field, as the dinner page's dish field does since MEA-56, or cap the list's height inside sheets.
-- [ ] **#99 Low** At 320 px wide, each dish's remove button drops onto its own line and the four type buttons stack one per row
-  - **Where:** `src/lib/components/DinnerDishes.svelte:388`, `src/lib/components/DinnerDishes.svelte:400`, `src/lib/components/DinnerEditor.svelte:292`
-  - **Problem:** On a small phone, or a phone set to larger display zoom, the dish list doubles in height and each remove button floats under its name near the next row, and the types take four rows before the dishes.
-  - **Fix:** Let the dish name shrink (flex-basis 0 with min-width 0) so the role select and remove stay on its line, and lower the type buttons' minimum column to about 8rem so they stay two by two at 320 px.
-
 ### Recipes
 
-- [ ] **#100 Medium** Import recipes crashes to 'Something went wrong' when a column header appears three or more times
-  - **Where:** `src/routes/(app)/recipes/import/+page.svelte:69`, `src/lib/server/recipe-import.ts:127`
-  - **Problem:** A household whose spreadsheet has several columns all headed 'Ingredients' or 'Steps' tries Import. Instead of a fixable list of problems they get an error page with no app header or tabs.
-  - **Fix:** In readFile, report a repeated column once (remember which columns were already reported), and key the problems list by index instead of by its text.
-- [ ] **#101 Low** The import summary says 'Imported 0 recipes' instead of leaving out the zero part
-  - **Where:** `src/routes/(app)/recipes/+page.svelte:32`
-  - **Problem:** Someone re-imports a corrected file and replaces all 3 recipes. Recipes says 'Imported 0 recipes and replaced 3.', which reads as if nothing was imported.
-  - **Fix:** Leave out the Imported part when it's 0 and start with the first non-zero part, such as 'Replaced 3 recipes.' or 'Skipped 4 recipes.'
-- [ ] **#102 Low** After Remove ingredient, focus lands on a button with the same name, so a second press deletes the next row
-  - **Where:** `src/lib/components/RecipeIngredients.svelte:95`, `src/lib/components/RecipeIngredients.svelte:32`, `src/lib/components/RecipeIngredients.svelte:133`
-  - **Problem:** A screen reader or keyboard user presses Remove ingredient 2 and hears 'Remove ingredient 2, button' again, so it sounds as if nothing happened. Pressing again deletes the next ingredient, with its amount, unit and prep note. A quick double tap on the ✕ can do the same, since the next row's ✕ moves into its place.
-  - **Fix:** Announce the removal in a polite live region, such as 'Removed ingredient 2, Ground beef', and offer Undo for a row that had text. Keeping focus on a button, so the phone's keyboard stays closed, is fine once the change is announced.
-- [ ] **#103 Low** Cancel in the editor and Back to recipe in the cooking view add a Back step, so Back reopens the page just left
-  - **Where:** `src/lib/components/RecipeForm.svelte:362`, `src/routes/(app)/recipes/[id]/edit/+page.svelte:20`, `src/routes/(app)/recipes/[id]/cook/+page.svelte:67`, `src/routes/(app)/recipes/import/+page.svelte:157`
-  - **Problem:** After cooking, someone taps Back to recipe, then the phone's Back to get to the list, and the cooking view opens again. After Cancel in the editor, Back shows the editor again. Cancel also drops the servings the recipe was shown at, so 6 servings becomes 4.
-  - **Fix:** Make Cancel and Back to recipe go back in history when the page before was that page, as finish() does for Save. Otherwise, replace the history entry. Pass the servings shown through to the editor's cancelHref.
-- [ ] **#104 Low** Step warnings miss fractions written with the fraction slash or spaced, so 'Simmer 1 1⁄2 hours' is flagged
-  - **Where:** `src/lib/steps.ts:19`, `src/lib/steps.ts:21`, `src/lib/amounts.ts:33`, `src/lib/ingredient-text.ts:37`
-  - **Problem:** A recipe imported from a site that writes fractions with the fraction slash has the step 'Simmer 1 1⁄2 hours'. Scaled to 6 servings, the step says 'Amounts in this step aren't scaled.' though it holds only a time: the always-on warning that change 2.1.3 meant to avoid.
-  - **Fix:** In stepHasUnscaledAmount, replace U+2044 with '/' before matching, as parseAmount does, and allow spaces around the slash in the mixed-number form ((?:\s+|-)\d+\s*/\s*\d+). Add these cases to steps.spec.ts.
 - [ ] **#105 Low** A Source with words after its web address becomes a broken link, since the whole text is the href
   - **Where:** `src/lib/recipe-view.ts:46`, `src/routes/(app)/recipes/[id]/+page.svelte:261`
   - **Problem:** Someone pastes a recipe's address into Source and adds a few words after it, such as '(we halve the sugar)' or '- Grandma's version'. The Recipe page shows it as a link, and tapping it opens the site's not-found page.
