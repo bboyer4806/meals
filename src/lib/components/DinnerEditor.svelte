@@ -289,8 +289,9 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* Each of a date's dinners is set apart from the next. */
-	.labeled + :global(.dinner.labeled) {
+	/* Each of a date's dinners is set apart from the next. Each dinner's switch sheet comes after
+	   its section, so the next dinner is a later sibling, not the adjacent one. */
+	.labeled ~ :global(.dinner.labeled) {
 		margin-top: 1.5rem;
 		padding-top: 1rem;
 		border-top: 2px solid var(--border);
