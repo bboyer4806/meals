@@ -2,7 +2,7 @@
 
 Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each item was found by one reviewer and confirmed by a second that tried to disprove it. It is a snapshot: line numbers drift as the code changes, so check the code before acting on an item.
 
-125 items have become "Review:" tickets in Jira (MEA-64 to MEA-186, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 48 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
+146 items have become "Review:" tickets in Jira (MEA-64 to MEA-207, in Meals 1.12 or the backlog), 1 was already a ticket (MEA-54) and 1 was dropped, so they're no longer listed here. The 26 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
 
 ## How to use this list
 
@@ -18,9 +18,7 @@ Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each ite
 
 Items that share a cause or a fix:
 
-- No pending state on taps: #150 (with MEA-133, MEA-145)
 - Error pages: #169 (with MEA-161) (with MEA-94)
-- Outdated help: #154 (with MEA-166)
 
 ## 1. Backend issues and tech debt
 
@@ -104,113 +102,8 @@ Items that share a cause or a fix:
 
 ## 3. Potential UI/UX improvements
 
-### Groceries
-
-- [ ] **#137 Medium** Let people add a store from the 'Where did you get it?' sheet instead of sending them to Household
-  - **Where:** `src/routes/(app)/groceries/+page.svelte:446`, `src/routes/(app)/groceries/+page.svelte:266`
-  - **Problem:** On a new household's first trip, the first tap on a circle in the store is a dead end: leave the list, find Stores on Household, add one, come back and tap again. The same happens the first time they shop at any new store.
-  - **Fix:** Add a 'New store' field to the picker (and to the edit sheet's store choice) that creates the store and checks the line off in one step, and mention stores in the first-run empty state.
-  - **Verifier's correction:** correction: the 'any new store' case only blocks lines with no store. A line that has a default store checks off at that store without asking (needs.ts storeForStatusChange). A cheap first step is to mention stores in the empty state and Help. Inline creation would also need the name and archived-name rules (6.10). Not covered by any open MEA ticket.
-- [ ] **#138 Low** Items shows an archived store as an item's store, though adding the item then fills in no store
-  - **Where:** `src/lib/server/data/items.ts:108`, `src/routes/(app)/groceries/items/+page.svelte:72`
-  - **Problem:** Someone checks Items to see where Milk is bought and sees Aldi. They add Milk, and it lands under No store with nothing to explain why.
-  - **Fix:** Return the default store's archived state from listCatalog and show it, for example 'Aldi (archived)', or show 'No store yet' to match what the add bar does.
-- [ ] **#139 Low** Show each line's note, such as a substitution, in History
-  - **Where:** `src/routes/(app)/groceries/history/+page.svelte:29`
-  - **Problem:** Someone checks History to see what they actually got last time and can't see that the store substituted something else.
-  - **Fix:** Render line.note under the item in History, as the list does, and label today's and yesterday's groups.
-- [ ] **#140 Low** Give the grocery list a print layout
-  - **Where:** `src/app.css:338`, `src/routes/(app)/groceries/+page.svelte:216`, `src/routes/(app)/groceries/+page.svelte:281`
-  - **Problem:** A family member who shops without a phone gets a printout that starts with an empty form and buttons, and is missing every store someone had collapsed.
-  - **Fix:** Mark the add bar, title links and group actions no-print, print every group open, and keep the circles as boxes to tick by hand.
-- [ ] **#141 Low** Names match with accents, so typing 'jalapeno' misses 'Jalapeño' and adds a second item
-  - **Where:** `src/lib/text.ts:7`, `src/lib/components/ItemInput.svelte:52`, `src/lib/server/data/items.ts:37`, `src/lib/server/data/items.ts:120`
-  - **Problem:** A recipe imported from a site has 'Jalapeño'. Later someone types 'jalapeno' on the grocery list, because an ñ takes a long press on a phone. Once the n is typed, no suggestion matches and 'Add new item' is offered. Add creates a second item with its own default store and history, and gives no 'already on the list' warning. Searching Items, History or Recipes for 'creme brulee' finds nothing, and typing it on a dinner and tapping Add creates a new empty dish beside the 'Crème brûlée' recipe.
-  - **Fix:** Add a separate accent-free key (foldCase, then NFD with \p{M} removed) for ItemInput's suggestions and the instr() searches, and keep fold() for name equality. Treating names that differ only in accents as one item would change 2.3's 'ignoring case', so that part needs a design decision.
-
-### Menu and dinners
-
-- [ ] **#142 Medium** After Save, the week opens at its top, so the 3-second Saved line for a later day is off screen
-  - **Where:** `src/routes/(app)/menu/+page.svelte:23`, `src/routes/(app)/menu/+page.svelte:382`, `src/routes/(app)/menu/[date]/+page.server.ts:228`
-  - **Problem:** On a phone, change Thursday's note and tap Save. The week opens at Sunday; the only sign the save worked, 'Saved' on Thursday, appears and disappears two screens down, so people scroll to check or reopen the day.
-  - **Fix:** When afterNavigate finds ?saved=, scroll that dinner's day into view after tick (scrollIntoView({ block: 'center' })), or redirect with a #day anchor and give each row an id.
-- [ ] **#143 Low** Move to another date swaps silently: the sheet doesn't say the chosen date has a dinner, and nothing says where it went
-  - **Where:** `src/lib/components/MoveDinner.svelte:90`, `src/lib/components/MoveDinner.svelte:72`, `src/routes/(app)/menu/[date]/+page.server.ts:324`
-  - **Problem:** Someone moves Monday's tacos to Wednesday, forgetting Wednesday was pizza night. They land on Wednesday, see tacos and leave; pizza is now on Monday and nothing told them.
-  - **Fix:** After a swap, say on the new date 'Pizza moved to Mon, Nov 9.' (for example from a flag on the redirect), and name the chosen date's dinners in the sheet before Move.
-- [ ] **#144 Low** On a date with several dinners, the Clear sheet doesn't say which dinner it clears
-  - **Where:** `src/lib/components/DinnerEditor.svelte:246`
-  - **Problem:** On a Kids and Adults day the Clear sheet covers the page and reads the same for both dinners. Since the dinners also run together (see the separator finding), the person can't confirm which one goes.
-  - **Fix:** Name the dinner on labeled dates, for example title 'Clear Kids?' and message 'Clear Kids? Its dishes stay in your recipes.'
-- [ ] **#145 Low** Suggestions still offer dishes already on the dinner, which now fail as soon as they're picked
-  - **Where:** `src/lib/components/DinnerDishes.svelte:337`, `src/routes/(app)/menu/[date]/+page.svelte:277`
-  - **Problem:** With Rice already on the dinner, typing 'ric' still lists Rice first. Tapping it, which adds right away, gives an error instead.
-  - **Fix:** Leave this dinner's own dishes out of its suggestions, or list them marked 'On this dinner' and not pickable.
-- [ ] **#146 Low** At 5 dinners, Add a dinner disappears without saying why
-  - **Where:** `src/routes/(app)/menu/[date]/+page.svelte:287`
-  - **Problem:** A family with five dinners on a day looks for Add a dinner, finds nothing, and isn't told there's a limit.
-  - **Fix:** In the button's place, show 'A day can have up to 5 dinners. Clear one to add another.' (the restaurant request Add already uses this wording).
-- [ ] **#147 Low** The 'Add … as a new dish' suggestion doesn't add the dish
-  - **Where:** `src/lib/components/ItemInput.svelte:77`, `src/lib/components/ItemInput.svelte:157`
-  - **Problem:** Since MEA-56, picking a suggestion adds it, so people expect the last option, which says 'Add “Garlic bread” as a new dish', to add too. It only closes the list, and they have to notice that they still need to tap Add (see the finding about typed dish names being dropped).
-  - **Fix:** Make the new-dish option add the dish, as the other suggestions do (the restore sheet still covers archived names). Or reword it so it doesn't promise to add, for example 'New dish: Garlic bread (tap Add)'.
-  - **Notes:** Reopens design: design 7, Dinner (MEA-56): picking 'Add ... as a new dish' only fills it in
-- [ ] **#148 Low** A requested dish already on the date's dinner can't be added or removed from that date's page, so the request lingers
-  - **Where:** `src/lib/server/data/dinners.ts:383`, `src/lib/components/DayRequests.svelte:187`
-  - **Problem:** Someone requests Lasagna after another member already put it on Friday. On Friday's page, Add says 'Lasagna is already on this dinner.', and the request stays on every week until someone finds it on the Menu and removes it.
-  - **Fix:** Treat it as done: when the dish is already on the chosen dinner, remove the request and say 'Lasagna was already on this dinner, so the request is done.', or offer Remove in that message.
-  - **Notes:** Reopens design: 6.12 (nothing changes when the dish is already on that dinner; no Remove on a date's page)
-- [ ] **#149 Low** Copy a dinner doesn't show the type a past dinner will switch this one to
-  - **Where:** `src/lib/components/CopyDinner.svelte:155`, `src/lib/server/data/dinners.ts:735`
-  - **Problem:** Someone copies 'Brownies' onto a dessert night at home and the dinner quietly becomes Bringing a dish.
-  - **Fix:** Show the type on groups whose latest dinner isn't Cooking at home (for example 'Bringing a dish · Made Fri, Oct 23').
-  - **Notes:** Likely, not fully proven
-- [ ] **#150 Low** Request a dish and Request a restaurant show nothing while sending
-  - **Where:** `src/routes/(app)/menu/+page.svelte:42`, `src/routes/(app)/menu/+page.svelte:101`, `src/routes/(app)/menu/+page.svelte:133`, `src/routes/(app)/menu/+page.svelte:465`
-  - **Problem:** On a slow connection the person taps Request, nothing changes, and they close the sheet thinking it failed or tap again; the request appears later. The app's Feedback sheet says 'Sending…' in the same situation.
-  - **Fix:** Use the existing flags in the markup: disable the button and show 'Requesting…' (and 'Restoring…') while set.
-- [ ] **#151 Low** Request sheets open with focus on Close rather than the Dish or Restaurant field
-  - **Where:** `src/lib/components/Sheet.svelte:16`, `src/routes/(app)/menu/+page.svelte:444`, `src/routes/(app)/menu/+page.svelte:474`
-  - **Problem:** A phone user taps Request a dish and has to tap again into the field before the keyboard opens; a screen reader user lands on the close button and must move on to find the only field that matters.
-  - **Fix:** Let Sheet's showModal focus a descendant marked autofocus and mark the Dish and Restaurant inputs.
-  - **Verifier's correction:** Correction: showModal() already focuses a descendant that has autofocus, so Sheet needs no change for that. Svelte flags autofocus (a11y_autofocus), so the fix needs a svelte-ignore or a focus target passed to Sheet. Feedback, Add a dinner and Copy a dinner behave the same way, so a convention set in Sheet may be better than a fix for requests only. Worth doing on phones: these sheets exist to type one name.
-- [ ] **#152 Low** Request a dish and Request a restaurant stack on two lines on phones
-  - **Where:** `src/routes/(app)/menu/+page.svelte:431`, `src/routes/(app)/menu/+page.svelte:719`
-  - **Problem:** On a typical phone the two request buttons wrap into a ragged stack under the list.
-  - **Fix:** As MEA-54 asks: a two-column grid with shorter labels, or smaller padding, so both fit 346 px.
-  - **Notes:** MEA-54
-- [ ] **#153 Low** Typed notes are lost without a question when a phone drops the tab in the background
-  - **Where:** `src/routes/(app)/menu/[date]/+page.svelte:15`, `src/lib/components/DinnerDetails.svelte:173`
-  - **Problem:** Someone types a long note, switches to a recipe site to copy a link, and the phone discards Meals in the background. Coming back reloads the page (Q11), and the note is gone with no question.
-  - **Fix:** Export a snapshot from the dinner page that captures and restores each dinner's typed note, servings, label and restaurant (and the dish field), keyed by dinner id.
-  - **Verifier's correction:** Fix correction: SvelteKit 3.0.0 deprecates `export const snapshot` (client.js:663-673, 'TODO 4.0 get rid of this'). Use `snapshot({ id, capture, restore })` from $app/navigation inside DinnerDetails, with an id per dinner, since a duplicate id errors in dev. It is saved to sessionStorage when the tab is hidden (client.js:3113-3116).
-  - **Notes:** Likely, not fully proven
-- [ ] **#154 Low** Help: Dinner doesn't mention several dinners or labels, and has 7 points
-  - **Where:** `src/lib/help.ts:117`
-  - **Problem:** A household that wants a kids' dinner and an adults' dinner can't learn from Help that Add a dinner exists, that it asks for labels, or that Move takes every dinner on the day.
-  - **Fix:** Combine two points and add one, for example 'Add a dinner plans another for this day, such as Kids and Adults, up to 5. Moving the date moves them all.'
-
 ### Recipes and import
 
-- [ ] **#155 Medium** Replace in Import recipes wipes every detail the file has no column for, and resets servings
-  - **Where:** `src/lib/server/recipe-import.ts:142`, `src/lib/server/recipe-import.ts:88`, `src/lib/server/recipe-import.ts:296`, `src/lib/server/data/dishes.ts:211`
-  - **Problem:** A household imports from a spreadsheet, then adds notes, nutrition and times in the app. Later they fix a few ingredient lines in a sheet that has only Recipe and Ingredients columns and choose Replace. The notes, steps, nutrition, times and tags are erased and servings fall back to the usual number. Neither the duplicates step nor Help warns about this, and there is no undo.
-  - **Fix:** On Replace, keep the existing value for any column the file doesn't have, and say so in Help. At minimum, warn beside Replace that details missing from the file will be cleared.
-  - **Notes:** Reopens design: Section 7, Import recipes: Replace swaps the existing recipe's details for the file's
-- [ ] **#156 Medium** Import from a link silently replaces the whole editor, dropping a chosen photo, tags, notes and earlier edits
-  - **Where:** `src/routes/(app)/recipes/new/+page.svelte:27`, `src/routes/(app)/recipes/new/+page.svelte:70`, `src/lib/components/RecipeForm.svelte:36`
-  - **Problem:** Someone opens New recipe, takes a photo of the dish and types tags, then pastes the link and taps Import. The photo and tags disappear. In another case, someone imports, spends minutes fixing ingredients and adding notes, then taps Import again, which sits right next to the Link field. Everything goes back to the page's version, and nothing asks first.
-  - **Fix:** When the editor has changes (RecipeForm's typed() differs from its start), ask before replacing them. Keep the photo, tags and notes the person already set, since the import never fills those in.
-  - **Also covers:** Import from a link replaces everything in the editor, including a photo already chosen, without asking
-  - **Notes:** Reopens design: Section 7, Import from a link: fields the page leaves out keep what a new recipe starts with
-- [ ] **#157 Low** Recipes already in Recipes need one choice each; there's no Replace all or Skip all
-  - **Where:** `src/routes/(app)/recipes/import/+page.svelte:97`
-  - **Problem:** After fixing a spreadsheet, for example for the line-break problem above, re-importing 120 recipes that are all already in Recipes means tapping Replace 120 times on a phone.
-  - **Fix:** Add 'Replace all' and 'Skip all' above the list to set every row's choice at once, keeping Rename per row.
-- [ ] **#158 Low** The recipe editor reports one problem per save, at the top of the form, without marking the field
-  - **Where:** `src/lib/server/recipe-form.ts:327`, `src/lib/components/RecipeForm.svelte:208`
-  - **Problem:** On a phone, fixing a long recipe means: Save, read 'Ingredient 4 needs an item', scroll down to find row 4, fix it, scroll up, Save again, and repeat for each problem.
-  - **Fix:** Return every problem at once (Import recipes already does), show each next to its field or ingredient row with aria-invalid, and focus the first one.
 - [ ] **#159 Low** Scaled custom units keep the typed form, so recipes show '3 clove Garlic' and '1 cloves'
   - **Where:** `src/lib/scaling.ts:26`, `src/lib/units.ts:88`
   - **Problem:** Print-outs and the cooking view read wrong for the most common custom units (clove, can, slice, stick, head) whenever a recipe is scaled.
