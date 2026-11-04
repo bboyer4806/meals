@@ -123,7 +123,7 @@
 
 	// One line's actions. Their errors show next to the line or in its sheet, not elsewhere.
 
-	type Where = number | 'sheet' | 'picker';
+	type Where = number | 'sheet' | 'fewer' | 'picker';
 	let lineError = $state<{ where: Where; message: string } | null>(null);
 
 	function lineFailure(result: ActionResult): string | null {
@@ -162,6 +162,10 @@
 	let picking = $state<Line | null>(null);
 	let pickOpen = $state(false);
 
+	// An error from Got fewer shows beside its amount, and any other at the top of the sheet.
+	const submitSheet: SubmitFunction = (input) =>
+		lineSubmit(input.submitter === fewerSave ? 'fewer' : 'sheet')(input);
+
 	function edit(line: Line) {
 		editing = line;
 		editKey += 1;
@@ -174,6 +178,18 @@
 		picking = line;
 		lineError = null;
 		pickOpen = true;
+	}
+
+	// A store's Mark all sends the ids of the lines its confirmation counts, since the list may
+	// be out of date (Q11), and then says how many lines it changed (6.2).
+
+	function lineIds(lines: Line[]) {
+		return lines.map((line) => line.id).join(',');
+	}
+
+	/** "Marked 7 Walmart items as ordered." */
+	function markedMessage(count: number, storeName: string, marked: 'ordered' | 'received') {
+		return `Marked ${count} ${storeName} ${count === 1 ? 'item' : 'items'} as ${marked}.`;
 	}
 
 	// Collapsed groups are remembered on this device only.
@@ -283,6 +299,7 @@
 				{#if group.toOrder.length > 0}
 					<form method="POST" action="?/orderAll" use:enhance>
 						<input type="hidden" name="storeId" value={group.storeId} />
+						<input type="hidden" name="ids" value={lineIds(group.toOrder)} />
 						<ConfirmButton
 							label="Mark all ordered"
 							message={`Mark ${group.toOrder.length} ${group.name} ${group.toOrder.length === 1 ? 'item' : 'items'} as ordered?`}
@@ -293,6 +310,7 @@
 				{#if group.ordered.length > 0}
 					<form method="POST" action="?/receiveAll" use:enhance>
 						<input type="hidden" name="storeId" value={group.storeId} />
+						<input type="hidden" name="ids" value={lineIds(group.ordered)} />
 						<ConfirmButton
 							label="Mark all received"
 							message={`Mark ${group.ordered.length} ordered ${group.name} ${group.ordered.length === 1 ? 'item' : 'items'} as received?`}
@@ -301,6 +319,9 @@
 					</form>
 				{/if}
 			</div>
+		{/if}
+		{#if form?.action === 'group' && form.storeId === group.storeId && form.marked}
+			<p role="status">{markedMessage(form.count, group.name, form.marked)}</p>
 		{/if}
 
 		{#if group.toOrder.length > 0}
@@ -463,7 +484,7 @@
 <Sheet bind:open={editOpen} title={editing?.itemName ?? ''}>
 	{#if editing}
 		{#key editKey}
-			<form method="POST" action="?/update" use:enhance={lineSubmit('sheet')}>
+			<form method="POST" action="?/update" use:enhance={submitSheet}>
 				{#if lineError?.where === 'sheet'}<p class="error" role="alert">{lineError.message}</p>{/if}
 				<input type="hidden" name="id" value={editing.id} />
 				<div class="row field">
@@ -535,8 +556,9 @@
 								}
 							}}
 						/>
-						<button formaction="?/gotFewer" bind:this={fewerSave}>Save</button>
+						<button formaction="?/gotFewer" bind:this={fewerSave}>Save received</button>
 					</div>
+					{#if lineError?.where === 'fewer'}<p class="error" role="alert">{lineError.message}</p>{/if}
 				{/if}
 				<div class="delete">
 					<ConfirmButton
@@ -732,12 +754,17 @@
 		flex-wrap: wrap;
 	}
 
+	/* The question keeps its words whole; when they don't fit beside the amount, Save received
+	   moves under it. */
 	.fewer {
 		margin-top: 0.75rem;
+		flex-wrap: wrap;
 	}
 
 	.fewer label {
 		margin: 0;
+		min-width: auto;
+		overflow-wrap: normal;
 	}
 
 	.delete {

@@ -193,6 +193,11 @@ async function saveToWeek(page: Page, date: string) {
 const LEAVE = 'Leave without saving? What you typed will be lost.';
 const CHANGED = 'Someone changed this dinner since you opened it.';
 
+/** What leaving asks with a dish name typed and not added, which Save doesn't add (MEA-127). */
+function leaveDish(name: string): string {
+	return `Leave without adding ${name}? What you typed will be lost.`;
+}
+
 test('plans a week with all four dinner types, with dishes and roles', async ({
 	page,
 	db,
@@ -1006,6 +1011,176 @@ test('offers to restore a suggested dish someone archived after the page opened'
 	expect(db.prepare('select archived_at from dishes where id = ?').pluck().get(bread)).toBeNull();
 });
 
+test('asks before Save leaves a dish name typed and not added, naming it (MEA-127)', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	const dinnerId = addDinner(db, person.householdId, date, { note: 'Taco night' });
+	const questions: string[] = [];
+	page.on('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	});
+
+	// "Add ... as a new dish" only fills the name in, and Save doesn't add it, so going to the
+	// week asks, naming the dish. Staying keeps it, with the note saved.
+	await open(page, `/menu/${date}`);
+	await page.getByLabel('Note', { exact: true }).fill('Taco night at 6');
+	await dishField(page).fill('Garlic bread');
+	await page.getByRole('option', { name: 'Add “Garlic bread” as a new dish' }).click();
+	await expect(dishField(page)).toHaveValue('Garlic bread');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect.poll(() => questions).toEqual([leaveDish('Garlic bread')]);
+	await expect(page.getByRole('status')).toHaveText('Saved');
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	await expect(dishField(page)).toHaveValue('Garlic bread');
+	expect(dinnerRow(db, person.householdId, date)?.note).toBe('Taco night at 6');
+	expect(dinnerDishes(db, dinnerId)).toEqual([]);
+
+	// Once it's added, leaving asks nothing.
+	await addButton(page).click();
+	await expect(dishLinks(page)).toHaveText(['Garlic bread']);
+	await expect(dishField(page)).toHaveValue('');
+	await page.getByRole('link', { name: /^‹ Week of/ }).click();
+	await expect(day(page, date).locator('.names')).toHaveText(['Garlic bread']);
+	expect(questions).toHaveLength(1);
+});
+
+test('asks before leaving or moving with a dish name typed, and drops it when told to (MEA-127)', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	const dinnerId = addDinner(db, person.householdId, date);
+	const questions: string[] = [];
+	const stay = (dialog: Dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	};
+	page.on('dialog', stay);
+	const weekLink = page.getByRole('link', { name: /^‹ Week of/ });
+
+	// The week link, a tab and Move each ask, naming the dish as it would be added.
+	await open(page, `/menu/${date}`);
+	await dishField(page).fill('  Garlic   bread ');
+	await weekLink.click();
+	await expect.poll(() => questions).toEqual([leaveDish('Garlic bread')]);
+	await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Recipes' }).click();
+	await expect.poll(() => questions).toHaveLength(2);
+	await dateButton(page).click();
+	const sheet = page.getByRole('dialog', { name: 'Move to another date' });
+	await sheet.getByRole('button', { name: /^Move to / }).click();
+	await expect.poll(() => questions).toHaveLength(3);
+	await expect(sheet).toBeVisible();
+	await sheet.getByRole('button', { name: 'Cancel' }).click();
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	await expect(dishField(page)).toHaveValue('  Garlic   bread ');
+	expect(questions).toEqual(Array(3).fill(leaveDish('Garlic bread')));
+
+	// Told to go, it goes without the dish.
+	page.off('dialog', stay);
+	page.once('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.accept();
+	});
+	await weekLink.click();
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sundayOf(date)}$`));
+	expect(questions).toHaveLength(4);
+	expect(dinnerDishes(db, dinnerId)).toEqual([]);
+
+	// Spaces alone aren't a name, so leaving asks nothing.
+	page.on('dialog', stay);
+	await day(page, date).click();
+	await dishField(page).fill('   ');
+	await weekLink.click();
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sundayOf(date)}$`));
+	expect(questions).toHaveLength(4);
+});
+
+test('has the browser ask before closing the tab with a dish name typed (MEA-127)', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date);
+	const dialogs: string[] = [];
+	page.on('dialog', (dialog) => {
+		dialogs.push(dialog.type());
+		void dialog.dismiss();
+	});
+
+	await open(page, `/menu/${date}`);
+	// A tap first, since the browser only asks on a page someone used.
+	await dishField(page).click();
+	await dishField(page).fill('Garlic bread');
+	await page.close({ runBeforeUnload: true });
+	await expect.poll(() => dialogs).toEqual(['beforeunload']);
+	expect(page.isClosed()).toBe(false);
+});
+
+test('goes to the week without asking about a picked dish still on its way at Save (MEA-127)', async ({
+	page,
+	db,
+	person
+}) => {
+	addRecipe(db, person.householdId, { name: 'Rice' });
+	const date = addDays(today(), 1);
+	const dinnerId = addDinner(db, person.householdId, date, { note: 'Taco night' });
+	const adds = countAdds(page);
+	const questions: string[] = [];
+	page.on('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	});
+	// Holds the add back, as a slow connection might.
+	let release!: () => void;
+	const released = new Promise<void>((resolve) => (release = resolve));
+	await page.route(
+		(url) => url.search === '?/addDish',
+		async (route) => {
+			await released;
+			await route.continue();
+		}
+	);
+
+	await open(page, `/menu/${date}`);
+	await page.getByLabel('Note', { exact: true }).fill('Taco night at 6');
+	await dishField(page).fill('ric');
+	await page.getByRole('option', { name: 'Rice', exact: true }).tap();
+	await expect.poll(adds).toBe(1);
+	await saveToWeek(page, date);
+	release();
+	await expect.poll(() => dinnerDishes(db, dinnerId)).toEqual([{ name: 'Rice', role: 'main' }]);
+	expect(dinnerRow(db, person.householdId, date)?.note).toBe('Taco night at 6');
+	expect(questions).toEqual([]);
+});
+
+test('keeps a dish name typed, with nothing to save, when someone else clears the dinner (MEA-127)', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	const dinnerId = addDinner(db, person.householdId, date, { note: 'Taco night' });
+
+	// Save doesn't add a dish, so a name alone holds no form for Save, and stays for Add.
+	await open(page, `/menu/${date}`);
+	await dishField(page).fill('Garlic bread');
+	db.prepare('delete from dinners where id = ?').run(dinnerId);
+	await comeBack(page);
+	await expect(page.getByText('Not planned yet.')).toBeVisible();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await expect(page.getByLabel('Note', { exact: true })).toHaveValue('');
+	await expect(dishField(page)).toHaveValue('Garlic bread');
+	await addButton(page).click();
+	await expect(dishLinks(page)).toHaveText(['Garlic bread']);
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({ type: 'cook', note: null });
+});
+
 test('copies a past dinner from the most-made list or by searching a dish name', async ({
 	page,
 	db,
@@ -1226,6 +1401,34 @@ test('moves a dinner to an empty date, and swaps it with a planned one', async (
 	expect(dinnerRow(db, person.householdId, mon)).toBeUndefined();
 	expect(dinnerRow(db, person.householdId, tue)?.id).toBe(pizzaId);
 	expect(dinnerRow(db, person.householdId, wed)?.id).toBe(tacosId);
+});
+
+test('says the year on Move when the new date is in another year', async ({
+	page,
+	db,
+	person
+}) => {
+	// This year's New Year's Eve, whose next day is in the next year (MEA-150).
+	const year = Number(today().slice(0, 4));
+	const eve = `${year}-12-31`;
+	const newYearsDay = `${year + 1}-01-01`;
+	const dayBefore = `${year}-12-30`;
+	const nextEve = `${year + 1}-12-31`;
+	addDinner(db, person.householdId, eve, { note: "New Year's Eve" });
+
+	await open(page, `/menu/${eve}`);
+	await dateButton(page).click();
+	const sheet = page.getByRole('dialog', { name: 'Move to another date' });
+	const newDate = sheet.getByLabel('New date');
+	const move = sheet.getByRole('button', { name: /^Move/ });
+	await expect(newDate).toHaveValue(newYearsDay);
+	await expect(move).toHaveText(`Move to ${dayLabel(newYearsDay)}, ${year + 1}`);
+	// A date this year doesn't say its year.
+	await newDate.fill(dayBefore);
+	await expect(move).toHaveText(`Move to ${dayLabel(dayBefore)}`);
+	// A slip in the year field, so the date isn't taken for this year's.
+	await newDate.fill(nextEve);
+	await expect(move).toHaveText(`Move to ${dayLabel(nextEve)}, ${year + 1}`);
 });
 
 test('clears a dinner after asking, and shows the date as not planned', async ({
@@ -3088,7 +3291,7 @@ test.describe('swiping between weeks', () => {
 	}) => {
 		const sunday = sundayOf(today());
 		await open(page, '/menu');
-		// The weeks the page loads, to show at the end that only the last swipe loaded one.
+		// The weeks the page loads, to show that only the real swipe loaded one.
 		const loads: (string | null)[] = [];
 		page.on('request', (request) => {
 			const url = new URL(request.url());
@@ -3102,8 +3305,6 @@ test.describe('swiping between weeks', () => {
 		await swipe(wednesday, -50);
 		// More than half as far down as across.
 		await swipe(wednesday, -160, 100);
-		// With a second finger, off the days, as in a pinch.
-		await touch(page, await stroke(wednesday, -200), await stroke(heading, -200));
 		// Across the week's heading rather than its days.
 		await swipe(heading, -200);
 		// Up the screen, which scrolls the page as before, even straying 70 pixels sideways.
@@ -3115,6 +3316,13 @@ test.describe('swiping between weeks', () => {
 		// loads its page ahead of time.)
 		await wednesday.scrollIntoViewIfNeeded();
 		await swipe(wednesday, -200);
+		await showsWeek(page, addDays(sunday, 7));
+		expect(loads).toEqual([addDays(sunday, 7)]);
+
+		// With a second finger, off the days, as in a pinch. It goes last because full Chrome's
+		// touch emulation, unlike the headless shell CI runs, then holds the second finger down
+		// for the rest of the page, so every later swipe would be a pinch too (MEA-79).
+		await touch(page, await stroke(wednesday, -200), await stroke(heading, -200));
 		await showsWeek(page, addDays(sunday, 7));
 		expect(loads).toEqual([addDays(sunday, 7)]);
 	});

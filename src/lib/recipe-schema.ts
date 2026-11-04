@@ -153,10 +153,18 @@ function steps(instructions: unknown): string | null {
 	return lines.length > 0 ? lines.join('\n') : null;
 }
 
-/** The number a nutrition value starts with, such as 240 in "240 kcal" or 12.5 in "12.5 g". */
+// A comma followed by exactly three digits, as between the thousands in 1,250.
+const THOUSANDS = /,(?=\d{3}(?!\d))/g;
+
+/**
+ * The number a nutrition value starts with, such as 240 in "240 kcal", 12.5 in "12.5 g" or 1250
+ * in "1,250 kcal". Null when its digits go on after any other comma, as in "12,5 g", rather than
+ * guess whether that comma is a decimal point (MEA-76).
+ */
 function nutrient(value: unknown): string | null {
 	if (typeof value !== 'string' && typeof value !== 'number') return null;
-	return /\d*\.?\d+/.exec(String(value))?.[0] ?? null;
+	const number = /\d*\.?\d+(,\d)?/.exec(String(value).replace(THOUSANDS, ''));
+	return number && number[1] === undefined ? number[0] : null;
 }
 
 /**

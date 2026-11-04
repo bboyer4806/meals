@@ -28,6 +28,25 @@ describe('sessions', () => {
 		expect(db().select().from(sessions).all()).toEqual([]);
 	});
 
+	it("deletes expired sessions, anyone's, when one is created", () => {
+		const { userId } = makeHousehold();
+		const other = makeHousehold().userId;
+		createSession(other, 0);
+		createSession(userId, 1);
+
+		// Signing in when the first has just expired and the second has a moment left.
+		createSession(userId, 30 * DAY);
+		const left = db()
+			.select({ userId: sessions.userId, expiresAt: sessions.expiresAt })
+			.from(sessions)
+			.orderBy(sessions.expiresAt)
+			.all();
+		expect(left).toEqual([
+			{ userId, expiresAt: 30 * DAY + 1 },
+			{ userId, expiresAt: 60 * DAY }
+		]);
+	});
+
 	it('marks the admin and forgets deleted sessions', () => {
 		const { userId } = makeHousehold();
 		const { token } = createSession(userId, 0);

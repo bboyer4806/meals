@@ -207,6 +207,14 @@
 	let restoring = $state(false);
 	let restoreSent = '';
 
+	/**
+	 * The name in the field as it would be added, which leaving would drop, so leaving asks about
+	 * it (MEA-127); empty when there's none, or while it's on its way to the dinner.
+	 */
+	export function typedName(): string {
+		return adding || restoring ? '' : normalizeName(name);
+	}
+
 	function archivedIn(data: unknown): Archived | null {
 		return (data as { archived?: Archived | null } | undefined)?.archived ?? null;
 	}

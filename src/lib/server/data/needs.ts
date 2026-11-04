@@ -304,8 +304,17 @@ export function markReceived(
 	});
 }
 
-/** Marks every To Order line at a store as Ordered. Returns how many changed. */
-export function markAllOrdered(householdId: number, storeId: number, now: number): number {
+/**
+ * Marks the To Order lines a store's confirmation counted as Ordered (6.2). The list doesn't
+ * update itself (Q11), so a line added since isn't among them, and a counted line that's no
+ * longer To Order at the store is left as it is. Returns how many changed.
+ */
+export function markAllOrdered(
+	householdId: number,
+	storeId: number,
+	needIds: number[],
+	now: number
+): number {
 	return transaction(() => {
 		getStore(householdId, storeId);
 		const lines = db()
@@ -315,7 +324,8 @@ export function markAllOrdered(householdId: number, storeId: number, now: number
 				and(
 					eq(groceryNeeds.householdId, householdId),
 					eq(groceryNeeds.storeId, storeId),
-					eq(groceryNeeds.status, 'to_order')
+					eq(groceryNeeds.status, 'to_order'),
+					inArray(groceryNeeds.id, needIds)
 				)
 			)
 			.returning({ itemId: groceryNeeds.itemId })
@@ -325,8 +335,16 @@ export function markAllOrdered(householdId: number, storeId: number, now: number
 	});
 }
 
-/** Marks every Ordered line at a store as Received. Returns how many changed. */
-export function markAllReceived(householdId: number, storeId: number, now: number): number {
+/**
+ * Marks the Ordered lines a store's confirmation counted as Received, leaving a counted line
+ * that's no longer Ordered at the store as it is (6.2, Q11). Returns how many changed.
+ */
+export function markAllReceived(
+	householdId: number,
+	storeId: number,
+	needIds: number[],
+	now: number
+): number {
 	return transaction(() => {
 		getStore(householdId, storeId);
 		const lines = db()
@@ -336,7 +354,8 @@ export function markAllReceived(householdId: number, storeId: number, now: numbe
 				and(
 					eq(groceryNeeds.householdId, householdId),
 					eq(groceryNeeds.storeId, storeId),
-					eq(groceryNeeds.status, 'ordered')
+					eq(groceryNeeds.status, 'ordered'),
+					inArray(groceryNeeds.id, needIds)
 				)
 			)
 			.returning({ id: groceryNeeds.id })

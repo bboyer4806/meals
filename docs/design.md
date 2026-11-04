@@ -259,7 +259,7 @@ lost, so is everything. Moving backups off the server later is a small change.
   household.
 - **Sessions** use a random token in an `httpOnly`, `Secure`, `SameSite=Lax` cookie, and
   only a SHA-256 hash of the token is stored. Sessions last 30 days and are extended when
-  used. Signing out deletes the session.
+  used. Signing out deletes the session, and each sign-in deletes every expired one.
 - **Forms:** SvelteKit's origin check blocks cross-site form posts. All input is validated
   with Zod.
 - **Long text** (MEA-64). Names are matched and stored in one Unicode form (NFC), and putting
@@ -279,7 +279,8 @@ lost, so is everything. Moving backups off the server later is a small change.
   cloud's metadata service at 169.254.169.254). Every address a name resolves to is checked
   as the connection is made, so the name can't resolve to a public address for a check and a
   private one for the fetch. Redirects are followed one at a time, up to 5, each checked the
-  same way. A fetch stops after 10 seconds or 5 MB.
+  same way. A fetch stops after 10 seconds or 5 MB, and a page sent gzipped stops unzipping at
+  5 MB.
 
 ### 4.6 Code layout
 
@@ -435,6 +436,12 @@ mark points at a checklist, an item and sometimes a grocery line.
 Lines that are To Order or Ordered can be edited (quantity, unit, store, note) or
 deleted. Received lines leave the list, apart from "received today", and are kept as
 history (Q21).
+
+"Mark all ordered" and "Mark all received" ask first ("Mark 7 Walmart items as ordered?"),
+then change only the lines that question counted, and only those still To Order (or Ordered) at
+that store (MEA-68). The list doesn't update while it's open (Q11), so a line added there since,
+such as Eggs from another phone, is left for next time. The group then says how many lines
+changed: "Marked 7 Walmart items as ordered."
 
 ### 6.3 Default store
 
@@ -652,7 +659,8 @@ If two people change the same thing, the last save wins.
 
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
 header menu, More, holds Items, History, Household, What's new, Admin (admin only) and Sign
-out. Help sits in the header to the left of More.
+out. It closes when one of its links is followed, with Escape or with a tap outside it, and
+that tap still goes to the page. Help sits in the header to the left of More.
 
 | Screen           | Path                                 | What it does                                                                                                                         |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -718,10 +726,10 @@ next time. There's no way to replay it, and no other screen has a tour.
 (filled from the default; tap to change) and Add. Below it, one group per store plus "No
 store". Groups can be collapsed, and the device remembers which ones are. Each group
 lists its To Order lines, then Ordered, then Received today (struck through). Store
-groups have "Mark all ordered" and "Mark all received"; "No store" has neither. A row's
-circle checks it off as Received. Tapping a row opens an edit sheet: quantity, unit,
-store, note, Mark ordered, Didn't come, Got fewer, and Delete. An item's notes (brand,
-size) show under its name.
+groups have "Mark all ordered" and "Mark all received"; "No store" has neither. After either,
+the group says how many lines it changed (6.2). A row's circle checks it off as Received.
+Tapping a row opens an edit sheet: quantity, unit, store, note, Mark ordered, Didn't come, Got
+fewer, and Delete. An item's notes (brand, size) show under its name.
 
 **Search.** Recipes, History and Items search as people type (MEA-36): the list updates 300 ms
 after typing stops, and Enter, or a phone keyboard's search key, searches right away. There's no
@@ -755,7 +763,9 @@ many at once from a CSV file saved from a spreadsheet. Import beside New recipe 
 The template is the header row alone: Recipe, Servings, Prep (min), Cook (min), Tags,
 Ingredients, Steps, Notes, Source, Calories, Protein (g), Carbs (g), Fat (g). Columns are
 matched by name ignoring case, in any order; only Recipe is needed, and other columns are
-ignored. Each row is one recipe, and blank rows are skipped. Ingredients and Steps hold several
+ignored. Each row is one recipe, and blank rows are skipped. As in a spreadsheet, a quote opens a
+quoted cell only at the start of a cell and is text anywhere else, so Use a 9" pan keeps its inch
+mark (MEA-72). Ingredients and Steps hold several
 entries separated by `|`, and an ingredient entry starting with `#` is a section heading. Each
 ingredient entry fills an editor row (`src/lib/ingredient-text.ts`): an amount, or a range whose
 first amount is the amount and which goes in the prep note as "2 to 3"; then a known unit (6.5)
@@ -770,7 +780,10 @@ cell over 10,000 characters ("Row 3: keep each cell under 10000 characters."), a
 a name, a name used twice in the file
 ("Row 5: Pound cake is also on row 2."), an ingredient the editor wouldn't take ("Row 7: '2 cups'
 needs an item.") and an archived item ("Row 9: Saffron is archived. Restore it on Items first."),
-since importing never restores items. A file with no problems whose recipe names are already in
+since importing never restores items. A quote that starts a cell and is never closed would put
+the rest of the file in that cell, so it's the only problem listed, on the row where the quote
+opens ("Row 4: a cell starts with a quote that isn't closed.").
+A file with no problems whose recipe names are already in
 Recipes (ignoring case, archived included) first lists those recipes, archived ones marked so,
 each with Skip (selected to start), Replace and Rename. Skip leaves the file's recipe out.
 Replace swaps the existing recipe's details for the file's, keeping its name, photo, Tried,
@@ -815,20 +828,27 @@ so a recipe found online can be brought in on any device, a phone included. Most
 put a schema.org Recipe in their pages as JSON-LD for search engines; Import has the server
 fetch the page (4.5) and fills in the editor from it: the name, servings, prep and cook minutes,
 ingredients, steps one per line, calories, protein, carbs and fat, with Source set to the link.
-Servings are the first whole number in the page's yield, such as 4 in "4 servings". Each
+Servings are the first whole number in the page's yield, such as 4 in "4 servings". Calories,
+protein, carbs and fat are the number each value starts with, such as 12.5 in "12.5 g". A comma
+before exactly three digits separates thousands, so "1,250 kcal" is 1250 (MEA-76); a value with
+any other comma in its number, such as "12,5 g", is left blank rather than guessed. Each
 ingredient is split as Import recipes splits one, so "1 1/2 cups flour, sifted" is 1 1/2, cups,
 flour and sifted. Steps grouped in sections keep their order without the section names, and
 HTML and character references such as `&amp;` are taken out of the text. Text over 10,000
 characters in one place, such as the name, an ingredient or a step, is cut to 10,000 (4.5),
-which Save then checks like any other. Fields the page leaves out keep what a new recipe starts
-with, such as the household's usual servings; the photo, tags
+which Save then checks like any other. The page is read in
+the charset its Content-Type names, else the one a meta element in its first 1,024 bytes names,
+else UTF-8, so a page in windows-1252 or ISO-8859-1 keeps its é, ° and ½ (MEA-75). Import asks
+for the page uncompressed, and unzips one its server gzips anyway. Fields the page leaves
+out keep what a new recipe starts with, such as the household's usual servings; the photo, tags
 and notes are never imported. The page then says "Filled in from the page. Check it, then tap Save."
 Nothing is saved until Save, which checks the fields as if they were typed. A page without a
 Recipe says "Couldn't find a recipe on that page.", and one that can't be opened says
 "Couldn't open that page. Check the link and try again."; either way the link stays in its
 field and the editor stays as it was. The link must start with http:// or https:// and, like
 Source, be up to 500 characters. Pages whose sites block servers or need a sign-in can't be
-opened, and recipe data written as Microdata or RDFa rather than JSON-LD isn't read.
+opened, nor can a page compressed other than with gzip or in a charset the server doesn't know,
+and recipe data written as Microdata or RDFa rather than JSON-LD isn't read.
 
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, the restaurant (Eating
 out; MEA-58) or dishes by role, and the whole note, with its line breaks (MEA-59). A day with
@@ -873,9 +893,11 @@ dinners, and a restaurant request's Add makes a new Eating out dinner there (6.1
 dishes, copying, moving, clearing and adding a request save as soon as they're made, and keep
 anything typed in the servings, restaurant and note for Save. Save on the servings or
 restaurant and note goes to the dinner's week, where that dinner's line says "Saved" for 3
-seconds; on a date with no dinner it plans it as the type shown. Leaving with something typed asks first. If someone cleared or moved the dinner
-meanwhile, Save plans the date again when it has no dinner left, and the page stays to say so
-(6.11).
+seconds; on a date with no dinner it plans it as the type shown. Leaving with something typed
+asks first. A name in the dish field that isn't added counts, since Save doesn't add it, and the
+question names it: "Leave without adding Garlic bread?" (MEA-127). A dish on its way to the
+dinner doesn't. If someone cleared or moved the dinner meanwhile, Save plans the date again when
+it has no dinner left, and the page stays to say so (6.11).
 
 **What's new.** What each release changed, newest first, in words for the people using the
 app; every household sees the same page. Each release's heading is its version, such as "1.2"
@@ -900,7 +922,8 @@ Warmer and food-themed (Q39), following the phone's light or dark setting:
 - Type: Fraunces, a soft serif, for headings, and Nunito, a rounded sans serif, for
   everything else. Both are self-hosted.
 - Phone details: tap targets at least 44 px, edit sheets that slide up from the bottom,
-  and nothing that depends on hovering.
+  and nothing that depends on hovering. Dragging on an open sheet scrolls only the sheet,
+  and the page behind stays where it was (MEA-164).
 
 Colors and fonts are defined once as variables, so changes after you see the first
 deploy are quick.

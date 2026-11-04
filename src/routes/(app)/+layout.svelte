@@ -6,12 +6,22 @@
 
 	let { data, children } = $props();
 	let menu = $state<HTMLDetailsElement>();
+	let summary: HTMLElement;
 
 	// Following a link in the More menu closes it. Not when the page first loads: More tapped
 	// before the page's script started is already open, and stays so.
 	afterNavigate(({ type }) => {
 		if (type !== 'enter' && menu) menu.open = false;
 	});
+
+	// A tap outside the More menu or Escape closes it too, so a tap meant for the page doesn't
+	// land on one of its links (design 7). Focus in the menu goes back to More rather than
+	// staying on a link that's now hidden; focus elsewhere, such as in a search box, stays.
+	function closeMenu() {
+		if (!menu?.open) return;
+		if (menu.contains(document.activeElement)) summary.focus();
+		menu.open = false;
+	}
 
 	// A tab stays current on the pages under it, such as Items under Groceries.
 	function current(path: string): 'page' | undefined {
@@ -27,6 +37,15 @@
 	{/if}
 {/snippet}
 
+<svelte:document
+	onpointerdown={(event) => {
+		if (!menu?.contains(event.target as Node)) closeMenu();
+	}}
+	onkeydown={(event) => {
+		if (event.key === 'Escape') closeMenu();
+	}}
+/>
+
 <header class="no-print">
 	<div class="bar">
 		<a class="brand link-tap" href="/groceries">Meals</a>
@@ -34,7 +53,7 @@
 		<Help />
 		<details class="menu" bind:this={menu}>
 			<!-- Not "Menu", which is the menu of dinners in the tab bar. -->
-			<summary data-tour="more">More{@render dot()}</summary>
+			<summary data-tour="more" bind:this={summary}>More{@render dot()}</summary>
 			<nav aria-label="More">
 				<a href="/groceries/items">Items</a>
 				<a href="/groceries/history">History</a>

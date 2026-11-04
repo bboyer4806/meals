@@ -22,5 +22,7 @@ export function load({ locals, url }) {
 		if (day?.date === date) day.lines.push(line);
 		else days.push({ date, lines: [line] });
 	}
-	return { search, days, more: lines.length > shown ? shown + PAGE : null };
+	// Today in the household's time zone (design 11), so dates from other years show their year.
+	const today = dateIn(Date.now(), timeZone);
+	return { search, days, more: lines.length > shown ? shown + PAGE : null, today };
 }

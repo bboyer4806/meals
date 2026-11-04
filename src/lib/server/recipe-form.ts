@@ -11,7 +11,7 @@ import {
 	type DishSaveResult,
 	type IngredientInput
 } from './data/dishes.ts';
-import { id, nameField, parseForm, sentMax, type FormFailure } from './forms.ts';
+import { idList, nameField, parseForm, sentMax, type FormFailure } from './forms.ts';
 import { deletePhoto, savePhoto } from './photos.ts';
 
 // The recipe editor's form (design 7, Edit recipe): the text its fields start with, what it
@@ -393,12 +393,6 @@ function upload(value: FormDataEntryValue | null): File | null | undefined {
 	return value.size === 0 ? null : value;
 }
 
-// The ids the "Restore and save" button sends, joined by commas.
-const itemIds = z.preprocess(
-	(value) => (typeof value === 'string' ? value.split(',') : value),
-	z.array(id)
-);
-
 /**
  * Reads the recipe editor's form. Names, units and amounts are normalized as they're stored,
  * blank optional fields are null, and the rows in `ingredients` become the ingredients, each in
@@ -425,7 +419,7 @@ export function parseRecipeForm(
 	const restore = formData.get('restoreItems');
 	let restoreItemIds: number[] = [];
 	if (restore !== null) {
-		const ids = itemIds.safeParse(restore);
+		const ids = idList.safeParse(restore);
 		if (!ids.success) {
 			return {
 				failure: failure("The items to restore couldn't be read. Reload the page and try again.")

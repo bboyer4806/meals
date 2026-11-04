@@ -1,5 +1,5 @@
-import type { Page } from '@playwright/test';
-import { addStore, expect, test } from './fixtures.ts';
+import type { Locator, Page } from '@playwright/test';
+import { addStore, expect, open, test } from './fixtures.ts';
 
 function addForm(page: Page) {
 	return page.getByRole('form', { name: 'Add to the list' });
@@ -29,6 +29,28 @@ function group(page: Page, name: string) {
 async function confirm(page: Page, button: string) {
 	await page.getByRole('dialog').getByRole('button', { name: button, exact: true }).click();
 	await expect(page.getByRole('dialog')).toHaveCount(0);
+}
+
+/**
+ * A finger pressed, moved `down` pixels (negative is up) in steps across the middle of what's
+ * there, then lifted. Real touch input, as a phone sends it; page.mouse would send a mouse pointer
+ * even on the Pixel 7.
+ */
+async function drag(on: Locator, down: number) {
+	const box = await on.boundingBox();
+	if (!box) throw new Error('Nothing there to drag');
+	const x = box.x + box.width / 2;
+	const y = box.y + box.height / 2 - down / 2;
+	const cdp = await on.page().context().newCDPSession(on.page());
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+	for (let step = 1; step <= 8; step += 1) {
+		await cdp.send('Input.dispatchTouchEvent', {
+			type: 'touchMove',
+			touchPoints: [{ x, y: y + (down * step) / 8 }]
+		});
+	}
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await cdp.detach();
 }
 
 test('orders and receives a store, then suggests that store next time', async ({
@@ -65,6 +87,51 @@ test('orders and receives a store, then suggests that store next time', async ({
 	await addForm(page).getByRole('button', { name: 'Add' }).click();
 	await expect(walmart.getByRole('button', { name: /Milk\s*1 gal/ })).toBeVisible();
 	await expect(item).toHaveValue('');
+});
+
+// The list doesn't update while it's open (design 6.11), so Mark all changes only the lines its
+// question counted (6.2).
+test('marks only the lines the question counted, and says how many changed', async ({
+	page,
+	db,
+	person
+}) => {
+	const walmartId = addStore(db, person.householdId, 'Walmart');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Milk', store: 'Walmart' });
+	await addAndWait(page, { name: 'Bread', store: 'Walmart' });
+	const walmart = group(page, 'Walmart');
+	await expect(walmart.getByRole('button', { name: /^Bread/ })).toBeVisible();
+
+	// Meanwhile, someone else adds Eggs at Walmart from their phone.
+	const item = db
+		.prepare("insert into items (household_id, name, created_at) values (?, 'Eggs', 0)")
+		.run(person.householdId).lastInsertRowid;
+	const eggs = db
+		.prepare(
+			"insert into grocery_needs (household_id, item_id, quantity, store_id, status, created_at) values (?, ?, 1, ?, 'to_order', 0)"
+		)
+		.run(person.householdId, item, walmartId).lastInsertRowid;
+	const eggsStatus = () =>
+		db.prepare('select status from grocery_needs where id = ?').pluck().get(eggs);
+
+	await walmart.getByRole('button', { name: 'Mark all ordered' }).click();
+	await expect(page.getByRole('dialog')).toContainText('Mark 2 Walmart items as ordered?');
+	await confirm(page, 'Mark ordered');
+	await expect(walmart.getByRole('status')).toHaveText('Marked 2 Walmart items as ordered.');
+	await expect(walmart.getByRole('button', { name: /^Eggs/ })).toBeVisible();
+	expect(eggsStatus()).toBe('to_order');
+
+	// Then they order Eggs on their own.
+	db.prepare("update grocery_needs set status = 'ordered', ordered_at = ? where id = ?").run(
+		Date.now(),
+		eggs
+	);
+	await walmart.getByRole('button', { name: 'Mark all received' }).click();
+	await expect(page.getByRole('dialog')).toContainText('Mark 2 ordered Walmart items as received?');
+	await confirm(page, 'Mark received');
+	await expect(walmart.getByRole('status')).toHaveText('Marked 2 Walmart items as received.');
+	expect(eggsStatus()).toBe('ordered');
 });
 
 test('offers to update a line already on the list', async ({ page, person: _ }) => {
@@ -139,7 +206,7 @@ test('splits off what arrived when an order comes up short', async ({ page, db, 
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('button', { name: 'Got fewer' }).click();
 	await dialog.getByLabel('How many did you get?').fill('2');
-	await dialog.getByRole('button', { name: 'Save' }).last().click();
+	await dialog.getByRole('button', { name: 'Save received' }).click();
 	await expect(dialog).toHaveCount(0);
 
 	await expect(walmart.getByRole('button', { name: /^Yogurt\s*1 cups/ })).toBeVisible();
@@ -272,6 +339,19 @@ test('records Got fewer when Enter is pressed in the amount', async ({ page, db,
 	await expect(walmart.getByRole('button', { name: /^Yogurt\s*1 cups/ })).toBeVisible();
 });
 
+test('shows a Got fewer error beside the amount', async ({ page, db, person }) => {
+	addStore(db, person.householdId, 'Walmart');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Yogurt', quantity: '3', unit: 'cups', store: 'Walmart' });
+	await group(page, 'Walmart').getByRole('button', { name: /^Yogurt/ }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'Got fewer' }).click();
+	await dialog.getByLabel('How many did you get?').fill('3');
+	await dialog.getByRole('button', { name: 'Save received' }).click();
+	await expect(dialog.locator('.fewer + [role="alert"]')).toHaveText('Enter an amount less than 3');
+	await expect(dialog.getByRole('alert')).toHaveCount(1);
+});
+
 test('keeps working for a line whose store was archived', async ({ page, db, person }) => {
 	const costco = addStore(db, person.householdId, 'Costco');
 	await page.goto('/groceries');
@@ -372,10 +452,59 @@ test("saves the sheet edits with Didn't come and Got fewer", async ({ page, db, 
 	await dialog.getByLabel('Quantity').fill('5');
 	await dialog.getByRole('button', { name: 'Got fewer' }).click();
 	await dialog.getByLabel('How many did you get?').fill('1');
-	await dialog.getByRole('button', { name: 'Save' }).last().click();
+	await dialog.getByRole('button', { name: 'Save received' }).click();
 	await expect(dialog).toHaveCount(0);
 	await expect(walmart.getByRole('button', { name: /^Yogurt\s*4 cups\s*vanilla/ })).toBeVisible();
 	await expect(walmart.locator('.done')).toContainText('1 cups');
+});
+
+// While a sheet is open, dragging scrolls only the sheet (design 8; MEA-164).
+test('scrolls only the edit sheet when dragged, and the list behind stays where it was', async ({
+	page,
+	db,
+	person
+}) => {
+	// A list longer than the screen.
+	const addItemRow = db.prepare(
+		'insert into items (household_id, name, created_at) values (?, ?, 0)'
+	);
+	const addLine = db.prepare(
+		"insert into grocery_needs (household_id, item_id, quantity, status, created_at) values (?, ?, 1, 'to_order', 0)"
+	);
+	for (let number = 10; number < 50; number += 1) {
+		const item = addItemRow.run(person.householdId, `Item ${number}`).lastInsertRowid;
+		addLine.run(person.householdId, item);
+	}
+	await page.setViewportSize({ width: 412, height: 520 });
+	await open(page, '/groceries');
+	const line = page.getByRole('button', { name: /^Item 30/ });
+	await line.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+	const scrollY = () => page.evaluate(() => window.scrollY);
+	const scrolled = await scrollY();
+	expect(scrolled).toBeGreaterThan(0);
+	const where = await line.boundingBox();
+
+	// On this short screen, with Got fewer showing, the sheet is taller than it can show at once.
+	await line.click();
+	const sheet = page.getByRole('dialog', { name: 'Item 30' });
+	await sheet.getByRole('button', { name: 'Got fewer' }).click();
+	const below = () =>
+		sheet.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop);
+	expect(await below()).toBeGreaterThan(0);
+
+	// Up the sheet to its end, where Delete is, then on up from there.
+	await drag(sheet, -300);
+	await expect.poll(below).toBeLessThan(1);
+	await expect(sheet.getByRole('button', { name: 'Delete' })).toBeInViewport();
+	await drag(sheet, -300);
+	await page.keyboard.press('Escape');
+	await expect(sheet).toBeHidden();
+	expect(await scrollY()).toBe(scrolled);
+	expect(await line.boundingBox()).toEqual(where);
+
+	// Once the sheet is closed, the list scrolls again.
+	await drag(line, -300);
+	await expect.poll(scrollY).toBeGreaterThan(scrolled);
 });
 
 // Every page reloads its data when opened (design 6.11), so Back never shows a stored copy.

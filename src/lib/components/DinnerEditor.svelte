@@ -99,7 +99,10 @@
 		return dishEditor?.nameLost() ?? null;
 	}
 
-	/** Asks before something drops what's typed here. True when nothing is lost or it's agreed. */
+	/**
+	 * Asks before something drops what's typed here, a dish name not added included. True when
+	 * nothing is lost or it's agreed.
+	 */
 	export function confirmLeave(): boolean {
 		return details?.confirmLeave() ?? true;
 	}
@@ -234,7 +237,13 @@
 		/>
 	{/if}
 
-	<DinnerDetails dinner={editing} {labeled} bind:servings={shownServings} bind:this={details} />
+	<DinnerDetails
+		dinner={editing}
+		{labeled}
+		typedDish={dishEditor?.typedName() ?? ''}
+		bind:servings={shownServings}
+		bind:this={details}
+	/>
 
 	<div class="actions">
 		<CopyDinner {groups} dinnerId={dinner?.id} {dishCount} {today} {ownUpdate} />

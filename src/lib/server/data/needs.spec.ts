@@ -6,6 +6,7 @@ import { expectHttpError, freshDb, makeHousehold, makeStore } from '../testing.t
 import { setItemArchived } from './items.ts';
 import {
 	addNeed,
+	deleteLine,
 	listActiveLines,
 	listHistory,
 	markAllOrdered,
@@ -42,6 +43,12 @@ function onlyLine(householdId: number) {
 	const all = lines(householdId);
 	expect(all).toHaveLength(1);
 	return all[0]!;
+}
+
+function lineFor(householdId: number, itemName: string) {
+	const line = lines(householdId).find((l) => l.itemName === itemName);
+	expect(line, itemName).toBeDefined();
+	return line!;
 }
 
 function defaultStoreOf(itemId: number) {
@@ -257,13 +264,57 @@ describe('status changes', () => {
 		add(householdId, { itemName: 'Milk', store: walmart });
 		add(householdId, { itemName: 'Eggs', store: walmart });
 		add(householdId, { itemName: 'Bread', store: aldi });
-		expect(markAllOrdered(householdId, walmart, NOON)).toBe(2);
+		const walmartIds = lines(householdId)
+			.filter((l) => l.storeId === walmart)
+			.map((l) => l.id);
+		expect(markAllOrdered(householdId, walmart, walmartIds, NOON)).toBe(2);
 		const walmartLines = lines(householdId).filter((l) => l.storeId === walmart);
 		expect(walmartLines.every((l) => l.status === 'ordered')).toBe(true);
 		for (const line of walmartLines) expect(defaultStoreOf(line.itemId)).toBe(walmart);
 
-		expect(markAllReceived(householdId, walmart, NOON)).toBe(2);
+		expect(markAllReceived(householdId, walmart, walmartIds, NOON)).toBe(2);
 		expect(lines(householdId).find((l) => l.storeId === aldi)?.status).toBe('to_order');
+	});
+
+	it('orders only the lines the confirmation counted (MEA-68)', () => {
+		for (const itemName of ['Milk', 'Bread', 'Butter', 'Rice']) {
+			add(householdId, { itemName, store: walmart });
+		}
+		const milk = lineFor(householdId, 'Milk').id;
+		const bread = lineFor(householdId, 'Bread').id;
+		const butter = lineFor(householdId, 'Butter').id;
+		const rice = lineFor(householdId, 'Rice').id;
+		// Meanwhile, on another phone: Eggs is added, Bread is checked off in the store, Butter
+		// moves to Aldi and Rice comes off the list.
+		add(householdId, { itemName: 'Eggs', store: walmart });
+		markReceived(householdId, bread, undefined, NOON);
+		updateLine(householdId, butter, { quantity: 1, unit: null, storeId: aldi, note: null });
+		deleteLine(householdId, rice);
+
+		expect(markAllOrdered(householdId, walmart, [milk, bread, butter, rice], NOON)).toBe(1);
+		expect(lineFor(householdId, 'Milk').status).toBe('ordered');
+		const eggs = lineFor(householdId, 'Eggs');
+		expect(eggs.status).toBe('to_order');
+		expect(defaultStoreOf(eggs.itemId)).toBeNull();
+		expect(lineFor(householdId, 'Bread').status).toBe('received');
+		expect(lineFor(householdId, 'Butter')).toMatchObject({ status: 'to_order', storeId: aldi });
+	});
+
+	it('receives only the ordered lines the confirmation counted (MEA-68)', () => {
+		add(householdId, { itemName: 'Milk', store: walmart });
+		add(householdId, { itemName: 'Bread', store: walmart });
+		const milk = lineFor(householdId, 'Milk').id;
+		const bread = lineFor(householdId, 'Bread').id;
+		markAllOrdered(householdId, walmart, [milk, bread], NOON);
+		// Meanwhile, on another phone: Eggs is ordered on its own, and Bread didn't come.
+		add(householdId, { itemName: 'Eggs', store: walmart });
+		markOrdered(householdId, lineFor(householdId, 'Eggs').id, undefined, NOON);
+		markDidntCome(householdId, bread);
+
+		expect(markAllReceived(householdId, walmart, [milk, bread], NOON)).toBe(1);
+		expect(lineFor(householdId, 'Milk').status).toBe('received');
+		expect(lineFor(householdId, 'Bread').status).toBe('to_order');
+		expect(lineFor(householdId, 'Eggs').status).toBe('ordered');
 	});
 
 	it("puts a line that didn't come back to To Order with its store", () => {
@@ -316,6 +367,15 @@ describe('status changes', () => {
 		markOrdered(householdId, id, walmart, NOON);
 		expectHttpError(() => updateLine(householdId, id, change), 400);
 	});
+
+	it('is not found for a deleted line once a newer one is added, and leaves that one as it was (6.11)', () => {
+		add(householdId, { itemName: 'Milk', store: walmart });
+		const milk = onlyLine(householdId).id;
+		deleteLine(householdId, milk);
+		add(householdId, { itemName: 'Eggs', store: walmart });
+		expectHttpError(() => markReceived(householdId, milk, undefined, NOON), 404);
+		expect(onlyLine(householdId)).toMatchObject({ itemName: 'Eggs', status: 'to_order' });
+	});
 });
 
 describe('listing', () => {
@@ -335,6 +395,10 @@ describe('listing', () => {
 		const other = makeHousehold(TZ);
 		expect(lines(other.householdId)).toHaveLength(0);
 		expectHttpError(() => markReceived(other.householdId, id, undefined, NOON), 404);
+		expectHttpError(() => markAllOrdered(other.householdId, walmart, [id], NOON), 404);
+		const theirs = makeStore(other.householdId, 'Walmart');
+		expect(markAllOrdered(other.householdId, theirs, [id], NOON)).toBe(0);
+		expect(onlyLine(householdId).status).toBe('to_order');
 	});
 
 	it('rejects a line that points at another household in the database itself', () => {

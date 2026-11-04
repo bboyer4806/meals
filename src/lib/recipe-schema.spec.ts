@@ -190,6 +190,25 @@ describe('schemaRecipeValues', () => {
 		expect(fromRecipe({ nutrition: { calories: 'unknown' } }).calories).toBe('');
 	});
 
+	it('reads commas between thousands in nutrition, and leaves other commas blank', () => {
+		const nutrition = {
+			calories: '1,250 kcal',
+			proteinContent: '1,000.5 g',
+			carbohydrateContent: '1,250,000 g',
+			fatContent: '12,5 g'
+		};
+		expect(fromRecipe({ nutrition })).toMatchObject({
+			calories: '1250',
+			proteinG: '1000.5',
+			carbsG: '1250000',
+			// The comma could be a decimal point, so it isn't guessed at (MEA-76).
+			fatG: ''
+		});
+		for (const calories of ['1,25 kcal', '1,2500 kcal', '1.250,5 kcal', '1,250,5 kcal']) {
+			expect(fromRecipe({ nutrition: { calories } }).calories).toBe('');
+		}
+	});
+
 	it('reads steps written as text, one step per line', () => {
 		// As King Arthur Baking writes them: paragraphs, with a comma between them.
 		const paragraphs = '<p>Preheat the oven to 325°F.</p>\n, <p>Weigh your flour.</p>\n, ';

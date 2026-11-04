@@ -7,6 +7,12 @@ import { normalizeName } from '../text.ts';
 
 export const id = z.coerce.number().int().positive();
 
+/** Ids sent in one field, joined by commas, such as "7,12". */
+export const idList = z.preprocess(
+	(value) => (typeof value === 'string' ? value.split(',') : value),
+	z.array(id)
+);
+
 /**
  * The most characters a name of up to `max` characters may have as sent. Normalizing a name can
  * shorten it, as accents sent apart from their letters join them and runs of spaces become one,
