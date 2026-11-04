@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
+import { eq, lte } from 'drizzle-orm';
 import { db } from '../db/index.ts';
 import { sessions, users } from '../db/schema.ts';
 
@@ -25,7 +25,12 @@ export function hashToken(token: string): string {
 	return createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * Also deletes every expired session, anyone's (design 4.5). A session's cookie expires with it,
+ * so the browser stops sending the token and validateSession seldom sees an expired one to delete.
+ */
 export function createSession(userId: number, now: number): { token: string; expiresAt: number } {
+	db().delete(sessions).where(lte(sessions.expiresAt, now)).run();
 	const token = randomBytes(20).toString('base64url');
 	const expiresAt = now + LIFETIME;
 	db().insert(sessions).values({ id: hashToken(token), userId, expiresAt }).run();
