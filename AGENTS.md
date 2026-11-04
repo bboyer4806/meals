@@ -55,6 +55,9 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
 - Check the length of text people send before it's normalized: names with `nameField` or
   `sentName` in `src/lib/server/forms.ts`, longer text against `NORMALIZE_MAX_LENGTH` in
   `src/lib/text.ts`. `normalizeName` and `foldCase` throw for longer text (design 4.5).
+- Request bodies over 64 KB are refused before they're read (design 4.5). A form that sends a
+  photo or a file uses `multipart/form-data`, and its route goes in `FILE_ROUTES` in
+  `src/lib/server/body-size.ts`.
 - Routes import shared code as `#lib/...` (`package.json` imports).
 
 ## Database

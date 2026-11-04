@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
+import { checkBodySize } from '#lib/server/body-size.ts';
 import { config, loadConfig } from '#lib/server/config.ts';
 import { openDb } from '#lib/server/db/index.ts';
 import {
@@ -19,6 +20,8 @@ export const init: ServerInit = () => {
 };
 
 export const handle: Handle = async ({ event, resolve }) => {
+	// First, so a body too large to read is refused before anything reads it (4.5).
+	checkBodySize(event.request, event.route.id);
 	event.locals.user = null;
 	const token = event.cookies.get(SESSION_COOKIE);
 	if (token) {
