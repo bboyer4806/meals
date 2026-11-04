@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../db/index.ts';
 import { sessions, users } from '../db/schema.ts';
 import { createSession } from '../auth/session.ts';
+import { signIn } from '../auth/sign-in.ts';
 import { expectHttpError, freshDb, makeHousehold } from '../testing.ts';
 import {
 	cancelInvite,
@@ -45,7 +46,21 @@ describe('households', () => {
 	it("can't remove someone from another household", () => {
 		const mine = makeHousehold();
 		const theirs = makeHousehold();
-		expectHttpError(() => removeMember(mine.householdId, mine.userId, theirs.userId), 404);
+		removeMember(mine.householdId, mine.userId, theirs.userId);
+		expect(listMembers(theirs.householdId).map((m) => m.id)).toEqual([theirs.userId]);
+	});
+
+	it('counts a member someone else already removed as removed (6.1)', () => {
+		const { householdId, userId } = makeHousehold();
+		const other = db()
+			.insert(users)
+			.values({ householdId, googleSub: 'g2', email: 'b@example.com', name: 'B', createdAt: 0 })
+			.returning()
+			.get();
+		removeMember(householdId, userId, other.id);
+		// A page that still shows them.
+		removeMember(householdId, userId, other.id);
+		expect(listMembers(householdId).map((m) => m.id)).toEqual([userId]);
 	});
 });
 
@@ -78,18 +93,37 @@ describe('invites', () => {
 		expect(listInvites(mine.householdId).map((i) => i.email)).toEqual(['a@example.com']);
 		expect(listInvites(null).map((i) => i.email)).toEqual(['b@example.com']);
 		const invite = listInvites(mine.householdId)[0]!;
-		expectHttpError(() => cancelInvite(theirs.householdId, invite.id), 404);
+		cancelInvite(theirs.householdId, invite.id);
+		cancelInvite(null, invite.id);
+		expect(listInvites(mine.householdId)).toEqual([invite]);
 		cancelInvite(mine.householdId, invite.id);
 		expect(listInvites(mine.householdId)).toHaveLength(0);
 	});
 
-	it('is not found for a cancelled invite once a newer one is made, and cancels nothing', () => {
+	it('cancels nothing for a cancelled invite once a newer one is made', () => {
 		const { householdId } = makeHousehold();
 		createInvite(householdId, 'a@example.com', 0);
 		const [cancelled] = listInvites(householdId);
 		cancelInvite(householdId, cancelled!.id);
 		createInvite(householdId, 'b@example.com', 0);
-		expectHttpError(() => cancelInvite(householdId, cancelled!.id), 404);
+		cancelInvite(householdId, cancelled!.id);
 		expect(listInvites(householdId).map((invite) => invite.email)).toEqual(['b@example.com']);
+	});
+
+	it('counts an invite that was used or cancelled meanwhile as cancelled (6.1)', () => {
+		const { householdId } = makeHousehold();
+		createInvite(householdId, 'sam@example.com', 0);
+		createInvite(null, 'pat@example.com', 0);
+		const [sam] = listInvites(householdId);
+		const [pat] = listInvites(null);
+		// Sam signs in, which uses the invite, and the admin cancels Pat's in another tab.
+		signIn({ sub: 'g-sam', email: 'sam@example.com', name: 'Sam' }, 'admin@example.com', 0);
+		cancelInvite(null, pat!.id);
+		// Pages that still show them.
+		cancelInvite(householdId, sam!.id);
+		cancelInvite(null, pat!.id);
+		expect(listInvites(householdId)).toEqual([]);
+		expect(listInvites(null)).toEqual([]);
+		expect(listMembers(householdId).map((m) => m.name)).toContain('Sam');
 	});
 });

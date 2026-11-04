@@ -44,14 +44,16 @@ export function listMembers(householdId: number) {
 		.all();
 }
 
-/** Deletes the member's account and sessions. Nobody can remove themselves (design 2.3). */
+/**
+ * Deletes the member's account and sessions. Nobody can remove themselves (design 2.3). A member
+ * someone else already removed counts as removed, so the page shows its members as they are (6.1).
+ */
 export function removeMember(householdId: number, actingUserId: number, memberId: number): void {
 	if (memberId === actingUserId) error(400, "You can't remove yourself");
-	const result = db()
+	db()
 		.delete(users)
 		.where(and(eq(users.id, memberId), eq(users.householdId, householdId)))
 		.run();
-	if (result.changes === 0) error(404, 'Not found');
 }
 
 export type InviteResult =
@@ -99,12 +101,15 @@ export function listInvites(householdId: number | null) {
 		.all();
 }
 
+/**
+ * An invite that was used, or that someone else cancelled, counts as cancelled, so the page shows
+ * its invites as they are (6.1).
+ */
 export function cancelInvite(householdId: number | null, inviteId: number): void {
-	const result = db()
+	db()
 		.delete(invites)
 		.where(and(eq(invites.id, inviteId), inviteOwner(householdId)))
 		.run();
-	if (result.changes === 0) error(404, 'Not found');
 }
 
 /** For the admin page: names and member emails only, never household data. */
