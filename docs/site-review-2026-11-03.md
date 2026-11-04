@@ -2,7 +2,7 @@
 
 Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each item was found by one reviewer and confirmed by a second that tried to disprove it. It is a snapshot: line numbers drift as the code changes, so check the code before acting on an item.
 
-119 items have become "Review:" tickets in Jira (MEA-64 to MEA-180, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 54 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
+125 items have become "Review:" tickets in Jira (MEA-64 to MEA-186, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 48 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
 
 ## How to use this list
 
@@ -92,39 +92,15 @@ Items that share a cause or a fix:
   - **Problem:** With a Windows contrast theme, someone opens a dinner. Cooking at home, Eating out, Bringing a dish and Leftovers look the same, so they can't see which type is set. On Recipes they can't see which tags filter the list, the tab bar doesn't show which tab they're on, and arrowing through suggestions shows no highlight.
   - **Fix:** Add `@media (forced-colors: active)` rules that mark these states with system colors, for example `button[aria-pressed='true'], .chip[aria-current='true'], li[aria-selected='true'] { forced-color-adjust: none; background: SelectedItem; color: SelectedItemText; }`. Draw the current tab's bar with `border-top` instead of box-shadow.
   - **Notes:** Skipped in triage
-- [ ] **#130 Low** The dish combobox doesn't announce an added dish, and Down Arrow can't reopen the suggestions
-  - **Where:** `src/lib/components/DinnerDishes.svelte:183`, `src/lib/components/ItemInput.svelte:96`, `src/lib/components/ItemInput.svelte:140`
-  - **Problem:** A screen reader user picks a dish with Enter. The field just empties, with no 'Added Chicken tacos'. After pressing Escape, they have to retype to get the suggestions back.
-  - **Fix:** Announce 'Added <dish>.' in a polite status region in the Dishes section, open the list on Down Arrow (or Alt+Down) when the field has text, and give the listbox aria-label 'Dish suggestions'.
-  - **Verifier's correction:** Correction: the Down Arrow and listbox-name problems are in the shared ItemInput, so they also affect the grocery add bar, recipe ingredient rows and the request sheet, not only the dish field.
-- [ ] **#131 Low** Household, Admin and store groups have bare Edit, Remove, Cancel and Mark all buttons that don't name their target
-  - **Where:** `src/routes/(app)/household/+page.svelte:140`, `src/routes/(app)/household/+page.svelte:81`, `src/routes/(app)/household/+page.svelte:117`, `src/routes/(app)/household/+page.svelte:153`
-  - **Problem:** A screen-reader user brings up the list of buttons to rename Costco and hears 'Edit, Edit, Edit, Edit'. Or they tab to 'Cancel' without hearing which invite it cancels.
-  - **Fix:** Put the target in the accessible name, as the circles do: aria-label='Edit Costco', 'Cancel invite for …', 'Remove Bob Lopez', 'Restore …' and 'Mark all Aldi items ordered'. ConfirmButton can take an optional ariaLabel for this.
 
 ### Frontend code health
 
-- [ ] **#132 Low** The dinner page's components repeat the same submit and failure handling and run typed-form state through pass-through methods
-  - **Where:** `src/lib/components/DinnerEditor.svelte:82`, `src/routes/(app)/menu/[date]/+page.svelte:106`, `src/lib/components/AddDinner.svelte:40`, `src/lib/components/DayRequests.svelte:116`
-  - **Problem:** Each fix to the busy, failure or reload handling (such as the overlapping-change race) has to be made in seven places. The rules for keeping typed text (reconcile, matches, hasUnsaved) live in Svelte components called imperatively during $effect.pre, so they can only be tested through the browser.
-  - **Fix:** Extract a shared failureMessage(result) and one page-level change runner (busy flag, refresh, own-change tracking) that every form uses, plus a DinnerLabels fields component. Keep each dinner's typed fields in a plain state object the page owns, so reconcile can be unit tested.
 - [ ] **#133 Low** The 730-line week page repeats near-identical request handlers that already diverged, and copies DayRequests' list
   - **Where:** `src/routes/(app)/menu/+page.svelte:65`, `src/routes/(app)/menu/+page.svelte:107`, `src/routes/(app)/menu/+page.svelte:141`, `src/routes/(app)/menu/+page.svelte:278`
   - **Problem:** The next change to requests (MEA-44 screenshots, a new field) has to be made in three handlers and two lists, and one copy gets missed, as navigate: false already was.
   - **Fix:** Extract a RequestSheet component or one submit helper that always applies results in place, a shared RequestSummary for the week and DayRequests, a shared failureMessage in #lib, and move swipe and drag into Svelte actions.
   - **Verifier's correction:** Corrections: (1) groceries/+page.svelte:23 and DinnerDishes.svelte:49 have their own failure helpers, so 'failureMessage exists only on this page' is true of the name only. (2) MEA-44 ('Feedback: Add screenshot to request') is about feedback, not menu requests. (3) About 215 of the 730 lines are CSS. The user-facing bug is already MEA-43; this finding's value is fixing it in one shared place. Lowered to low because the duplication stays within two components.
-- [ ] **#134 Low** ItemInput's comment says a dish request offers no new option, but the request sheet offers one, as 6.12 says
-  - **Where:** `src/lib/components/ItemInput.svelte:10`, `src/routes/(app)/menu/+page.svelte:450`
-  - **Problem:** A developer who trusts the comment passes noun={null} for requests and removes the new-dish option that 6.12 requires.
-  - **Fix:** Change the comment to say the request field offers a new dish, which the request adds to Recipes (6.12).
-- [ ] **#135 Low** Two unrelated .label rules style both the week range and each dinner's label
-  - **Where:** `src/routes/(app)/menu/+page.svelte:520`, `src/routes/(app)/menu/+page.svelte:643`, `src/routes/(app)/menu/+page.svelte:308`, `src/routes/(app)/menu/+page.svelte:389`
-  - **Problem:** On a day with Kids and Adults dinners, each label sits 8 px away from the dinner it names, so 'Kids' reads apart from 'Cooking at home'. The week range takes the dinner label's heading font at 600 instead of the 700 its own rule sets.
-  - **Fix:** Rename one class (for example week-label and dinner-label) so each rule styles only its own element.
-- [ ] **#136 Low** RecipeForm's failure prop and the new and edit pages' form plumbing never run, since every save uses the script
-  - **Where:** `src/lib/components/RecipeForm.svelte:21`, `src/lib/components/RecipeForm.svelte:137`, `src/routes/(app)/recipes/new/+page.svelte:77`, `src/routes/(app)/recipes/[id]/edit/+page.svelte:21`
-  - **Problem:** A maintainer reads 'A failure from a save that didn't go through this page's script' and assumes a save path without the script exists. They then keep both paths in step when changing failures such as archivedId or archivedItems, for code that never runs.
-  - **Fix:** Remove the failure prop, the untrack(() => failure) seed and the form plumbing in both pages. If a save without the script is actually wanted, stop disabling Save before hydration and add a test for it.
+  - **Notes:** Skipped in triage
 
 ## 3. Potential UI/UX improvements
 
