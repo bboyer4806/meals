@@ -20,6 +20,7 @@
 	let {
 		dinner,
 		labeled,
+		typedDish,
 		servings = $bindable(null)
 	}: {
 		/** A saved dinner, or with no id the Cooking at home a date with no dinner shows (6.9). */
@@ -28,6 +29,11 @@
 		};
 		/** Whether the date has more than one dinner, so this one has a label. */
 		labeled: boolean;
+		/**
+		 * The name in the dinner's dish field as it would be added, or empty. Save doesn't add it,
+		 * so leaving asks about it too (MEA-127).
+		 */
+		typedDish: string;
 		/**
 		 * The servings on screen, saved or not, which the dish links use. A number field bound
 		 * with bind:value holds a number, or null while it's empty.
@@ -100,18 +106,28 @@
 		return JSON.stringify(typed);
 	}
 
+	// What leaving would lose, or null when nothing would: what saving would change, and the
+	// dish name typed (MEA-127).
+	function unkept(): string | null {
+		const typed = unsaved();
+		return typed === null && typedDish === '' ? null : JSON.stringify([typed, typedDish]);
+	}
+
 	const LEAVE = 'Leave without saving? What you typed will be lost.';
 	// What the person agreed to lose, so going on with it doesn't ask again.
 	let dropped: string | null = null;
 
 	/**
-	 * Asks before something drops what's typed here, as moving the dinner does. True when nothing
-	 * is lost or the person agreed.
+	 * Asks before something drops what's typed here or in the dish field, as moving the dinner
+	 * does. True when nothing is lost or the person agreed.
 	 */
 	export function confirmLeave(): boolean {
-		const typed = unsaved();
+		const typed = unkept();
 		if (typed === null || typed === dropped) return true;
-		if (!confirm(LEAVE)) return false;
+		// A dish is named, since right after Save, "without saving" would seem not to apply (MEA-127).
+		const question =
+			typedDish === '' ? LEAVE : `Leave without adding ${typedDish}? What you typed will be lost.`;
+		if (!confirm(question)) return false;
 		dropped = typed;
 		return true;
 	}
@@ -161,10 +177,12 @@
 		note = appendNote(typedNote(), added);
 	}
 
-	/** Whether something typed here would be lost, and the person hasn't agreed to lose it. */
+	/**
+	 * Whether something typed in this form would be lost, and the person hasn't agreed to lose it.
+	 * The dish field doesn't count, since this is what Save keeps.
+	 */
 	export function hasUnsaved(): boolean {
-		const typed = unsaved();
-		return typed !== null && typed !== dropped;
+		return unsaved() !== null && unkept() !== dropped;
 	}
 
 	// Set when the person goes elsewhere while a save is on its way, so the save leaves them there.
@@ -177,7 +195,8 @@
 			return;
 		}
 		// Closing the tab or leaving the site: the browser asks.
-		if (hasUnsaved()) navigation.cancel();
+		const typed = unkept();
+		if (typed !== null && typed !== dropped) navigation.cancel();
 	});
 
 	let busy = $state(false);
