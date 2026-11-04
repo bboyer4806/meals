@@ -123,7 +123,7 @@
 
 	// One line's actions. Their errors show next to the line or in its sheet, not elsewhere.
 
-	type Where = number | 'sheet' | 'picker';
+	type Where = number | 'sheet' | 'fewer' | 'picker';
 	let lineError = $state<{ where: Where; message: string } | null>(null);
 
 	function lineFailure(result: ActionResult): string | null {
@@ -161,6 +161,10 @@
 	let fewerSave = $state<HTMLButtonElement>();
 	let picking = $state<Line | null>(null);
 	let pickOpen = $state(false);
+
+	// An error from Got fewer shows beside its amount, and any other at the top of the sheet.
+	const submitSheet: SubmitFunction = (input) =>
+		lineSubmit(input.submitter === fewerSave ? 'fewer' : 'sheet')(input);
 
 	function edit(line: Line) {
 		editing = line;
@@ -463,7 +467,7 @@
 <Sheet bind:open={editOpen} title={editing?.itemName ?? ''}>
 	{#if editing}
 		{#key editKey}
-			<form method="POST" action="?/update" use:enhance={lineSubmit('sheet')}>
+			<form method="POST" action="?/update" use:enhance={submitSheet}>
 				{#if lineError?.where === 'sheet'}<p class="error" role="alert">{lineError.message}</p>{/if}
 				<input type="hidden" name="id" value={editing.id} />
 				<div class="row field">
@@ -535,8 +539,9 @@
 								}
 							}}
 						/>
-						<button formaction="?/gotFewer" bind:this={fewerSave}>Save</button>
+						<button formaction="?/gotFewer" bind:this={fewerSave}>Save received</button>
 					</div>
+					{#if lineError?.where === 'fewer'}<p class="error" role="alert">{lineError.message}</p>{/if}
 				{/if}
 				<div class="delete">
 					<ConfirmButton
@@ -732,12 +737,17 @@
 		flex-wrap: wrap;
 	}
 
+	/* The question keeps its words whole; when they don't fit beside the amount, Save received
+	   moves under it. */
 	.fewer {
 		margin-top: 0.75rem;
+		flex-wrap: wrap;
 	}
 
 	.fewer label {
 		margin: 0;
+		min-width: auto;
+		overflow-wrap: normal;
 	}
 
 	.delete {
