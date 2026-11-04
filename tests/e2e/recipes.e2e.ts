@@ -623,7 +623,9 @@ test('lists who rated a recipe, with a removed member as Former member', async (
 	rate.run(person.householdId, dishId, member('Robin'), 5);
 	const quinn = member('Quinn');
 	rate.run(person.householdId, dishId, quinn, 3);
-	// Removing a member, as the Household page does, keeps their rating without them.
+	// Removing a member, as the Household page does, keeps their rating without them: who rated is
+	// emptied first, since the database refuses to delete a member a rating still names (4.5).
+	db.prepare('update dish_ratings set user_id = null where user_id = ?').run(quinn);
 	db.prepare('delete from users where id = ?').run(quinn);
 
 	const list = page.getByRole('list', { name: 'Ratings' });

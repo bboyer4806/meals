@@ -43,7 +43,8 @@ export const users = sqliteTable(
 		// When they finished or skipped the first-time tour; empty until then (design 7, "Tour").
 		tourSeen: integer('tour_seen')
 	},
-	(t) => [index('users_household').on(t.householdId)]
+	// Requests and ratings point at their member through this key (design 4.5, MEA-70).
+	(t) => [unique('users_household_id').on(t.householdId, t.id)]
 );
 
 export const sessions = sqliteTable(
@@ -266,13 +267,18 @@ export const dishRatings = sqliteTable(
 			.references(() => households.id),
 		dishId: integer('dish_id').notNull(),
 		// Who rated. Empty once they're removed from the household, so the rating still counts.
-		userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+		// removeMember empties it, since a composite key's SET NULL would empty household_id too.
+		userId: integer('user_id'),
 		stars: integer('stars').notNull()
 	},
 	(t) => [
 		foreignKey({
 			columns: [t.householdId, t.dishId],
 			foreignColumns: [dishes.householdId, dishes.id]
+		}),
+		foreignKey({
+			columns: [t.householdId, t.userId],
+			foreignColumns: [users.householdId, users.id]
 		}),
 		uniqueIndex('dish_ratings_dish_user').on(t.dishId, t.userId),
 		index('dish_ratings_household').on(t.householdId),
@@ -422,9 +428,7 @@ export const dishRequests = sqliteTable(
 			.notNull()
 			.references(() => households.id),
 		// Who asked. Removing them from the household removes their requests.
-		userId: integer('user_id')
-			.notNull()
-			.references(() => users.id, { onDelete: 'cascade' }),
+		userId: integer('user_id').notNull(),
 		// Requests made before restaurant requests are dish requests.
 		kind: text('kind', { enum: REQUEST_KINDS }).notNull().default('dish'),
 		// As typed, or the dish's name when requested from its recipe's page. Kept when the linked
@@ -437,6 +441,10 @@ export const dishRequests = sqliteTable(
 		createdAt: integer('created_at').notNull()
 	},
 	(t) => [
+		foreignKey({
+			columns: [t.householdId, t.userId],
+			foreignColumns: [users.householdId, users.id]
+		}).onDelete('cascade'),
 		foreignKey({
 			columns: [t.householdId, t.dishId],
 			foreignColumns: [dishes.householdId, dishes.id]

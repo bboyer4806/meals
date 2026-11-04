@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db, transaction } from '../db/index.ts';
-import { households, invites, users } from '../db/schema.ts';
+import { dishRatings, households, invites, users } from '../db/schema.ts';
 
 export type HouseholdSettings = { name: string; defaultServings: number; timeZone: string };
 
@@ -45,15 +45,25 @@ export function listMembers(householdId: number) {
 }
 
 /**
- * Deletes the member's account and sessions. Nobody can remove themselves (design 2.3). A member
- * someone else already removed counts as removed, so the page shows its members as they are (6.1).
+ * Deletes the member's account and sessions. Their requests go too, and their ratings stay with
+ * nobody named on them (section 5). Nobody can remove themselves (design 2.3). A member someone
+ * else already removed counts as removed, so the page shows its members as they are (6.1).
  */
 export function removeMember(householdId: number, actingUserId: number, memberId: number): void {
 	if (memberId === actingUserId) error(400, "You can't remove yourself");
-	db()
-		.delete(users)
-		.where(and(eq(users.id, memberId), eq(users.householdId, householdId)))
-		.run();
+	transaction(() => {
+		// Empties who rated before the delete, since the composite key's SET NULL would empty the
+		// rating's household_id too (4.5).
+		db()
+			.update(dishRatings)
+			.set({ userId: null })
+			.where(and(eq(dishRatings.householdId, householdId), eq(dishRatings.userId, memberId)))
+			.run();
+		db()
+			.delete(users)
+			.where(and(eq(users.id, memberId), eq(users.householdId, householdId)))
+			.run();
+	});
 }
 
 export type InviteResult =

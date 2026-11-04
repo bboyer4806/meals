@@ -38,9 +38,10 @@ export function transaction<T>(fn: () => T): T {
 
 /**
  * Applies new migrations from `folder` in one transaction and checks foreign keys before it
- * commits, so a migration that breaks them rolls back instead of being recorded. Keeps the same
- * bookkeeping table as Drizzle's own migrator. Registers fold() first, so migrations and the
- * app's queries match names the same way.
+ * commits, so a migration that breaks them rolls back instead of being recorded. A table a
+ * migration rebuilds still never gives a deleted row's id again. Keeps the same bookkeeping table
+ * as Drizzle's own migrator. Registers fold() first, so migrations and the app's queries match
+ * names the same way.
  */
 export function migrate(sqlite: Database.Database, folder: string): void {
 	// SQLite's lower() only folds A-Z, so name matching and search use this instead. It is used
@@ -64,16 +65,46 @@ export function migrate(sqlite: Database.Database, folder: string): void {
 	// transaction, so it's set around it.
 	sqlite.pragma('foreign_keys = OFF');
 	sqlite.transaction(() => {
+		const given = highestIds(sqlite);
 		for (const migration of pending) {
 			for (const statement of migration.sql) sqlite.exec(statement);
 			sqlite
 				.prepare('INSERT INTO "__drizzle_migrations" ("hash", "created_at") VALUES (?, ?)')
 				.run(migration.hash, migration.folderMillis);
 		}
+		keepHighestIds(sqlite, given);
 		const violations = sqlite.pragma('foreign_key_check') as unknown[];
 		if (violations.length > 0) {
 			throw new Error(`Foreign key violations after migrating: ${JSON.stringify(violations)}`);
 		}
 	})();
 	sqlite.pragma('foreign_keys = ON');
+}
+
+type HighestId = { name: string; seq: number };
+
+/** The highest id each AUTOINCREMENT table has ever given, as SQLite records it. */
+function highestIds(sqlite: Database.Database): HighestId[] {
+	const recorded = sqlite
+		.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'")
+		.get();
+	if (!recorded) return [];
+	return sqlite.prepare('SELECT name, seq FROM sqlite_sequence').all() as HighestId[];
+}
+
+/**
+ * Rebuilding a table, as drizzle-kit does to change one, leaves SQLite's record of its highest id
+ * at the highest row copied, or gone when none was. A deleted row's id could then be given again,
+ * and a page that still shows that row would reach the new one (6.11, 6.12). This puts back the
+ * highest id each table had given.
+ */
+function keepHighestIds(sqlite: Database.Database, given: HighestId[]): void {
+	for (const { name, seq } of given) {
+		const raised = sqlite
+			.prepare('UPDATE sqlite_sequence SET seq = max(seq, ?) WHERE name = ?')
+			.run(seq, name);
+		if (raised.changes === 0) {
+			sqlite.prepare('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)').run(name, seq);
+		}
+	}
 }

@@ -768,6 +768,23 @@ it('the database rejects a dish from another household', () => {
 	).toThrow(/FOREIGN KEY/);
 });
 
+it("the database rejects another household's member as who asked (4.5)", () => {
+	expect(() =>
+		db()
+			.insert(dishRequests)
+			.values({
+				householdId,
+				userId: otherUserId,
+				kind: 'restaurant',
+				name: 'Diner',
+				note: null,
+				createdAt: NOW
+			})
+			.run()
+	).toThrow(/FOREIGN KEY/);
+	expect(listRequests(householdId)).toEqual([]);
+});
+
 it('the database refuses a restaurant request with a dish, and a dish request without one', () => {
 	const insert = (kind: 'dish' | 'restaurant', dishId: number | null) => () =>
 		db()
