@@ -6,6 +6,7 @@ import { expectHttpError, freshDb, makeHousehold, makeStore } from '../testing.t
 import { setItemArchived } from './items.ts';
 import {
 	addNeed,
+	deleteLine,
 	listActiveLines,
 	listHistory,
 	markAllOrdered,
@@ -315,6 +316,15 @@ describe('status changes', () => {
 		expect(onlyLine(householdId)).toMatchObject({ quantity: 2, storeId: null, note: 'blue cap' });
 		markOrdered(householdId, id, walmart, NOON);
 		expectHttpError(() => updateLine(householdId, id, change), 400);
+	});
+
+	it('is not found for a deleted line once a newer one is added, and leaves that one as it was (6.11)', () => {
+		add(householdId, { itemName: 'Milk', store: walmart });
+		const milk = onlyLine(householdId).id;
+		deleteLine(householdId, milk);
+		add(householdId, { itemName: 'Eggs', store: walmart });
+		expectHttpError(() => markReceived(householdId, milk, undefined, NOON), 404);
+		expect(onlyLine(householdId)).toMatchObject({ itemName: 'Eggs', status: 'to_order' });
 	});
 });
 

@@ -358,6 +358,15 @@ describe('removeRequest', () => {
 		removeRequest(householdId, restaurant!.id);
 		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Soup']);
 	});
+
+	it('is not found for a removed request once a newer one is made, and removes nothing', () => {
+		ask('Soup');
+		const [soup] = listRequests(householdId);
+		removeRequest(householdId, soup!.id);
+		ask('Pie');
+		expectHttpError(() => removeRequest(householdId, soup!.id), 404);
+		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Pie']);
+	});
 });
 
 describe('promoteDishRequest', () => {
@@ -574,6 +583,16 @@ describe('promoteDishRequest', () => {
 		for (const requestId of [removed, restaurant, theirs]) {
 			expectHttpError(() => promote(requestId, { dinnerId }), 404);
 		}
+		expect(everything()).toEqual(before);
+	});
+
+	it('is not found for a removed request once a newer one is made, changing nothing (6.11)', () => {
+		const dinnerId = makeDinner(householdId, DATE);
+		const removed = requested('Lasagna');
+		removeRequest(householdId, removed);
+		requested('Rice');
+		const before = everything();
+		expectHttpError(() => promote(removed, { dinnerId }), 404);
 		expect(everything()).toEqual(before);
 	});
 });

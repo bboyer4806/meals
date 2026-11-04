@@ -60,7 +60,9 @@ export const sessions = sqliteTable(
 );
 
 export const invites = sqliteTable('invites', {
-	id: integer('id').primaryKey(),
+	// Never reused after an invite is cancelled or used, so a page that still shows it can't
+	// cancel a newer invite (6.1).
+	id: integer('id').primaryKey({ autoIncrement: true }),
 	email: text('email').notNull().unique(),
 	// Empty means the person creates a new household.
 	householdId: integer('household_id').references(() => households.id),
@@ -115,7 +117,9 @@ export type NeedStatus = (typeof NEED_STATUSES)[number];
 export const groceryNeeds = sqliteTable(
 	'grocery_needs',
 	{
-		id: integer('id').primaryKey(),
+		// Never reused after a line is deleted, so a page that still shows a deleted line can't
+		// change a newer one (6.11).
+		id: integer('id').primaryKey({ autoIncrement: true }),
 		householdId: integer('household_id')
 			.notNull()
 			.references(() => households.id),
@@ -411,7 +415,9 @@ export const REQUEST_KINDS = ['dish', 'restaurant'] as const;
 export const dishRequests = sqliteTable(
 	'dish_requests',
 	{
-		id: integer('id').primaryKey(),
+		// Never reused after a request is removed or added to a date, so a page that still shows it
+		// can't remove or add a newer one (6.12).
+		id: integer('id').primaryKey({ autoIncrement: true }),
 		householdId: integer('household_id')
 			.notNull()
 			.references(() => households.id),

@@ -317,3 +317,78 @@ describe('whats-new-seen-version', () => {
 		expect(applied(sqlite)).toBe(before);
 	});
 });
+
+// The change that stops reusing the ids of deleted grocery lines, requests and invites (MEA-67).
+describe('never-reuse-ids', () => {
+	it('keeps every line, request and invite with its id, and never gives a deleted id again', () => {
+		const sqlite = new Database(':memory:');
+		migrate(sqlite, foldersBefore('0015_never-reuse-ids'));
+		const run = (statement: string, ...values: unknown[]) =>
+			Number(sqlite.prepare(statement).run(...values).lastInsertRowid);
+		const household = run(
+			"insert into households (name, default_servings, time_zone, created_at) values ('H', 4, 'UTC', 0)"
+		);
+		const user = run(
+			"insert into users (household_id, google_sub, email, name, created_at) values (?, 'sub', 'p@example.com', 'P', 0)",
+			household
+		);
+		const milk = run(
+			"insert into items (household_id, name, created_at) values (?, 'Milk', 0)",
+			household
+		);
+		const line = () =>
+			run(
+				"insert into grocery_needs (household_id, item_id, quantity, status, created_at) values (?, ?, 1, 'to_order', 0)",
+				household,
+				milk
+			);
+		const request = () =>
+			run(
+				"insert into dish_requests (household_id, user_id, kind, name, created_at) values (?, ?, 'restaurant', 'Diner', 0)",
+				household,
+				user
+			);
+		const invite = (email: string) =>
+			run(
+				'insert into invites (email, household_id, created_at) values (?, ?, 0)',
+				email,
+				household
+			);
+		line();
+		const needed = line();
+		request();
+		request();
+		invite('a@example.com');
+		invite('b@example.com');
+		// A pantry Need points at its line, so rebuilding the lines must keep it.
+		const checklist = run(
+			"insert into pantry_checklists (household_id, start_date, end_date, created_at) values (?, '2026-11-01', '2026-11-07', 0)",
+			household
+		);
+		run(
+			"insert into pantry_marks (household_id, checklist_id, item_id, state, need_id) values (?, ?, ?, 'need', ?)",
+			household,
+			checklist,
+			milk,
+			needed
+		);
+		const rows = () =>
+			['grocery_needs', 'dish_requests', 'invites', 'pantry_marks'].map((table) =>
+				sqlite.prepare(`select * from ${table} order by id`).all()
+			);
+		const before = rows();
+
+		migrate(sqlite, 'drizzle');
+
+		expect(rows()).toEqual(before);
+		for (const [table, add] of [
+			['grocery_needs', line],
+			['dish_requests', request],
+			['invites', () => invite('c@example.com')]
+		] as const) {
+			const newest = sqlite.prepare(`select max(id) from ${table}`).pluck().get() as number;
+			sqlite.prepare(`delete from ${table} where id = ?`).run(newest);
+			expect(add(), table).toBe(newest + 1);
+		}
+	});
+});
