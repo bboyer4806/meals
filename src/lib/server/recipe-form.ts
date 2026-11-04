@@ -385,6 +385,14 @@ const recipeFields = z.object({
 /** The editor's fields other than the ingredients, with the same checks, for Import recipes. */
 export const recipeDetailFields = recipeFields.omit({ ingredients: true });
 
+/**
+ * The ids the editor's "Restore and save" button sends: the archived items the recipe would start
+ * using (6.10). A recipe has at most 100 ingredients, so there are at most 100 ids, and 1000
+ * characters fits 100 ids of up to 9 digits. The length is checked before the ids are split, as
+ * splitting 5 MB of commas takes seconds and gigabytes of memory (MEA-65).
+ */
+const restoreItemsField = z.string().max(1000).pipe(idList);
+
 /** A file that was sent, null for none, or undefined for something that isn't a file. */
 function upload(value: FormDataEntryValue | null): File | null | undefined {
 	if (value === null) return null;
@@ -419,7 +427,7 @@ export function parseRecipeForm(
 	const restore = formData.get('restoreItems');
 	let restoreItemIds: number[] = [];
 	if (restore !== null) {
-		const ids = idList.safeParse(restore);
+		const ids = restoreItemsField.safeParse(restore);
 		if (!ids.success) {
 			return {
 				failure: failure("The items to restore couldn't be read. Reload the page and try again.")

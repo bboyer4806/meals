@@ -7,11 +7,15 @@ import { normalizeName } from '../text.ts';
 
 export const id = z.coerce.number().int().positive();
 
-/** Ids sent in one field, joined by commas, such as "7,12". */
-export const idList = z.preprocess(
-	(value) => (typeof value === 'string' ? value.split(',') : value),
-	z.array(id)
-);
+/**
+ * Ids sent in one field, joined by commas, such as "7,12". It takes text, so a caller can limit
+ * the field's length before it's split: z.string().max(1000).pipe(idList) (MEA-65).
+ */
+export const idList = z
+	.string()
+	// unknown[], the type z.array(id) takes, as id coerces any value.
+	.transform((text): unknown[] => text.split(','))
+	.pipe(z.array(id));
 
 /**
  * The most characters a name of up to `max` characters may have as sent. Normalizing a name can
