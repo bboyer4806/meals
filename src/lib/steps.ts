@@ -15,10 +15,10 @@ export function splitSteps(text: string | null): string[] {
 }
 
 const GLYPHS = '¼½¾⅓⅔⅛⅜⅝⅞';
-// A number as written in a step: 1/2, 350, 1.5, 1 1/2, 1-1/2, 1½, 1 ½, .5 or ½.
+// A number as written in a step: 1/2, 350, 1.5, 1 1/2, 1 1 / 2, 1-1/2, 1½, 1 ½, .5 or ½.
 const NUMBER = [
 	String.raw`\d+\s*/\s*\d+`,
-	String.raw`\d+(?:\.\d+)?(?:(?:\s+|-)\d+/\d+|\s*[${GLYPHS}])?`,
+	String.raw`\d+(?:\.\d+)?(?:(?:\s+|-)\d+\s*/\s*\d+|\s*[${GLYPHS}])?`,
 	String.raw`\.\d+`,
 	`[${GLYPHS}]`
 ].join('|');
@@ -42,5 +42,7 @@ const DIGIT = new RegExp(`[\\d${GLYPHS}]`);
 
 /** Whether a step has a number that scaling won't change, other than times and temperatures. */
 export function stepHasUnscaledAmount(step: string): boolean {
-	return DIGIT.test(step.trim().replace(LIST_MARKER, '').replace(TIME_OR_TEMPERATURE, ' '));
+	// Pasted text can use the fraction slash, U+2044, which reads as "/", as in parseAmount.
+	const plain = step.trim().replace(LIST_MARKER, '').replace(/\u2044/g, '/');
+	return DIGIT.test(plain.replace(TIME_OR_TEMPERATURE, ' '));
 }
