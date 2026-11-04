@@ -272,7 +272,8 @@ lost, so is everything. Moving backups off the server later is a small change.
   cloud's metadata service at 169.254.169.254). Every address a name resolves to is checked
   as the connection is made, so the name can't resolve to a public address for a check and a
   private one for the fetch. Redirects are followed one at a time, up to 5, each checked the
-  same way. A fetch stops after 10 seconds or 5 MB.
+  same way. A fetch stops after 10 seconds or 5 MB, and a page sent gzipped stops unzipping at
+  5 MB.
 
 ### 4.6 Code layout
 
@@ -809,7 +810,10 @@ ingredients, steps one per line, calories, protein, carbs and fat, with Source s
 Servings are the first whole number in the page's yield, such as 4 in "4 servings". Each
 ingredient is split as Import recipes splits one, so "1 1/2 cups flour, sifted" is 1 1/2, cups,
 flour and sifted. Steps grouped in sections keep their order without the section names, and
-HTML and character references such as `&amp;` are taken out of the text. Fields the page leaves
+HTML and character references such as `&amp;` are taken out of the text. The page is read in
+the charset its Content-Type names, else the one a meta element in its first 1,024 bytes names,
+else UTF-8, so a page in windows-1252 or ISO-8859-1 keeps its é, ° and ½ (MEA-75). Import asks
+for the page uncompressed, and unzips one its server gzips anyway. Fields the page leaves
 out keep what a new recipe starts with, such as the household's usual servings; the photo, tags
 and notes are never imported. The page then says "Filled in from the page. Check it, then tap Save."
 Nothing is saved until Save, which checks the fields as if they were typed. A page without a
@@ -817,7 +821,8 @@ Recipe says "Couldn't find a recipe on that page.", and one that can't be opened
 "Couldn't open that page. Check the link and try again."; either way the link stays in its
 field and the editor stays as it was. The link must start with http:// or https:// and, like
 Source, be up to 500 characters. Pages whose sites block servers or need a sign-in can't be
-opened, and recipe data written as Microdata or RDFa rather than JSON-LD isn't read.
+opened, nor can a page compressed other than with gzip or in a charset the server doesn't know,
+and recipe data written as Microdata or RDFa rather than JSON-LD isn't read.
 
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, the restaurant (Eating
 out; MEA-58) or dishes by role, and the whole note, with its line breaks (MEA-59). A day with

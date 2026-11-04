@@ -2,6 +2,8 @@ import { lookup } from 'node:dns';
 import http, { type IncomingMessage } from 'node:http';
 import https from 'node:https';
 import { BlockList, isIP, type LookupFunction } from 'node:net';
+import { promisify } from 'node:util';
+import zlib from 'node:zlib';
 
 // Import from a link (design 7) fetches the recipe's page on the server. A link may only reach
 // a public website over http or https, never this computer or a private network, where the
@@ -64,7 +66,7 @@ function checkLink(url: URL): void {
 
 const HEADERS = {
 	accept: 'text/html,application/xhtml+xml',
-	// Uncompressed, so the body is read as it comes.
+	// Uncompressed, so the body is read as it comes. Some servers compress it anyway (uncompress).
 	'accept-encoding': 'identity',
 	'user-agent': 'Mozilla/5.0 (compatible; Meals recipe import)'
 };
@@ -82,8 +84,8 @@ function get(url: URL, signal: AbortSignal): Promise<IncomingMessage> {
 	});
 }
 
-/** The body as text, read until it ends or passes 5 MB. */
-async function readBody(response: IncomingMessage): Promise<string> {
+/** The body, read until it ends or passes 5 MB. */
+async function readBody(response: IncomingMessage): Promise<Buffer> {
 	const chunks: Buffer[] = [];
 	let bytes = 0;
 	for await (const chunk of response as AsyncIterable<Buffer>) {
@@ -92,15 +94,49 @@ async function readBody(response: IncomingMessage): Promise<string> {
 		if (bytes > MAX_BYTES) throw new Error(`The page is over ${MAX_BYTES} bytes`);
 		chunks.push(chunk);
 	}
-	return Buffer.concat(chunks).toString('utf8');
+	return Buffer.concat(chunks);
+}
+
+const gunzip = promisify(zlib.gunzip);
+
+/**
+ * The body as it was before the server compressed it, as some do though asked not to. Gzip is
+ * unzipped up to 5 MB, so a small body can't unzip to fill the server (design 4.5).
+ * Throws for any other compression.
+ */
+async function uncompress(body: Buffer, contentEncoding = 'identity'): Promise<Buffer> {
+	if (contentEncoding === 'identity') return body;
+	if (contentEncoding === 'gzip') return gunzip(body, { maxOutputLength: MAX_BYTES });
+	throw new Error(`The page is compressed as ${contentEncoding}`);
+}
+
+// The charset of a Content-Type such as "text/html; charset=windows-1252", and of a meta element
+// such as <meta charset="iso-8859-1"> or an http-equiv whose content is a Content-Type. A meta
+// element's charset must end before the bytes searched do, or iso-8859-15 could be read as
+// iso-8859-1.
+const CHARSET = /\bcharset\s*=\s*["']?([\w.:-]+)/i;
+const META_CHARSET = /<meta\b[^>]*?\bcharset\s*=\s*["']?([\w.:-]+)(?![\w.:-]|$)/i;
+
+/**
+ * The page's text, in the charset its Content-Type names, else the charset of a meta element
+ * in its first 1,024 bytes, else UTF-8 (design 7). TextDecoder reads the names as browsers do,
+ * so ISO-8859-1 is read as windows-1252. Throws for a charset it doesn't know.
+ */
+function decode(body: Buffer, contentType = ''): string {
+	// Byte for byte, as a meta element is written in ASCII.
+	const start = body.subarray(0, 1024).toString('latin1');
+	const charset = CHARSET.exec(contentType)?.[1] ?? META_CHARSET.exec(start)?.[1] ?? 'utf-8';
+	return new TextDecoder(charset).decode(body);
 }
 
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 
 /**
- * A web page's HTML. Redirects are followed one at a time, up to 5, each checked as the link
- * was. Throws if the link or a redirect isn't http or https or reaches a private address, if the
- * page doesn't answer 200, or if it takes over 10 seconds or 5 MB in all.
+ * A web page's HTML, unzipped and decoded by its charset. Redirects are followed one at a time,
+ * up to 5, each checked as the link was. Throws if the link or a redirect isn't http or https or
+ * reaches a private address, if the page doesn't answer 200, if it takes over 10 seconds or 5 MB
+ * in all, if it's compressed other than with gzip or unzips to over 5 MB, or if its charset
+ * isn't known.
  */
 export async function fetchPage(link: URL): Promise<string> {
 	const signal = AbortSignal.timeout(TIMEOUT_MS);
@@ -119,7 +155,8 @@ export async function fetchPage(link: URL): Promise<string> {
 			response.destroy();
 			throw new Error(`${url.href} answered ${response.statusCode}`);
 		}
-		return readBody(response);
+		const body = await uncompress(await readBody(response), response.headers['content-encoding']);
+		return decode(body, response.headers['content-type']);
 	}
 }
 
