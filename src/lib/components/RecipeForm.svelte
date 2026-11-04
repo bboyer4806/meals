@@ -3,7 +3,7 @@
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import { beforeNavigate, refreshAll } from '$app/navigation';
 	import { returnOnClick, returnTo } from '../return-to.ts';
-	import type { RecipeFailure, RecipeFormValues } from '../server/recipe-form.ts';
+	import type { RecipeFailure, RecipeFormValues, RecipeRow } from '../server/recipe-form.ts';
 	import RecipeIngredients, { blankIngredient, type EditorRow } from './RecipeIngredients.svelte';
 	import RecipePhoto, { type PhotoChoice } from './RecipePhoto.svelte';
 	import RecipeTags from './RecipeTags.svelte';
@@ -12,7 +12,7 @@
 	// bound to state here, copied once from the page's data and never re-read from it, so what's
 	// typed survives a failed save and the data reloading when someone comes back to the tab
 	// (Q11). (A field with value={...} instead could be set back to that value whenever the page
-	// updates around it.)
+	// updates around it.) Only Import from a link changes them from outside, through fill.
 	let {
 		values,
 		photoKey,
@@ -39,21 +39,24 @@
 	// Number fields put numbers back in here; the form sends the fields' text either way.
 	let fields = $state<Record<keyof typeof initial, string | number | null>>(initial);
 	let tagText = $state(initialTags);
-	// A new recipe, or one without ingredients yet, starts with an empty row to type in.
-	let rows = $state<EditorRow[]>(
-		initialRows.length === 0
+
+	// A recipe without ingredients, such as a new one, starts with an empty row to type in.
+	function editorRows(from: RecipeRow[]): EditorRow[] {
+		return from.length === 0
 			? [blankIngredient(1)]
-			: initialRows.map((row, index) => ({ ...row, key: index + 1 }))
-	);
+			: from.map((row, index) => ({ ...row, key: index + 1 }));
+	}
+	let rows = $state(editorRows(initialRows));
 	let photo = $state<PhotoChoice>({ kind: 'keep' });
 	let preparingPhoto = $state(false);
 
-	// What saving would keep, to ask before leaving with it unsaved. Number fields hold numbers
-	// once typed in, so everything is compared as text. As on the server, blank ingredient rows
-	// are left out and each ingredient carries the heading above it, so a blank row or an empty
-	// heading alone changes nothing.
-	function typed(): string {
-		const text = Object.values(fields).map((value) => String(value ?? ''));
+	// What Import from a link replaces (design 7): everything but the photo, tags and notes.
+	// Number fields hold numbers once typed in, so everything is compared as text. As on the
+	// server, blank ingredient rows are left out and each ingredient carries the heading above
+	// it, so a blank row or an empty heading alone changes nothing.
+	function recipeText(): string {
+		const { notes: _, ...replaced } = fields;
+		const text = Object.values(replaced).map((value) => String(value ?? ''));
 		const ingredients: string[][] = [];
 		let section = '';
 		for (const row of rows) {
@@ -64,7 +67,14 @@
 			const cells = [row.amount, row.unit, row.item, row.prepNote].map((cell) => cell.trim());
 			if (cells.some((cell) => cell !== '')) ingredients.push([section, ...cells]);
 		}
-		return JSON.stringify([text, tagText, ingredients, photo.kind]);
+		return JSON.stringify([text, ingredients]);
+	}
+	const recipeTextAtStart = recipeText();
+
+	// What saving would keep, to ask before leaving with it unsaved: the recipe text, and the
+	// notes, tags and photo an import leaves as they are.
+	function typed(): string {
+		return JSON.stringify([recipeText(), String(fields.notes ?? ''), tagText, photo.kind]);
 	}
 	const typedAtStart = typed();
 	// Set once the recipe is saved or the person agreed to drop it, so leaving doesn't ask.
@@ -131,6 +141,29 @@
 		problem = next;
 		await tick();
 		problemElement?.focus();
+	}
+
+	const REPLACE = "Replace what you typed with the page's recipe? The photo, tags and notes stay.";
+
+	/**
+	 * Asks before fill replaces anything typed or changed since the editor started, an earlier
+	 * import included. True when nothing would be replaced or the person agreed.
+	 */
+	export function confirmFill(): boolean {
+		return recipeText() === recipeTextAtStart || confirm(REPLACE);
+	}
+
+	/**
+	 * Fills in a recipe from Import from a link (design 7): every field but the tags and notes, and
+	 * the ingredients. The photo, tags and notes stay as they are. The editor's start stays as it
+	 * was, so leaving afterward asks first.
+	 */
+	export function fill(next: RecipeFormValues): void {
+		const { rows: nextRows, tags: _tags, notes: _notes, ...imported } = next;
+		Object.assign(fields, imported);
+		rows = editorRows(nextRows);
+		// A failed save's message was about the recipe this replaces.
+		problem = null;
 	}
 
 	const submit: SubmitFunction = ({ formData, cancel }) => {

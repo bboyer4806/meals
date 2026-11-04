@@ -6,9 +6,11 @@
 
 	let { data, form } = $props();
 
-	// Import from a link (design 7). The editor copies its values once, so an import makes it
-	// again with the page's recipe. A failed import leaves it as it was.
-	let imported = $state<RecipeFormValues | null>(null);
+	// Import from a link (design 7) fills in the editor in place, keeping its photo, tags and
+	// notes, and asks first when that replaces anything else typed or changed. A failed import,
+	// or Cancel, leaves the editor as it was.
+	let editor: ReturnType<typeof RecipeForm>;
+	let filled = $state(false);
 	let importing = $state(false);
 	let problem = $state<string | null>(null);
 
@@ -24,7 +26,9 @@
 			importing = false;
 			// Nothing here resets the form, so the link stays in its field.
 			if (result.type === 'success') {
-				imported = (result.data as { values: RecipeFormValues }).values;
+				if (!editor.confirmFill()) return;
+				editor.fill((result.data as { values: RecipeFormValues }).values);
+				filled = true;
 			} else if (result.type === 'failure') {
 				problem = (result.data as { error: string }).error;
 			} else if (result.type === 'redirect') {
@@ -61,22 +65,21 @@
 	</div>
 	{#if problem}
 		<p class="error" role="alert">{problem}</p>
-	{:else if imported}
+	{:else if filled}
 		<p class="muted" role="status">Filled in from the page. Check it, then tap Save.</p>
 	{/if}
 </form>
 
 <!-- The import's result never reaches `form`, so it only holds a failed save. -->
-{#key imported}
-	<RecipeForm
-		values={imported ?? data.values}
-		photoKey={null}
-		tags={data.tags}
-		items={data.items}
-		cancelHref="/recipes"
-		failure={form?.error === undefined ? null : form}
-	/>
-{/key}
+<RecipeForm
+	bind:this={editor}
+	values={data.values}
+	photoKey={null}
+	tags={data.tags}
+	items={data.items}
+	cancelHref="/recipes"
+	failure={form?.error === undefined ? null : form}
+/>
 
 <style>
 	.help {

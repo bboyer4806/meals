@@ -11,8 +11,7 @@ import { navigating } from '$app/state';
 // opened or reloaded, or reached with Back or with Forward more than one step. It's where the
 // last navigation came from, so for a page that took another's place, as a search does, it's
 // the page replaced; none of those pages return anywhere. The root layout notes it after every
-// navigation, so it's known to what a page makes later too, such as the editor that New recipe
-// makes again after Import from a link. Only the browser sets it.
+// navigation, so it's known to what a page makes later too. Only the browser sets it.
 let pageBefore: string | null = null;
 
 /** Notes the page before the one a navigation reached. The root layout calls it after each. */
