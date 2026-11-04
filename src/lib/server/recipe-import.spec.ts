@@ -16,7 +16,7 @@ beforeEach(() => {
 	({ householdId, userId } = makeHousehold());
 });
 
-function form(csv: string, fields: Record<string, string> = {}): FormData {
+function form(csv: BlobPart, fields: Record<string, string> = {}): FormData {
 	const data = new FormData();
 	data.set('file', new File([csv], 'recipes.csv', { type: 'text/csv' }));
 	for (const [name, value] of Object.entries(fields)) data.set(name, value);
@@ -37,9 +37,9 @@ function dishNamed(name: string) {
 }
 
 describe('templateCsv', () => {
-	it('is the header row alone', () => {
+	it('is the header row alone, after a byte order mark so Excel keeps it UTF-8 (MEA-71)', () => {
 		expect(templateCsv()).toBe(
-			'Recipe,Servings,Prep (min),Cook (min),Tags,Ingredients,Steps,Notes,Source,Calories,Protein (g),Carbs (g),Fat (g)\r\n'
+			'\uFEFFRecipe,Servings,Prep (min),Cook (min),Tags,Ingredients,Steps,Notes,Source,Calories,Protein (g),Carbs (g),Fat (g)\r\n'
 		);
 	});
 });
@@ -135,6 +135,29 @@ describe('importRecipeFile', () => {
 		const steps = ['Recipe,Steps', `Toast,${most}`].join('\n');
 		expect(await importRecipeFile(householdId, form(steps), NOW)).toMatchObject({ imported: 1 });
 		expect(dishNamed('Toast').steps).toBe(most);
+	});
+
+	it('reads the template saved as CSV UTF-8, with its byte order mark, é, ½ and ° (MEA-71)', async () => {
+		const csv = `${templateCsv()}Crème brûlée,,,,,½ cup sugar|1 cup crème fraîche,Bake at 325 °F.\r\n`;
+		const result = await importRecipeFile(householdId, form(csv), NOW);
+		expect(result).toEqual({ kind: 'imported', imported: 1, replaced: 0, skipped: 0, ignored: [] });
+		const dish = dishNamed('Crème brûlée');
+		expect(dish.steps).toBe('Bake at 325 °F.');
+		expect(dish.ingredients.map(({ amount, unit, itemName }) => [amount, unit, itemName])).toEqual([
+			[0.5, 'cup', 'sugar'],
+			[1, 'cup', 'crème fraîche']
+		]);
+	});
+
+	it("refuses a file that isn't UTF-8, as Excel's CSV (Comma delimited) isn't (MEA-71)", async () => {
+		// Windows-1252 is Latin-1 for these characters.
+		const csv = Buffer.from('Recipe,Ingredients\nCrème brûlée,½ cup sugar\n', 'latin1');
+		const result = await importRecipeFile(householdId, form(csv), NOW);
+		expect(result).toEqual({
+			kind: 'problems',
+			problems: ['Save the file as CSV UTF-8, then import it again.']
+		});
+		expect(names()).toEqual([]);
 	});
 
 	it('keeps a quote inside a cell, as in Use a 9" pan', async () => {
