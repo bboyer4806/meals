@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import { filterCopyGroups } from '../copy-groups.ts';
 	import { formatDateLabel } from '../dates.ts';
@@ -15,7 +15,7 @@
 		dinnerId,
 		dishCount,
 		today,
-		ownUpdate
+		send
 	}: {
 		groups: CopyGroup[];
 		/** The dinner the page shows, if any, so a copy doesn't land on another one. */
@@ -24,10 +24,10 @@
 		dishCount: number;
 		today: string;
 		/**
-		 * Reloads the page after the copy. A copy onto a date with no dinner plans it, and the
+		 * Sends one of the page's own changes. A copy onto a date with no dinner plans it, and the
 		 * page keeps what's typed in its note and servings.
 		 */
-		ownUpdate: (result: ActionResult, update: () => Promise<void>) => Promise<void>;
+		send: (submit: SubmitFunction) => SubmitFunction;
 	} = $props();
 
 	const uid = $props.id();
@@ -88,7 +88,7 @@
 					return;
 				}
 				open = false;
-				await ownUpdate(result, () => update({ reset: false }));
+				await update({ reset: false });
 				// SvelteKit moves focus to the top of the page after a form succeeds. The sheet's
 				// button gets it back, as when the sheet closes.
 				await tick();
@@ -113,7 +113,7 @@
 			Replace the {dishCount === 1 ? 'dish' : `${dishCount} dishes`} on this dinner with
 			{names(confirming)}?
 		</p>
-		<form method="POST" action="?/copy" use:enhance={submit}>
+		<form method="POST" action="?/copy" use:enhance={send(submit)}>
 			<input type="hidden" name="sourceId" value={confirming.dinnerId} />
 			{@render shownDinner()}
 			<input type="hidden" name="replaceDishes" value="1" />
@@ -136,7 +136,7 @@
 			bind:this={searchInput}
 		/>
 		{#if shown.length > 0}
-			<form method="POST" action="?/copy" use:enhance={submit}>
+			<form method="POST" action="?/copy" use:enhance={send(submit)}>
 				{@render shownDinner()}
 				<ul class="groups">
 					{#each shown as group (group.dinnerId)}

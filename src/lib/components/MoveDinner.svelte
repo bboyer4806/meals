@@ -17,7 +17,8 @@
 		dinnerId,
 		canLeave,
 		keepAsking,
-		onlost
+		onlost,
+		send
 	}: {
 		date: string;
 		/** So a new date in another year says its year (MEA-150). */
@@ -35,6 +36,8 @@
 		 * (someone cleared the dinner meanwhile).
 		 */
 		onlost: (message: string) => void;
+		/** Sends one of the page's own changes. */
+		send: (submit: SubmitFunction) => SubmitFunction;
 	} = $props();
 
 	const uid = $props.id();
@@ -84,7 +87,7 @@
 </script>
 
 <Sheet bind:open title="Move to another date">
-	<form method="POST" action="?/move" use:enhance={submit}>
+	<form method="POST" action="?/move" use:enhance={send(submit)}>
 		<input type="hidden" name="dinnerId" value={dinnerId} />
 		<div class="field">
 			<label for="{uid}-to">New date</label>

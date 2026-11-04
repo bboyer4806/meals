@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import { DINNER_LABEL_MAX } from '../menu.ts';
 	import Sheet from './Sheet.svelte';
@@ -9,13 +9,13 @@
 	// asks for both labels at once: the first dinner's and the new one's.
 	let {
 		count,
-		ownUpdate,
+		send,
 		onadded
 	}: {
 		/** How many dinners the date has now. */
 		count: number;
-		/** Reloads the page after the dinner is added, keeping what's typed in the others. */
-		ownUpdate: (result: ActionResult, update: () => Promise<void>) => Promise<void>;
+		/** Sends one of the page's own changes, so the reload after it keeps what's typed. */
+		send: (submit: SubmitFunction) => SubmitFunction;
 		/** After the new dinner shows. */
 		onadded: () => void;
 	} = $props();
@@ -52,7 +52,7 @@
 					return;
 				}
 				if (result.type === 'success') open = false;
-				await ownUpdate(result, () => update({ reset: false }));
+				await update({ reset: false });
 				if (result.type === 'success') onadded();
 			} finally {
 				busy = false;
@@ -64,7 +64,7 @@
 <button type="button" onclick={show}>Add a dinner</button>
 
 <Sheet bind:open title="Add a dinner">
-	<form method="POST" action="?/addDinner" use:enhance={submit}>
+	<form method="POST" action="?/addDinner" use:enhance={send(submit)}>
 		{#if asked === 1}
 			<p>Give each dinner a label, such as Kids or Adults.</p>
 			<div class="field">

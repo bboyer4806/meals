@@ -183,6 +183,21 @@ async function slow(page: Page, matches: (url: URL) => boolean, ms: number) {
 	});
 }
 
+/**
+ * Holds back the answers to requests that match until the function it returns is called, as on
+ * a slow phone connection. The server gets each request right away and makes the change.
+ */
+async function holdAnswers(page: Page, matches: (url: URL) => boolean): Promise<() => void> {
+	let release!: () => void;
+	const released = new Promise<void>((resolve) => (release = resolve));
+	await page.route(matches, async (route) => {
+		const response = await route.fetch();
+		await released;
+		await route.fulfill({ response });
+	});
+	return release;
+}
+
 /** Saves the servings and note, which goes to the date's week with "Saved" on its row. */
 async function saveToWeek(page: Page, date: string) {
 	await page.getByRole('button', { name: 'Save' }).click();
@@ -2053,6 +2068,138 @@ test('keeps what was typed on an unplanned day when a dish or a copy plans it', 
 	expect(dinnerRow(db, person.householdId, copied)).toMatchObject({ note: 'Taco night' });
 });
 
+// On a slow connection, the change that plans an unplanned day can still be on its way when the
+// next one is made (MEA-128).
+
+test('adds a dish picked while the type planning the day is on its way, and asks before a switch would take one off', async ({
+	page,
+	db,
+	person
+}) => {
+	addRecipe(db, person.householdId, { name: 'Potato salad' });
+	const note = page.getByLabel('Note', { exact: true });
+	const adds = countAdds(page);
+
+	// The type planned the day, and its answer hasn't come when the dish is picked.
+	const date = addDays(today(), 1);
+	await open(page, `/menu/${date}`);
+	const typeAnswered = await holdAnswers(page, (url) => url.search === '?/type');
+	await note.fill('Bring the big bowl');
+	await typeButton(page, 'Bringing a dish').click();
+	await expect.poll(() => dinnerRow(db, person.householdId, date)?.type).toBe('going');
+	await dishField(page).fill('pot');
+	await page.getByRole('option', { name: 'Potato salad', exact: true }).tap();
+	typeAnswered();
+	await expect(dishLinks(page)).toHaveText(['Potato salad']);
+	await expect(typeButton(page, 'Bringing a dish')).toHaveAttribute('aria-pressed', 'true');
+	await expect(dishField(page)).toHaveValue('');
+	await expect(note).toHaveValue('Bring the big bowl');
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect(adds()).toBe(1);
+	const going = dinnerRow(db, person.householdId, date);
+	expect(dinnerRows(db, person.householdId, date)).toHaveLength(1);
+	expect(going).toMatchObject({ type: 'going', note: null });
+	expect(dinnerDishes(db, going?.id ?? 0)).toEqual([{ name: 'Potato salad', role: 'main' }]);
+	await saveToWeek(page, date);
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({ note: 'Bring the big bowl' });
+
+	// Eating out, tapped while the dish planning the day is on its way, asks first once the dish
+	// shows, as it would have if tapped then.
+	const dished = addDays(today(), 2);
+	await open(page, `/menu/${dished}`);
+	const dishAnswered = await holdAnswers(page, (url) => url.search === '?/addDish');
+	await dishField(page).fill('pot');
+	await page.getByRole('option', { name: 'Potato salad', exact: true }).tap();
+	await expect.poll(() => dinnerRow(db, person.householdId, dished)?.type).toBe('cook');
+	await typeButton(page, 'Eating out').click();
+	dishAnswered();
+	const sheet = page.getByRole('dialog', { name: 'Switch to Eating out?' });
+	await expect(sheet).toContainText('this takes Potato salad off this dinner');
+	await sheet.getByRole('button', { name: 'Switch to Eating out' }).click();
+	await expect(typeButton(page, 'Eating out')).toHaveAttribute('aria-pressed', 'true');
+	await expect(dishSection(page)).toHaveCount(0);
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	const eatingOut = dinnerRow(db, person.householdId, dished);
+	expect(dinnerRows(db, person.householdId, dished)).toHaveLength(1);
+	expect(eatingOut).toMatchObject({ type: 'eat_out' });
+	expect(dinnerDishes(db, eatingOut?.id ?? 0)).toEqual([]);
+});
+
+test('saves to the dinner that a type tapped just before Save planned, and saves nothing when the type is refused', async ({
+	page,
+	db,
+	person
+}) => {
+	const note = page.getByLabel('Note', { exact: true });
+	const date = addDays(today(), 1);
+	await open(page, `/menu/${date}`);
+	const typeAnswered = await holdAnswers(page, (url) => url.search === '?/type');
+	await note.fill('Bring the big bowl');
+	await typeButton(page, 'Bringing a dish').click();
+	await expect.poll(() => dinnerRow(db, person.householdId, date)?.type).toBe('going');
+	await page.getByRole('button', { name: 'Save' }).click();
+	typeAnswered();
+
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sundayOf(date)}$`));
+	await expect(day(page, date).getByRole('status')).toHaveText('Saved');
+	expect(dinnerRows(db, person.householdId, date)).toEqual([
+		expect.objectContaining({ type: 'going', note: 'Bring the big bowl' })
+	]);
+
+	// Someone planned the day after the page opened, so the type is refused. Save, tapped while
+	// it was on its way, isn't sent, and the page says why, with the note typed to copy.
+	const taken = addDays(today(), 2);
+	await open(page, `/menu/${taken}`);
+	addDinner(db, person.householdId, taken, { type: 'eat_out', note: 'Pizza' });
+	const refusalAnswered = await holdAnswers(page, (url) => url.search === '?/type');
+	await note.fill('Bring the big bowl');
+	await typeButton(page, 'Bringing a dish').click();
+	await page.getByRole('button', { name: 'Save' }).click();
+	refusalAnswered();
+
+	await expect(page.getByRole('alert')).toHaveText([
+		'Someone put another dinner on this date, so your note wasn\'t saved: "Bring the big bowl"',
+		CHANGED
+	]);
+	await expect(typeButton(page, 'Eating out')).toHaveAttribute('aria-pressed', 'true');
+	await expect(note).toHaveValue('Pizza');
+	await expect(page).toHaveURL(new RegExp(`/menu/${taken}$`));
+	expect(dinnerRows(db, person.householdId, taken)).toEqual([
+		expect.objectContaining({ type: 'eat_out', note: 'Pizza' })
+	]);
+});
+
+test('keeps what was typed when the page reloads while its own change is on its way', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	const note = page.getByLabel('Note', { exact: true });
+	await open(page, `/menu/${date}`);
+	const typeAnswered = await holdAnswers(page, (url) => url.search === '?/type');
+	await note.fill('Chili from Sunday');
+	await typeButton(page, 'Leftovers').click();
+	await expect.poll(() => dinnerRow(db, person.householdId, date)?.type).toBe('leftovers');
+
+	// Coming back to the app reloads the page, which shows the day planned, before the answer.
+	await comeBack(page);
+	await expect(typeButton(page, 'Leftovers')).toHaveAttribute('aria-pressed', 'true');
+	await expect(note).toHaveValue('Chili from Sunday');
+	await expect(page.getByRole('alert')).toHaveCount(0);
+
+	const reloaded = page.waitForResponse((response) => response.url().includes('/__data.json'));
+	typeAnswered();
+	await reloaded;
+	await expect(note).toHaveValue('Chili from Sunday');
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await saveToWeek(page, date);
+	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+		type: 'leftovers',
+		note: 'Chili from Sunday'
+	});
+});
+
 // Requests (design 6.12), under the week.
 
 function requestsSection(page: Page) {
@@ -2566,6 +2713,32 @@ test("plans a day with no dinner, and changes nothing when a request can't go on
 		note: 'Extra cheese',
 		servings: 4
 	});
+	await expect(section.getByText('No requests yet.')).toBeVisible();
+});
+
+test('adds a request tapped while the type planning the day is on its way to the dinner it planned', async ({
+	page,
+	db,
+	person
+}) => {
+	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna' });
+	askFor(db, person, 'Lasagna', { dishId: lasagna, note: 'Extra cheese' });
+	const section = requestsSection(page);
+	const date = addDays(today(), 1);
+	await open(page, `/menu/${date}`);
+	const typeAnswered = await holdAnswers(page, (url) => url.search === '?/type');
+	await typeButton(page, 'Bringing a dish').click();
+	await expect.poll(() => dinnerRow(db, person.householdId, date)?.type).toBe('going');
+	await section.getByRole('button', { name: 'Add Lasagna' }).click();
+	typeAnswered();
+
+	await expect(section.getByText('Added Lasagna.', { exact: true })).toBeFocused();
+	await expect(dishLinks(page)).toHaveText(['Lasagna']);
+	await expect(typeButton(page, 'Bringing a dish')).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect(dinnerRows(db, person.householdId, date)).toEqual([
+		expect.objectContaining({ type: 'going', note: 'Extra cheese' })
+	]);
 	await expect(section.getByText('No requests yet.')).toBeVisible();
 });
 

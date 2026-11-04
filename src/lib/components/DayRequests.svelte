@@ -16,15 +16,15 @@
 	let {
 		requests,
 		dinners,
-		ownUpdate,
+		send,
 		onadded
 	}: {
 		/** The household's requests, oldest first. */
 		requests: DishRequest[];
 		/** The date's dinners as they are now, in the order they were added. */
 		dinners: Dinner[];
-		/** Reloads the page after a request is added, keeping what's typed in the dinners. */
-		ownUpdate: (result: ActionResult, update: () => Promise<void>) => Promise<void>;
+		/** Sends one of the page's own changes, so the reload after it keeps what's typed. */
+		send: (submit: SubmitFunction) => SubmitFunction;
 		/** After a request went on the dinner, with the request's note, if it has one. */
 		onadded: (dinnerId: number, note: string | null) => void;
 	} = $props();
@@ -136,7 +136,7 @@
 						return;
 					}
 					open = false;
-					await ownUpdate(result, () => update({ reset: false }));
+					await update({ reset: false });
 					await tick();
 					const { dinnerId } = result.data as { dinnerId: number };
 					onadded(dinnerId, request.note);
@@ -184,7 +184,7 @@
 						{#if request.note}<span class="request-note">{request.note}</span>{/if}
 						<span class="muted">Asked by {request.askedBy}</span>
 					</div>
-					<form method="POST" action={actionFor(request)} use:enhance={submitFor(request)}>
+					<form method="POST" action={actionFor(request)} use:enhance={send(submitFor(request))}>
 						<input type="hidden" name="requestId" value={request.id} />
 						{#if request.kind === 'dish' && only}
 							<input type="hidden" name="dinnerId" value={only.id} />
@@ -208,7 +208,7 @@
 
 <Sheet bind:open title="Add {asked?.request.name ?? ''}">
 	{#if asked}
-		<form method="POST" action={actionFor(asked.request)} use:enhance={submitAsked}>
+		<form method="POST" action={actionFor(asked.request)} use:enhance={send(submitAsked)}>
 			<input type="hidden" name="requestId" value={asked.request.id} />
 			{#if asked.choices.length > 1}
 				<p>Which dinner should it go on?</p>

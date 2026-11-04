@@ -19,7 +19,7 @@
 		suggestions,
 		servings,
 		onlost,
-		ownUpdate
+		send
 	}: {
 		dinner: Dinner | null;
 		/** Active dishes, most used first. */
@@ -32,10 +32,10 @@
 		 */
 		onlost: (message: string) => void;
 		/**
-		 * Reloads the page after an added dish. One added to a date with no dinner plans it, and
+		 * Sends one of the page's own changes. A dish added to a date with no dinner plans it, and
 		 * the page keeps what's typed in its note and servings.
 		 */
-		ownUpdate: (result: ActionResult, update: () => Promise<void>) => Promise<void>;
+		send: (submit: SubmitFunction) => SubmitFunction;
 	} = $props();
 
 	type Failure = { error?: string } | undefined;
@@ -243,7 +243,7 @@
 					restoreOpen = true;
 					return;
 				}
-				await ownUpdate(result, () => update({ reset: false }));
+				await update({ reset: false });
 				if (result.type === 'success') added(sent);
 			} finally {
 				adding = false;
@@ -264,7 +264,7 @@
 					await reload(notAdded(sentName, message));
 					return;
 				}
-				await ownUpdate(result, () => update({ reset: false }));
+				await update({ reset: false });
 				if (result.type === 'success') {
 					restoreOpen = false;
 					// Once the sheet has closed and given focus back.
@@ -297,7 +297,7 @@
 						</a>
 						{#if dish.archived}<span class="badge">Archived</span>{/if}
 					</span>
-					<form method="POST" action="?/role" use:enhance={roleSubmit(dish.dishId)}>
+					<form method="POST" action="?/role" use:enhance={send(roleSubmit(dish.dishId))}>
 						<input type="hidden" name="dishId" value={dish.dishId} />
 						{@render shownDinner()}
 						<label class="visually-hidden" for={roleId(dish.dishId)}>
@@ -314,7 +314,7 @@
 							{/each}
 						</select>
 					</form>
-					<form method="POST" action="?/removeDish" use:enhance={removeSubmit(dish.dishId)}>
+					<form method="POST" action="?/removeDish" use:enhance={send(removeSubmit(dish.dishId))}>
 						<input type="hidden" name="dishId" value={dish.dishId} />
 						{@render shownDinner()}
 						<button id={removeId(dish.dishId)} class="remove" aria-label="Remove {dish.name}">
@@ -331,7 +331,13 @@
 		<p class="muted">No dishes yet.</p>
 	{/if}
 
-	<form class="add" method="POST" action="?/addDish" use:enhance={submitAdd} bind:this={addForm}>
+	<form
+		class="add"
+		method="POST"
+		action="?/addDish"
+		use:enhance={send(submitAdd)}
+		bind:this={addForm}
+	>
 		{@render shownDinner()}
 		<label for="{uid}-name">Add a dish</label>
 		<div bind:this={nameField}>
@@ -365,7 +371,7 @@
 <Sheet bind:open={restoreOpen} title={archived?.name ?? ''}>
 	{#if archived}
 		<p>{archived.name} is archived. Restore it and add it to this dinner?</p>
-		<form method="POST" action="?/restoreDish" use:enhance={submitRestore}>
+		<form method="POST" action="?/restoreDish" use:enhance={send(submitRestore)}>
 			<input type="hidden" name="dishId" value={archived.dishId} />
 			<input type="hidden" name="role" value={archived.role} />
 			{@render shownDinner()}
