@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
-	import type { ActionResult } from '$app/forms';
+	import type { SubmitFunction } from '$app/forms';
 	import AddDinner from '#lib/components/AddDinner.svelte';
 	import DayRequests from '#lib/components/DayRequests.svelte';
 	import DinnerEditor from '#lib/components/DinnerEditor.svelte';
@@ -83,18 +83,77 @@
 	const editors: Record<number, ReturnType<typeof DinnerEditor> | null> = $state({});
 	const HELD = 'Someone cleared or moved this dinner. Save to plan it again with what you typed.';
 
-	// Set while this page's own change reloads it. The person asked for it, so what it takes off
-	// the page goes without a word, and what's typed in the forms stays for Save, also when the
-	// change planned the date.
-	let ownChange = false;
+	// How many of this page's own changes are on their way, each from when it's sent until the
+	// reload after it settles. Any reload meanwhile can show what they did, so it's the person's
+	// own: what it takes off the page goes without a word, and what's typed in the forms stays for
+	// Save, also when a change planned the date. A change that didn't go through changed nothing,
+	// so it stops counting when its answer comes, and the reload after it shows what someone else
+	// did (MEA-128).
+	let ownChanges = 0;
 
-	/** Reloads the page after one of its own changes, sent with the result it got. */
-	async function ownUpdate(result: ActionResult, update: () => Promise<void>) {
-		ownChange = result.type === 'success';
-		try {
-			await update();
-		} finally {
-			ownChange = false;
+	// The form whose change is planning the date, sent while it had no dinner. Until the reload
+	// after it, the page's other forms still show the date as not planned, so what's sent from
+	// them meanwhile would go to no dinner and be refused. It waits instead, and is sent again
+	// once the page shows the dinner just planned: the latest from each form, in the order they
+	// were first sent (MEA-128).
+	let planning: HTMLFormElement | null = null;
+	const waiting = new Map<HTMLFormElement, HTMLElement | null>();
+
+	/**
+	 * Sends one of the page's own changes, counted while it's on its way, or holds it while
+	 * another form's change is planning the date.
+	 */
+	function send(submit: SubmitFunction): SubmitFunction {
+		return async (input) => {
+			if (planning !== null && input.formElement !== planning) {
+				waiting.set(input.formElement, input.submitter);
+				return input.cancel();
+			}
+			const plans = planning === null && dinners.length === 0;
+			if (plans) planning = input.formElement;
+			ownChanges += 1;
+			let cancelled = false;
+			const callback = await submit({
+				...input,
+				cancel: () => {
+					cancelled = true;
+					input.cancel();
+				}
+			});
+			if (cancelled) {
+				ownChanges -= 1;
+				if (plans) await endPlanning(true);
+				return;
+			}
+			return async (options) => {
+				const counted = options.result.type === 'success';
+				if (!counted) ownChanges -= 1;
+				try {
+					await (callback ? callback(options) : options.update());
+				} finally {
+					if (counted) ownChanges -= 1;
+					if (plans) await endPlanning(counted);
+				}
+			};
+		};
+	}
+
+	/**
+	 * Once the change planning the date is done, sends again what waited for it, each made as the
+	 * person made it, so a switch or a copy that would now take dishes off asks first. When that
+	 * change didn't go through, nothing that waited is sent: the page says why, and the person
+	 * can make them again.
+	 */
+	async function endPlanning(sendAgain: boolean): Promise<void> {
+		planning = null;
+		const waited = [...waiting];
+		waiting.clear();
+		if (!sendAgain) return;
+		// Once the forms show the dinner just planned.
+		await tick();
+		for (const [form, submitter] of waited) {
+			if (submitter) submitter.click();
+			else form.requestSubmit();
 		}
 	}
 
@@ -180,7 +239,7 @@
 				slots = freshSlots(now.dinners);
 				return;
 			}
-			reconcile(now.dinners, was.dinners, ownChange);
+			reconcile(now.dinners, was.dinners, ownChanges > 0);
 		});
 	});
 
@@ -278,7 +337,7 @@
 			copyGroups={data.copyGroups}
 			today={data.today}
 			onlost={showNotice}
-			{ownUpdate}
+			{send}
 			oncleared={cleared}
 			bind:this={editors[slot.key]}
 		/>
@@ -286,11 +345,11 @@
 
 	{#if dinners.length > 0 && dinners.length < MAX_DINNERS}
 		<div class="add">
-			<AddDinner count={dinners.length} {ownUpdate} onadded={added} />
+			<AddDinner count={dinners.length} {send} onadded={added} />
 		</div>
 	{/if}
 
-	<DayRequests requests={data.requests} {dinners} {ownUpdate} onadded={requestAdded} />
+	<DayRequests requests={data.requests} {dinners} {send} onadded={requestAdded} />
 
 	{#if dinners[0]}
 		<MoveDinner
@@ -301,6 +360,7 @@
 			{canLeave}
 			{keepAsking}
 			onlost={showNotice}
+			{send}
 			bind:this={mover}
 		/>
 	{/if}

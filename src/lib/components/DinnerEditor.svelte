@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import { DINNER_TYPES, DINNER_TYPE_LABELS, hasDishes, type DinnerType } from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
@@ -23,7 +23,7 @@
 		copyGroups,
 		today,
 		onlost,
-		ownUpdate,
+		send,
 		oncleared
 	}: {
 		/** The dinner as it is now, or null on a date with no dinner. */
@@ -43,8 +43,8 @@
 		today: string;
 		/** Shows a failure on the page, once the part of this dinner it belonged to is gone. */
 		onlost: (message: string) => void;
-		/** Reloads the page after one of its own changes, which keeps what's typed. */
-		ownUpdate: (result: ActionResult, update: () => Promise<void>) => Promise<void>;
+		/** Sends one of the page's own changes, so the reload after it keeps what's typed. */
+		send: (submit: SubmitFunction) => SubmitFunction;
 		/** After this dinner is cleared. */
 		oncleared: () => void;
 	} = $props();
@@ -160,7 +160,7 @@
 					// put on this date.
 					await refreshAll();
 				} else {
-					await ownUpdate(result, () => update({ reset: false }));
+					await update({ reset: false });
 				}
 			} finally {
 				typeBusy = false;
@@ -179,7 +179,7 @@
 		return async ({ result, update }) => {
 			// When someone put another dinner on this date meanwhile, it isn't cleared, and the
 			// page shows it under the message.
-			await ownUpdate(result, () => update({ reset: false, refreshAll: true }));
+			await update({ reset: false, refreshAll: true });
 			if (result.type !== 'success') return;
 			await tick();
 			details?.reset();
@@ -205,7 +205,7 @@
 		class="types"
 		method="POST"
 		action="?/type"
-		use:enhance={submitType}
+		use:enhance={send(submitType)}
 		aria-label="Type"
 		bind:this={typesForm}
 	>
@@ -232,7 +232,7 @@
 			{suggestions}
 			servings={linkServings}
 			{onlost}
-			{ownUpdate}
+			{send}
 			bind:this={dishEditor}
 		/>
 	{/if}
@@ -241,16 +241,17 @@
 		dinner={editing}
 		{labeled}
 		typedDish={dishEditor?.typedName() ?? ''}
+		{send}
 		bind:servings={shownServings}
 		bind:this={details}
 	/>
 
 	<div class="actions">
-		<CopyDinner {groups} dinnerId={dinner?.id} {dishCount} {today} {ownUpdate} />
+		<CopyDinner {groups} dinnerId={dinner?.id} {dishCount} {today} {send} />
 	</div>
 
 	{#if dinner}
-		<form class="clear" method="POST" action="?/clear" use:enhance={submitClear}>
+		<form class="clear" method="POST" action="?/clear" use:enhance={send(submitClear)}>
 			{@render shownDinner()}
 			<ConfirmButton
 				label="Clear"
@@ -270,7 +271,7 @@
 		{listNames(dinner?.dishes.map((dish) => dish.name) ?? [])} off this dinner. They stay in your
 		recipes.
 	</p>
-	<form method="POST" action="?/type" use:enhance={submitType}>
+	<form method="POST" action="?/type" use:enhance={send(submitType)}>
 		{@render shownDinner()}
 		<input type="hidden" name="type" value={switchTo} />
 		<input type="hidden" name="removeDishes" value="1" />

@@ -904,8 +904,12 @@ at home selected, with its servings and note ready to fill in, unsaved (6.9). Un
 **Requests** lists the Menu's requests: a dish request's Add puts its dish on one of the date's
 dinners, and a restaurant request's Add makes a new Eating out dinner there (6.12). The type,
 dishes, copying, moving, clearing and adding a request save as soon as they're made, and keep
-anything typed in the servings, restaurant and note for Save. Save on the servings or
-restaurant and note goes to the dinner's week, where that dinner's line says "Saved" for 3
+anything typed in the servings, restaurant and note for Save. On a date with no dinner, what's
+done while the change that plans it is still on its way, such as picking a dish or tapping Save
+just after a type, waits for it, then goes to the dinner it planned as if done then, so quick
+changes in a row all go through; a switch that would now take a dish off asks first. When that
+change is refused, what waited isn't sent, and the page says why (MEA-128). Save on the servings
+or restaurant and note goes to the dinner's week, where that dinner's line says "Saved" for 3
 seconds; on a date with no dinner it plans it as the type shown. Leaving with something typed
 asks first. A name in the dish field that isn't added counts, since Save doesn't add it, and the
 question names it: "Leave without adding Garlic bread?" (MEA-127). A dish on its way to the

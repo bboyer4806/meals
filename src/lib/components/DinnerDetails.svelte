@@ -21,6 +21,7 @@
 		dinner,
 		labeled,
 		typedDish,
+		send,
 		servings = $bindable(null)
 	}: {
 		/** A saved dinner, or with no id the Cooking at home a date with no dinner shows (6.9). */
@@ -34,6 +35,8 @@
 		 * so leaving asks about it too (MEA-127).
 		 */
 		typedDish: string;
+		/** Sends one of the page's own changes. */
+		send: (submit: SubmitFunction) => SubmitFunction;
 		/**
 		 * The servings on screen, saved or not, which the dish links use. A number field bound
 		 * with bind:value holds a number, or null while it's empty.
@@ -271,7 +274,7 @@
 	};
 </script>
 
-<form class="card" method="POST" action="?/details" use:enhance={submit}>
+<form class="card" method="POST" action="?/details" use:enhance={send(submit)}>
 	{#if dinner.id !== null}<input type="hidden" name="dinnerId" value={dinner.id} />{/if}
 	<input type="hidden" name="type" value={dinner.type} />
 	{#if labeled}
