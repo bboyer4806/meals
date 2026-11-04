@@ -793,9 +793,12 @@ mark (MEA-72). Ingredients and Steps hold several entries, each on its own line 
 separated by `|` (MEA-73), and an ingredient entry starting with `#` is a section heading. Each
 ingredient entry fills an editor row (`src/lib/ingredient-text.ts`): an amount, or a range whose
 first amount is the amount and which goes in the prep note as "2 to 3"; then a known unit (6.5)
-or a common one, such as clove, can, pinch, slice or stick, while any other word starts the
-item; then the item up to the first comma, and the rest as the prep note. "1 1/2 cups flour,
-sifted" is 1 1/2, cup, flour and sifted; "Salt, to taste" has no amount. Fields follow the
+or a common one, such as clove, can, pinch, slice or stick, also when it's written onto the
+amount, as in 500g or 1/2cup, while any other word starts the item; then the item up to the
+first comma, and the rest as the prep note. Text in parentheses right after the amount or the
+unit, such as a size, goes in the prep note too, and an "of" after the unit is left out
+(MEA-74). "1 1/2 cups flour, sifted" is 1 1/2, cup, flour and sifted; "1 (14 oz) can of
+tomatoes" is 1, can, tomatoes and 14 oz; "Salt, to taste" has no amount. Fields follow the
 editor's rules and limits, tags are separated by commas, and a blank Servings is the
 household's usual servings. A cell holds up to 10,000 characters (4.5). If anything is wrong,
 nothing is imported, and the page lists each problem with its row number (the header is row

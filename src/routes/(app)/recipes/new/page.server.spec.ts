@@ -81,8 +81,8 @@ describe('the import action', () => {
 			kind: 'ingredient',
 			amount: '2',
 			unit: 'cups',
-			item: '(212g) medium rye flour',
-			prepNote: ''
+			item: 'medium rye flour',
+			prepNote: '212g'
 		});
 	});
 

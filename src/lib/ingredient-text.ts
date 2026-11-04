@@ -38,11 +38,15 @@ const SINGLE =
 // The amount, then the rest after a space or a comma, or nothing.
 const END = '(?=[\\s,]|$)';
 const AMOUNT = new RegExp(`^(${SINGLE})${END}`);
-// Two amounts joined like a range: "2-3", "2 to 3", "½ or 1", or with an en or em dash.
-const RANGE = new RegExp(
-	`^(${SINGLE})\\s*(?:-|–|—|to\\b|or\\b)\\s*(${SINGLE})${END}`,
-	'i'
-);
+// What joins two amounts in a range: "2-3", "2 to 3", "½ or 1", or an en or em dash.
+const JOIN = '\\s*(?:-|–|—|to\\b|or\\b)\\s*';
+const RANGE = new RegExp(`^(${SINGLE})${JOIN}(${SINGLE})${END}`, 'i');
+// An amount or a range with letters written onto it, as in "500g" or "1/2cup" (MEA-74).
+const ATTACHED = new RegExp(`^${SINGLE}(?:${JOIN}${SINGLE})?(?=[a-z])`, 'i');
+// Text in parentheses, such as the size in "1 (14 oz) can", and the space after it (MEA-74).
+const PARENTHESES = /^\(([^()]*)\)\s*/;
+// The "of" in "2 cloves of garlic", and the space after it (MEA-74).
+const OF = /^of(?:\s|$)/i;
 
 /** The unit the words start with, as many words as it takes, or null for none. */
 function leadingUnit(words: string[]): { unit: string; length: number } | null {
@@ -59,16 +63,38 @@ function leadingUnit(words: string[]): { unit: string; length: number } | null {
 }
 
 /**
- * An ingredient's parts. It starts with an amount, or a range whose first amount is the amount
- * and which goes in the prep note as "2 to 3" (design 2.3). A known unit or a common one (clove,
- * can, pinch, slice, stick and others) after an amount is the unit; any other word starts the
- * item. The item runs to the first comma, and the rest is the prep note.
+ * The text with a space after an amount that has its unit written onto it, so "500g flour" reads
+ * as "500 g flour". Letters that aren't a unit stay on, so "7UP" doesn't start with an amount.
+ */
+function spaceOutUnit(text: string): string {
+	const amount = ATTACHED.exec(text)?.[0];
+	if (amount === undefined) return text;
+	const rest = text.slice(amount.length);
+	return leadingUnit(rest.split(' ')) ? `${amount} ${rest}` : text;
+}
+
+/** The text inside the parentheses the text starts with, or '', and the text after them. */
+function leadingParentheses(text: string): [inside: string, rest: string] {
+	const found = PARENTHESES.exec(text);
+	if (!found) return ['', text];
+	const [whole, inside = ''] = found;
+	return [inside.trim(), text.slice(whole.length)];
+}
+
+/**
+ * An ingredient's parts (design 7, Import recipes). It starts with an amount, or a range whose
+ * first amount is the amount and which goes in the prep note as "2 to 3" (design 2.3). A known
+ * unit or a common one (clove, can, pinch, slice, stick and others) after an amount is the unit,
+ * also when it's written onto the amount, as in "500g"; any other word starts the item. Text in
+ * parentheses right after the amount or the unit, such as a size, goes in the prep note, and an
+ * "of" after the unit is left out. The item runs to the first comma, and the rest is the prep
+ * note.
  *
- * "1 1/2 cups flour, sifted" is 1 1/2, cups, flour and sifted. "3 eggs" has no unit, and
- * "Salt, to taste" has no amount or unit.
+ * "1 1/2 cups flour, sifted" is 1 1/2, cups, flour and sifted. "1 (14 oz) can of tomatoes" is
+ * 1, can, tomatoes and 14 oz. "3 eggs" has no unit, and "Salt, to taste" has no amount or unit.
  */
 export function splitIngredient(text: string): IngredientParts {
-	let rest = normalizeName(text);
+	let rest = spaceOutUnit(normalizeName(text));
 	let amount = '';
 	let range = '';
 	const single = AMOUNT.exec(rest);
@@ -87,18 +113,24 @@ export function splitIngredient(text: string): IngredientParts {
 	rest = rest.trim();
 
 	let unit = '';
+	// What's in parentheses after the amount, as in "1 (14 oz) can", and after the unit, as in
+	// "1 cup (240 ml) milk".
+	let afterAmount = '';
+	let afterUnit = '';
 	if (amount !== '') {
+		[afterAmount, rest] = leadingParentheses(rest);
 		const words = rest.split(' ');
 		const found = leadingUnit(words);
 		if (found) {
 			unit = found.unit;
-			rest = words.slice(found.length).join(' ');
+			[afterUnit, rest] = leadingParentheses(words.slice(found.length).join(' '));
+			rest = rest.replace(OF, '');
 		}
 	}
 
 	const comma = rest.indexOf(',');
 	const item = (comma === -1 ? rest : rest.slice(0, comma)).trim();
 	const note = comma === -1 ? '' : rest.slice(comma + 1).trim();
-	const prepNote = [range, note].filter((part) => part !== '').join(', ');
+	const prepNote = [range, afterAmount, afterUnit, note].filter((part) => part !== '').join(', ');
 	return { amount, unit, item, prepNote };
 }

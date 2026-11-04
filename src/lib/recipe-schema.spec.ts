@@ -85,7 +85,7 @@ describe('schemaRecipeValues', () => {
 			['1', 'tablespoon', 'minced garlic', ''],
 			['0.5', 'teaspoon', 'sea salt', ''],
 			['8', '', 'Roma tomatoes', 'sliced'],
-			['2', '', '(12 inch) pre-baked pizza crusts', ''],
+			['2', '', 'pre-baked pizza crusts', '12 inch'],
 			['8', 'ounces', 'shredded Mozzarella cheese', ''],
 			['4', 'ounces', 'shredded Fontina cheese', ''],
 			['10', '', 'fresh basil leaves', 'washed, dried'],
@@ -235,7 +235,7 @@ describe('schemaRecipeValues', () => {
 		});
 		expect(values.name).toBe("Mom's best pie");
 		expect(ingredients(values)).toEqual([
-			['2', 'cups', '(212g) medium rye flour', ''],
+			['2', 'cups', 'medium rye flour', '212g'],
 			['2 ½', 'pounds', 'peaches', 'peeled']
 		]);
 	});
