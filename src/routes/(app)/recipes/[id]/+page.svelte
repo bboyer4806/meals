@@ -215,7 +215,8 @@ or the Menu, says Requested in its place, and an archived one has no Request (6.
 	<div class="actions no-print">
 		<a class="button primary" href="/recipes/{dish.id}/cook?servings={servings}">Cook</a>
 		<button type="button" onclick={() => window.print()}>Print</button>
-		<a class="button" href="/recipes/{dish.id}/edit">Edit</a>
+		<!-- With the servings shown, for the editor's Cancel to return to (MEA-156). -->
+		<a class="button" href="/recipes/{dish.id}/edit?servings={servings}">Edit</a>
 	</div>
 
 	{#if dish.ingredients.length > 0}

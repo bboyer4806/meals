@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
+	import { returnOnClick } from '#lib/return-to.ts';
 	import type { Duplicate, DuplicateChoice } from '#lib/server/recipe-import.ts';
 
 	// Import recipes (design 7). The chosen file stays in the form, so after the duplicate
@@ -154,7 +155,8 @@
 		<button class="primary" disabled={!ready || importing}>
 			{importing ? 'Importing…' : 'Import'}
 		</button>
-		<a class="button" href="/recipes">Cancel</a>
+		<!-- Without adding a Back step (MEA-156). -->
+		<a class="button" href="/recipes" onclick={returnOnClick}>Cancel</a>
 	</div>
 </form>
 

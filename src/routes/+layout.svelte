@@ -3,8 +3,9 @@
 	import '@fontsource-variable/fraunces';
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { refreshAll } from '$app/navigation';
+	import { afterNavigate, refreshAll } from '$app/navigation';
 	import { page } from '$app/state';
+	import { notePageBefore } from '#lib/return-to.ts';
 
 	let { children } = $props();
 
@@ -19,6 +20,10 @@
 	// Marks the page once its script has started. Until then it's the server's page, which can't
 	// ask before leaving or suggest as someone types, so browser tests wait for this mark.
 	onMount(() => (document.documentElement.dataset.started = ''));
+
+	// Which page came before each one, so a page can return to it without adding a Back step
+	// (MEA-156).
+	afterNavigate(notePageBefore);
 
 	// Reload page data when someone comes back to the tab or app (Q11), once the server answers:
 	// a reload that can't reach it puts an error page in place of this one and loses what was

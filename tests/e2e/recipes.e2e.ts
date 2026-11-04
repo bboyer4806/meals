@@ -508,6 +508,86 @@ test('goes back to the recipe after saving an edit, so Back leaves it in one ste
 	await expect(page.getByRole('link', { name: /^Cheese omelet/ })).toBeVisible();
 });
 
+test('goes back to the recipe on Cancel, at its servings, so Back leaves it in one step', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', steps: 'Whisk.' });
+	await page.goto('/recipes');
+	await page.getByRole('link', { name: /^Omelet/ }).click();
+	await page.getByRole('button', { name: 'More servings' }).click();
+	await page.getByRole('link', { name: 'Edit' }).click();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}/edit\\?servings=5$`));
+	// With changes, it asks first.
+	await page.getByLabel('Name', { exact: true }).fill('Cheese omelet');
+	page.once('dialog', (dialog) => {
+		expect(dialog.message()).toBe('Leave without saving? What you typed will be lost.');
+		void dialog.accept();
+	});
+	await page.getByRole('link', { name: 'Cancel' }).click();
+	await expect(page.getByRole('heading', { name: 'Omelet', level: 1 })).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}\\?servings=5$`));
+	await expect(page.getByRole('status')).toHaveText('5 servings');
+	await page.goBack();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(page.getByRole('heading', { name: 'Recipes', level: 1 })).toBeVisible();
+});
+
+test('goes back to Recipes on Cancel from a new recipe, keeping its search', async ({
+	page,
+	person: _
+}) => {
+	await open(page, '/groceries');
+	await page.getByRole('navigation', { name: 'Main' }).getByText('Recipes').click();
+	const search = page.getByLabel('Search recipes');
+	await search.fill('pie');
+	await search.press('Enter');
+	await expect(page).toHaveURL(/\/recipes\?q=pie&sort=name$/);
+	await page.getByRole('link', { name: 'New recipe' }).click();
+	await expect(page.getByRole('heading', { name: 'New recipe', level: 1 })).toBeVisible();
+	await page.getByRole('link', { name: 'Cancel' }).click();
+	await expect(page).toHaveURL(/\/recipes\?q=pie&sort=name$/);
+	await expect(search).toHaveValue('pie');
+	await page.goBack();
+	await expect(page).toHaveURL(/\/groceries$/);
+});
+
+test("puts the recipe in the editor's place on Cancel when it was opened elsewhere", async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', steps: 'Whisk.' });
+	await page.goto('/recipes');
+	// Opened from its address, with the servings Edit passes on.
+	await open(page, `/recipes/${dishId}/edit?servings=6`);
+	await page.getByRole('link', { name: 'Cancel' }).click();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}\\?servings=6$`));
+	await expect(page.getByRole('status')).toHaveText('6 servings');
+	await page.goBack();
+	await expect(page).toHaveURL(/\/recipes$/);
+});
+
+test('shows what was saved after tapping Cancel and staying', async ({ page, db, person }) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', steps: 'Whisk.' });
+	// With its servings in the address, as from a dinner, the recipe is where Cancel goes.
+	await open(page, `/recipes/${dishId}?servings=4`);
+	await page.getByRole('link', { name: 'Edit' }).click();
+	await page.getByLabel('Name', { exact: true }).fill('Cheese omelet');
+	const questions: string[] = [];
+	page.once('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	});
+	await page.getByRole('link', { name: 'Cancel' }).click();
+	await expect.poll(() => questions).toHaveLength(1);
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}/edit\\?servings=4$`));
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}\\?servings=4$`));
+	await expect(page.getByRole('heading', { name: 'Cheese omelet', level: 1 })).toBeVisible();
+});
+
 test('marks a recipe tried from its page, shown as a badge on its card', async ({
 	page,
 	db,
@@ -1012,10 +1092,13 @@ test('goes to the recipe after saving an editor that was reached with Back', asy
 	person
 }) => {
 	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', steps: 'Whisk.' });
-	await page.goto(`/recipes/${dishId}/edit`);
-	await page.getByRole('link', { name: 'Cancel' }).click();
-	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}$`));
-	await page.goBack();
+	await open(page, `/recipes/${dishId}/edit`);
+	await page.getByRole('navigation', { name: 'Main' }).getByText('Recipes').click();
+	await page.getByRole('link', { name: /^Omelet/ }).click();
+	await expect(page.getByRole('heading', { name: 'Omelet', level: 1 })).toBeVisible();
+	// Long-pressing Back on a phone lists the history to jump to. The recipe it jumps from isn't
+	// the page before the editor.
+	await page.evaluate(() => history.go(-2));
 	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}/edit$`));
 	await page.getByLabel('Name', { exact: true }).fill('Cheese omelet');
 	await page.getByRole('button', { name: 'Save' }).click();
@@ -1039,7 +1122,7 @@ test("opens each recipe's own values when history jumps from one editor to anoth
 	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Pancakes');
 	// Long-pressing Back on a phone lists the history to jump to.
 	await page.evaluate(() => history.go(-3));
-	await expect(page).toHaveURL(new RegExp(`/recipes/${waffles}/edit$`));
+	await expect(page).toHaveURL(new RegExp(`/recipes/${waffles}/edit\\?servings=4$`));
 	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Waffles');
 	await expect(page.getByLabel('Steps')).toHaveValue('Mix.\nBake.');
 	await page.getByLabel('Name', { exact: true }).fill('Belgian waffles');
@@ -1526,6 +1609,37 @@ test('says so when the browser refuses to keep the screen on', async ({ page, db
 	const cream = checkOff(page, /^1\. Cream/);
 	await cream.line.tap();
 	await expect(cream.box).toBeChecked();
+});
+
+test('goes back to the recipe from cooking, so Back leaves the recipe in one step', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, cookable);
+	const recipe = new RegExp(`/recipes/${dishId}\\?servings=5$`);
+	const back = page.getByRole('link', { name: 'Back to recipe' });
+	await page.goto('/recipes');
+	await page.getByRole('link', { name: /^Pound cake/ }).click();
+	await page.getByRole('button', { name: 'More servings' }).click();
+	await page.getByRole('link', { name: 'Cook' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Pound cake · 5 servings');
+	// A second tap while the recipe loads doesn't go back past it.
+	await slow(page, (url) => url.pathname === `/recipes/${dishId}/__data.json`, 1500);
+	await back.click();
+	await expect(page).toHaveURL(recipe);
+	await back.click();
+	await expect(page.getByRole('status')).toHaveText('5 servings');
+	await expect(page).toHaveURL(recipe);
+	await page.goBack();
+	await expect(page).toHaveURL(/\/recipes$/);
+
+	// Opened from its address, the recipe takes its place instead.
+	await open(page, `/recipes/${dishId}/cook?servings=6`);
+	await back.click();
+	await expect(page.getByRole('status')).toHaveText('6 servings');
+	await page.goBack();
+	await expect(page).toHaveURL(/\/recipes$/);
 });
 
 test('finds recipes by name and tag, and archives and restores one', async ({

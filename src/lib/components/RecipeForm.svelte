@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
-	import { afterNavigate, beforeNavigate, goto, refreshAll } from '$app/navigation';
+	import { beforeNavigate, refreshAll } from '$app/navigation';
+	import { returnOnClick, returnTo } from '../return-to.ts';
 	import type { RecipeFailure, RecipeFormValues } from '../server/recipe-form.ts';
 	import RecipeIngredients, { blankIngredient, type EditorRow } from './RecipeIngredients.svelte';
 	import RecipePhoto, { type PhotoChoice } from './RecipePhoto.svelte';
@@ -28,6 +29,7 @@
 		tags: string[];
 		/** The item catalog, suggested in each ingredient's item field. */
 		items: { id: number; name: string; timesAdded: number }[];
+		/** Where Cancel returns to: the recipe, or Recipes for a new one. */
 		cancelHref: string;
 		/** A failure from a save that didn't go through this page's script. */
 		failure?: RecipeFailure | null;
@@ -95,15 +97,6 @@
 		if (saving || restoring) leftWhileBusy = navigation.complete;
 	});
 
-	// The page before the editor in history, so saving can go back to it. Not when the editor
-	// was reached with Back, since the page it came from is then the one after it.
-	let openedFrom: string | null | undefined;
-	afterNavigate((navigation) => {
-		if (openedFrom !== undefined) return;
-		const back = navigation.type === 'popstate' && navigation.delta < 0;
-		openedFrom = back ? null : (navigation.from?.url.pathname ?? null);
-	});
-
 	/** After a save or a restore went through: on to the recipe, unless the person left. */
 	async function finish(to: string) {
 		done = true;
@@ -114,11 +107,8 @@
 			return;
 		}
 		finishing = true;
-		// So that Back from the recipe doesn't open the editor again: opened from that recipe's
-		// page, it goes back to that page; otherwise the recipe takes the editor's place.
-		const recipe = new URL(to, location.href);
-		if (recipe.pathname === openedFrom) history.back();
-		else await goto(recipe, { replace: true, refreshAll: true });
+		// Without a Back step, so Back from the recipe doesn't open the editor again (MEA-156).
+		await returnTo(to, { refreshAll: true });
 	}
 
 	// Restoring the other recipe drops this one, so it asks before anything changes.
@@ -359,7 +349,15 @@
 		<button class="primary" disabled={!ready || saving || preparingPhoto}>
 			{saving ? 'Saving…' : 'Save'}
 		</button>
-		<a class="button" href={cancelHref}>Cancel</a>
+		<!-- Returns without adding a Back step (MEA-156). A touch doesn't load its page ahead, as
+		other links do, since Save can go back to that page and would show what was loaded before
+		the save. -->
+		<a
+			class="button"
+			href={cancelHref}
+			data-sveltekit-preload-data="off"
+			onclick={returnOnClick}>Cancel</a
+		>
 	</div>
 </form>
 
