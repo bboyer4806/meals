@@ -2270,6 +2270,196 @@ test('keeps what was typed when the page reloads while its own change is on its 
 	});
 });
 
+// A phone can drop the app in the background to free memory, and coming back loads the page
+// again. What was typed in a dinner's details and not saved comes back (design 7, Dinner; MEA-202).
+test.describe('keeping what was typed when the page loads again', () => {
+	// A dropped app hears nothing more once it's hidden, so a page marked dropped isn't told it's
+	// hidden again or being left as it reloads. Added before the page's own scripts, so it comes
+	// before their listeners.
+	test.beforeEach(async ({ page }) => {
+		await page.addInitScript(() => {
+			for (const type of ['visibilitychange', 'beforeunload']) {
+				addEventListener(
+					type,
+					(event) => {
+						if ('dropped' in document.documentElement.dataset) event.stopImmediatePropagation();
+					},
+					{ capture: true }
+				);
+			}
+		});
+	});
+
+	/**
+	 * The phone drops the app in the background, after telling the page it's hidden as when
+	 * switching apps, and coming back loads the page again in the same tab, with the tab's history
+	 * and session storage.
+	 */
+	async function dropAndComeBack(page: Page) {
+		await page.evaluate(() => {
+			Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+			document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+			document.documentElement.dataset.dropped = '';
+		});
+		await page.reload();
+		await expect(page.locator('html[data-started]')).toBeAttached();
+	}
+
+	test("brings back each dinner's typed fields when the phone drops the app (MEA-202)", async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		const kidsId = addDinner(db, person.householdId, date, { note: 'Early', servings: 4 });
+		const adultsId = addDinner(db, person.householdId, date, {
+			type: 'eat_out',
+			restaurantName: 'Thai Garden',
+			note: 'After bedtime'
+		});
+		labelDinner(db, kidsId, 'Kids');
+		labelDinner(db, adultsId, 'Adults');
+		const kids = page.getByRole('region', { name: 'Kids' });
+		const adults = page.getByRole('region', { name: 'Adults' });
+
+		await open(page, `/menu/${date}`);
+		await kids.getByLabel('Servings', { exact: true }).fill('3');
+		await kids.getByLabel('Note', { exact: true }).fill('Early, with mac and cheese');
+		await adults.getByLabel('Label', { exact: true }).fill('Grown-ups');
+		await adults.getByLabel('Restaurant', { exact: true }).fill('Olive Garden');
+		await adults.getByLabel('Note', { exact: true }).fill('After bedtime, table at 8');
+		await dropAndComeBack(page);
+
+		await expect(kids.getByLabel('Servings', { exact: true })).toHaveValue('3');
+		await expect(kids.getByLabel('Note', { exact: true })).toHaveValue(
+			'Early, with mac and cheese'
+		);
+		await expect(kids.getByLabel('Label', { exact: true })).toHaveValue('Kids');
+		await expect(adults.getByLabel('Label', { exact: true })).toHaveValue('Grown-ups');
+		await expect(adults.getByLabel('Restaurant', { exact: true })).toHaveValue('Olive Garden');
+		await expect(adults.getByLabel('Note', { exact: true })).toHaveValue(
+			'After bedtime, table at 8'
+		);
+		expect(dinnerRows(db, person.householdId, date)).toEqual([
+			{ id: kidsId, label: 'Kids', type: 'cook', restaurant: null, note: 'Early' },
+			{
+				id: adultsId,
+				label: 'Adults',
+				type: 'eat_out',
+				restaurant: 'Thai Garden',
+				note: 'After bedtime'
+			}
+		]);
+	});
+
+	test('shows a field saved before the app was dropped as saved, and still asks about the rest (MEA-202)', async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		addDinner(db, person.householdId, date, { note: 'Taco night', servings: 4 });
+		const questions: string[] = [];
+		page.on('dialog', (dialog) => {
+			questions.push(dialog.message());
+			void dialog.dismiss();
+		});
+		const note = page.getByLabel('Note', { exact: true });
+		const servings = page.getByLabel('Servings', { exact: true });
+
+		// The note is saved, and the servings typed while the save is on its way stay, unsaved.
+		await open(page, `/menu/${date}`);
+		const saveAnswered = await holdAnswers(page, (url) => url.search === '?/details');
+		await note.fill('Taco night at 6');
+		await page.getByRole('button', { name: 'Save' }).click();
+		await expect.poll(() => dinnerRow(db, person.householdId, date)?.note).toBe('Taco night at 6');
+		await servings.fill('6');
+		saveAnswered();
+		await expect.poll(() => questions).toEqual([LEAVE]);
+		await expect(page.getByRole('status')).toHaveText('Saved');
+
+		// Someone else changes the note before the app is dropped.
+		db.prepare('update dinners set note = ? where household_id = ? and date = ?').run(
+			'Taco night at 7',
+			person.householdId,
+			date
+		);
+		await dropAndComeBack(page);
+		await expect(servings).toHaveValue('6');
+		await expect(note).toHaveValue('Taco night at 7');
+		await page.getByRole('link', { name: /^‹ Week of/ }).click();
+		await expect.poll(() => questions).toEqual([LEAVE, LEAVE]);
+		await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+		expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+			note: 'Taco night at 7',
+			servings: 4
+		});
+	});
+
+	test('brings back what was typed on a day with no dinner, also once a dish plans it (MEA-202)', async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		const questions: string[] = [];
+		page.on('dialog', (dialog) => {
+			questions.push(dialog.message());
+			void dialog.dismiss();
+		});
+		const note = page.getByLabel('Note', { exact: true });
+		const servings = page.getByLabel('Servings', { exact: true });
+
+		await open(page, `/menu/${date}`);
+		await note.fill('Grill outside');
+		await dropAndComeBack(page);
+		await expect(page.getByText('Not planned yet.')).toBeVisible();
+		await expect(note).toHaveValue('Grill outside');
+
+		// The dish plans the day, so the form, with what's typed in it, is now for that dinner.
+		await addDish(page, 'Grilled corn', 'new');
+		await servings.fill('6');
+		await dropAndComeBack(page);
+		await expect(dishLinks(page)).toHaveText(['Grilled corn']);
+		await expect(note).toHaveValue('Grill outside');
+		await expect(servings).toHaveValue('6');
+		await page.getByRole('link', { name: /^‹ Week of/ }).click();
+		await expect.poll(() => questions).toEqual([LEAVE]);
+		await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+		expect(dinnerRow(db, person.householdId, date)).toMatchObject({ note: null, servings: 4 });
+	});
+
+	test("doesn't bring back what the person agreed to lose when Back or Forward returns (MEA-202)", async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		addDinner(db, person.householdId, date, { note: 'Taco night' });
+		const questions: string[] = [];
+		page.on('dialog', (dialog) => {
+			questions.push(dialog.message());
+			void dialog.accept();
+		});
+		const note = page.getByLabel('Note', { exact: true });
+
+		await open(page, `/menu?week=${sundayOf(date)}`);
+		await day(page, date).click();
+		await note.fill('Taco night at 6');
+		await page.goBack();
+		await expect.poll(() => questions).toEqual([LEAVE]);
+		// The week shows, so the day's page is gone.
+		await expect(day(page, date)).toBeVisible();
+		await page.goForward();
+		await expect(note).toHaveValue('Taco night');
+
+		// Nothing typed came back, so leaving again doesn't ask.
+		await page.getByRole('link', { name: /^‹ Week of/ }).click();
+		await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sundayOf(date)}$`));
+		expect(questions).toEqual([LEAVE]);
+	});
+});
+
 // Requests (design 6.12), under the week.
 
 function requestsSection(page: Page) {
