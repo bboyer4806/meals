@@ -108,13 +108,19 @@ function readRecipe(cell: (column: Column) => string, defaultServings: number): 
 /**
  * The file's recipes and the problems with it. Columns are matched by name ignoring case, in
  * any order; only Recipe is needed, and the names of columns that aren't recipe fields are
- * returned as `ignored`. Blank rows are left out.
+ * returned as `ignored`. Blank rows are left out. A quote the file never closes is the only
+ * problem listed, since its cell holds the rest of the file (design 7).
  */
 function readFile(
 	text: string,
 	defaultServings: number
 ): { recipes: FileRecipe[]; problems: Problem[]; ignored: string[] } {
-	const [header = [], ...rows] = parseCsv(text);
+	const csv = parseCsv(text);
+	if (csv.kind === 'unclosed-quote') {
+		const problem = { row: csv.row, text: "a cell starts with a quote that isn't closed." };
+		return { recipes: [], problems: [problem], ignored: [] };
+	}
+	const [header = [], ...rows] = csv.rows;
 	const problems: Problem[] = [];
 	const ignored: string[] = [];
 	const columns = new Map<Column, number>();

@@ -116,6 +116,24 @@ describe('importRecipeFile', () => {
 		expect(names()).toEqual([]);
 	});
 
+	it('keeps a quote inside a cell, as in Use a 9" pan', async () => {
+		const csv = 'Recipe,Notes\nPizza,Use a 9" pan\nToast,Butter';
+		const result = await importRecipeFile(householdId, form(csv), NOW);
+		expect(result).toEqual({ kind: 'imported', imported: 2, replaced: 0, skipped: 0, ignored: [] });
+		expect(dishNamed('Pizza').notes).toBe('Use a 9" pan');
+		expect(names()).toEqual(['Pizza', 'Toast']);
+	});
+
+	it('lists a quote that is never closed on its row and imports nothing', async () => {
+		const csv = 'Recipe,Notes\nPizza,Hot\nToast,"Butter\nRice,Plain';
+		const result = await importRecipeFile(householdId, form(csv), NOW);
+		expect(result).toEqual({
+			kind: 'problems',
+			problems: ["Row 3: a cell starts with a quote that isn't closed."]
+		});
+		expect(names()).toEqual([]);
+	});
+
 	it('needs a Recipe column', async () => {
 		const result = await importRecipeFile(householdId, form('Name,Steps\nToast,Eat'), NOW);
 		expect(result).toEqual({

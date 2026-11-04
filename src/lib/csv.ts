@@ -1,11 +1,21 @@
 // Reading CSV files, as spreadsheets save them (RFC 4180): commas between cells, and a cell with
-// commas, quotes or line breaks in double quotes, with its quotes doubled.
+// commas, quotes or line breaks in double quotes, with its quotes doubled. As in a spreadsheet, a
+// quote opens a quoted cell only at the start of a cell and is text anywhere else, so Use a 9" pan
+// keeps its inch mark (design 7, MEA-72).
 
 /**
- * The file's rows, each a list of cells as text. Lines may end in \n or \r\n, a byte order mark
- * at the start is dropped, and a line break at the end of the file doesn't start another row.
+ * The file's rows, each a list of cells as text, or the row (counting from 1) where a cell starts
+ * with a quote the file never closes. That cell would hold the rest of the file.
  */
-export function parseCsv(text: string): string[][] {
+export type CsvResult =
+	| { kind: 'rows'; rows: string[][] }
+	| { kind: 'unclosed-quote'; row: number };
+
+/**
+ * Reads a CSV file. Lines may end in \n or \r\n, a byte order mark at the start is dropped, and
+ * a line break at the end of the file doesn't start another row.
+ */
+export function parseCsv(text: string): CsvResult {
 	const rows: string[][] = [];
 	let row: string[] = [];
 	let cell = '';
@@ -19,7 +29,7 @@ export function parseCsv(text: string): string[][] {
 				cell += '"';
 				i++;
 			} else quoted = false;
-		} else if (char === '"') quoted = true;
+		} else if (char === '"' && cell === '') quoted = true;
 		else if (char === ',') {
 			row.push(cell);
 			cell = '';
@@ -31,9 +41,11 @@ export function parseCsv(text: string): string[][] {
 			cell = '';
 		} else cell += char;
 	}
+	// A line break in quotes belongs to the cell, so the quote opened on the row being read.
+	if (quoted) return { kind: 'unclosed-quote', row: rows.length + 1 };
 	if (cell !== '' || row.length > 0) {
 		row.push(cell);
 		rows.push(row);
 	}
-	return rows;
+	return { kind: 'rows', rows };
 }
