@@ -295,6 +295,7 @@
 	{#if dinners[0]}
 		<MoveDinner
 			date={data.date}
+			today={data.today}
 			count={dinners.length}
 			dinnerId={dinners[0].id}
 			{canLeave}
