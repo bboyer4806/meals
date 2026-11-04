@@ -3,7 +3,8 @@ import { db } from '../db/index.ts';
 import { sessions, users } from '../db/schema.ts';
 import { createSession } from '../auth/session.ts';
 import { signIn } from '../auth/sign-in.ts';
-import { expectHttpError, freshDb, makeHousehold } from '../testing.ts';
+import { expectHttpError, freshDb, makeDish, makeHousehold, recipe } from '../testing.ts';
+import { getOwnRating, rateDish } from './dishes.ts';
 import {
 	cancelInvite,
 	createHousehold,
@@ -43,11 +44,14 @@ describe('households', () => {
 		expect(db().select().from(sessions).all()).toHaveLength(0);
 	});
 
-	it("can't remove someone from another household", () => {
+	it("can't remove someone from another household or change their ratings", () => {
 		const mine = makeHousehold();
 		const theirs = makeHousehold();
+		const omelet = makeDish(theirs.householdId, recipe('Omelet'));
+		rateDish(theirs.householdId, omelet, theirs.userId, 4);
 		removeMember(mine.householdId, mine.userId, theirs.userId);
 		expect(listMembers(theirs.householdId).map((m) => m.id)).toEqual([theirs.userId]);
+		expect(getOwnRating(theirs.householdId, omelet, theirs.userId)).toBe(4);
 	});
 
 	it('counts a member someone else already removed as removed (6.1)', () => {

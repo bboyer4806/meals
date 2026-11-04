@@ -62,6 +62,30 @@ describe('migrate', () => {
 		expect(applied(sqlite)).toBe(MIGRATIONS);
 		expect(sqlite.prepare('select count(*) from items').pluck().get()).toBe(0);
 	});
+
+	it('never gives a deleted id again after rebuilding its table, even an empty one', () => {
+		const sqlite = new Database(':memory:');
+		migrate(sqlite, 'drizzle');
+		const invite = (email: string) =>
+			Number(
+				sqlite.prepare('insert into invites (email, created_at) values (?, 0)').run(email)
+					.lastInsertRowid
+			);
+		invite('a@example.com');
+		const removed = invite('b@example.com');
+		sqlite.prepare('delete from invites').run();
+		// As drizzle-kit rebuilds a table to change it.
+		const rebuilt = foldersWith(
+			[
+				'create table __new_invites (id integer primary key autoincrement not null, email text not null, household_id integer, created_at integer not null);',
+				'insert into __new_invites select * from invites;',
+				'drop table invites;',
+				'alter table __new_invites rename to invites;'
+			].join('\n')
+		);
+		migrate(sqlite, rebuilt);
+		expect(invite('c@example.com')).toBe(removed + 1);
+	});
 });
 
 // The one-time change that links every old request to a recipe (design 6.12).
@@ -390,5 +414,62 @@ describe('never-reuse-ids', () => {
 			sqlite.prepare(`delete from ${table} where id = ?`).run(newest);
 			expect(add(), table).toBe(newest + 1);
 		}
+	});
+});
+
+// The change that ties requests and ratings to a member of their own household (design 4.5,
+// MEA-70).
+describe('household-member-keys', () => {
+	it("keeps every request and rating, and never gives a removed request's id again", () => {
+		const sqlite = new Database(':memory:');
+		migrate(sqlite, foldersBefore('0016_household-member-keys'));
+		const run = (statement: string, ...values: unknown[]) =>
+			Number(sqlite.prepare(statement).run(...values).lastInsertRowid);
+		const household = run(
+			"insert into households (name, default_servings, time_zone, created_at) values ('H', 4, 'UTC', 0)"
+		);
+		const user = run(
+			"insert into users (household_id, google_sub, email, name, created_at) values (?, 'sub', 'p@example.com', 'P', 0)",
+			household
+		);
+		const chili = run(
+			"insert into dishes (household_id, name, servings, created_at, updated_at) values (?, 'Chili', 2, 0, 0)",
+			household
+		);
+		run(
+			"insert into dish_requests (household_id, user_id, kind, name, dish_id, created_at) values (?, ?, 'dish', 'Chili', ?, 0)",
+			household,
+			user,
+			chili
+		);
+		const request = () =>
+			run(
+				"insert into dish_requests (household_id, user_id, kind, name, created_at) values (?, ?, 'restaurant', 'Diner', 0)",
+				household,
+				user
+			);
+		const removed = request();
+		sqlite.prepare('delete from dish_requests where id = ?').run(removed);
+		const rate = (userId: number | null, stars: number) =>
+			run(
+				'insert into dish_ratings (household_id, dish_id, user_id, stars) values (?, ?, ?, ?)',
+				household,
+				chili,
+				userId,
+				stars
+			);
+		rate(user, 4);
+		// A removed member's.
+		rate(null, 2);
+		const rows = () =>
+			['dish_requests', 'dish_ratings'].map((table) =>
+				sqlite.prepare(`select * from ${table} order by id`).all()
+			);
+		const before = rows();
+
+		migrate(sqlite, 'drizzle');
+
+		expect(rows()).toEqual(before);
+		expect(request()).toBe(removed + 1);
 	});
 });

@@ -254,7 +254,9 @@ lost, so is everything. Moving backups off the server later is a small change.
   functions take the household ID from the signed-in session, never from the request.
 - **Household isolation in the database.** References between household-owned rows use
   composite foreign keys on `(household_id, id)`, so the database rejects a row that
-  points at another household's data, even if someone tampers with a form.
+  points at another household's data, even if someone tampers with a form. That includes who
+  asked for a request and who rated a recipe, so neither can be another household's member
+  (MEA-70).
 - **Photos** are served through a route that checks the photo belongs to the signed-in
   household.
 - **Sessions** use a random token in an `httpOnly`, `Secure`, `SameSite=Lax` cookie, and
@@ -319,7 +321,8 @@ Conventions:
 - IDs are integers. Timestamps are milliseconds since 1970, UTC. Calendar dates are
   `YYYY-MM-DD` text in the household's time zone.
 - Every household-owned table has `household_id`. Household-owned tables that others
-  point at also have a unique key on `(household_id, id)` for the composite foreign keys.
+  point at, and `users`, also have a unique key on `(household_id, id)` for the composite
+  foreign keys.
 - `archived_at` is empty for active records (E3, section 6.10).
 
 **households:** `name`, `default_servings` (the usual number of people, at least 1;

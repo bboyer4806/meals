@@ -830,6 +830,18 @@ describe('households', () => {
 		).toThrow(/FOREIGN KEY/);
 	});
 
+	it("the database rejects a rating by another household's member (4.5)", () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		const other = makeHousehold();
+		expect(() =>
+			db()
+				.insert(dishRatings)
+				.values({ householdId, dishId: id, userId: other.userId, stars: 5 })
+				.run()
+		).toThrow(/FOREIGN KEY/);
+		expect(listDishRatings(householdId, id)).toEqual([]);
+	});
+
 	it("uses the household's own items, never another household's", () => {
 		const other = makeHousehold();
 		const theirs = createItem(other.householdId, 'Butter', NOW).id;
