@@ -2420,8 +2420,11 @@ test('stops the dish at 80 characters and the note at 200, typed or pasted', asy
 	await page.keyboard.insertText('x'.repeat(30));
 	await expect(dish).toHaveValue(`${'a'.repeat(79)}x`);
 	await expect(dishFull).toBeVisible();
+	// It shows between the field and the new-dish option, which never covers it (MEA-151).
+	await expect(sheet.getByRole('option', { name: /as a new dish$/ })).toBeVisible();
+	expect(await uncovered(dishFull)).toBe(true);
 
-	// The new-dish option covers the note, so Tab goes there, as when typing.
+	// Tab goes to the note, as when typing.
 	await page.keyboard.press('Tab');
 	await expect(note).toBeFocused();
 	await page.keyboard.insertText('n'.repeat(250));
@@ -2440,6 +2443,137 @@ test('needs a dish name', async ({ page, person: _ }) => {
 	await dish.fill('   ');
 	await sheet.getByRole('button', { name: 'Request', exact: true }).click();
 	await expect(sheet.getByRole('alert')).toHaveText('Enter a dish name');
+});
+
+/** Eight dishes with "rice" in their names, one of them Rice itself, whose id it returns. */
+function addRiceDishes(db: Database.Database, householdId: number): number {
+	const rice = addRecipe(db, householdId, { name: 'Rice' });
+	for (const name of [
+		'Rice and beans',
+		'Rice noodles',
+		'Rice pudding',
+		'Rice salad',
+		'Brown rice',
+		'Fried rice',
+		'Wild rice'
+	]) {
+		addRecipe(db, householdId, { name });
+	}
+	return rice;
+}
+
+/** Waits for a sheet to finish sliding up, so what's in it stays where it is. */
+async function slidUp(sheet: Locator) {
+	await sheet.evaluate(async (element) => {
+		await Promise.all(element.getAnimations().map((animation) => animation.finished));
+	});
+}
+
+test('shows the dish suggestions in the request sheet under the field, with Note and Request uncovered and in place (MEA-151)', async ({
+	page,
+	db,
+	person
+}) => {
+	const rice = addRiceDishes(db, person.householdId);
+	await open(page, '/menu');
+	await openRequestSheet(page);
+	const sheet = requestSheet(page);
+	const dish = sheet.getByRole('combobox', { name: 'Dish' });
+	const note = sheet.getByLabel('Note (optional)');
+	const request = sheet.getByRole('button', { name: 'Request', exact: true });
+	await slidUp(sheet);
+	const noteBefore = await note.boundingBox();
+	const requestBefore = await request.boundingBox();
+
+	// They show in the sheet under the field, about four at a time with the rest scrolling. On a
+	// phone the sheet grows upward to fit them, so Note and Request stay where they were.
+	await dish.fill('ric');
+	const list = sheet.getByRole('listbox');
+	await expect(list.getByRole('option')).toHaveCount(9);
+	const field = await dish.boundingBox();
+	const shown = await list.boundingBox();
+	expect(shown?.y).toBeGreaterThan((field?.y ?? 0) + (field?.height ?? 0));
+	expect((shown?.y ?? 0) + (shown?.height ?? 0)).toBeLessThan(noteBefore?.y ?? 0);
+	expect(shown?.y).toBeGreaterThan((await sheet.boundingBox())?.y ?? 0);
+	expect(await list.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+	expect(await note.boundingBox()).toEqual(noteBefore);
+	expect(await request.boundingBox()).toEqual(requestBefore);
+	expect(await uncovered(note)).toBe(true);
+	expect(await uncovered(request)).toBe(true);
+
+	// A tap on Note goes there.
+	await note.tap();
+	await expect(note).toBeFocused();
+	await expect(list).toHaveCount(0);
+	await note.fill('For Sunday, please');
+
+	// A tap on Request asks for the dish typed, not a suggestion where Request is.
+	await dish.fill('Rice');
+	await expect(list.getByRole('option')).toHaveCount(8);
+	expect(await request.boundingBox()).toEqual(requestBefore);
+	await request.tap();
+	await expect(sheet).toHaveCount(0);
+	const section = requestsSection(page);
+	await expect(section.getByRole('listitem')).toHaveCount(1);
+	await expect(section.getByRole('link', { name: 'Rice', exact: true })).toHaveAttribute(
+		'href',
+		`/recipes/${rice}`
+	);
+	await expect(section.getByText('For Sunday, please')).toBeVisible();
+});
+
+test.describe('the dish request sheet on a computer', () => {
+	test.use({ isMobile: false, hasTouch: false, viewport: { width: 1280, height: 800 } });
+
+	test('takes a click on Note, Close or Request while the dish suggestions show, though the centered sheet shrinks as they close (MEA-151)', async ({
+		page,
+		db,
+		person
+	}) => {
+		const rice = addRiceDishes(db, person.householdId);
+		await open(page, '/menu');
+		await openRequestSheet(page);
+		const sheet = requestSheet(page);
+		const dish = sheet.getByRole('combobox', { name: 'Dish' });
+		const note = sheet.getByLabel('Note (optional)');
+		const list = sheet.getByRole('listbox');
+
+		// Leaving the field closes them once the click is done, so it lands on Note rather than
+		// on the backdrop, which would close the sheet.
+		await dish.fill('ric');
+		await expect(list.getByRole('option')).toHaveCount(9);
+		await note.click();
+		await expect(note).toBeFocused();
+		await expect(list).toHaveCount(0);
+		await expect(sheet).toBeVisible();
+		await page.keyboard.type('For Sunday, please');
+
+		// Tab closes them straight away.
+		await dish.fill('ric');
+		await expect(list.getByRole('option')).toHaveCount(9);
+		await page.keyboard.press('Tab');
+		await expect(note).toBeFocused();
+		await expect(list).toHaveCount(0);
+
+		// Close lands too, with only the new-dish option showing.
+		await dish.fill('Rice bowl');
+		await expect(list.getByRole('option')).toHaveText(['Add “Rice bowl” as a new dish']);
+		await sheet.getByRole('button', { name: 'Close' }).click();
+		await expect(sheet).toHaveCount(0);
+
+		// So does Request, which asks for the dish typed.
+		await openRequestSheet(page);
+		await dish.fill('Rice');
+		await expect(list.getByRole('option')).toHaveCount(8);
+		await sheet.getByRole('button', { name: 'Request', exact: true }).click();
+		await expect(sheet).toHaveCount(0);
+		const section = requestsSection(page);
+		await expect(section.getByRole('link', { name: 'Rice', exact: true })).toHaveAttribute(
+			'href',
+			`/recipes/${rice}`
+		);
+		await expect(section.getByText('For Sunday, please')).toBeVisible();
+	});
 });
 
 test('removes a request for everyone, keeping its recipe', async ({ page, db, person }) => {

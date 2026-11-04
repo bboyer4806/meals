@@ -893,9 +893,12 @@ since the week loaded, nothing moves, the week shows the menu as it is now, and 
 cleared or moved that day's dinners, so nothing moved." ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
 **Requests** lists the dish and restaurant requests together (6.12), or "No requests yet.", each
 with Remove. "Request a dish" opens a sheet with Dish (with suggestions, or a new dish), an
-optional Note and Request. "Request a restaurant", beside it, opens a sheet with Restaurant, an
-optional Note and Request, and the week shown stays open. Each dish request links to its recipe;
-a restaurant request shows "Eating out" and the restaurant's name, not a link.
+optional Note and Request. The suggestions show in the sheet under Dish, about four at a time
+with the rest scrolling, so they never cover Note or Request, and a tap or click elsewhere closes
+them once it's done, so it lands where it was aimed (MEA-151). "Request a restaurant", beside it,
+opens a sheet with Restaurant, an optional Note and Request, and the week shown stays open. Each
+dish request links to its recipe; a restaurant request shows "Eating out" and the restaurant's
+name, not a link.
 
 **Dinner.** "‹ Week of" goes to the dinner's week. Type (four buttons), note, servings,
 and dishes. You add a dish by searching existing dishes or typing a new name (MEA-56). Picking
