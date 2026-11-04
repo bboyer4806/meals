@@ -862,9 +862,11 @@ dinners, and a restaurant request's Add makes a new Eating out dinner there (6.1
 dishes, copying, moving, clearing and adding a request save as soon as they're made, and keep
 anything typed in the servings, restaurant and note for Save. Save on the servings or
 restaurant and note goes to the dinner's week, where that dinner's line says "Saved" for 3
-seconds; on a date with no dinner it plans it as the type shown. Leaving with something typed asks first. If someone cleared or moved the dinner
-meanwhile, Save plans the date again when it has no dinner left, and the page stays to say so
-(6.11).
+seconds; on a date with no dinner it plans it as the type shown. Leaving with something typed
+asks first. A name in the dish field that isn't added counts, since Save doesn't add it, and the
+question names it: "Leave without adding Garlic bread?" (MEA-127). A dish on its way to the
+dinner doesn't. If someone cleared or moved the dinner meanwhile, Save plans the date again when
+it has no dinner left, and the page stays to say so (6.11).
 
 **What's new.** What each release changed, newest first, in words for the people using the
 app; every household sees the same page. Each release's heading is its version, such as "1.2"
