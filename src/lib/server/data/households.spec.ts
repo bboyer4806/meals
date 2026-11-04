@@ -82,4 +82,14 @@ describe('invites', () => {
 		cancelInvite(mine.householdId, invite.id);
 		expect(listInvites(mine.householdId)).toHaveLength(0);
 	});
+
+	it('is not found for a cancelled invite once a newer one is made, and cancels nothing', () => {
+		const { householdId } = makeHousehold();
+		createInvite(householdId, 'a@example.com', 0);
+		const [cancelled] = listInvites(householdId);
+		cancelInvite(householdId, cancelled!.id);
+		createInvite(householdId, 'b@example.com', 0);
+		expectHttpError(() => cancelInvite(householdId, cancelled!.id), 404);
+		expect(listInvites(householdId).map((invite) => invite.email)).toEqual(['b@example.com']);
+	});
 });
