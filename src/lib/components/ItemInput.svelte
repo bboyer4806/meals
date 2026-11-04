@@ -192,6 +192,9 @@
 
 	.inline ul {
 		position: static;
+		/* In the page, so under the sticky header, the tab bar and the feedback button like the
+		   rest of it. A grid item's z-index applies even though it's static (MEA-143). */
+		z-index: auto;
 		max-height: 13rem;
 		overflow-y: auto;
 	}

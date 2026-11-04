@@ -30,13 +30,31 @@ export const RECIPE_COLUMNS = [
 
 type Column = (typeof RECIPE_COLUMNS)[number];
 
-/** The template: just the header row. */
+/**
+ * The template: just the header row. It starts with a UTF-8 byte order mark, so Excel opens it
+ * as CSV UTF-8 and saves it that way, keeping é, ° and ½ (design 7; MEA-71).
+ */
 export function templateCsv(): string {
-	return `${RECIPE_COLUMNS.join(',')}\r\n`;
+	return `\uFEFF${RECIPE_COLUMNS.join(',')}\r\n`;
 }
 
 // Big enough for thousands of recipes, and well under the app's upload limit.
 const MAX_FILE_BYTES = 1_000_000;
+
+// A file must be UTF-8, as CSV UTF-8 saves it. Another encoding isn't guessed, since a wrong guess
+// garbles é, ° and ½ without a word (design 7; MEA-71).
+const utf8 = new TextDecoder('utf-8', { fatal: true });
+
+/** The file's text, or null when it isn't UTF-8. */
+function utf8Text(bytes: ArrayBuffer): string | null {
+	try {
+		return utf8.decode(bytes);
+	} catch (error) {
+		// What decode throws for bytes that aren't UTF-8.
+		if (error instanceof TypeError) return null;
+		throw error;
+	}
+}
 
 // Cells are normalized as they're read, so a cell longer than normalizing takes is refused unread
 // (text.ts). The steps, the editor's longest field, fit in one.
@@ -243,7 +261,7 @@ function renameProblems(
 }
 
 /**
- * Imports the CSV file in the form's `file` field. Nothing is imported while the file has a
+ * Imports the UTF-8 CSV file in the form's `file` field. Nothing is imported while the file has a
  * problem. Recipes whose names are already in Recipes, archived ones included, are returned
  * as duplicates until the form has a choice for each, sent as `choice-<row>` (skip, replace or
  * rename) and `rename-<row>` (the new name). Everything is checked and saved in one
@@ -261,7 +279,10 @@ export async function importRecipeFile(
 	if (file.size > MAX_FILE_BYTES) {
 		return { kind: 'problems', problems: ['Choose a file under 1 MB.'] };
 	}
-	const text = await file.text();
+	const text = utf8Text(await file.arrayBuffer());
+	if (text === null) {
+		return { kind: 'problems', problems: ['Save the file as CSV UTF-8, then import it again.'] };
+	}
 
 	return transaction((): ImportResult => {
 		const { recipes, problems, ignored } = readFile(
