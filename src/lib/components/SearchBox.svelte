@@ -27,7 +27,11 @@
 
 	function typed() {
 		cancel();
-		timer = setTimeout(() => input.form?.requestSubmit(), DELAY);
+		timer = setTimeout(() => {
+			// Offline, a search would put an error page in place of the list and lose what's
+			// typed, so typing doesn't search then. Enter still does (MEA-80).
+			if (navigator.onLine) input.form?.requestSubmit();
+		}, DELAY);
 	}
 
 	// Enter, or the form's other fields such as Sort, search right away.
