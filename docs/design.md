@@ -926,7 +926,12 @@ seconds; on a date with no dinner it plans it as the type shown. Leaving with so
 asks first. A name in the dish field that isn't added counts, since Save doesn't add it, and the
 question names it: "Leave without adding Garlic bread?" (MEA-127). A dish on its way to the
 dinner doesn't. If someone cleared or moved the dinner meanwhile, Save plans the date again when
-it has no dinner left, and the page stays to say so (6.11).
+it has no dinner left, and the page stays to say so (6.11). When the page loads again in its tab,
+as when a phone drops the app in the background to free memory and coming back reloads it, what
+was typed in the servings, label, restaurant and note and not saved comes back to each dinner
+still on the date (MEA-202). Only fields that differed from what was saved come back, so a field
+saved before the app was hidden shows what's saved now, and leaving still asks. A dish name that
+wasn't added doesn't come back. Back and Forward bring nothing back, since leaving asked first.
 
 **What's new.** What each release changed, newest first, in words for the people using the
 app; every household sees the same page. Each release's heading is its version, such as "1.2"

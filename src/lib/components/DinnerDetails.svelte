@@ -14,6 +14,7 @@
 	import { MAX_SERVINGS } from '../recipe-view.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
 	import { normalizeName } from '../text.ts';
+	import Snapshot from './Snapshot.svelte';
 
 	// A dinner's servings (types with dishes; Q28), restaurant (Eating out) and note (all types;
 	// Q26), saved together, and its label on a date with more than one dinner (6.9).
@@ -93,20 +94,49 @@
 		return withRestaurant ? normalizeName(restaurant) : savedRestaurant;
 	}
 
+	/** The servings as typed, while they show. An emptied servings field has nothing to keep. */
+	function typedServings(): number {
+		return withServings && servings !== null ? servings : savedServings;
+	}
+
 	// What saving would change, or null when nothing would: the note as it's stored, and the
-	// servings, label and restaurant while they show. An emptied servings field has nothing to keep.
+	// servings, label and restaurant while they show.
 	function unsaved(): string | null {
-		const typedServings = withServings && servings !== null ? servings : savedServings;
-		const typed = [typedNote(), typedServings, typedLabel(), typedRestaurant()];
+		const typed = [typedNote(), typedServings(), typedLabel(), typedRestaurant()];
 		if (
 			typed[0] === savedNote &&
-			typedServings === savedServings &&
+			typed[1] === savedServings &&
 			typed[2] === savedLabel &&
 			typed[3] === savedRestaurant
 		) {
 			return null;
 		}
 		return JSON.stringify(typed);
+	}
+
+	// When a phone drops the app in the background to free memory, coming back loads the page
+	// again, which would lose what was typed here without a word. The tab keeps what's typed and
+	// not saved, under the dinner the form is for, and gets it back when the page loads again
+	// (design 7, Dinner; MEA-202). Only the fields saving would change are kept, so a field saved
+	// by then shows what's saved. Back and Forward don't bring it back, since leaving asked first.
+	type TypedFields = { note?: string; servings?: number; label?: string; restaurant?: string };
+
+	/** The fields typed and not saved, as typed. */
+	function typedFields(): TypedFields {
+		const fields: TypedFields = {};
+		if (typedNote() !== savedNote) fields.note = note;
+		if (typedServings() !== savedServings) fields.servings = typedServings();
+		if (typedLabel() !== savedLabel) fields.label = label;
+		if (typedRestaurant() !== savedRestaurant) fields.restaurant = restaurant;
+		return fields;
+	}
+
+	/** Puts back the fields that were typed and not saved. */
+	function restoreTyped(fields: TypedFields): void {
+		if (fields.note !== undefined) note = fields.note;
+		if (fields.servings !== undefined) servings = fields.servings;
+		if (fields.label !== undefined) label = fields.label;
+		if (fields.restaurant !== undefined) restaurant = fields.restaurant;
 	}
 
 	// What leaving would lose, or null when nothing would: what saving would change, and the
@@ -273,6 +303,12 @@
 		};
 	};
 </script>
+
+<!-- Kept under the dinner the form is for, which can change while the form stays, as when the
+page's own change plans the date (MEA-202). -->
+{#key dinner.id}
+	<Snapshot id="dinner-{dinner.id ?? 'new'}" capture={typedFields} restore={restoreTyped} />
+{/key}
 
 <form class="card" method="POST" action="?/details" use:enhance={send(submit)}>
 	{#if dinner.id !== null}<input type="hidden" name="dinnerId" value={dinner.id} />{/if}
