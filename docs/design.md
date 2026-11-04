@@ -859,6 +859,17 @@ which Edit passes on, or to Recipes from a new recipe. Neither adds a Back step 
 when the page before the editor is the one they go to, they go back to it as it was left, such
 as Recipes with its search; otherwise that page takes the editor's place, so Back from it
 doesn't open the editor again.
+When the recipe can't be saved, nothing changes, and Save shows every problem with the fields at
+once (MEA-207). Each shows under its field, or under its row of fields where they sit side by
+side and are too narrow for it: servings, prep and cook, and an ingredient's amount, unit and
+prep note. So "Ingredient 4 needs an item" shows in that row, under its item. Each of those
+fields is outlined in red, marked invalid for screen readers and described by its problem, and
+focus goes to the first one on the page, scrolled clear of the header and tabs. A row's problems
+move with it and go when it's removed. A problem that isn't about one field shows above the form
+instead, and takes the focus: a name another recipe has, with Restore it when that recipe is
+archived (6.10); archived items the recipe would start using, with Restore and save; more than
+100 ingredients; a photo the server turns down; or a lost connection. What a failed save shows
+stays until the next Save, or until Import from a link replaces the recipe.
 
 **Import from a link.** New recipe has a Link field and Import above the editor (MEA-47, Q37),
 so a recipe found online can be brought in on any device, a phone included. Most recipe sites

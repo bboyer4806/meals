@@ -22,6 +22,7 @@ import {
 	parseRecipeForm,
 	recipeValues,
 	saveRecipe,
+	type RecipeFailure,
 	type RecipeFormValues,
 	type RecipeRow
 } from './recipe-form.ts';
@@ -57,11 +58,26 @@ function formData(
 
 function parse(values: Partial<RecipeFormValues> = {}, extra: Record<string, string | File> = {}) {
 	const result = parseRecipeForm(formData(values, extra));
-	if ('failure' in result) throw new Error(`Expected it to parse: ${result.failure.data.error}`);
+	if ('failure' in result) {
+		throw new Error(`Expected it to parse: ${JSON.stringify(result.failure.data)}`);
+	}
 	return result;
 }
 
-/** The message the form shows. */
+/** Why the form failed: a problem above the form, each field's, and each ingredient row's. */
+function failureIn(data: FormData): RecipeFailure {
+	const result = parseRecipeForm(data);
+	if (!('failure' in result)) throw new Error('Expected a failure');
+	expect(result.failure.status).toBe(400);
+	expect(result.failure.data.action).toBe('recipe');
+	return result.failure.data;
+}
+
+function failure(values: Partial<RecipeFormValues> = {}): RecipeFailure {
+	return failureIn(formData(values));
+}
+
+/** The message the form shows, when it has just one problem. */
 function problem(
 	values: Partial<RecipeFormValues> = {},
 	extra: Record<string, string | File> = {}
@@ -70,11 +86,17 @@ function problem(
 }
 
 function problemIn(data: FormData): string {
-	const result = parseRecipeForm(data);
-	if (!('failure' in result)) throw new Error('Expected a failure');
-	expect(result.failure.status).toBe(400);
-	expect(result.failure.data.action).toBe('recipe');
-	return result.failure.data.error;
+	const { error, fields = {}, rows = [] } = failureIn(data);
+	const messages = [
+		...(error === undefined ? [] : [error]),
+		...Object.values(fields),
+		...rows.map((row) => row.message)
+	];
+	const [message] = messages;
+	if (messages.length !== 1 || message === undefined) {
+		throw new Error(`Expected one problem: ${JSON.stringify(messages)}`);
+	}
+	return message;
 }
 
 function row(amount = '', unit = '', item = '', prepNote = ''): RecipeRow {
@@ -221,19 +243,40 @@ describe('the fields', () => {
 		expect(problem({ source: 'b'.repeat(501) })).toBe('Keep the source under 500 characters');
 	});
 
-	it('names the first problem in the order of the form', () => {
-		expect(problem({ name: '', servings: '0', rows: [row('x', '', 'Flour')] })).toBe(
-			'Enter a recipe name'
-		);
-		expect(problem({ fatG: '-1', rows: [row('x', '', 'Flour')], tags: 'a'.repeat(31) })).toBe(
-			'Keep each tag under 30 characters'
-		);
-		expect(problem({ fatG: '-1', rows: [row('x', '', 'Flour')] })).toBe(
-			'Ingredient 1: enter an amount like 1 1/2'
-		);
-		expect(problem({ fatG: '-1', notes: 'a'.repeat(2001), rows: [row('', '', 'Salt')] })).toBe(
-			'Keep the notes under 2000 characters'
-		);
+	it('reports every problem at once, each with its field (MEA-207)', () => {
+		expect(
+			failure({
+				name: ' ',
+				servings: '0',
+				cookMinutes: 'soon',
+				tags: 'a'.repeat(31),
+				rows: [row('x', '', 'Flour'), heading('Glaze'), row('', 'cup')],
+				notes: 'a'.repeat(2001),
+				fatG: '-1'
+			})
+		).toEqual({
+			action: 'recipe',
+			fields: {
+				name: 'Enter a recipe name',
+				servings: 'Enter at least 1 serving',
+				cookMinutes: 'Enter the cook time in whole minutes',
+				tags: 'Keep each tag under 30 characters',
+				notes: 'Keep the notes under 2000 characters',
+				fatG: 'Enter fat in grams, 0 or more'
+			},
+			rows: [
+				{ row: 0, field: 'amount', message: 'Ingredient 1: enter an amount like 1 1/2' },
+				{ row: 2, field: 'amount', message: 'Ingredient 2: enter an amount, or clear the unit' },
+				{ row: 2, field: 'item', message: 'Ingredient 2 needs an item' }
+			]
+		} satisfies RecipeFailure);
+	});
+
+	it("gives each field its first problem, in the order it's checked", () => {
+		// Not a whole number, and under 1.
+		expect(failure({ servings: '0.5' }).fields).toEqual({
+			servings: 'Enter a whole number of servings'
+		});
 	});
 });
 
@@ -468,6 +511,48 @@ describe('ingredient rows', () => {
 		const hundred = Array.from({ length: 100 }, (_, i) => row('1', '', `Item ${i}`));
 		expect(ingredients(...hundred, row(), row())).toHaveLength(100);
 		expect(rowProblem(...hundred, row('1', '', 'One more'))).toBe('Use 100 ingredients or fewer');
+	});
+
+	it("reports every problem with a row's fields, each with its field (MEA-207)", () => {
+		expect(failure({ rows: [row('20000', 'u'.repeat(21), '', 'p'.repeat(81))] }).rows).toEqual([
+			{ row: 0, field: 'amount', message: 'Ingredient 1: enter a smaller amount' },
+			{ row: 0, field: 'unit', message: 'Ingredient 1: keep the unit under 20 characters' },
+			{ row: 0, field: 'item', message: 'Ingredient 1 needs an item' },
+			{ row: 0, field: 'prepNote', message: 'Ingredient 1: keep the prep note under 80 characters' }
+		]);
+		// A field over 4 times its limit isn't normalized, and the row's other fields are still read.
+		expect(failure({ rows: [row('x', 'cup'.padEnd(81))] }).rows).toEqual([
+			{ row: 0, field: 'unit', message: 'Ingredient 1: keep the unit under 20 characters' },
+			{ row: 0, field: 'amount', message: 'Ingredient 1: enter an amount like 1 1/2' },
+			{ row: 0, field: 'item', message: 'Ingredient 1 needs an item' }
+		]);
+	});
+
+	it('places row problems by their place in the rows sent, blank rows and headings included', () => {
+		const rows = [row(), heading('Sauce'), row('x', '', 'Flour'), row(), heading('a'.repeat(61))];
+		expect(failure({ rows }).rows).toEqual([
+			{ row: 2, field: 'amount', message: 'Ingredient 2: enter an amount like 1 1/2' },
+			{ row: 4, field: 'heading', message: 'Section 2: keep the heading under 60 characters' }
+		]);
+	});
+
+	it("reports a problem with the rows as a whole apart from the fields' problems", () => {
+		const hundred = Array.from({ length: 100 }, (_, i) => row('1', '', `Item ${i}`));
+		expect(failure({ name: '', rows: [...hundred, row('x', '', 'Flour')] })).toEqual({
+			action: 'recipe',
+			error: 'Use 100 ingredients or fewer',
+			fields: { name: 'Enter a recipe name' },
+			rows: [{ row: 100, field: 'amount', message: 'Ingredient 101: enter an amount like 1 1/2' }]
+		} satisfies RecipeFailure);
+
+		const unreadable = withIngredients('not json');
+		unreadable.set('name', '');
+		expect(failureIn(unreadable)).toEqual({
+			action: 'recipe',
+			error: "The ingredients couldn't be read. Reload the page and try again.",
+			fields: { name: 'Enter a recipe name' },
+			rows: []
+		} satisfies RecipeFailure);
 	});
 
 	it("says so when the rows can't be read", () => {
@@ -746,7 +831,9 @@ describe('saveRecipe', () => {
 		extra: Record<string, string | File> = {}
 	): Promise<number> {
 		const result = await saveRecipe(householdId, dishId, formData(values, extra), 1000);
-		if ('failure' in result) throw new Error(`Expected it to save: ${result.failure.data.error}`);
+		if ('failure' in result) {
+			throw new Error(`Expected it to save: ${JSON.stringify(result.failure.data)}`);
+		}
 		return result.id;
 	}
 
@@ -866,11 +953,13 @@ describe('saveRecipe', () => {
 	});
 
 	it('checks the form before storing anything', async () => {
-		expect(await refused(null, { name: '' }, newPhoto())).toEqual({
+		expect(await refused(null, { name: '', rows: [row('', '', '', 'diced')] }, newPhoto())).toEqual({
 			action: 'recipe',
-			error: 'Enter a recipe name'
+			fields: { name: 'Enter a recipe name' },
+			rows: [{ row: 0, field: 'item', message: 'Ingredient 1 needs an item' }]
 		});
 		expect(storedFiles()).toEqual([]);
+		expect(activeDishes(householdId)).toEqual([]);
 	});
 
 	it('stores a new photo with a new recipe', async () => {

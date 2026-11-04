@@ -128,11 +128,11 @@ function readRecipe(cell: (column: Column) => string, defaultServings: number): 
 		fatG: cell('Fat (g)')
 	});
 	if (!details.success) return sentence(details.error.issues[0]?.message ?? 'Check this row');
-	const ingredients = readRows(
+	const read = readRows(
 		entries(cell('Ingredients')).map((entry) => ({ row: ingredientRow(entry), label: `'${entry}'` }))
 	);
-	if (typeof ingredients === 'string') return sentence(ingredients);
-	return { ...details.data, ingredients };
+	if ('problems' in read) return sentence(read.problems[0]?.message ?? 'Check this row');
+	return { ...details.data, ingredients: read.ingredients };
 }
 
 /**

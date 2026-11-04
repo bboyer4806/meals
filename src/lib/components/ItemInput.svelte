@@ -18,6 +18,7 @@
 		placeholder,
 		required = true,
 		noun = 'item',
+		problemId,
 		onchoose,
 		children
 	}: {
@@ -29,6 +30,11 @@
 		required?: boolean;
 		/** What a name that matches nothing would be added as; null offers nothing for it. */
 		noun?: string | null;
+		/**
+		 * The id of a problem shown with the field, such as the recipe editor's from a failed save.
+		 * The field is then marked invalid and described by it.
+		 */
+		problemId?: string;
 		/** Called once the field shows an existing item someone chose from the suggestions. */
 		onchoose?: () => void;
 		/**
@@ -148,6 +154,8 @@
 		aria-expanded={showList}
 		aria-controls={listId}
 		aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
+		aria-invalid={problemId === undefined ? undefined : true}
+		aria-describedby={problemId}
 		oninput={() => {
 			open = true;
 			active = -1;

@@ -11,7 +11,7 @@ import {
 	type DishSaveResult,
 	type IngredientInput
 } from './data/dishes.ts';
-import { idList, nameField, parseForm, sentMax, type FormFailure } from './forms.ts';
+import { idList, nameField, sentMax } from './forms.ts';
 import { deletePhoto, savePhoto } from './photos.ts';
 
 // The recipe editor's form (design 7, Edit recipe): the text its fields start with, what it
@@ -56,12 +56,27 @@ export type RecipeSubmission = {
 	restoreItemIds: number[];
 };
 
+/** A field of the editor other than the ingredient rows, named as the form sends it. */
+export type RecipeField = Exclude<keyof RecipeFormValues, 'rows'>;
+
+/** A field of an ingredient row: a section's heading, or one of an ingredient's fields. */
+export type RowField = 'heading' | 'amount' | 'unit' | 'item' | 'prepNote';
+
+/** A problem with a field of the ingredient row at `row`, its place in the rows sent. */
+export type RowProblem = { row: number; field: RowField; message: string };
+
 /**
- * archivedId is an archived recipe that has the name, which the page offers to restore.
- * archivedItems are archived items the recipe would start using, which the page offers to restore
- * by saving again.
+ * Why a save didn't go through (design 7, Edit recipe). `error` is a problem that isn't about one
+ * field, shown above the form. `fields` holds each field's problem and `rows` the ingredient rows',
+ * each shown beside its field (MEA-207). archivedId is an archived recipe that has the name, which
+ * the page offers to restore. archivedItems are archived items the recipe would start using, which
+ * the page offers to restore by saving again.
  */
-export type RecipeFailure = FormFailure & {
+export type RecipeFailure = {
+	action: string;
+	error?: string;
+	fields?: Partial<Record<RecipeField, string>>;
+	rows?: RowProblem[];
 	archivedId?: number;
 	archivedItems?: { id: number; name: string }[];
 };
@@ -232,20 +247,33 @@ const UNREADABLE = "The ingredients couldn't be read. Reload the page and try ag
 // Two amounts joined like a range: "2-3", "2 to 3", "½ or 1", or with an en or em dash.
 const RANGE = /[\d¼½¾⅓⅔⅛⅜⅝⅞]\s*(?:-|\u2013|\u2014|to|or)\s*[\d.¼½¾⅓⅔⅛⅜⅝⅞]/i;
 
-/** The ingredient rows as ingredients, in order, or the first problem with them. */
-function readIngredients(json: string): IngredientInput[] | string {
+/**
+ * A problem with the ingredient rows. Its path, like a Zod issue's, is the row's place in the
+ * rows and the field it's about, or empty for a problem with the rows as a whole.
+ */
+type RowsProblem = { path: [] | [number, RowField]; message: string };
+
+type ReadRows = { ingredients: IngredientInput[] } | { problems: RowsProblem[] };
+
+/** A problem with the rows as a whole. */
+function rowsProblem(message: string): ReadRows {
+	return { problems: [{ path: [], message }] };
+}
+
+/** The ingredient rows as ingredients, in order, or every problem with them. */
+function readIngredients(json: string): ReadRows {
 	// Both limits are checked before the rows are read: JSON.parse of 5 MB of nested brackets,
 	// and Zod noting a problem for each of millions of bad rows, each take seconds.
-	if (json.length > MAX_LENGTH) return UNREADABLE;
+	if (json.length > MAX_LENGTH) return rowsProblem(UNREADABLE);
 	let raw: unknown;
 	try {
 		raw = JSON.parse(json);
 	} catch {
-		return UNREADABLE;
+		return rowsProblem(UNREADABLE);
 	}
-	if (!Array.isArray(raw) || raw.length > MAX_ROWS) return UNREADABLE;
+	if (!Array.isArray(raw) || raw.length > MAX_ROWS) return rowsProblem(UNREADABLE);
 	const rows = rowsSchema.safeParse(raw);
-	if (!rows.success) return UNREADABLE;
+	if (!rows.success) return rowsProblem(UNREADABLE);
 
 	// Rows are numbered as the editor labels them: blank rows count, and headings are counted
 	// apart from ingredients.
@@ -272,43 +300,60 @@ function tooLong(label: string, field: string, max: number): string {
 }
 
 /**
- * The rows as ingredients, in order, each in the section of the heading above it, or the first
- * problem with them, which starts with the row's label. Fully blank rows are left out.
+ * The rows as ingredients, in order, each in the section of the heading above it, or every
+ * problem with them, in the order of the rows. A problem with a row starts with its label. Fully
+ * blank rows are left out.
  */
-export function readRows(rows: { row: RecipeRow; label: string }[]): IngredientInput[] | string {
+export function readRows(rows: { row: RecipeRow; label: string }[]): ReadRows {
 	const ingredients: IngredientInput[] = [];
+	const problems: RowsProblem[] = [];
+	// Ingredient rows that aren't blank, whether or not they have a problem.
+	let filled = 0;
 	let section: string | null = null;
-	for (const { row, label } of rows) {
+	for (const [at, { row, label }] of rows.entries()) {
 		if (row.kind === 'section') {
-			if (row.heading.length > sentMax(60)) return tooLong(label, 'heading', 60);
-			const heading = normalizeName(row.heading);
-			if (heading.length > 60) return tooLong(label, 'heading', 60);
+			const heading = row.heading.length > sentMax(60) ? null : normalizeName(row.heading);
+			if (heading === null || heading.length > 60) {
+				problems.push({ path: [at, 'heading'], message: tooLong(label, 'heading', 60) });
+				continue;
+			}
 			// A blank heading ends the section above it. A heading with no ingredients after it
 			// is dropped, since sections are stored on ingredients.
 			section = orNull(heading);
 			continue;
 		}
-		const ingredient = readIngredient(row, label, section);
-		if (typeof ingredient === 'string') return ingredient;
-		if (ingredient) ingredients.push(ingredient);
+		const ingredient = readIngredient(row, at, label, section);
+		if (ingredient === null) continue;
+		filled += 1;
+		if (Array.isArray(ingredient)) problems.push(...ingredient);
+		else ingredients.push(ingredient);
 	}
-	if (ingredients.length > 100) return 'Use 100 ingredients or fewer';
-	return ingredients;
+	if (filled > 100) problems.push({ path: [], message: 'Use 100 ingredients or fewer' });
+	return problems.length > 0 ? { problems } : { ingredients };
 }
 
-/** One ingredient row, null when it's blank, or its problem. */
+/**
+ * One ingredient row, at `at` in the rows: null when it's blank, or every problem with it, at
+ * most one for each field, in the order they're checked.
+ */
 function readIngredient(
 	row: Extract<RecipeRow, { kind: 'ingredient' }>,
+	at: number,
 	label: string,
 	section: string | null
-): IngredientInput | null | string {
-	if (row.unit.length > sentMax(20)) return tooLong(label, 'unit', 20);
-	if (row.item.length > sentMax(80)) return tooLong(label, 'item', 80);
-	if (row.prepNote.length > sentMax(80)) return tooLong(label, 'prep note', 80);
+): IngredientInput | null | RowsProblem[] {
+	const problems: RowsProblem[] = [];
+	const problem = (field: RowField, message: string) => {
+		problems.push({ path: [at, field], message });
+	};
+	// A field over sentMax isn't normalized (tooLong), so it's undefined here.
+	const unit = row.unit.length > sentMax(20) ? undefined : normalizeUnit(row.unit);
+	const itemName = row.item.length > sentMax(80) ? undefined : normalizeName(row.item);
+	const prepNote = row.prepNote.length > sentMax(80) ? undefined : normalizeName(row.prepNote);
+	if (unit === undefined) problem('unit', tooLong(label, 'unit', 20));
+	if (itemName === undefined) problem('item', tooLong(label, 'item', 80));
+	if (prepNote === undefined) problem('prepNote', tooLong(label, 'prep note', 80));
 	const amountText = row.amount.trim();
-	const unit = normalizeUnit(row.unit);
-	const itemName = normalizeName(row.item);
-	const prepNote = normalizeName(row.prepNote);
 	// An empty row, such as the one a new recipe starts with, is left out.
 	if (amountText === '' && unit === null && itemName === '' && prepNote === '') return null;
 
@@ -317,33 +362,52 @@ function readIngredient(
 		amount = parseAmount(amountText);
 		if (amount === null) {
 			// One amount per ingredient; a range goes in the prep note (design 2.3).
-			return RANGE.test(amountText)
-				? `${label}: enter one amount, and put a range like 2 to 3 in the prep note`
-				: `${label}: enter an amount like 1 1/2`;
+			problem(
+				'amount',
+				RANGE.test(amountText)
+					? `${label}: enter one amount, and put a range like 2 to 3 in the prep note`
+					: `${label}: enter an amount like 1 1/2`
+			);
+		} else if (amount > 10_000) {
+			problem('amount', `${label}: enter a smaller amount`);
+		} else if (amount < 0.001) {
+			// The smallest amount a recipe shows (amounts.ts).
+			problem('amount', `${label}: enter a larger amount`);
 		}
-		if (amount > 10_000) return `${label}: enter a smaller amount`;
-		// The smallest amount a recipe shows (amounts.ts).
-		if (amount < 0.001) return `${label}: enter a larger amount`;
 	}
-	if (unit !== null && unit.length > 20) return tooLong(label, 'unit', 20);
+	if (typeof unit === 'string' && unit.length > 20) problem('unit', tooLong(label, 'unit', 20));
 	// A unit alone can't be scaled or shown (design 5).
-	if (unit !== null && amount === null) return `${label}: enter an amount, or clear the unit`;
-	if (itemName === '') return `${label} needs an item`;
-	if (itemName.length > 80) return tooLong(label, 'item', 80);
-	if (prepNote.length > 80) return tooLong(label, 'prep note', 80);
+	if (typeof unit === 'string' && amountText === '') {
+		problem('amount', `${label}: enter an amount, or clear the unit`);
+	}
+	if (itemName === '') problem('item', `${label} needs an item`);
+	else if (itemName !== undefined && itemName.length > 80) {
+		problem('item', tooLong(label, 'item', 80));
+	}
+	if (prepNote !== undefined && prepNote.length > 80) {
+		problem('prepNote', tooLong(label, 'prep note', 80));
+	}
+	// A field over sentMax always has a problem, so the rest were normalized.
+	if (
+		problems.length > 0 ||
+		unit === undefined ||
+		itemName === undefined ||
+		prepNote === undefined
+	) {
+		return problems;
+	}
 	return { section, amount, unit, itemName, prepNote: orNull(prepNote) };
 }
 
+// Each problem with the rows is an issue on `ingredients`, at its row and field.
 const ingredientsField = z.string({ error: UNREADABLE }).transform((json, ctx) => {
-	const ingredients = readIngredients(json);
-	if (typeof ingredients === 'string') {
-		ctx.addIssue({ code: 'custom', message: ingredients });
-		return z.NEVER;
-	}
-	return ingredients;
+	const read = readIngredients(json);
+	if ('ingredients' in read) return read.ingredients;
+	for (const problem of read.problems) ctx.addIssue({ code: 'custom', ...problem });
+	return z.NEVER;
 });
 
-// In the order of the form, so a failure names the first problem on it.
+// In the order of the form. Import recipes names a row's first problem in this order.
 const recipeFields = z.object({
 	name: nameField(80, 'a recipe name'),
 	servings: z.coerce
@@ -402,10 +466,31 @@ function upload(value: FormDataEntryValue | null): File | null | undefined {
 }
 
 /**
+ * The failure for fields with problems (MEA-207): each field's first problem, and each ingredient
+ * row's, by the row's place and field. A problem with the ingredients as a whole isn't about one
+ * field, so it's the failure's `error`.
+ */
+function fieldsFailure(issues: z.ZodError['issues']): ActionFailure<RecipeFailure> {
+	let error: string | undefined;
+	const fields: Partial<Record<RecipeField, string>> = {};
+	const rows: RowProblem[] = [];
+	for (const { path, message } of issues) {
+		// As recipeFields and readRows make them: a field's name, or `ingredients` and, for a
+		// row's field, the row's place and the field.
+		const [field, row, rowField] = path as [RecipeField | 'ingredients', number?, RowField?];
+		if (field !== 'ingredients') fields[field] ??= message;
+		else if (row === undefined || rowField === undefined) error ??= message;
+		else rows.push({ row, field: rowField, message });
+	}
+	return fail(400, { action: ACTION, error, fields, rows });
+}
+
+/**
  * Reads the recipe editor's form. Names, units and amounts are normalized as they're stored,
  * blank optional fields are null, and the rows in `ingredients` become the ingredients, each in
- * the section of the heading above it. Fully blank rows are left out. A failure names the first
- * problem, in the order of the form.
+ * the section of the heading above it. Fully blank rows are left out. A failure has every
+ * problem with the fields at once (fieldsFailure), or else the one with the photo or the items
+ * to restore.
  *
  * A new photo comes as two files, `photo` and `thumb`. `removePhoto` set to '1' asks to clear the
  * current photo. `restoreItems`, sent by the editor's "Restore and save" button, lists the ids of
@@ -414,8 +499,8 @@ function upload(value: FormDataEntryValue | null): File | null | undefined {
 export function parseRecipeForm(
 	formData: FormData
 ): RecipeSubmission | { failure: ActionFailure<RecipeFailure> } {
-	const parsed = parseForm(recipeFields, formData, ACTION);
-	if ('failure' in parsed) return parsed;
+	const parsed = recipeFields.safeParse(Object.fromEntries(formData));
+	if (!parsed.success) return { failure: fieldsFailure(parsed.error.issues) };
 	const data: DishInput = parsed.data;
 
 	const photo = upload(formData.get('photo'));

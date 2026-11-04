@@ -143,6 +143,17 @@ textarea {
 	resize: vertical;
 }
 
+/* A field with a problem, shown under it (MEA-207). Focused and scrolled to, it stays clear of
+   the sticky header and the tab bar, with room for its label and its problem. */
+[aria-invalid='true'] {
+	border-color: var(--danger);
+	scroll-margin: 6rem 0 calc(var(--tabs-height) + 4rem);
+}
+
+.field-problem {
+	margin: 0.25rem 0 0;
+}
+
 .field {
 	margin-bottom: 1rem;
 }
