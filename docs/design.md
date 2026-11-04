@@ -877,9 +877,14 @@ which Save then checks like any other. The page is read in
 the charset its Content-Type names, else the one a meta element in its first 1,024 bytes names,
 else UTF-8, so a page in windows-1252 or ISO-8859-1 keeps its é, ° and ½ (MEA-75). Import asks
 for the page uncompressed, and unzips one its server gzips anyway. Fields the page leaves
-out keep what a new recipe starts with, such as the household's usual servings; the photo, tags
-and notes are never imported. The page then says "Filled in from the page. Check it, then tap Save."
-Nothing is saved until Save, which checks the fields as if they were typed. A page without a
+out get what a new recipe starts with, such as the household's usual servings. The photo, tags
+and notes are never imported: Import fills in the editor around them, so a photo taken and tags
+or notes typed before it stay (MEA-205). When anything else has been typed or changed since New
+recipe opened, an earlier import included, Import asks first: "Replace what you typed with the
+page's recipe? The photo, tags and notes stay." Cancel leaves the editor as it was. Once it's
+filled in, the page says "Filled in from the page. Check it, then tap Save."
+Nothing is saved until Save, which checks the fields as if they were typed, and leaving New
+recipe before Save asks first, as it does once anything is typed. A page without a
 Recipe says "Couldn't find a recipe on that page.", and one that can't be opened says
 "Couldn't open that page. Check the link and try again."; either way the link stays in its
 field and the editor stays as it was. The link must start with http:// or https:// and, like
