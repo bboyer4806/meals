@@ -80,7 +80,8 @@ Every push to `main` runs `.github/workflows/deploy.yml`. It runs the checks, bu
 GitHub, pushes it to GHCR, and has Dokku on the server run it as the app `meals`. The same run
 creates the app if it is missing, sets its domain, and requests its first HTTPS certificate. The
 server renews it, as described in the [dev repo's README](https://github.com/bboyer4806/dev#one-time-server-setup).
-Pull requests run the checks only.
+Pull requests run the checks only, and so does a run started by hand (Actions > Deploy > Run
+workflow) on any branch other than `main`.
 
 The repo needs these Actions secrets (Settings > Secrets and variables > Actions):
 

@@ -4,8 +4,8 @@ name: Deploy
 # and has Dokku on the server run it. The Dokku app, its domain and its HTTPS
 # certificate are set up here too. The server limits which Dokku commands the
 # deploy key may run, so the app's storage, settings and ports are set once on
-# the server instead (README, "One-time server setup"). Pull requests only run
-# the checks.
+# the server instead (README, "One-time server setup"). Only main deploys: pull
+# requests, and runs started by hand on another branch, only run the checks.
 #
 # Each action is pinned to a full commit SHA, with its version in a comment, so
 # moving a tag can't change the code that runs here. Dependabot proposes new
@@ -18,9 +18,9 @@ on:
 
 # One deploy at a time, in push order. A running deploy is never cancelled; a newer push
 # replaces one still waiting to start, so the latest commit is what goes live. Pull requests
-# only run the checks, so each gets its own group.
+# and runs started by hand on another branch only run the checks, so each gets its own group.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && github.run_id || 'deploy' }}
+  group: ${{ github.ref == 'refs/heads/main' && 'deploy' || github.run_id }}
   cancel-in-progress: false
 
 env:
@@ -50,7 +50,9 @@ jobs:
 
   build:
     needs: check
-    if: github.event_name != 'pull_request'
+    # Deploy needs this job, so only main deploys. A pull request runs on its
+    # merge ref, refs/pull/<number>/merge, so it stops after the checks too.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
