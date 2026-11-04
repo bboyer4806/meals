@@ -2,7 +2,7 @@
 
 Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each item was found by one reviewer and confirmed by a second that tried to disprove it. It is a snapshot: line numbers drift as the code changes, so check the code before acting on an item.
 
-62 items have become "Review:" tickets in Jira (MEA-64 to MEA-125, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 111 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
+79 items have become "Review:" tickets in Jira (MEA-64 to MEA-142, in Meals 1.12 or the backlog) and 1 was dropped, so they're no longer listed here. The 94 items below keep their original numbers; items marked "Skipped in triage" were looked at on 2026-11-04 and kept for later.
 
 ## How to use this list
 
@@ -15,17 +15,14 @@ Full read-only review of `main` at `86004ad` (Meals 1.9) on 2026-11-03. Each ite
 
 ## Where to start
 
-1. **Pass `navigate: false` in the enhance updates: #77, #87 (MEA-43).** The same SvelteKit 3 behavior causes both.
-2. **Stop losing typed text: #72, #73, #74.** Same theme as MEA-80 and MEA-111.
-3. **Smooth the grocery list in the store: #78, #79, #80, #81.**
-4. **Finish the CSV import fixes: #75, #100.** The other import fixes are MEA-71 to MEA-74 in Meals 1.12 and MEA-89 in the backlog.
+1. **Finish the CSV import fixes: #100 (with MEA-129).** The other import fixes are MEA-71 to MEA-74 in Meals 1.12 and MEA-89 in the backlog.
 
 Items that share a cause or a fix:
 
-- Stale pages: #82, #92, #93 (MEA-67 and MEA-69 handle the server side)
-- No pending state on taps: #79, #91, #150
+- Stale pages: #92, #93 (with MEA-136) (MEA-67 and MEA-69 handle the server side)
+- No pending state on taps: #91, #150 (with MEA-133)
 - Focus after a save: #102, #114, #117
-- 320 px phones: #84, #99, #106
+- 320 px phones: #99, #106 (with MEA-138)
 - Copy a dinner cost: #90 (with MEA-101 and MEA-102)
 - Error pages: #108, #169 (with MEA-94)
 - Outdated help: #113, #154
@@ -92,84 +89,9 @@ Items that share a cause or a fix:
   - **Problem:** On a phone, someone imports a recipe from a link, then switches to Groceries to check an item before tapping Save. The filled-in recipe and the link are gone, with no warning.
   - **Fix:** Compare against a new recipe's starting values rather than the imported ones (pass the page's own data.values as the baseline), or mark the editor changed after a successful import.
   - **Notes:** Skipped in triage
-- [ ] **#72 Medium** With two dinners, Save on one asks an unnamed 'Leave without saving?' about the other, so that dinner's typing is easily lost
-  - **Where:** `src/lib/components/DinnerDetails.svelte:103`, `src/lib/components/DinnerDetails.svelte:111`, `src/lib/components/DinnerDetails.svelte:173`, `src/lib/components/DinnerDetails.svelte:224`
-  - **Problem:** On a Kids and Adults day, type a note in each and tap Save under Kids. The page goes to the week and asks 'Leave without saving?' right after Save, without saying it means Adults. OK seems like the obvious answer after a Save, and it drops the Adults note. Tapping '‹ Week of' asks the same question twice in a row.
-  - **Fix:** Ask once, from the page, naming the dinners that have unsaved typing (for example 'Adults has a note you haven't saved. Leave anyway?'). Alternatively, on a date with several dinners, make Save keep the person on the page or save every dinner's details.
-- [ ] **#73 Medium** A dish name typed but not added is dropped without asking when the person leaves or taps Save
-  - **Where:** `src/lib/components/DinnerDetails.svelte:89`, `src/lib/components/DinnerDetails.svelte:173`, `src/lib/components/DinnerDishes.svelte:162`, `src/lib/components/ItemInput.svelte:77`
-  - **Problem:** Someone types a new dish, taps the 'Add … as a new dish' suggestion (it only closes the list), then taps Save thinking that saves everything. The week opens and the dish was never added, with no question.
-  - **Fix:** Count a non-empty dish field (normalizeName(name) !== '') as unsaved, so hasUnsaved and confirmLeave ask about it, or have Save add a typed dish before it saves the details.
-- [ ] **#74 Medium** Two quick changes on an unplanned date: the second is refused as someone else's, and the typed note can be wiped
-  - **Where:** `src/routes/(app)/menu/[date]/+page.svelte:89`, `src/routes/(app)/menu/[date]/+page.svelte:92`, `src/routes/(app)/menu/[date]/+page.svelte:135`, `src/lib/components/DinnerEditor.svelte:189`
-  - **Problem:** On a slow phone connection, on a day not planned yet, the person types a note, taps Bringing a dish and quickly picks the dish to bring. The dish is refused because the form still has no dinnerId. The typed note is cleared from the form, and both messages blame someone else. Tapping a type and then Save quickly fails Save the same way.
-  - **Fix:** Count the page's own changes in flight instead of using one flag (increment when a change is sent, decrement after its reload settles, and treat reloads as own while the count is above zero). Also queue or disable a dinner's other immediate controls while one change is in flight, so nothing is sent from the stale unplanned form.
-- [ ] **#75 Medium** Fixing the CSV and tapping Import again fails in Chrome and Edge, and the page blames the connection
-  - **Where:** `src/routes/(app)/recipes/import/+page.svelte:66`, `src/routes/(app)/recipes/import/+page.svelte:79`, `src/routes/(app)/recipes/import/+page.svelte:39`
-  - **Problem:** Someone imports a CSV that has a problem. They fix the row in Excel or Numbers, save over the same file and tap Import, as the page tells them to. The field still shows the file name, so they don't choose it again. Chromium won't upload a file that changed after it was chosen, so the page tells them to check their connection. Every retry fails the same way until they happen to choose the file again.
-  - **Fix:** After a problems result, clear the file field and say "Fix these problems, then choose the file again." Keep the file only for the duplicate choices, as design 7 requires. Alternatively, catch the failed upload and say the file changed and needs choosing again. The wrong "Check your connection" text is the import-message finding that was already reported. This root cause is the old file being kept after problems.
-  - **Verifier's correction:** Correction to the fix: the server also returns problems together with duplicates for rename problems (import/+page.server.ts:10-12). In that case the file is unchanged and must stay, so clear the field only for a problems result that has no duplicates. I verified Chromium only. Other engines may re-send a stale copy instead, which I didn't check.
-  - **Also covers:** The import page says 'Nothing was imported... Check your connection' for errors where that's wrong
-- [ ] **#76 Low** On a Household page opened directly, the first data reload resets typed name and servings to the saved values
-  - **Where:** `src/routes/(app)/household/+page.svelte:43`, `src/routes/(app)/household/+page.svelte:55`, `src/lib/components/RecipeForm.svelte:10`
-  - **Problem:** The phone reloads a discarded Household tab. Someone types a new household name and servings, switches to Messages to check a spelling, and comes back, or adds a store before tapping Save. The fields show the old values again, and the next Save keeps them.
-  - **Fix:** Do what RecipeForm does: copy the settings into $state once, use bind:value, and reset them only after a successful Save. Add a browser test that types, returns to the tab and checks the fields.
-
-### Grocery list, Items and History
-
-- [ ] **#77 Medium** Saving, archiving or restoring an item on Items drops the search and the archived view
-  - **Where:** `src/routes/(app)/groceries/items/+page.svelte:31`, `src/routes/(app)/groceries/items/+page.svelte:90`, `src/routes/(app)/groceries/items/+page.svelte:114`, `src/routes/(app)/groceries/items/+page.svelte:117`
-  - **Problem:** Search Items for 'coff', tap Coffee, change its notes and tap Save: the search box still shows 'coff' but the list now shows every item from Apples down, and only Back brings the search back. Restoring several archived items means reopening Show archived items after each one, and archiving from a search loses the search too.
-  - **Fix:** Pass navigate: false in the Items sheet's update call, as recipes/[id] and menu already do, so the result applies to the current address. MEA-43 is the same SvelteKit 3 enhance behavior on the Menu, so one shared fix could cover both; add a browser test that edits from a search and restores from the archived view.
-- [ ] **#78 Medium** History shows last year's dates without the year, so they read as this year's
-  - **Where:** `src/routes/(app)/groceries/history/+page.svelte:27`, `src/routes/(app)/groceries/history/+page.server.ts:25`
-  - **Problem:** History's help says to search it to see when you last bought an item. Milk bought on 2025-10-19 shows as 'Sun, Oct 19', which reads as two weeks ago, and from every January 1 all of last year's history loses its year.
-  - **Fix:** Return today (dateIn(Date.now(), timeZone)) from the History load and pass { today: data.today } to formatDateLabel, as the Items page does.
-- [ ] **#79 Medium** Check-off and Add show nothing while pending, so a second tap errors, duplicates or hits the next row
-  - **Where:** `src/routes/(app)/groceries/+page.svelte:136`, `src/routes/(app)/groceries/+page.svelte:346`, `src/routes/(app)/groceries/+page.svelte:90`
-  - **Problem:** In a store with a weak signal, a parent taps Bread's circle, sees nothing change and taps again: either a red error appears, or Bread has already moved to Received today and the second tap checks off Milk instead. Tapping Add twice turns one new item into a duplicate question that doubles the quantity if they tap Update.
-  - **Fix:** Track submissions in flight on the grocery page: fill the circle and disable that row's buttons as soon as it is tapped, ignore repeat submits of a form until its result arrives, and treat 'already received' after a repeat tap as success.
-- [ ] **#80 Medium** Collapsed store groups load expanded and snap shut once the script runs, so the list jumps
-  - **Where:** `src/routes/(app)/groceries/+page.svelte:181`, `src/routes/(app)/groceries/+page.svelte:271`
-  - **Problem:** Someone who folds away the stores they aren't at opens the list on a slow connection: every group shows open, they start scrolling, and a moment later everything moves up by over 1,000 px under their finger. On a fast connection it is still a visible jump on every load.
-  - **Fix:** Keep the collapsed keys in a cookie (still per device) and read it in the page load so the server renders those groups closed, or hide group contents until the stored state has been applied.
-- [ ] **#81 Medium** When a slow Add finishes, the list jumps back to the top and the add bar takes focus, even after scrolling away
-  - **Where:** `src/routes/(app)/groceries/+page.svelte:66`, `src/routes/(app)/groceries/+page.svelte:99`
-  - **Problem:** On a slow connection, someone adds Basil, scrolls down to the Walmart group and reaches for Bread's circle. The Add lands, the page snaps to the top, and the tap hits the add bar instead (on Android the keyboard may also open). They have to scroll back down and find Bread again.
-  - **Fix:** Refocus the item field only if it, or the add form, still had focus when the result arrived, and use focus({ preventScroll: true }). Otherwise leave focus and scroll position alone.
-- [ ] **#82 Low** Tapping a line someone else deleted removes it silently; the 'no longer on the list' message never shows
-  - **Where:** `src/routes/(app)/groceries/+page.svelte:136`, `src/routes/(app)/groceries/+page.svelte:358`
-  - **Problem:** Two people shop from the list; one deletes Cheddar while the other taps its circle in the store. The line vanishes without explanation, so the second person can't tell whether it was bought, deleted or a glitch.
-  - **Fix:** When the failed line is gone after the refresh, show the message at the top of the list, where group errors already go, instead of inside the missing row.
-- [ ] **#83 Low** History's Show older jumps back to the top of the page
-  - **Where:** `src/routes/(app)/groceries/history/+page.svelte:43`
-  - **Problem:** Someone scrolls to the bottom of 100 lines looking for an older purchase, taps Show older and lands back at today; they must scroll past the same 100 lines again to reach the new ones.
-  - **Fix:** Add data-sveltekit-noscroll to the Show older link (and data-sveltekit-replacestate if Back shouldn't step through each page), and leave q out of the address when it is empty.
-- [ ] **#84 Low** On a 320 px phone the add bar's store field shrinks to about 54 px and shows one letter
-  - **Where:** `src/routes/(app)/groceries/+page.svelte:233`, `src/routes/(app)/groceries/+page.svelte:573`, `src/routes/(app)/groceries/+page.svelte:578`
-  - **Problem:** On a first-generation iPhone SE or a small Android phone, typing Milk fills in its usual store, but the field shows only 'W' or 'U', so the person can't see or check which store the new line goes to before tapping Add.
-  - **Fix:** Let the second row wrap at narrow widths (flex-wrap: wrap with the store select on its own full-width row), or shrink the quantity and unit fields below about 360 px.
-  - **Verifier's correction:** Correction: the one-letter case happens only at 320 px (first-generation iPhone SE, rare now). At 360 px, the most common Android width, about five characters show, which usually identifies the store. The person can tap the select to see the full name, and the new line then appears in a visible store group where it can be edited. I lowered severity to low.
-- [ ] **#85 Low** Long item names in the add bar's suggestions run together with no space between options
-  - **Where:** `src/lib/components/ItemInput.svelte:199`
-  - **Problem:** Typing 'mi' with two long names in the catalog shows a block of text where it is unclear where one suggestion ends, so the person can tap the wrong item.
-  - **Fix:** Give options vertical padding (about 0.5rem) and a divider or gap so wrapped names stay distinct.
-- [ ] **#86 Low** Long email addresses on Household and Admin run under Remove and Cancel and widen small phones' pages
-  - **Where:** `src/routes/(app)/household/+page.svelte:71`, `src/routes/(app)/household/+page.svelte:113`, `src/routes/(app)/admin/+page.svelte:48`, `src/routes/(app)/admin/+page.svelte:65`
-  - **Problem:** A member with a 30+ character address shows only part of it beside Remove, so whoever removes members or cancels an invite can't read the full address; on a small phone the whole Household and Admin pages scroll sideways.
-  - **Fix:** Add overflow-wrap: anywhere to the email text in members, invites and Admin's household list (or to .row > .grow), as the grocery rows and sheets already do.
 
 ### Menu and the dinner page
 
-- [ ] **#87 Medium** Request a dish, Restore it and request, and Remove jump back to this week; Escape in the suggestions closes the sheet
-  - **Where:** `src/routes/(app)/menu/+page.svelte:85`, `src/routes/(app)/menu/+page.svelte:117`, `src/routes/(app)/menu/+page.svelte:286`, `src/routes/(app)/menu/+page.svelte:152`
-  - **Problem:** Planning ahead: tap Next, Request a dish, request Lasagna. The sheet closes and the page shows this week, not the week being planned. Remove and restoring an archived dish do the same. Pressing Escape to dismiss the suggestion list closes the whole sheet.
-  - **Fix:** Pass navigate: false in submitRequest, submitRestore and submitRemove as submitRestaurant does, and have ItemInput preventDefault and stop propagation when Escape closes an open list. Add e2e checks on a non-current week for all three.
-  - **Notes:** MEA-43
-- [ ] **#88 Medium** On a date with several dinners, the gap and divider between dinners never show, so they run together
-  - **Where:** `src/lib/components/DinnerEditor.svelte:282`, `src/lib/components/DinnerEditor.svelte:258`, `src/lib/components/DinnerEditor.svelte:314`
-  - **Problem:** Open a day that has Kids and Adults dinners on a phone. The 'Adults' heading sits right under Kids' Clear button with no gap and no divider, so that Clear looks like it belongs to Adults. The Clear sheet doesn't name the dinner either, so it's easy to clear the wrong one.
-  - **Fix:** Render the switch Sheet inside the dinner's section (or use `.dinner.labeled ~ .dinner.labeled`) so the separator applies, and have the two-dinner browser test check that the second dinner has its top border.
 - [ ] **#89 Medium** On a date's page, open dish suggestions cover the header, tab bar and feedback button, so a tap there adds a dish
   - **Where:** `src/lib/components/ItemInput.svelte:173`, `src/lib/components/ItemInput.svelte:189`, `src/lib/components/ItemInput.svelte:193`, `src/lib/components/DinnerDishes.svelte:333`
   - **Problem:** On a dinner's page, someone types 'Cr' in Add a dish. They close the phone keyboard (Android's back gesture keeps the field focused) or type on a tablet keyboard, then tap Recipes in the tab bar. The suggestion under their finger is added to the dinner, and the page stays. With the list open, scrolling up covers Help and More in the same way.
