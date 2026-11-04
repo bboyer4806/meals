@@ -56,7 +56,7 @@ describe('normalizeUnit', () => {
 	it('maps every listed spelling, ignoring case', () => {
 		const spellings: Record<KnownUnitCode, string[]> = {
 			tsp: ['tsp', 'tsps', 'tsp.', 'teaspoon', 'teaspoons'],
-			tbsp: ['tbsp', 'tbsps', 'tbsp.', 'tbs', 'tbl', 'tablespoon', 'tablespoons'],
+			tbsp: ['tbsp', 'tbsps', 'tbsp.', 'tbs', 'tbl', 'tb', 'tb.', 'tablespoon', 'tablespoons'],
 			'fl oz': ['fl oz', 'fl. oz.', 'fl.oz.', 'floz', 'fluid ounce', 'fluid ounces'],
 			cup: ['c', 'c.', 'cup', 'cups'],
 			pint: ['pt', 'pt.', 'pts', 'pint', 'pints'],
@@ -73,11 +73,15 @@ describe('normalizeUnit', () => {
 		}
 		expect(normalizeUnit('Fl. Oz.')).toBe('fl oz');
 		expect(normalizeUnit('C')).toBe('cup');
+		expect(normalizeUnit('Tb')).toBe('tbsp');
+		expect(normalizeUnit('Tb.')).toBe('tbsp');
 	});
 
-	it('reads a lone t as a teaspoon and T as a tablespoon', () => {
+	it('reads a lone t as a teaspoon and T as a tablespoon, also with a period (MEA-77)', () => {
 		expect(normalizeUnit('t')).toBe('tsp');
 		expect(normalizeUnit(' T ')).toBe('tbsp');
+		expect(normalizeUnit('t.')).toBe('tsp');
+		expect(normalizeUnit('T.')).toBe('tbsp');
 	});
 
 	it('keeps anything else as a custom unit, trimmed with spaces collapsed', () => {

@@ -46,7 +46,7 @@ export function knownUnit(unit: string): KnownUnit | undefined {
 // "floz" are both fl oz.
 const SPELLINGS: Record<KnownUnitCode, string[]> = {
 	tsp: ['tsp', 'tsps', 'teaspoon', 'teaspoons'],
-	tbsp: ['tbsp', 'tbsps', 'tbs', 'tbl', 'tablespoon', 'tablespoons'],
+	tbsp: ['tbsp', 'tbsps', 'tbs', 'tbl', 'tb', 'tablespoon', 'tablespoons'],
 	'fl oz': ['fl oz', 'fluid ounce', 'fluid ounces'],
 	cup: ['c', 'cup', 'cups'],
 	pint: ['pt', 'pts', 'pint', 'pints'],
@@ -73,9 +73,11 @@ const codesBySpelling = new Map(
 export function normalizeUnit(text: string): string | null {
 	const unit = normalizeName(text);
 	if (unit === '') return null;
-	// Recipe shorthand where case matters: t is a teaspoon and T a tablespoon.
-	if (unit === 't') return 'tsp';
-	if (unit === 'T') return 'tbsp';
+	// Recipe shorthand where case matters: t is a teaspoon and T a tablespoon, also with a period,
+	// as in "1 T. butter" (MEA-77).
+	const shorthand = unit.replace(/\.$/, '');
+	if (shorthand === 't') return 'tsp';
+	if (shorthand === 'T') return 'tbsp';
 	return codesBySpelling.get(spellingKey(unit)) ?? unit;
 }
 
