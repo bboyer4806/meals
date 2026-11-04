@@ -645,7 +645,8 @@ If two people change the same thing, the last save wins.
 
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
 header menu, More, holds Items, History, Household, What's new, Admin (admin only) and Sign
-out. Help sits in the header to the left of More.
+out. It closes when one of its links is followed, with Escape or with a tap outside it, and
+that tap still goes to the page. Help sits in the header to the left of More.
 
 | Screen           | Path                                 | What it does                                                                                                                         |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
