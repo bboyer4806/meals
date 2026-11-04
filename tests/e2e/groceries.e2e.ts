@@ -67,6 +67,51 @@ test('orders and receives a store, then suggests that store next time', async ({
 	await expect(item).toHaveValue('');
 });
 
+// The list doesn't update while it's open (design 6.11), so Mark all changes only the lines its
+// question counted (6.2).
+test('marks only the lines the question counted, and says how many changed', async ({
+	page,
+	db,
+	person
+}) => {
+	const walmartId = addStore(db, person.householdId, 'Walmart');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Milk', store: 'Walmart' });
+	await addAndWait(page, { name: 'Bread', store: 'Walmart' });
+	const walmart = group(page, 'Walmart');
+	await expect(walmart.getByRole('button', { name: /^Bread/ })).toBeVisible();
+
+	// Meanwhile, someone else adds Eggs at Walmart from their phone.
+	const item = db
+		.prepare("insert into items (household_id, name, created_at) values (?, 'Eggs', 0)")
+		.run(person.householdId).lastInsertRowid;
+	const eggs = db
+		.prepare(
+			"insert into grocery_needs (household_id, item_id, quantity, store_id, status, created_at) values (?, ?, 1, ?, 'to_order', 0)"
+		)
+		.run(person.householdId, item, walmartId).lastInsertRowid;
+	const eggsStatus = () =>
+		db.prepare('select status from grocery_needs where id = ?').pluck().get(eggs);
+
+	await walmart.getByRole('button', { name: 'Mark all ordered' }).click();
+	await expect(page.getByRole('dialog')).toContainText('Mark 2 Walmart items as ordered?');
+	await confirm(page, 'Mark ordered');
+	await expect(walmart.getByRole('status')).toHaveText('Marked 2 Walmart items as ordered.');
+	await expect(walmart.getByRole('button', { name: /^Eggs/ })).toBeVisible();
+	expect(eggsStatus()).toBe('to_order');
+
+	// Then they order Eggs on their own.
+	db.prepare("update grocery_needs set status = 'ordered', ordered_at = ? where id = ?").run(
+		Date.now(),
+		eggs
+	);
+	await walmart.getByRole('button', { name: 'Mark all received' }).click();
+	await expect(page.getByRole('dialog')).toContainText('Mark 2 ordered Walmart items as received?');
+	await confirm(page, 'Mark received');
+	await expect(walmart.getByRole('status')).toHaveText('Marked 2 Walmart items as received.');
+	expect(eggsStatus()).toBe('ordered');
+});
+
 test('offers to update a line already on the list', async ({ page, person: _ }) => {
 	await page.goto('/groceries');
 	await addAndWait(page, { name: 'Coffee', quantity: '1', unit: 'bag' });

@@ -429,6 +429,12 @@ Lines that are To Order or Ordered can be edited (quantity, unit, store, note) o
 deleted. Received lines leave the list, apart from "received today", and are kept as
 history (Q21).
 
+"Mark all ordered" and "Mark all received" ask first ("Mark 7 Walmart items as ordered?"),
+then change only the lines that question counted, and only those still To Order (or Ordered) at
+that store (MEA-68). The list doesn't update while it's open (Q11), so a line added there since,
+such as Eggs from another phone, is left for next time. The group then says how many lines
+changed: "Marked 7 Walmart items as ordered."
+
 ### 6.3 Default store
 
 When a line leaves To Order (to Ordered or Received), its store becomes the item's
@@ -711,10 +717,10 @@ next time. There's no way to replay it, and no other screen has a tour.
 (filled from the default; tap to change) and Add. Below it, one group per store plus "No
 store". Groups can be collapsed, and the device remembers which ones are. Each group
 lists its To Order lines, then Ordered, then Received today (struck through). Store
-groups have "Mark all ordered" and "Mark all received"; "No store" has neither. A row's
-circle checks it off as Received. Tapping a row opens an edit sheet: quantity, unit,
-store, note, Mark ordered, Didn't come, Got fewer, and Delete. An item's notes (brand,
-size) show under its name.
+groups have "Mark all ordered" and "Mark all received"; "No store" has neither. After either,
+the group says how many lines it changed (6.2). A row's circle checks it off as Received.
+Tapping a row opens an edit sheet: quantity, unit, store, note, Mark ordered, Didn't come, Got
+fewer, and Delete. An item's notes (brand, size) show under its name.
 
 **Search.** Recipes, History and Items search as people type (MEA-36): the list updates 300 ms
 after typing stops, and Enter, or a phone keyboard's search key, searches right away. There's no
