@@ -1,6 +1,6 @@
 import { parseCsv } from '../csv.ts';
 import { splitIngredient } from '../ingredient-text.ts';
-import { foldCase, normalizeName } from '../text.ts';
+import { foldCase, NORMALIZE_MAX_LENGTH, normalizeName } from '../text.ts';
 import { createDish, findDishByName, updateDish, type DishInput } from './data/dishes.ts';
 import { getHousehold } from './data/households.ts';
 import { findItemByName } from './data/items.ts';
@@ -37,6 +37,14 @@ export function templateCsv(): string {
 
 // Big enough for thousands of recipes, and well under the app's upload limit.
 const MAX_FILE_BYTES = 1_000_000;
+
+// Cells are normalized as they're read, so a cell longer than normalizing takes is refused unread
+// (text.ts). The steps, the editor's longest field, fit in one.
+const CELL_TOO_LONG = `keep each cell under ${NORMALIZE_MAX_LENGTH} characters.`;
+
+function isTooLong(cell: string): boolean {
+	return cell.length > NORMALIZE_MAX_LENGTH;
+}
 
 /** A problem with the file, on its row as a spreadsheet numbers it (the header is row 1). */
 type Problem = { row: number; text: string };
@@ -82,6 +90,7 @@ function ingredientRow(entry: string): RecipeRow {
 
 /** One row of the file as a recipe, or its first problem, in the order of the editor. */
 function readRecipe(cell: (column: Column) => string, defaultServings: number): DishInput | string {
+	if (RECIPE_COLUMNS.some((column) => isTooLong(cell(column)))) return CELL_TOO_LONG;
 	const details = recipeDetailFields.safeParse({
 		name: cell('Recipe'),
 		// A blank Servings is the household's usual servings, as a new recipe starts at (design 7).
@@ -123,6 +132,10 @@ function readFile(
 	const [header = [], ...rows] = csv.rows;
 	const problems: Problem[] = [];
 	const ignored: string[] = [];
+	if (header.some(isTooLong)) {
+		problems.push({ row: 1, text: CELL_TOO_LONG });
+		return { recipes: [], problems, ignored };
+	}
 	const columns = new Map<Column, number>();
 	header.forEach((cell, index) => {
 		const name = normalizeName(cell);

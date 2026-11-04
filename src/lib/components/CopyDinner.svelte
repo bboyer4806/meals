@@ -131,6 +131,7 @@
 			id="{uid}-search"
 			type="search"
 			placeholder="Search by dish"
+			maxlength="80"
 			autocomplete="off"
 			bind:value={search}
 			bind:this={searchInput}

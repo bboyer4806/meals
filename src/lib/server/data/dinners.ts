@@ -31,8 +31,8 @@ import { getHousehold } from './households.ts';
 // dinner someone put on the date meanwhile (6.11). A change that can plan the date takes null
 // for a page that showed it not planned.
 
-// The recipe editor's limit for a dish name.
-const MAX_DISH_NAME = 80;
+/** The recipe editor's limit for a dish name. */
+export const MAX_DISH_NAME = 80;
 
 const CHANGED = 'Someone changed this dinner since you opened it.';
 

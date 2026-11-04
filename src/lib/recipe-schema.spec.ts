@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { findRecipe, schemaRecipeValues, type JsonLdNode } from './recipe-schema.ts';
 import { newRecipeValues, type RecipeFormValues } from './server/recipe-form.ts';
+import { NORMALIZE_MAX_LENGTH } from './text.ts';
 
 // Each JSON file in src/lib/test-pages holds the application/ld+json blocks of a real recipe
 // page, parsed, in the page's order. The recipe-scrapers project saved the pages for its tests.
@@ -246,8 +247,25 @@ describe('schemaRecipeValues', () => {
 			name: '<a '.repeat(330_000),
 			recipeInstructions: '<p '.repeat(330_000)
 		});
-		expect(values.name).toHaveLength(989_999);
+		// Cut to the most normalizing takes (text.ts).
+		expect(values.name).toHaveLength(NORMALIZE_MAX_LENGTH);
 		expect(performance.now() - started).toBeLessThan(1000);
+	});
+
+	it('cuts text over 10000 characters in one place before normalizing it (MEA-64)', () => {
+		const long = 'x'.repeat(NORMALIZE_MAX_LENGTH + 5);
+		const values = fromRecipe({
+			name: long,
+			recipeIngredient: [`2 cups ${long}`],
+			recipeInstructions: [long, 'Bake.']
+		});
+		const most = 'x'.repeat(NORMALIZE_MAX_LENGTH);
+		expect(values.name).toBe(most);
+		expect(ingredients(values)).toEqual([['2', 'cups', most.slice('2 cups '.length), '']]);
+		expect(values.steps).toBe(`${most}\nBake.`);
+		// Combining marks that would hold up the server for minutes if normalized all together.
+		const marks = 'a' + '\u0301\u0316'.repeat(1_000_000);
+		expect(fromRecipe({ name: marks }).name.length).toBeLessThanOrEqual(NORMALIZE_MAX_LENGTH);
 	});
 
 	it("keeps a new recipe's fields when the Recipe has none of them", () => {

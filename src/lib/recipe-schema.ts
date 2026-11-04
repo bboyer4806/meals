@@ -1,5 +1,5 @@
 import { splitIngredient } from './ingredient-text.ts';
-import { normalizeName } from './text.ts';
+import { NORMALIZE_MAX_LENGTH, normalizeName } from './text.ts';
 import type { RecipeFormValues, RecipeRow } from './server/recipe-form.ts';
 
 // Reading a web page's schema.org Recipe, which most recipe sites embed as JSON-LD for search
@@ -74,9 +74,14 @@ const BREAK = /<\/?(?:br|p|div|li|ol|ul|h[1-6])\b[^<>]*>/gi;
 // Any other tag, such as a link around an ingredient's name.
 const TAG = /<\/?[a-z][^<>]*>/gi;
 
-/** Text that can hold HTML, as one line without tags or character references. */
+/**
+ * Text that can hold HTML, as one line without tags or character references. Text over the most
+ * normalizing takes (text.ts) is cut to it first, as the editor then shows before anything is
+ * saved.
+ */
 function plain(text: string): string {
-	return normalizeName(decodeEntities(text.replace(BREAK, ' ').replace(TAG, '')));
+	const line = decodeEntities(text.replace(BREAK, ' ').replace(TAG, ''));
+	return normalizeName(line.slice(0, NORMALIZE_MAX_LENGTH));
 }
 
 /** Whether a line says anything: some sites put a comma alone between paragraphs. */

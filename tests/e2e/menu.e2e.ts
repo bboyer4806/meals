@@ -1269,6 +1269,9 @@ test('copies a past dinner from the most-made list or by searching a dish name',
 	await search.fill('fish');
 	await expect(groups).toHaveCount(0);
 	await expect(sheet.getByText('No past dinners with “fish”.')).toBeVisible();
+	// It takes up to 80 characters, as a dish name does (6.9).
+	await search.fill('x'.repeat(81));
+	await expect(search).toHaveValue('x'.repeat(80));
 	await search.fill('rice');
 	await sheet.getByRole('button', { name: /^Chicken tacos, Rice/ }).click();
 	await expect(sheet).toHaveCount(0);

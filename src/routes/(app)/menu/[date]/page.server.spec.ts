@@ -18,6 +18,7 @@ import {
 import { db } from '#lib/server/db/index.ts';
 import { dishes, households } from '#lib/server/db/schema.ts';
 import { freshDb, makeDinner, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
+import { NORMALIZE_MAX_LENGTH } from '#lib/text.ts';
 import { actions, load } from './+page.server.ts';
 
 const TZ = 'America/Chicago';
@@ -1175,5 +1176,67 @@ describe('every action', () => {
 		for (const [action, fields] of Object.entries(forms) as [Action, Record<string, string>][]) {
 			expectNotFound(await post(action, fields, { date: '2026-02-30' }));
 		}
+	});
+});
+
+describe('labels and names too long to normalize (MEA-64)', () => {
+	it('are refused before they are read, as one over its limit is', async () => {
+		const long = 'x'.repeat(NORMALIZE_MAX_LENGTH + 1);
+		// A date whose dinner can't have dishes, so a requested dish goes on a new dinner.
+		const dinnerId = shown(makeDinner(householdId, TOMORROW, { type: 'eat_out' }));
+		addRequest(householdId, userId, { name: 'Rice', note: null }, NOW);
+		addRestaurantRequest(householdId, userId, { name: 'Olive Garden', note: null }, NOW);
+		const requests = listRequests(householdId);
+		const idOf = (name: string) => String(requests.find((request) => request.name === name)?.id);
+		const dish = idOf('Rice');
+		const restaurant = idOf('Olive Garden');
+		const label = 'Keep a label under 30 characters';
+		const tries: [Action, Record<string, string>, string, string][] = [
+			['details', { label: long, dinnerId }, 'details', label],
+			[
+				'details',
+				{ restaurantName: long, dinnerId },
+				'details',
+				'Keep the restaurant under 80 characters'
+			],
+			[
+				'addDish',
+				{ name: long, role: 'main', dinnerId },
+				'dish',
+				'Keep a dish name under 80 characters'
+			],
+			['addDinner', { firstLabel: long, label: 'Kids' }, 'addDinner', label],
+			['addDinner', { firstLabel: 'Adults', label: long }, 'addDinner', label],
+			[
+				'promoteDishRequest',
+				{ requestId: dish, firstLabel: long, label: 'Kids' },
+				'request',
+				label
+			],
+			[
+				'promoteDishRequest',
+				{ requestId: dish, firstLabel: 'Adults', label: long },
+				'request',
+				label
+			],
+			[
+				'promoteRestaurantRequest',
+				{ requestId: restaurant, firstLabel: long, label: 'Kids' },
+				'request',
+				label
+			],
+			[
+				'promoteRestaurantRequest',
+				{ requestId: restaurant, firstLabel: 'Adults', label: long },
+				'request',
+				label
+			]
+		];
+		const before = october();
+		for (const [action, fields, form, error] of tries) {
+			expectFailure(await post(action, fields), form, error);
+		}
+		expect(october()).toEqual(before);
+		expect(listRequests(householdId)).toHaveLength(2);
 	});
 });
