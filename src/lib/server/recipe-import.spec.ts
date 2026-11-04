@@ -87,6 +87,32 @@ describe('importRecipeFile', () => {
 		expect(names()).toEqual(['Pancakes', 'Toast']);
 	});
 
+	it('splits Ingredients and Steps cells on line breaks as well as | (MEA-73)', async () => {
+		// Excel ends a row with \r\n and a line in a cell (Alt+Enter) with \n. A blank line is left out.
+		const csv = [
+			'Recipe,Ingredients,Steps',
+			'Pancakes,"# Batter\n1 1/2 cups flour, sifted\n\n2 eggs|1 cup milk","Mix\nCook\r\nServe"'
+		].join('\r\n');
+		const result = await importRecipeFile(householdId, form(csv), NOW);
+		expect(result).toEqual({ kind: 'imported', imported: 1, replaced: 0, skipped: 0, ignored: [] });
+
+		const pancakes = dishNamed('Pancakes');
+		expect(pancakes.steps).toBe('Mix\nCook\nServe');
+		expect(
+			pancakes.ingredients.map(({ section, amount, unit, itemName, prepNote }) => [
+				section,
+				amount,
+				unit,
+				itemName,
+				prepNote
+			])
+		).toEqual([
+			['Batter', 1.5, 'cup', 'flour', 'sifted'],
+			['Batter', 2, null, 'eggs', null],
+			['Batter', 1, 'cup', 'milk', null]
+		]);
+	});
+
 	it('lists every problem by row and imports nothing', async () => {
 		createItem(householdId, 'Saffron', NOW);
 		const saffron = findItemByName(householdId, 'Saffron');

@@ -786,8 +786,8 @@ UTF-8 byte order mark, so Excel opens it as CSV UTF-8 and saves it that way (MEA
 matched by name ignoring case, in any order; only Recipe is needed, and other columns are
 ignored. Each row is one recipe, and blank rows are skipped. As in a spreadsheet, a quote opens a
 quoted cell only at the start of a cell and is text anywhere else, so Use a 9" pan keeps its inch
-mark (MEA-72). Ingredients and Steps hold several
-entries separated by `|`, and an ingredient entry starting with `#` is a section heading. Each
+mark (MEA-72). Ingredients and Steps hold several entries, each on its own line in the cell or
+separated by `|` (MEA-73), and an ingredient entry starting with `#` is a section heading. Each
 ingredient entry fills an editor row (`src/lib/ingredient-text.ts`): an amount, or a range whose
 first amount is the amount and which goes in the prep note as "2 to 3"; then a known unit (6.5)
 or a common one, such as clove, can, pinch, slice or stick, while any other word starts the

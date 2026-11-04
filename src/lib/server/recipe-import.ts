@@ -87,10 +87,13 @@ export type ImportResult =
 	/** The file has no problems, and these choices are still to make or fix. */
 	| { kind: 'duplicates'; duplicates: Duplicate[]; problems: string[] };
 
-/** Several entries in one cell, separated by |. Blank entries are left out. */
+/**
+ * Several entries in one cell, each on its own line or separated by | (design 7; MEA-73). Blank
+ * entries are left out.
+ */
 function entries(cell: string): string[] {
 	return cell
-		.split('|')
+		.split(/[|\r\n]/)
 		.map((entry) => normalizeName(entry))
 		.filter((entry) => entry !== '');
 }
