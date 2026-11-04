@@ -1,6 +1,6 @@
 # Build: install everything and build the app. No secrets are needed here; the app reads its
 # settings from the environment when it starts.
-FROM node:24-slim AS build
+FROM node:26-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 # Dependencies don't need install scripts: better-sqlite3 ships prebuilt binaries, and esbuild
@@ -12,7 +12,7 @@ RUN npm run build && npm prune --omit=dev
 
 # Run: production dependencies, the built app, migrations, the backup script and app.json
 # (Dokku reads its health check and nightly backup schedule from there).
-FROM node:24-slim
+FROM node:26-slim
 WORKDIR /app
 ENV NODE_ENV=production
 # Saving a recipe with a photo sends up to about 3.5 MB, and adapter-node refuses request bodies
