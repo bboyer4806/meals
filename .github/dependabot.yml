@@ -1,9 +1,34 @@
-# Opens a pull request when an action the workflows pin has a new version.
-# The cooldown waits until a release is a week old (GitHub's default is 3 days),
-# so a bad release is likely caught and pulled before it is proposed.
+# Opens pull requests when an npm package, an action the workflows pin or the
+# Dockerfile's Node image has a new version. The cooldown waits until a release
+# is a week old (GitHub's default is 3 days), so a bad release is likely caught
+# and pulled before it is proposed.
 version: 2
 updates:
   - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      # svelte-check doesn't support TypeScript 7 yet (its peer range ends at 6).
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # The types match the Node major the app runs on, so they change with it.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  # node:24-slim already picks up each Node 24 release when the image is built,
+  # so this proposes only new Node majors. A new major also changes deploy.yml's
+  # node-version and @types/node.
+  - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
