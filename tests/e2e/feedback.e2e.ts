@@ -1,10 +1,14 @@
+import { createHash } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import {
 	addDinner,
 	addRecipe,
 	expect,
+	failNextJiraAttachment,
 	failNextJiraTicket,
 	jiraTickets,
+	makeJpeg,
+	makePng,
 	open,
 	test,
 	today
@@ -17,6 +21,27 @@ const feedbackButton = (page: Page) => page.getByRole('button', { name: 'Send fe
 const sheet = (page: Page) => page.getByRole('dialog', { name: 'Send feedback' });
 const box = (page: Page) => sheet(page).getByLabel('Feedback');
 const send = (page: Page) => sheet(page).getByRole('button', { name: /^(Send|Sending…)$/ });
+const sheetButton = (page: Page, name: string) =>
+	sheet(page).getByRole('button', { name, exact: true });
+const thumbnail = (page: Page) => sheet(page).getByRole('img', { name: 'Your screenshot' });
+const thanks = (page: Page) => sheet(page).getByText('Thanks, your feedback was sent.');
+
+type Upload = { name: string; mimeType: string; buffer: Buffer };
+
+function upload(name: string, mimeType: string, buffer: Buffer): Upload {
+	return { name, mimeType, buffer };
+}
+
+/** Chooses a file in the device's picker, opened with Add screenshot or Replace. */
+async function choose(page: Page, button: 'Add screenshot' | 'Replace', file: Upload) {
+	const chooser = page.waitForEvent('filechooser');
+	await sheetButton(page, button).click();
+	await (await chooser).setFiles(file);
+}
+
+function sha256(bytes: Buffer): string {
+	return createHash('sha256').update(bytes).digest('hex');
+}
 
 /** All the text in an Atlassian Document Format value, with line breaks as \n. */
 function text(node: unknown): string {
@@ -179,4 +204,167 @@ test("says it couldn't send when Jira fails, and keeps the message", async ({ pa
 	await send(page).click();
 	await expect(sheet(page).getByText('Thanks, your feedback was sent.')).toBeVisible();
 	expect(await jiraTickets(person.email)).toHaveLength(1);
+});
+
+test('chooses, replaces and removes a screenshot, and attaches the one sent to the ticket', async ({
+	page,
+	person
+}) => {
+	const photo = await makeJpeg(page, { width: 800, height: 600 });
+	// A phone's screenshot, more than the 64 KB a form without files may send (design 4.5).
+	const screenshot = await makePng(page, { width: 1080, height: 2400, hue: 200 });
+	expect(screenshot.length).toBeGreaterThan(64 * 1024);
+
+	await open(page, '/groceries');
+	await feedbackButton(page).click();
+	await expect(sheet(page).getByRole('group', { name: 'Screenshot (optional)' })).toBeVisible();
+	await expect(thumbnail(page)).toHaveCount(0);
+	await expect(sheetButton(page, 'Remove')).toHaveCount(0);
+
+	await choose(page, 'Add screenshot', upload('dinner.jpg', 'image/jpeg', photo));
+	await expect(thumbnail(page)).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
+	const png = upload('Screenshot_20261104.png', 'image/png', screenshot);
+	await choose(page, 'Replace', png);
+	await expect(thumbnail(page)).toHaveAttribute('src', /^data:image\/png;base64,/);
+	await sheetButton(page, 'Remove').click();
+	await expect(thumbnail(page)).toHaveCount(0);
+	await expect(sheetButton(page, 'Add screenshot')).toBeFocused();
+	await choose(page, 'Add screenshot', png);
+	await expect(thumbnail(page)).toBeVisible();
+
+	const message = `The list is cut off ${person.email}`;
+	await box(page).fill(message);
+	await send(page).click();
+	await expect(thanks(page)).toBeVisible();
+
+	const tickets = await jiraTickets(person.email);
+	expect(tickets).toHaveLength(1);
+	const ticket = tickets[0]!;
+	expect(ticket.fields).toMatchObject({
+		project: { key: 'MEA' },
+		issuetype: { name: 'Task' },
+		labels: ['user-feedback'],
+		summary: `Feedback: ${message.slice(0, 80)}`
+	});
+	expect(text(ticket.fields.description)).toContain('Page: /groceries');
+	expect(ticket.attachments).toEqual([
+		{
+			// Signed in as the ticket was.
+			authorization: ticket.authorization,
+			atlassianToken: 'no-check',
+			name: 'screenshot.png',
+			type: 'image/png',
+			size: screenshot.length,
+			sha256: sha256(screenshot)
+		}
+	]);
+
+	// Opening it again starts new feedback, without the screenshot.
+	await sheetButton(page, 'Close').last().click();
+	await feedbackButton(page).click();
+	await expect(box(page)).toHaveValue('');
+	await expect(thumbnail(page)).toHaveCount(0);
+});
+
+test('refuses a screenshot over 3 MB or not a PNG or JPEG, and keeps the one chosen', async ({
+	page,
+	person
+}) => {
+	const screenshot = await makePng(page, { width: 400, height: 800 });
+	// A PNG's first bytes, in a file 1 byte over 3 MB.
+	const large = Buffer.alloc(3_000_001);
+	screenshot.copy(large, 0, 0, 8);
+	const notPngOrJpeg = 'The screenshot must be a PNG or JPEG.';
+	const tooLarge = 'That screenshot is over 3 MB. Choose a smaller one.';
+	// Each refused for a different reason from the one before, so each shows a new problem.
+	const refused: [Upload, string][] = [
+		[upload('notes.png', 'image/png', Buffer.from('<p>Not a picture</p>')), notPngOrJpeg],
+		[upload('large.png', 'image/png', large), tooLarge],
+		[upload('dance.gif', 'image/gif', Buffer.from('GIF89a\x01\x00\x01\x00')), notPngOrJpeg]
+	];
+
+	await open(page, '/menu');
+	await feedbackButton(page).click();
+	await choose(page, 'Add screenshot', upload('shot.png', 'image/png', screenshot));
+	const shown = await thumbnail(page).getAttribute('src');
+	for (const [file, problem] of refused) {
+		await choose(page, 'Replace', file);
+		await expect(sheet(page).getByRole('alert'), file.name).toHaveText(problem);
+		await expect(thumbnail(page)).toHaveAttribute('src', shown ?? '');
+	}
+
+	// One that can be sent replaces it, and the problem goes, as it does with Remove.
+	const photo = await makeJpeg(page, { width: 600, height: 400 });
+	await choose(page, 'Replace', upload('shot.jpg', 'image/jpeg', photo));
+	await expect(thumbnail(page)).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
+	await expect(sheet(page).getByRole('alert')).toHaveCount(0);
+	await choose(page, 'Replace', refused[0]![0]);
+	await expect(sheet(page).getByRole('alert')).toHaveText(notPngOrJpeg);
+	await sheetButton(page, 'Remove').click();
+	await expect(sheet(page).getByRole('alert')).toHaveCount(0);
+	await expect(thumbnail(page)).toHaveCount(0);
+	expect(await jiraTickets(person.email)).toHaveLength(0);
+});
+
+test('keeps the message and screenshot when the screenshot fails, and sends it to the same ticket', async ({
+	page,
+	person
+}) => {
+	const screenshot = await makePng(page, { width: 400, height: 800 });
+	const message = `The menu jumps when I scroll ${person.email}`;
+	await failNextJiraAttachment(person.email);
+	await open(page, '/menu');
+	await feedbackButton(page).click();
+	await box(page).fill(message);
+	await choose(page, 'Add screenshot', upload('shot.png', 'image/png', screenshot));
+	await send(page).click();
+	await expect(sheet(page).getByRole('alert')).toHaveText(
+		"Couldn't send your feedback. Try again."
+	);
+	await expect(box(page)).toHaveValue(message);
+	await expect(thumbnail(page)).toBeVisible();
+	let tickets = await jiraTickets(person.email);
+	expect(tickets).toHaveLength(1);
+	expect(tickets[0]!.attachments).toHaveLength(0);
+
+	// Closed and opened again, the sheet still has both.
+	await sheetButton(page, 'Close').click();
+	await feedbackButton(page).click();
+	await expect(box(page)).toHaveValue(message);
+	await expect(thumbnail(page)).toBeVisible();
+
+	await send(page).click();
+	await expect(thanks(page)).toBeVisible();
+	tickets = await jiraTickets(person.email);
+	expect(tickets).toHaveLength(1);
+	expect(tickets[0]!.attachments).toMatchObject([
+		{ name: 'screenshot.png', sha256: sha256(screenshot) }
+	]);
+});
+
+test('sends a changed message as new feedback after its screenshot failed', async ({
+	page,
+	person
+}) => {
+	const screenshot = await makePng(page, { width: 400, height: 800 });
+	const message = `Prices are missing ${person.email}`;
+	await failNextJiraAttachment(person.email);
+	await open(page, '/groceries');
+	await feedbackButton(page).click();
+	await box(page).fill(message);
+	await choose(page, 'Add screenshot', upload('shot.png', 'image/png', screenshot));
+	await send(page).click();
+	await expect(sheet(page).getByRole('alert')).toHaveText(
+		"Couldn't send your feedback. Try again."
+	);
+
+	await box(page).fill(`${message} on Fridays`);
+	await send(page).click();
+	await expect(thanks(page)).toBeVisible();
+	const tickets = await jiraTickets(person.email);
+	expect(tickets.map((ticket) => text(ticket.fields.description).split('\n')[0])).toEqual([
+		message,
+		`${message} on Fridays`
+	]);
+	expect(tickets.map((ticket) => ticket.attachments.length)).toEqual([0, 1]);
 });

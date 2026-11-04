@@ -169,7 +169,7 @@ test('keeps the photo, tags and notes, and asks before replacing anything else t
 	}
 
 	await open(page, '/recipes/new');
-	await page.locator('input[type="file"]').setInputFiles({
+	await page.getByRole('main').locator('input[type="file"]').setInputFiles({
 		name: 'toast.jpg',
 		mimeType: 'image/jpeg',
 		buffer: jpeg

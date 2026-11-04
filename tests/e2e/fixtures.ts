@@ -297,11 +297,27 @@ export function addDinner(
  * A real JPEG, drawn on a canvas in the browser: a warm background with a plate on it. Works on
  * any page, including about:blank.
  */
-export async function makeJpeg(
+export function makeJpeg(
 	page: Page,
 	size: { width: number; height: number; hue?: number }
 ): Promise<Buffer> {
-	const base64 = await page.evaluate(({ width, height, hue }) => {
+	return makeImage(page, size, 'image/jpeg');
+}
+
+/** The same picture as a real PNG, such as a screenshot a phone takes. */
+export function makePng(
+	page: Page,
+	size: { width: number; height: number; hue?: number }
+): Promise<Buffer> {
+	return makeImage(page, size, 'image/png');
+}
+
+async function makeImage(
+	page: Page,
+	size: { width: number; height: number; hue?: number },
+	type: 'image/jpeg' | 'image/png'
+): Promise<Buffer> {
+	const base64 = await page.evaluate(({ width, height, hue, type }) => {
 		const canvas = document.createElement('canvas');
 		canvas.width = width;
 		canvas.height = height;
@@ -321,10 +337,12 @@ export async function makeJpeg(
 		context.beginPath();
 		context.arc(width / 2, height / 2, radius * 0.6, 0, Math.PI * 2);
 		context.fill();
-		return canvas.toDataURL('image/jpeg', 0.9).split(',')[1] ?? '';
-	}, { hue: 20, ...size });
+		return canvas.toDataURL(type, 0.9).split(',')[1] ?? '';
+	}, { hue: 20, ...size, type });
 	const bytes = Buffer.from(base64, 'base64');
-	if (bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) throw new Error('Not a JPEG');
+	// Every JPEG starts with the first bytes, and every PNG with the second.
+	const start = type === 'image/jpeg' ? [0xff, 0xd8, 0xff] : [0x89, 0x50, 0x4e, 0x47];
+	if (!start.every((byte, i) => bytes[i] === byte)) throw new Error(`Not a ${type}`);
 	return bytes;
 }
 
@@ -346,6 +364,7 @@ export function photoFile(key: string, size: 'full' | 'thumb'): string {
 const JIRA_STUB = 'http://localhost:4174';
 
 export type JiraTicket = {
+	key: string;
 	authorization: string | undefined;
 	fields: {
 		project: { key: string };
@@ -354,6 +373,15 @@ export type JiraTicket = {
 		summary: string;
 		description: unknown;
 	};
+	attachments: {
+		authorization: string | undefined;
+		atlassianToken: string | undefined;
+		name: string;
+		type: string;
+		size: number;
+		/** The SHA-256 of the file's bytes, in hex. */
+		sha256: string;
+	}[];
 };
 
 /** The tickets the stand-in Jira received whose request contains the text. */
@@ -366,4 +394,10 @@ export async function jiraTickets(containing: string): Promise<JiraTicket[]> {
 /** Makes the stand-in Jira fail the next ticket whose request contains the text. */
 export async function failNextJiraTicket(containing: string): Promise<void> {
 	await fetch(`${JIRA_STUB}/fail?match=${encodeURIComponent(containing)}`, { method: 'POST' });
+}
+
+/** Makes the stand-in Jira fail the next file attached to a ticket whose request has the text. */
+export async function failNextJiraAttachment(containing: string): Promise<void> {
+	const match = encodeURIComponent(containing);
+	await fetch(`${JIRA_STUB}/fail-attachment?match=${match}`, { method: 'POST' });
 }

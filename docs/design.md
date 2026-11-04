@@ -275,9 +275,9 @@ lost, so is everything. Moving backups off the server later is a small change.
   its length: one crafted 5 MB form would hold up the server for every household for minutes. So
   a request's body may be at most 64 KB, checked against the length the request states before
   anything reads it, and a POST that doesn't state its length is refused. The largest form people
-  send this way, a dinner's note or feedback, comes to about 25 KB. Only the recipe editor and
-  Import recipes send more, a photo or a file as multipart/form-data, which they may send up to
-  5 MB (`BODY_SIZE_LIMIT`, 4.2).
+  send this way, a dinner's note, comes to about 25 KB. Only the recipe editor, Import recipes and
+  feedback send more, a photo, a file or a screenshot as multipart/form-data, which they may send
+  up to 5 MB (`BODY_SIZE_LIMIT`, 4.2).
 - **No raw HTML** from user input is ever rendered (no `{@html}`), and SvelteKit's
   built-in Content Security Policy is turned on.
 - **Admin** is only the `ADMIN_EMAIL` account. It sees household names and member
@@ -314,7 +314,7 @@ src/lib/server/
                           householdId first, except whats-new (a person's seen
                           release), which takes the person's id.
   photos.ts               save, delete and serve photos
-  jira.ts                 create a feedback ticket in Jira
+  jira.ts                 create a feedback ticket in Jira and attach its screenshot
   recipe-page.ts          fetch a recipe's web page (4.5) and read its JSON-LD
 src/routes/               pages and form actions; database access only through data/
 drizzle/                  generated SQL migrations
@@ -703,21 +703,34 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | What's new       | `/whats-new`                         | See below.                                                                                                                           |
 | Admin            | `/admin`                             | Invite households, list households, last backup date.                                                                                |
 
-**Feedback.** Every screen after household setup, from Grocery list to Admin, has a round
-"Send feedback" button with a speech-bubble icon at the bottom right, just above the tab bar.
-Pages leave room at the end so it never covers their last row, and printing hides it. It opens
-a "Send feedback" sheet with a Feedback box of up to 2,000 characters, a count such as
-"120 / 2,000" ("You've reached the 2,000-character limit." at 2,000), and Send. An empty box
-says "Enter your feedback". While sending, Send reads "Sending…" and can't be tapped again.
+**Feedback.** Every screen after household setup, from Grocery list to Admin, has a round "Send
+feedback" button with a speech-bubble icon at the bottom right, just above the tab bar. Pages
+leave room at the end so it never covers their last row, and printing hides it. It opens a "Send
+feedback" sheet with a Feedback box of up to 2,000 characters, a count such as "120 / 2,000"
+("You've reached the 2,000-character limit." at 2,000), an optional Screenshot, and Send. An
+empty box says "Enter your feedback". Add screenshot opens the device's photo or file picker for
+one PNG or JPEG of up to 3 MB (3,000,000 bytes), which then shows as a thumbnail with Replace
+and Remove (MEA-44). A larger file says "That screenshot is over 3 MB. Choose a smaller one."
+and any other file, whatever its name says, "The screenshot must be a PNG or JPEG."; the
+screenshot already chosen stays. While sending, Send reads "Sending…" and can't be tapped again.
 Sending creates a Task in the MEA backlog, labeled `user-feedback`, titled "Feedback: " and the
 first 80 characters of the message's first line. Its description has the message, the page's
 path and query, the sender's name and email, the household's name, the browser's user agent and
 the window size. The sender and household come from the session. The app's server creates it
 with Jira's API and the `JIRA_*` settings (4.3), so the token never reaches the browser and the
-ticket's reporter is that token's account. The sheet then says "Thanks, your feedback was
-sent." The page behind isn't reloaded, so anything typed there and not saved stays. If Jira
-can't be reached or refuses the ticket, it says "Couldn't send your feedback. Try again." and
-keeps the message. Feedback isn't stored in the app.
+ticket's reporter is that token's account. The server checks the screenshot the same way before
+it creates the ticket, then attaches it to the ticket as `screenshot.png` or `screenshot.jpg`,
+by the type its content shows. The ticket's title, labels and description are the same with or
+without one. The sheet then says "Thanks, your feedback was sent." The page behind isn't
+reloaded, so anything typed there and not saved stays. If Jira can't be reached, or refuses the
+ticket or the screenshot, it says "Couldn't send your feedback. Try again." and keeps the
+message and screenshot. When the ticket was created but its screenshot wasn't attached, the
+server also answers with a retry token: the ticket's key, signed with the Jira API token for the
+sender and the message, so it needs no storage. Sending the same message again sends the token,
+and the server attaches the screenshot to that ticket instead of creating another, or finishes
+without Jira if the screenshot was removed. A token that was changed or made for another person
+or message is refused, and nothing is sent. A changed message is sent as new feedback. Feedback
+and screenshots aren't stored in the app.
 
 **Help.** Every screen after household setup, from Grocery list to Admin, has a Help button in
 the header to the left of More, which printing hides with the rest of the header. It opens a
