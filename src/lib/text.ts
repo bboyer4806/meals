@@ -1,10 +1,28 @@
+/**
+ * The longest text normalizeName and foldCase take. Unicode normalization (NFC) takes time that
+ * grows with the square of a run of combining marks: 10,000 of them take a few hundredths of a
+ * second, and millions would hold up the server for every household for half an hour (MEA-64).
+ * Text people send is checked before it's normalized: a name against its own limit (sentMax in
+ * server/forms.ts), and longer text, such as an imported cell, against this one.
+ */
+export const NORMALIZE_MAX_LENGTH = 10_000;
+
+/** Throws for text longer than NORMALIZE_MAX_LENGTH, which a check before this one missed. */
+function requireNormalizable(text: string): void {
+	if (text.length > NORMALIZE_MAX_LENGTH) {
+		throw new Error(`Text of ${text.length} characters is too long to normalize`);
+	}
+}
+
 /** Trims a name and collapses runs of spaces, so "  Paper   towels " becomes "Paper towels". */
 export function normalizeName(name: string): string {
+	requireNormalizable(name);
 	return name.normalize('NFC').trim().replace(/\s+/g, ' ');
 }
 
 /** Folds case for matching names, including non-ASCII letters: "Éclairs" matches "éclairs". */
 export function foldCase(text: string): string {
+	requireNormalizable(text);
 	// Normalized again because lowercasing can undo NFC: a capital J with a caron has no
 	// single-character form, but the lowercase one does.
 	return text.normalize('NFC').toLowerCase().normalize('NFC');

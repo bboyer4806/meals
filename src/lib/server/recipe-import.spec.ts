@@ -4,6 +4,7 @@ import { createItem, findItemByName, setItemArchived } from './data/items.ts';
 import { transaction } from './db/index.ts';
 import { importRecipeFile, templateCsv } from './recipe-import.ts';
 import { freshDb, ingredient, makeDish, makeHousehold, recipe } from './testing.ts';
+import { NORMALIZE_MAX_LENGTH } from '../text.ts';
 
 const NOW = Date.UTC(2026, 9, 3, 17, 0);
 
@@ -116,6 +117,26 @@ describe('importRecipeFile', () => {
 		expect(names()).toEqual([]);
 	});
 
+	it('refuses a cell over 10000 characters before reading it (MEA-64)', async () => {
+		const most = 'a'.repeat(NORMALIZE_MAX_LENGTH);
+		const over = `${most}a`;
+		// Row 2's steps fit, and its Rating is ignored, however long.
+		const csv = ['Recipe,Steps,Rating', `Toast,${most},${over}`, `Soup,${over},`].join('\n');
+		expect(await importRecipeFile(householdId, form(csv), NOW)).toEqual({
+			kind: 'problems',
+			problems: ['Row 3: keep each cell under 10000 characters.']
+		});
+		expect(await importRecipeFile(householdId, form(`Recipe,${over}\nToast`), NOW)).toEqual({
+			kind: 'problems',
+			problems: ['Row 1: keep each cell under 10000 characters.']
+		});
+		expect(names()).toEqual([]);
+
+		const steps = ['Recipe,Steps', `Toast,${most}`].join('\n');
+		expect(await importRecipeFile(householdId, form(steps), NOW)).toMatchObject({ imported: 1 });
+		expect(dishNamed('Toast').steps).toBe(most);
+	});
+
 	it('needs a Recipe column', async () => {
 		const result = await importRecipeFile(householdId, form('Name,Steps\nToast,Eat'), NOW);
 		expect(result).toEqual({
@@ -179,7 +200,9 @@ describe('importRecipeFile', () => {
 		const cases: [rename: string, problem: string][] = [
 			['', 'Row 2: enter a new name.'],
 			['soup', 'Row 2: a recipe is already called soup.'],
-			['RICE', 'Row 2: RICE is also on row 3.']
+			['RICE', 'Row 2: RICE is also on row 3.'],
+			// Refused before it's normalized, which would throw for it (text.ts; MEA-64).
+			['x'.repeat(NORMALIZE_MAX_LENGTH + 1), 'Row 2: keep a new name under 80 characters.']
 		];
 		for (const [rename, problem] of cases) {
 			const result = await importRecipeFile(

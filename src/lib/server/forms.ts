@@ -7,9 +7,27 @@ import { normalizeName } from '../text.ts';
 
 export const id = z.coerce.number().int().positive();
 
+/**
+ * The most characters a name of up to `max` characters may have as sent. Normalizing a name can
+ * shorten it, as accents sent apart from their letters join them and runs of spaces become one,
+ * but it takes time that grows with the square of a run of combining marks (text.ts), so longer
+ * text is refused before it's normalized (MEA-64).
+ */
+export function sentMax(max: number): number {
+	return max * 4;
+}
+
+/**
+ * A name as sent, up to sentMax characters, for normalizing and checking after. Longer text gets
+ * the message for a name over `max`, such as "Keep a label under 30 characters". `params` sets
+ * the message for a missing field.
+ */
+export function sentName(max: number, what: string, params?: { error: string }) {
+	return z.string(params).max(sentMax(max), `Keep ${what} under ${max} characters`);
+}
+
 export function nameField(max: number, what: string) {
-	return z
-		.string()
+	return sentName(max, what)
 		.transform(normalizeName)
 		.pipe(
 			z

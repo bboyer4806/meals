@@ -262,6 +262,13 @@ lost, so is everything. Moving backups off the server later is a small change.
   used. Signing out deletes the session.
 - **Forms:** SvelteKit's origin check blocks cross-site form posts. All input is validated
   with Zod.
+- **Long text** (MEA-64). Names are matched and stored in one Unicode form (NFC), and putting
+  text in that form takes time that grows with the square of a run of combining marks: one name
+  of millions would hold up the server for every household for half an hour. So length is
+  checked first. A name may be up to 4 times its limit as sent, since accents sent apart from
+  their letters join them and runs of spaces become one. A cell of an imported file may be up to
+  10,000 characters, and a page's text is cut to 10,000 characters in one place (7, Import from
+  a link). Longer text that gets past these checks is refused with an error.
 - **No raw HTML** from user input is ever rendered (no `{@html}`), and SvelteKit's
   built-in Content Security Policy is turned on.
 - **Admin** is only the `ADMIN_EMAIL` account. It sees household names and member
@@ -557,10 +564,10 @@ on the list. The rest of this section describes it as built.
   to Side. Dishes are listed Main, Side, Dessert, Other (Q29).
 - **Copy a dinner** (Q3, Q30): the picker groups all dinners that have dishes by their
   exact set of non-archived dishes. Each group shows its dishes, how many times it was
-  made, and when it was last made. The most-made groups are listed first. Typing filters
-  to groups with a dish whose name matches, most recent first. Copying sets the type and
-  the dishes with their roles. Each dinner counts on its own, so a date with Kids and Adults
-  dinners counts as one make for each.
+  made, and when it was last made. The most-made groups are listed first. Typing, up to 80
+  characters as in a dish name, filters to groups with a dish whose name matches, most recent
+  first. Copying sets the type and the dishes with their roles. Each dinner counts on its own,
+  so a date with Kids and Adults dinners counts as one make for each.
 - **Move to another date** (addition 2.2.2) moves all of a date's dinners, and swaps them
   with the other date's if it has any; a date's dinners can't be moved separately. Tapping
   the date at the top of its page opens it (7). On a computer, dragging a day onto another in
@@ -756,9 +763,11 @@ or a common one, such as clove, can, pinch, slice or stick, while any other word
 item; then the item up to the first comma, and the rest as the prep note. "1 1/2 cups flour,
 sifted" is 1 1/2, cup, flour and sifted; "Salt, to taste" has no amount. Fields follow the
 editor's rules and limits, tags are separated by commas, and a blank Servings is the
-household's usual servings. If anything is wrong, nothing is imported, and the page lists each
-problem with its row number (the header is row 1), such as "Row 7: enter an amount like 1 1/2."
-Problems include a missing Recipe column, a row without a name, a name used twice in the file
+household's usual servings. A cell holds up to 10,000 characters (4.5). If anything is wrong,
+nothing is imported, and the page lists each problem with its row number (the header is row
+1), such as "Row 7: enter an amount like 1 1/2." Problems include a missing Recipe column, a
+cell over 10,000 characters ("Row 3: keep each cell under 10000 characters."), a row without
+a name, a name used twice in the file
 ("Row 5: Pound cake is also on row 2."), an ingredient the editor wouldn't take ("Row 7: '2 cups'
 needs an item.") and an archived item ("Row 9: Saffron is archived. Restore it on Items first."),
 since importing never restores items. A file with no problems whose recipe names are already in
@@ -809,8 +818,10 @@ ingredients, steps one per line, calories, protein, carbs and fat, with Source s
 Servings are the first whole number in the page's yield, such as 4 in "4 servings". Each
 ingredient is split as Import recipes splits one, so "1 1/2 cups flour, sifted" is 1 1/2, cups,
 flour and sifted. Steps grouped in sections keep their order without the section names, and
-HTML and character references such as `&amp;` are taken out of the text. Fields the page leaves
-out keep what a new recipe starts with, such as the household's usual servings; the photo, tags
+HTML and character references such as `&amp;` are taken out of the text. Text over 10,000
+characters in one place, such as the name, an ingredient or a step, is cut to 10,000 (4.5),
+which Save then checks like any other. Fields the page leaves out keep what a new recipe starts
+with, such as the household's usual servings; the photo, tags
 and notes are never imported. The page then says "Filled in from the page. Check it, then tap Save."
 Nothing is saved until Save, which checks the fields as if they were typed. A page without a
 Recipe says "Couldn't find a recipe on that page.", and one that can't be opened says

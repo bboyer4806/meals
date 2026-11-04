@@ -11,7 +11,7 @@ import {
 	type DishSaveResult,
 	type IngredientInput
 } from './data/dishes.ts';
-import { id, nameField, parseForm, type FormFailure } from './forms.ts';
+import { id, nameField, parseForm, sentMax, type FormFailure } from './forms.ts';
 import { deletePhoto, savePhoto } from './photos.ts';
 
 // The recipe editor's form (design 7, Edit recipe): the text its fields start with, what it
@@ -184,25 +184,31 @@ function multiline(max: number, what: string) {
 		.transform(orNull);
 }
 
-/** Comma-separated, each tag once ignoring case. The first spelling wins, as when saving. */
-const tagsField = z.string().transform((text, ctx) => {
-	const tags = new Map<string, string>();
-	for (const part of text.split(',')) {
-		const tag = normalizeName(part);
-		const key = foldCase(tag);
-		if (tag !== '' && !tags.has(key)) tags.set(key, tag);
-	}
-	const list = [...tags.values()];
-	if (list.some((tag) => tag.length > 30)) {
-		ctx.addIssue({ code: 'custom', message: 'Keep each tag under 30 characters' });
-		return z.NEVER;
-	}
-	if (list.length > 10) {
-		ctx.addIssue({ code: 'custom', message: 'Use 10 tags or fewer' });
-		return z.NEVER;
-	}
-	return list;
-});
+/**
+ * Comma-separated, each tag once ignoring case. The first spelling wins, as when saving. The
+ * field's length, the editor's limit, is checked before the tags are normalized (text.ts).
+ */
+const tagsField = z
+	.string()
+	.max(400, 'Keep the tags under 400 characters')
+	.transform((text, ctx) => {
+		const tags = new Map<string, string>();
+		for (const part of text.split(',')) {
+			const tag = normalizeName(part);
+			const key = foldCase(tag);
+			if (tag !== '' && !tags.has(key)) tags.set(key, tag);
+		}
+		const list = [...tags.values()];
+		if (list.some((tag) => tag.length > 30)) {
+			ctx.addIssue({ code: 'custom', message: 'Keep each tag under 30 characters' });
+			return z.NEVER;
+		}
+		if (list.length > 10) {
+			ctx.addIssue({ code: 'custom', message: 'Use 10 tags or fewer' });
+			return z.NEVER;
+		}
+		return list;
+	});
 
 const rowsSchema = z.array(
 	z.discriminatedUnion('kind', [
@@ -257,6 +263,15 @@ function readIngredients(json: string): IngredientInput[] | string {
 }
 
 /**
+ * The problem with a row's field over its limit, such as "Ingredient 2: keep the item under 80
+ * characters". A field is checked as sent, against sentMax (forms.ts), before it's normalized,
+ * and then as normalized.
+ */
+function tooLong(label: string, field: string, max: number): string {
+	return `${label}: keep the ${field} under ${max} characters`;
+}
+
+/**
  * The rows as ingredients, in order, each in the section of the heading above it, or the first
  * problem with them, which starts with the row's label. Fully blank rows are left out.
  */
@@ -265,8 +280,9 @@ export function readRows(rows: { row: RecipeRow; label: string }[]): IngredientI
 	let section: string | null = null;
 	for (const { row, label } of rows) {
 		if (row.kind === 'section') {
+			if (row.heading.length > sentMax(60)) return tooLong(label, 'heading', 60);
 			const heading = normalizeName(row.heading);
-			if (heading.length > 60) return `${label}: keep the heading under 60 characters`;
+			if (heading.length > 60) return tooLong(label, 'heading', 60);
 			// A blank heading ends the section above it. A heading with no ingredients after it
 			// is dropped, since sections are stored on ingredients.
 			section = orNull(heading);
@@ -286,6 +302,9 @@ function readIngredient(
 	label: string,
 	section: string | null
 ): IngredientInput | null | string {
+	if (row.unit.length > sentMax(20)) return tooLong(label, 'unit', 20);
+	if (row.item.length > sentMax(80)) return tooLong(label, 'item', 80);
+	if (row.prepNote.length > sentMax(80)) return tooLong(label, 'prep note', 80);
 	const amountText = row.amount.trim();
 	const unit = normalizeUnit(row.unit);
 	const itemName = normalizeName(row.item);
@@ -306,12 +325,12 @@ function readIngredient(
 		// The smallest amount a recipe shows (amounts.ts).
 		if (amount < 0.001) return `${label}: enter a larger amount`;
 	}
-	if (unit !== null && unit.length > 20) return `${label}: keep the unit under 20 characters`;
+	if (unit !== null && unit.length > 20) return tooLong(label, 'unit', 20);
 	// A unit alone can't be scaled or shown (design 5).
 	if (unit !== null && amount === null) return `${label}: enter an amount, or clear the unit`;
 	if (itemName === '') return `${label} needs an item`;
-	if (itemName.length > 80) return `${label}: keep the item under 80 characters`;
-	if (prepNote.length > 80) return `${label}: keep the prep note under 80 characters`;
+	if (itemName.length > 80) return tooLong(label, 'item', 80);
+	if (prepNote.length > 80) return tooLong(label, 'prep note', 80);
 	return { section, amount, unit, itemName, prepNote: orNull(prepNote) };
 }
 

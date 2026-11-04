@@ -2,7 +2,9 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 import { dateIn } from '#lib/dates.ts';
 import {
+	DINNER_LABEL_MAX,
 	DINNER_NOTE_MAX,
+	DINNER_RESTAURANT_MAX,
 	DINNER_TYPES,
 	DINNER_TYPE_LABELS,
 	DISH_ROLES,
@@ -20,6 +22,7 @@ import {
 	dishSuggestions,
 	getDay,
 	listCopyGroups,
+	MAX_DISH_NAME,
 	moveDinners,
 	removeDinnerDish,
 	restoreAndAddDinnerDish,
@@ -33,7 +36,7 @@ import {
 	promoteDishRequest,
 	promoteRestaurantRequest
 } from '#lib/server/data/requests.ts';
-import { attempt, id, parseForm } from '#lib/server/forms.ts';
+import { attempt, id, parseForm, sentName } from '#lib/server/forms.ts';
 
 // A date's dinners (design 7, Dinner; 6.9). Each form sends only what it changes and the rest
 // stays as saved, so a page left open doesn't put back what someone else changed meanwhile
@@ -81,6 +84,10 @@ const confirmed = z
 
 const role = z.enum(DISH_ROLES, { error: 'Pick a role' });
 
+// A dinner's label as sent. The data layer normalizes and checks it (6.9), and text too long to
+// normalize is refused here first (sentName).
+const sentLabel = sentName(DINNER_LABEL_MAX, 'a label');
+
 const typeSchema = z.object({
 	type: z.enum(DINNER_TYPES, { error: 'Pick a type' }),
 	removeDishes: confirmed,
@@ -90,12 +97,12 @@ const typeSchema = z.object({
 // Eating out and Leftovers show no servings, only Eating out shows the restaurant, and a date
 // with one dinner no label, so a missing field keeps what's saved. The type is the one the page
 // shows, used only if the dinner is gone by the time this is saved. The data layer checks the
-// label and the restaurant (6.9).
+// label and the restaurant (6.9) once they're short enough to normalize (sentName).
 const detailsSchema = z.object({
 	dinnerId: shownDinner,
-	label: z.string().optional(),
+	label: sentLabel.optional(),
 	type: z.enum(DINNER_TYPES, { error: 'Pick a type' }).optional(),
-	restaurantName: z.string().optional(),
+	restaurantName: sentName(DINNER_RESTAURANT_MAX, 'the restaurant').optional(),
 	servings: z.coerce
 		.number()
 		.int('Enter a whole number of servings')
@@ -113,7 +120,7 @@ const detailsSchema = z.object({
 
 // A suggestion or a new name alike; the data layer finds an existing dish by name.
 const addDishSchema = z.object({
-	name: z.string({ error: 'Enter a dish name' }),
+	name: sentName(MAX_DISH_NAME, 'a dish name', { error: 'Enter a dish name' }),
 	role,
 	dinnerId: shownDinner
 });
@@ -125,11 +132,8 @@ const dishSchema = z.object({ dishId: id, dinnerId: id });
 
 // The first dinner's label comes only with the date's second dinner (6.9).
 const addDinnerSchema = z.object({
-	firstLabel: z
-		.string()
-		.optional()
-		.transform((value) => value ?? null),
-	label: z.string({ error: 'Enter a label for each dinner' })
+	firstLabel: sentLabel.optional().transform((value) => value ?? null),
+	label: sentName(DINNER_LABEL_MAX, 'a label', { error: 'Enter a label for each dinner' })
 });
 
 // The past dinner to copy, and the one on this date the page showed.
@@ -147,14 +151,8 @@ const clearSchema = z.object({ dinnerId: shownDinner });
 const promoteSchema = z.object({
 	requestId: id,
 	dinnerId: id.optional(),
-	firstLabel: z
-		.string()
-		.optional()
-		.transform((value) => value ?? null),
-	label: z
-		.string()
-		.optional()
-		.transform((value) => value ?? null)
+	firstLabel: sentLabel.optional().transform((value) => value ?? null),
+	label: sentLabel.optional().transform((value) => value ?? null)
 });
 
 // A restaurant request, which always goes on a new Eating out dinner, with the labels the page

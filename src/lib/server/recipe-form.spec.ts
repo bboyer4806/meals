@@ -26,6 +26,7 @@ import {
 	type RecipeRow
 } from './recipe-form.ts';
 import { TEST_ENV, freshDb, ingredient, makeDish, makeHousehold, recipe } from './testing.ts';
+import { NORMALIZE_MAX_LENGTH } from '../text.ts';
 
 // The real functions, which a test can make fail once.
 vi.mock('./data/dishes.ts', async (importOriginal) => {
@@ -264,6 +265,16 @@ describe('tags', () => {
 			'Keep each tag under 30 characters'
 		);
 	});
+
+	it("limits the field to the editor's 400 characters, before reading the tags (MEA-64)", () => {
+		const spaced = `Dinner,${' '.repeat(387)},Quick`;
+		expect(tags(spaced)).toEqual(['Dinner', 'Quick']);
+		expect(problem({ tags: `${spaced} ` })).toBe('Keep the tags under 400 characters');
+		// normalizeName would throw for this (text.ts).
+		expect(problem({ tags: 'a'.repeat(NORMALIZE_MAX_LENGTH + 1) })).toBe(
+			'Keep the tags under 400 characters'
+		);
+	});
 });
 
 describe('ingredient rows', () => {
@@ -422,6 +433,35 @@ describe('ingredient rows', () => {
 		expect(rowProblem(row('1', '', 'Flour', 'p'.repeat(81)))).toBe(
 			'Ingredient 1: keep the prep note under 80 characters'
 		);
+	});
+
+	it('refuses fields over 4 times their limits before normalizing them (MEA-64)', () => {
+		// Spaces, which normalizing collapses, fill each field to 4 times its limit.
+		expect(
+			ingredients(
+				heading('For the cake'.padEnd(240)),
+				row('1', 'cup'.padEnd(80), 'Flour'.padEnd(320), 'sifted'.padEnd(320))
+			)
+		).toEqual([ingredient('Flour', 1, 'cup', { section: 'For the cake', prepNote: 'sifted' })]);
+		// One character more, and text that normalizeName would throw for (text.ts).
+		for (const extra of [1, NORMALIZE_MAX_LENGTH]) {
+			const tries: [RecipeRow, string][] = [
+				[heading('Cake'.padEnd(240 + extra)), 'Section 1: keep the heading under 60 characters'],
+				[
+					row('1', 'cup'.padEnd(80 + extra), 'Flour'),
+					'Ingredient 1: keep the unit under 20 characters'
+				],
+				[
+					row('1', '', 'Flour'.padEnd(320 + extra)),
+					'Ingredient 1: keep the item under 80 characters'
+				],
+				[
+					row('1', '', 'Flour', 'sifted'.padEnd(320 + extra)),
+					'Ingredient 1: keep the prep note under 80 characters'
+				]
+			];
+			for (const [sent, message] of tries) expect(rowProblem(sent)).toBe(message);
+		}
 	});
 
 	it('allows 100 ingredients, not counting blank rows', () => {

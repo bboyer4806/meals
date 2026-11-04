@@ -52,6 +52,9 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
   changes; both helpers are in `src/lib/server/forms.ts`. Data-layer HTTP 400s become form
   messages, shown to people as written. Recipe/photo saves use the specialized async
   `saveRecipe` in `src/lib/server/recipe-form.ts`; do not force them through `attempt`.
+- Check the length of text people send before it's normalized: names with `nameField` or
+  `sentName` in `src/lib/server/forms.ts`, longer text against `NORMALIZE_MAX_LENGTH` in
+  `src/lib/text.ts`. `normalizeName` and `foldCase` throw for longer text (design 4.5).
 - Routes import shared code as `#lib/...` (`package.json` imports).
 
 ## Database
