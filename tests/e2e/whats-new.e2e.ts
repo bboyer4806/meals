@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.9 was released on 2026-11-03, after 1.8.
+// What's new (design 7). 1.10 was released on 2026-11-04, after 1.9.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -28,8 +28,8 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
-	const [v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
+	const [v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
 		page.locator('section').nth(2),
@@ -38,8 +38,30 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 		page.locator('section').nth(5),
 		page.locator('section').nth(6),
 		page.locator('section').nth(7),
-		page.locator('section').nth(8)
+		page.locator('section').nth(8),
+		page.locator('section').nth(9)
 	];
+	await expect(v110.getByText('Released November 4, 2026')).toBeVisible();
+	await expect(v110.getByRole('listitem')).toHaveText([
+		"Coming back to Meals without a connection keeps the page and what you typed instead of showing Something went wrong. The page says Couldn't refresh at the bottom and reloads once you're back online.",
+		'Saving a dinner now scrolls the week to that day, so you can see it say Saved.',
+		'Mark all ordered and Mark all received now say how many items they marked, and change only the items they asked about, so an item added meanwhile waits for the next order.',
+		"When a recipe can't be saved, every problem shows at once, each under its field, instead of only the first one at the top.",
+		"On a dinner's page, the servings, label, restaurant and note you typed come back if your phone reloads the page while you're in another app. Leaving with a dish name typed but not added asks first.",
+		'Tap outside the More menu, or press Escape, to close it.',
+		'Scrolling in a panel, such as the one a grocery line opens, no longer moves the page behind it.',
+		"In Request a dish, the suggestions show under Dish instead of covering Note and Request. A requested dish's name is also easier to tap to open its recipe.",
+		'Cancel in the recipe editor or Import recipes, and Back to recipe in the cooking view, return to where you were, as you left it. Going back from there no longer opens them again.',
+		'On New recipe, importing from a link keeps the photo, tags and notes you added and asks before replacing anything else you typed. Leaving after an import, before Save, asks first.',
+		'In Got fewer on a grocery line, the button is now Save received, and a problem shows right under it instead of at the top.',
+		"On a dinner's page, dish suggestions scroll under the header and tabs, so tapping Help, More or a tab no longer adds a dish. A line now separates the dinners on a day with several.",
+		'History shows the year on dates from earlier years, and moving a dinner shows the year when the new date is in another year.',
+		'On a slow connection, quick changes on a day with no dinner yet all go through, instead of saying someone put another dinner on this date.',
+		'Imports read ingredients such as 2 cloves of garlic, 500g flour and 1 (14 oz) can of tomatoes correctly. Import from a link also keeps é, ° and ½ from older sites and reads nutrition such as 1,250 kcal in full.',
+		"T., Tb and TB now count as tablespoons and t. as teaspoons. A step with a time such as 1 1\u20442 hours no longer says its amounts aren't scaled.",
+		'Import recipes reads ingredients and steps on their own lines in a cell, and an inch mark like 9" no longer merges rows. A file not saved as CSV UTF-8 is refused with how to fix it, instead of garbling é, ½ and °.',
+		'When a page still shows a grocery line, request, invite or member someone else already removed, tapping it no longer changes a newer one or shows Not found.'
+	]);
 	await expect(v19.getByText('Released November 3, 2026')).toBeVisible();
 	await expect(v19.getByRole('listitem')).toHaveText([
 		"On a dinner's page, tap a dish in the suggestions to add it right away, with the role shown beside Add. The suggestions now show below the role and Add instead of covering them.",
@@ -148,14 +170,14 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	browser,
 	baseURL
 }) => {
-	// Two members of the household who joined before 1.9 and have seen 1.8.
+	// Two members of the household who joined before 1.10 and have seen 1.9.
 	const joined = Date.UTC(2026, 9, 1, 17);
 	setCreatedAt(db, person.userId, joined);
-	db.prepare("update users set whats_new_seen = '1.8' where id = ?").run(person.userId);
+	db.prepare("update users set whats_new_seen = '1.9' where id = ?").run(person.userId);
 	const memberId = Number(
 		db
 			.prepare(
-				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.8')"
+				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.9')"
 			)
 			.run(
 				person.householdId,
@@ -171,7 +193,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	await link(page).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
-	expect(seen(db, person.userId)).toBe('1.9');
+	expect(seen(db, person.userId)).toBe('1.10');
 
 	// Opening it cleared only their own dot.
 	const other = await browser.newContext();
@@ -179,7 +201,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	const phone = await other.newPage();
 	await phone.goto('/groceries');
 	await expect(more(phone).locator('.dot')).toBeVisible();
-	expect(seen(db, memberId)).toBe('1.8');
+	expect(seen(db, memberId)).toBe('1.9');
 	await other.close();
 });
 
@@ -188,7 +210,7 @@ test('shows no dot to someone who joined after the newest release', async ({
 	db,
 	person
 }) => {
-	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 3, 17));
+	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 4, 17));
 	await page.goto('/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
