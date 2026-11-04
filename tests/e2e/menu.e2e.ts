@@ -677,6 +677,31 @@ test('goes to the week after a save, which says Saved on that day for a moment',
 	expect(questions).toEqual([]);
 });
 
+test('opens the week at the saved day on a phone, so its Saved is on screen', async ({
+	page,
+	db,
+	person
+}) => {
+	// A dinner with a long note on every day runs the week well past a phone's screen (MEA-192).
+	const sunday = addDays(sundayOf(today()), 7);
+	for (let days = 0; days < 7; days += 1) {
+		addDinner(db, person.householdId, addDays(sunday, days), {
+			note: 'Shop on the way home\nSet the table early\nCall Grandma after\nWalk the dog'
+		});
+	}
+	const thursday = addDays(sunday, 4);
+	const row = day(page, thursday);
+	await open(page, `/menu?week=${sunday}`);
+	await expect(row).not.toBeInViewport();
+
+	await open(page, `/menu/${thursday}`);
+	await page.getByLabel('Note', { exact: true }).fill('Pizza night');
+	await saveToWeek(page, thursday);
+	await expect(row).toBeInViewport({ ratio: 1 });
+	// Its date and Saved line is clear of the header and the tabs.
+	expect(await uncovered(row.locator('.when'))).toBe(true);
+});
+
 test('lets someone leave while a save is on its way, and stays where they went', async ({
 	page,
 	db,

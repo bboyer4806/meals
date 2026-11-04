@@ -16,21 +16,32 @@
 	let { data } = $props();
 
 	// Saving a dinner's servings and note comes here with ?saved=<its id> (design 7, Dinner),
-	// and that dinner's line says "Saved" for 3 seconds. The address drops it straight away, so a
-	// reload, or coming back with Back, doesn't say it again.
+	// and that dinner's line says "Saved" for 3 seconds. The week scrolls to that dinner's day, so
+	// the line is on screen (MEA-192). The address drops it straight away, so a reload, or coming
+	// back with Back, doesn't say it again.
 	let saved = $state<string | null>(null);
 	let savedTimer: ReturnType<typeof setTimeout> | undefined;
 	afterNavigate(({ to, shallow }) => {
 		// Dropping it from the address is a navigation too.
 		if (shallow || !to) return;
 		clearTimeout(savedTimer);
-		saved = to.url.searchParams.get('saved');
-		if (saved === null) return;
+		const dinnerId = to.url.searchParams.get('saved');
+		saved = dinnerId;
+		if (dinnerId === null) return;
 		savedTimer = setTimeout(() => (saved = null), 3000);
 		const address = new URL(to.url);
 		address.searchParams.delete('saved');
 		void goto(address, { shallow: true, replace: true });
+		void tick().then(() => showDayOf(dinnerId));
 	});
+
+	/** Scrolls the dinner's day to the middle of the screen, clear of the header and tabs. */
+	function showDayOf(dinnerId: string) {
+		const day = data.days.find(({ dinners }) => dinners.some(({ id }) => String(id) === dinnerId));
+		// Someone cleared or moved it since, so this week has no line to show.
+		if (!day) return;
+		document.querySelector(`a.day[data-date="${day.date}"]`)?.scrollIntoView({ block: 'center' });
+	}
 
 	// Requests for a dish or a restaurant (6.12). The fields stop taking characters at their limit,
 	// pasted text included, and say so while they're full.
