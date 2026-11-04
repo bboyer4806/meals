@@ -269,6 +269,13 @@ lost, so is everything. Moving backups off the server later is a small change.
   their letters join them and runs of spaces become one. A cell of an imported file may be up to
   10,000 characters, and a page's text is cut to 10,000 characters in one place (7, Import from
   a link). Longer text that gets past these checks is refused with an error.
+- **Request size** (MEA-66). Node reads a URL-encoded form in time that grows with the square of
+  its length: one crafted 5 MB form would hold up the server for every household for minutes. So
+  a request's body may be at most 64 KB, checked against the length the request states before
+  anything reads it, and a POST that doesn't state its length is refused. The largest form people
+  send this way, a dinner's note or feedback, comes to about 25 KB. Only the recipe editor and
+  Import recipes send more, a photo or a file as multipart/form-data, which they may send up to
+  5 MB (`BODY_SIZE_LIMIT`, 4.2).
 - **No raw HTML** from user input is ever rendered (no `{@html}`), and SvelteKit's
   built-in Content Security Policy is turned on.
 - **Admin** is only the `ADMIN_EMAIL` account. It sees household names and member
