@@ -679,6 +679,17 @@ describe('archived items', () => {
 		expect(problem({}, { restoreItems: jpeg() })).toBe(message);
 	});
 
+	it('fail for a longer list than the editor sends, before it is split (MEA-65)', () => {
+		// A recipe has at most 100 ingredients, so the editor asks about at most 100 items.
+		const hundred = Array.from({ length: 100 }, (_, i) => 999_999_900 + i).join(',');
+		expect(hundred).toHaveLength(999);
+		expect(parse({}, { restoreItems: hundred }).restoreItemIds).toHaveLength(100);
+		const message = "The items to restore couldn't be read. Reload the page and try again.";
+		expect(problem({}, { restoreItems: `${hundred},1` })).toBe(message);
+		// Splitting this would take seconds and gigabytes of memory.
+		expect(problem({}, { restoreItems: ','.repeat(5_000_000) })).toBe(message);
+	});
+
 	it('are named in a failure that offers to restore them (design 6.10)', () => {
 		const salt = { id: 3, name: 'Salt' };
 		const pepper = { id: 5, name: 'Pepper' };
