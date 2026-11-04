@@ -286,7 +286,7 @@
 </script>
 
 <svelte:head>
-	<title>{formatDateLabel(data.date)} · Meals</title>
+	<title>{formatDateLabel(data.date, { today: data.today })} · Meals</title>
 </svelte:head>
 
 <!-- Any form sent, as the person goes on, takes the last failure's messages away. -->

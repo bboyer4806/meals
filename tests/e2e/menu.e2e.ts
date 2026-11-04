@@ -1538,6 +1538,20 @@ test('says the year on Move when the new date is in another year', async ({
 	await expect(move).toHaveText(`Move to ${dayLabel(nextEve)}, ${year + 1}`);
 });
 
+test("says the year in a date's tab title when it isn't this year", async ({
+	page,
+	person: _
+}) => {
+	// As the date's heading does (MEA-232).
+	const now = today();
+	await open(page, `/menu/${now}`);
+	await expect(page).toHaveTitle(`${dayLabel(now)} · Meals`);
+	const lastYear = String(Number(now.slice(0, 4)) - 1);
+	const eve = `${lastYear}-12-31`;
+	await open(page, `/menu/${eve}`);
+	await expect(page).toHaveTitle(`${dayLabel(eve)}, ${lastYear} · Meals`);
+});
+
 test('clears a dinner after asking, and shows the date as not planned', async ({
 	page,
 	db,
