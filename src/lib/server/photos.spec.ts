@@ -1,20 +1,33 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync
+} from 'node:fs';
+import http from 'node:http';
+import https from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isHttpError } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from './config.ts';
 import { setDishArchived, setDishPhoto } from './data/dishes.ts';
+import { createItem, setItemArchived, setItemPhoto } from './data/items.ts';
 import {
 	deletePhoto,
+	discardPhoto,
+	fetchImage,
 	householdOwnsPhoto,
 	PHOTO_MAX_BYTES,
 	photoPath,
 	savePhoto,
 	THUMB_MAX_BYTES
 } from './photos.ts';
-import { TEST_ENV, freshDb, makeDish, makeHousehold, recipe } from './testing.ts';
+import { TEST_ENV, freshDb, makeDish, makeHousehold, recipe, servePages } from './testing.ts';
 
 // Real random bytes unless a test says otherwise.
 vi.mock('node:crypto', async (importOriginal) => {
@@ -39,6 +52,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	rmSync(dataDir, { recursive: true, force: true });
+	vi.restoreAllMocks();
 });
 
 /** A file of `size` bytes that starts like a JPEG. */
@@ -175,6 +189,28 @@ describe('photoPath', () => {
 	});
 });
 
+describe('discardPhoto', () => {
+	it('removes both files', async () => {
+		const key = await savePhoto(jpeg(), jpeg());
+		discardPhoto(key);
+		expect(storedFiles()).toEqual([]);
+	});
+
+	it("logs rather than throws when the files can't be deleted", async () => {
+		const key = await savePhoto(jpeg(), jpeg());
+		// A folder in place of the photo can't be deleted as a file.
+		rmSync(photoPath(key, 'full'));
+		mkdirSync(photoPath(key, 'full'));
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		expect(() => discardPhoto(key)).not.toThrow();
+		expect(logged).toHaveBeenCalledExactlyOnceWith(
+			`Couldn't delete photo ${key}`,
+			expect.any(Error)
+		);
+	});
+});
+
 describe('householdOwnsPhoto', () => {
 	it("is true only for a photo on one of the household's dishes, archived or not", () => {
 		const { householdId } = makeHousehold();
@@ -191,5 +227,85 @@ describe('householdOwnsPhoto', () => {
 
 		setDishPhoto(householdId, dishId, null, 0);
 		expect(householdOwnsPhoto(householdId, KEY)).toBe(false);
+	});
+
+	it("is true only for an image on one of the household's items, archived or not", () => {
+		const { householdId } = makeHousehold();
+		const other = makeHousehold();
+		const itemId = createItem(householdId, 'Milk', 0).id;
+		setItemPhoto(householdId, itemId, KEY);
+
+		expect(householdOwnsPhoto(householdId, KEY)).toBe(true);
+		expect(householdOwnsPhoto(other.householdId, KEY)).toBe(false);
+
+		setItemArchived(householdId, itemId, true, 0);
+		expect(householdOwnsPhoto(householdId, KEY)).toBe(true);
+
+		setItemPhoto(householdId, itemId, null);
+		expect(householdOwnsPhoto(householdId, KEY)).toBe(false);
+	});
+});
+
+describe('fetchImage', () => {
+	const LINK = 'https://shop.example/milk.png';
+	// The first bytes of each kind of image it takes, then some of the picture.
+	const IMAGES = {
+		JPEG: [0xff, 0xd8, 0xff, 0xe0, 1, 2, 3],
+		PNG: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3],
+		GIF: [...Buffer.from('GIF89a'), 1, 2, 3],
+		WebP: [...Buffer.from('RIFF'), 9, 0, 0, 0, ...Buffer.from('WEBPVP8 '), 1, 2, 3]
+	};
+
+	it.each(Object.entries(IMAGES))('gets a %s that a link points at', async (_kind, bytes) => {
+		const requested = servePages({ [LINK]: { status: 200, body: Buffer.from(bytes) } });
+		const image = await fetchImage(new URL(LINK));
+		expect([...image]).toEqual(bytes);
+		expect(requested).toEqual([LINK]);
+	});
+
+	it('asks for an image, uncompressed', async () => {
+		servePages({ [LINK]: { status: 200, body: Buffer.from(IMAGES.PNG) } });
+		await fetchImage(new URL(LINK));
+		const [[, options]] = vi.mocked(https.get).mock.calls as unknown as [
+			[URL, http.RequestOptions]
+		];
+		expect(options.headers).toEqual({
+			accept: 'image/jpeg,image/png,image/webp,image/gif',
+			'user-agent': 'Mozilla/5.0 (compatible; Meals item image)',
+			'accept-encoding': 'identity'
+		});
+	});
+
+	it('gives the image in an array of its own', async () => {
+		// Small enough that Node could keep it in a larger shared buffer.
+		servePages({ [LINK]: { status: 200, body: Buffer.from(IMAGES.JPEG) } });
+		const image = await fetchImage(new URL(LINK));
+		expect(image.byteOffset).toBe(0);
+		expect(image.buffer.byteLength).toBe(IMAGES.JPEG.length);
+	});
+
+	it.each([
+		['a web page', '<!doctype html><html><img src="milk.png"></html>'],
+		['an SVG', '<svg xmlns="http://www.w3.org/2000/svg"></svg>'],
+		['a TIFF', Buffer.from([0x49, 0x49, 0x2a, 0x00, 1, 2, 3])],
+		['a RIFF file that is not WebP', Buffer.from('RIFF\x09\x00\x00\x00WAVEfmt ', 'latin1')],
+		['nothing', '']
+	])("refuses %s, which isn't a JPEG, PNG, GIF or WebP", async (_kind, body) => {
+		servePages({ [LINK]: { status: 200, body } });
+		await expect(fetchImage(new URL(LINK))).rejects.toThrow(
+			`${LINK} isn't a JPEG, PNG, GIF or WebP`
+		);
+	});
+
+	it("fails as Import from a link does when it can't get the link", async () => {
+		const requested = servePages({ [LINK]: { status: 404 } });
+		await expect(fetchImage(new URL(LINK))).rejects.toThrow(`${LINK} answered 404`);
+		await expect(fetchImage(new URL('http://169.254.169.254/milk.png'))).rejects.toThrow(
+			'169.254.169.254 is a private address'
+		);
+		await expect(fetchImage(new URL('http://localhost:5173/milk.png'))).rejects.toThrow(
+			/^localhost is at (127\.0\.0\.1|::1), a private address$/
+		);
+		expect(requested).toEqual([LINK, 'http://localhost:5173/milk.png']);
 	});
 });

@@ -131,9 +131,9 @@ The storage folder belongs to uid 1000, the image's `node` user, and the app lis
 `ports:set` points the site at port 3000 straight away, so run it just before a deploy: the site
 shows an error until the deploy finishes.
 
-`nginx:set` raises nginx's upload limit from 1 MB to 5 MB, so recipe photos and feedback
-screenshots get through. The app's own limit is `BODY_SIZE_LIMIT` in the Dockerfile. On an app
-that's already deployed, also run `dokku proxy:build-config meals` so nginx uses the new limit.
+`nginx:set` raises nginx's upload limit from 1 MB to 5 MB, so recipe photos, item images and
+feedback screenshots get through. The app's own limit is `BODY_SIZE_LIMIT` in the Dockerfile. On an
+app that's already deployed, also run `dokku proxy:build-config meals` so nginx uses the new limit.
 
 If a deploy fails, its log shows the app's error. "Invalid environment variables" means a setting
 is missing, "DATA_DIR /data does not exist" means the mount is missing, and "unable to open
@@ -147,9 +147,9 @@ way before the version that needs it deploys, or that version won't start.
 ## Backups
 
 Every night at 03:00 server time, Dokku runs `node scripts/backup.js`. It copies the database to
-`/var/lib/dokku/data/storage/meals/backups/<date>/meals.db`, hard-links the recipe photos into
-`backups/<date>/photos/`, and keeps the newest 14 backups. A failed run leaves the existing
-backups alone.
+`/var/lib/dokku/data/storage/meals/backups/<date>/meals.db`, hard-links the recipe photos and item
+images into `backups/<date>/photos/`, and keeps the newest 14 backups. A failed run leaves the
+existing backups alone.
 
 A hard link is the same file under a second name, so a photo that hasn't changed takes no extra
 space, however many backups have it. The app never changes a photo file (a new photo gets a new

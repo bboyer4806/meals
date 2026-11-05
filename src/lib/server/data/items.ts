@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
-import { db } from '../db/index.ts';
+import { db, transaction } from '../db/index.ts';
 import { groceryNeeds, items, stores } from '../db/schema.ts';
 
 export type Item = {
@@ -8,6 +8,8 @@ export type Item = {
 	name: string;
 	notes: string | null;
 	defaultStoreId: number | null;
+	/** The item's image (photos.ts), if it has one. */
+	photoKey: string | null;
 	archivedAt: number | null;
 };
 
@@ -16,6 +18,7 @@ const itemFields = {
 	name: items.name,
 	notes: items.notes,
 	defaultStoreId: items.defaultStoreId,
+	photoKey: items.photoKey,
 	archivedAt: items.archivedAt
 };
 
@@ -50,6 +53,7 @@ export type PickerItem = {
 	id: number;
 	name: string;
 	notes: string | null;
+	photoKey: string | null;
 	/** Empty when the item has no default store or it's archived. */
 	defaultStoreId: number | null;
 	lastUnit: string | null;
@@ -63,6 +67,7 @@ export function listPickerItems(householdId: number): PickerItem[] {
 			id: items.id,
 			name: items.name,
 			notes: items.notes,
+			photoKey: items.photoKey,
 			defaultStoreId: sql<number | null>`case when ${stores.archivedAt} is null then ${items.defaultStoreId} end`,
 			lastUnit: sql<string | null>`(select ${groceryNeeds.unit} from ${groceryNeeds}
 				where ${groceryNeeds.itemId} = ${items.id}
@@ -79,6 +84,7 @@ export type CatalogItem = {
 	id: number;
 	name: string;
 	notes: string | null;
+	photoKey: string | null;
 	alwaysHave: boolean;
 	archivedAt: number | null;
 	defaultStoreName: string | null;
@@ -103,6 +109,7 @@ export function listCatalog(householdId: number, archived: boolean, search: stri
 			id: items.id,
 			name: items.name,
 			notes: items.notes,
+			photoKey: items.photoKey,
 			alwaysHave: items.alwaysHave,
 			archivedAt: items.archivedAt,
 			defaultStoreName: sql<string | null>`(select ${stores.name} from ${stores} where ${stores.id} = ${items.defaultStoreId})`,
@@ -138,6 +145,22 @@ export function updateItem(
 	}
 	db().update(items).set(changes).where(eq(items.id, itemId)).run();
 	return { kind: 'saved' };
+}
+
+/**
+ * Sets or clears the item's image (MEA-50). Returns the previous key, so the caller can delete its
+ * files, or null when there was none or it didn't change.
+ */
+export function setItemPhoto(
+	householdId: number,
+	itemId: number,
+	photoKey: string | null
+): string | null {
+	return transaction(() => {
+		const previous = getItem(householdId, itemId).photoKey;
+		db().update(items).set({ photoKey }).where(eq(items.id, itemId)).run();
+		return previous === photoKey ? null : previous;
+	});
 }
 
 /** Archiving only hides an item from suggestions and lists; everything using it keeps working. */

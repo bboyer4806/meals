@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
+	import ItemImage, { type ImageChoice } from '#lib/components/ItemImage.svelte';
+	import ItemThumb from '#lib/components/ItemThumb.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
 	import SearchBox from '#lib/components/SearchBox.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
@@ -14,15 +16,29 @@
 	// Rebuilt every time the sheet opens, so edits abandoned last time don't come back.
 	let editKey = $state(0);
 	let sheetError = $state('');
+	let image = $state<ImageChoice>({ kind: 'keep' });
+	let preparingImage = $state(false);
 
 	function edit(item: Item) {
 		editing = item;
 		editKey += 1;
 		sheetError = '';
+		image = { kind: 'keep' };
+		preparingImage = false;
 		open = true;
 	}
 
-	const submitSheet: SubmitFunction = () => {
+	const submitSheet: SubmitFunction = ({ action, formData, cancel }) => {
+		// Save sends the image with the name and notes. Archive and Restore leave it as it is.
+		if (action.search === '?/update') {
+			if (preparingImage) return cancel();
+			if (image.kind === 'new') {
+				formData.set('photo', image.photo, 'photo.jpg');
+				formData.set('thumb', image.thumb, 'thumb.jpg');
+			} else if (image.kind === 'remove') {
+				formData.set('removePhoto', '1');
+			}
+		}
 		return async ({ result, update }) => {
 			if (result.type === 'failure') {
 				sheetError = (result.data as { error?: string } | undefined)?.error ?? 'Please try again.';
@@ -66,17 +82,20 @@
 		{#each data.items as item (item.id)}
 			<li>
 				<button class="item" onclick={() => edit(item)}>
-					<span class="name">{item.name}</span>
-					{#if item.notes}<span class="muted small">{item.notes}</span>{/if}
-					<span class="muted small">
-						{item.defaultStoreName ?? 'No store yet'}
-						{#if item.lastBoughtDate}
-							· last bought {formatDateLabel(item.lastBoughtDate, {
-								today: data.today
-							})}{item.lastBoughtStoreName
-								? ` at ${item.lastBoughtStoreName}`
-								: ''}
-						{/if}
+					<ItemThumb photoKey={item.photoKey} size={48} />
+					<span class="text">
+						<span class="name">{item.name}</span>
+						{#if item.notes}<span class="muted small">{item.notes}</span>{/if}
+						<span class="muted small">
+							{item.defaultStoreName ?? 'No store yet'}
+							{#if item.lastBoughtDate}
+								· last bought {formatDateLabel(item.lastBoughtDate, {
+									today: data.today
+								})}{item.lastBoughtStoreName
+									? ` at ${item.lastBoughtStoreName}`
+									: ''}
+							{/if}
+						</span>
 					</span>
 				</button>
 			</li>
@@ -87,7 +106,13 @@
 <Sheet bind:open title={editing?.name ?? ''}>
 	{#if editing}
 		{#key editKey}
-			<form method="POST" action="?/update" use:enhance={submitSheet}>
+			<ItemImage savedKey={editing.photoKey} bind:choice={image} bind:busy={preparingImage} />
+			<form
+				method="POST"
+				action="?/update"
+				enctype="multipart/form-data"
+				use:enhance={submitSheet}
+			>
 				{#if sheetError}<p class="error" role="alert">{sheetError}</p>{/if}
 				<input type="hidden" name="id" value={editing.id} />
 				<div class="field">
@@ -105,7 +130,7 @@
 					/>
 				</div>
 				<div class="row">
-					<button class="primary">Save</button>
+					<button class="primary" disabled={preparingImage}>Save</button>
 					{#if editing.archivedAt === null}
 						<ConfirmButton
 							label="Archive"
@@ -138,13 +163,21 @@
 	.item {
 		width: 100%;
 		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
+		align-items: center;
+		justify-content: flex-start;
+		gap: 0.75rem;
 		text-align: left;
 		background: none;
 		border: none;
 		padding: 0.25rem 0;
 		font-weight: 400;
+	}
+
+	.text {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		min-width: 0;
 	}
 
 	.name {
