@@ -270,7 +270,9 @@ lost, so is everything. Moving backups off the server later is a small change.
   checked first. A name may be up to 4 times its limit as sent, since accents sent apart from
   their letters join them and runs of spaces become one. A cell of an imported file may be up to
   10,000 characters, and a page's text is cut to 10,000 characters in one place (7, Import from
-  a link). Longer text that gets past these checks is refused with an error.
+  a link). Those pieces add up, so one import reads up to 100,000 characters in all, about 3 times
+  the text of the longest recipe the editor takes (MEA-234; 7, Import recipes and Import from a
+  link). Longer text that gets past these checks is refused with an error.
 - **Request size** (MEA-66). Node reads a URL-encoded form in time that grows with the square of
   its length: one crafted 5 MB form would hold up the server for every household for minutes. So
   a request's body may be at most 64 KB, checked against the length the request states before
@@ -814,11 +816,14 @@ unit, such as a size, goes in the prep note too, and an "of" after the unit is l
 (MEA-74). "1 1/2 cups flour, sifted" is 1 1/2, cup, flour and sifted; "1 (14 oz) can of
 tomatoes" is 1, can, tomatoes and 14 oz; "Salt, to taste" has no amount. Fields follow the
 editor's rules and limits, tags are separated by commas, and a blank Servings is the
-household's usual servings. A cell holds up to 10,000 characters (4.5). If anything is wrong,
-nothing is imported, and the page lists each problem with its row number (the header is row
-1), such as "Row 7: enter an amount like 1 1/2." Problems include a missing Recipe column, a
-cell over 10,000 characters ("Row 3: keep each cell under 10000 characters."), a row without
-a name, a name used twice in the file
+household's usual servings. A cell holds up to 10,000 characters, and the header and the cells
+in columns that aren't ignored up to 100,000 in all, not counting a row refused for a cell over
+10,000 (4.5). If anything is wrong, nothing is imported, and the page lists each problem with
+its row number (the header is row 1), such as "Row 7: enter an amount like 1 1/2." Problems
+include a missing Recipe column, a cell over 10,000 characters ("Row 3: keep each cell under
+10000 characters."), cells passing 100,000 characters in all, on the row where they do, after
+which no row is read ("Row 57: the file is too long to import at once. Split it into smaller
+files."), a row without a name, a name used twice in the file
 ("Row 5: Pound cake is also on row 2."), an ingredient the editor wouldn't take ("Row 7: '2 cups'
 needs an item.") and an archived item ("Row 9: Saffron is archived. Restore it on Items first."),
 since importing never restores items. A quote that starts a cell and is never closed would put
@@ -899,8 +904,10 @@ a decimal point, even before three digits, so "1.250 kcal" is 1.25 and "1.125 g"
 ingredient is split as Import recipes splits one, so "1 1/2 cups flour, sifted" is 1 1/2, cups,
 flour and sifted. Steps grouped in sections keep their order without the section names, and
 HTML and character references such as `&amp;` are taken out of the text. Text over 10,000
-characters in one place, such as the name, an ingredient or a step, is cut to 10,000 (4.5),
-which Save then checks like any other. The page is read in
+characters in one place, such as the name, an ingredient or a step, is cut to 10,000, and the
+text is read in the editor's order, the name, ingredients and then steps, up to 100,000
+characters in all, cutting the piece where it runs out and leaving out the rest (4.5). Save then
+checks it like any other. The page is read in
 the charset its Content-Type names, else the one a meta element in its first 1,024 bytes names,
 else UTF-8, so a page in windows-1252 or ISO-8859-1 keeps its é, ° and ½ (MEA-75). Import asks
 for the page uncompressed, and unzips one its server gzips anyway. Fields the page leaves

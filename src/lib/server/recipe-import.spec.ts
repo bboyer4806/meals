@@ -163,6 +163,59 @@ describe('importRecipeFile', () => {
 		expect(dishNamed('Toast').steps).toBe(most);
 	});
 
+	it('reads up to 100000 characters of cells, and stops on the row where they pass it (MEA-234)', async () => {
+		const most = 'a'.repeat(NORMALIZE_MAX_LENGTH);
+		// The header's cells come to 17 characters, and rows 2 to 10 to 10,001 each: 90,026 in all.
+		// Rating is ignored, so its cells don't count.
+		const file = (lastSteps: number, after: string[] = []) =>
+			[
+				'Recipe,Steps,Rating',
+				...[...'ABCDEFGHI'].map((name) => `${name},${most},${most}`),
+				`J,${'a'.repeat(lastSteps)}`,
+				...after
+			].join('\n');
+		// Row 11 passes 100,000 by one, so row 12, named as row 2 is, isn't read.
+		expect(await importRecipeFile(householdId, form(file(9_974, ['A'])), NOW)).toEqual({
+			kind: 'problems',
+			problems: ['Row 11: the file is too long to import at once. Split it into smaller files.']
+		});
+		expect(names()).toEqual([]);
+		expect(await importRecipeFile(householdId, form(file(9_973)), NOW)).toMatchObject({
+			kind: 'imported',
+			imported: 10
+		});
+	});
+
+	it('counts the header, and not a row refused for a cell over 10000 characters (MEA-234)', async () => {
+		const most = 'a'.repeat(NORMALIZE_MAX_LENGTH);
+		const header = ['Recipe', ...Array<string>(10).fill(most)].join(',');
+		expect(await importRecipeFile(householdId, form(`${header}\nToast`), NOW)).toEqual({
+			kind: 'problems',
+			problems: ['Row 1: the file is too long to import at once. Split it into smaller files.']
+		});
+		// Row 2 is refused unread, so its 900,000 characters don't count.
+		const csv = ['Recipe,Steps', `Toast,${'a'.repeat(900_000)}`, `Soup,${most}`].join('\n');
+		expect(await importRecipeFile(householdId, form(csv), NOW)).toEqual({
+			kind: 'problems',
+			problems: ['Row 2: keep each cell under 10000 characters.']
+		});
+	});
+
+	it('refuses a file of cells written to be slow to normalize in under a second (MEA-234)', async () => {
+		// Runs of combining marks, each of which takes a few hundredths of a second to normalize
+		// (text.ts). The 49 rows, nearly 1 MB, would take seconds.
+		const steps = `a${'̖́'.repeat(4_999)}`;
+		const rows = Array.from({ length: 49 }, (_, index) => `Dish ${index},${steps}`);
+		const csv = ['Recipe,Steps', ...rows].join('\n');
+		const started = performance.now();
+		const result = await importRecipeFile(householdId, form(csv), NOW);
+		expect(performance.now() - started).toBeLessThan(1000);
+		expect(result).toEqual({
+			kind: 'problems',
+			problems: ['Row 11: the file is too long to import at once. Split it into smaller files.']
+		});
+	});
+
 	it('reads the template saved as CSV UTF-8, with its byte order mark, é, ½ and ° (MEA-71)', async () => {
 		const csv = `${templateCsv()}Crème brûlée,,,,,½ cup sugar|1 cup crème fraîche,Bake at 325 °F.\r\n`;
 		const result = await importRecipeFile(householdId, form(csv), NOW);

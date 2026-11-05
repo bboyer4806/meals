@@ -1,6 +1,6 @@
 import { parseCsv } from '../csv.ts';
 import { splitIngredient } from '../ingredient-text.ts';
-import { foldCase, NORMALIZE_MAX_LENGTH, normalizeName } from '../text.ts';
+import { foldCase, IMPORT_MAX_LENGTH, NORMALIZE_MAX_LENGTH, normalizeName } from '../text.ts';
 import { createDish, findDishByName, updateDish, type DishInput } from './data/dishes.ts';
 import { getHousehold } from './data/households.ts';
 import { findItemByName } from './data/items.ts';
@@ -60,8 +60,18 @@ function utf8Text(bytes: ArrayBuffer): string | null {
 // (text.ts). The steps, the editor's longest field, fit in one.
 const CELL_TOO_LONG = `keep each cell under ${NORMALIZE_MAX_LENGTH} characters.`;
 
+// The header and the cells read from each row count toward the most one import reads (text.ts),
+// so many long cells can't add up to seconds. The row where they pass it, and the rows below it,
+// aren't read (design 7; MEA-234).
+const FILE_TOO_LONG = 'the file is too long to import at once. Split it into smaller files.';
+
 function isTooLong(cell: string): boolean {
 	return cell.length > NORMALIZE_MAX_LENGTH;
+}
+
+/** The characters in the cells, all together. */
+function length(cells: string[]): number {
+	return cells.reduce((sum, cell) => sum + cell.length, 0);
 }
 
 /** A problem with the file, on its row as a spreadsheet numbers it (the header is row 1). */
@@ -111,7 +121,6 @@ function ingredientRow(entry: string): RecipeRow {
 
 /** One row of the file as a recipe, or its first problem, in the order of the editor. */
 function readRecipe(cell: (column: Column) => string, defaultServings: number): DishInput | string {
-	if (RECIPE_COLUMNS.some((column) => isTooLong(cell(column)))) return CELL_TOO_LONG;
 	const details = recipeDetailFields.safeParse({
 		name: cell('Recipe'),
 		// A blank Servings is the household's usual servings, as a new recipe starts at (design 7).
@@ -139,7 +148,8 @@ function readRecipe(cell: (column: Column) => string, defaultServings: number): 
  * The file's recipes and the problems with it. Columns are matched by name ignoring case, in
  * any order; only Recipe is needed, and the names of columns that aren't recipe fields are
  * returned as `ignored`. Blank rows are left out. A quote the file never closes is the only
- * problem listed, since its cell holds the rest of the file (design 7).
+ * problem listed, since its cell holds the rest of the file (design 7). Reading stops at the row
+ * where the cells read pass IMPORT_MAX_LENGTH (FILE_TOO_LONG).
  */
 function readFile(
 	text: string,
@@ -155,6 +165,12 @@ function readFile(
 	const ignored: string[] = [];
 	if (header.some(isTooLong)) {
 		problems.push({ row: 1, text: CELL_TOO_LONG });
+		return { recipes: [], problems, ignored };
+	}
+	// Characters still to read, of the most one import reads.
+	let left = IMPORT_MAX_LENGTH - length(header);
+	if (left < 0) {
+		problems.push({ row: 1, text: FILE_TOO_LONG });
 		return { recipes: [], problems, ignored };
 	}
 	const columns = new Map<Column, number>();
@@ -176,27 +192,38 @@ function readFile(
 
 	const recipes: FileRecipe[] = [];
 	const rowsByName = new Map<string, number>();
-	rows.forEach((cells, index) => {
+	for (const [index, cells] of rows.entries()) {
 		const row = index + 2;
-		if (cells.every((cell) => cell.trim() === '')) return;
+		if (cells.every((cell) => cell.trim() === '')) continue;
 		const cell = (column: Column) => {
 			const at = columns.get(column);
 			return at === undefined ? '' : (cells[at] ?? '');
 		};
+		const recipeCells = RECIPE_COLUMNS.map(cell);
+		// A row with a cell too long to normalize is refused unread, so it doesn't count.
+		if (recipeCells.some(isTooLong)) {
+			problems.push({ row, text: CELL_TOO_LONG });
+			continue;
+		}
+		left -= length(recipeCells);
+		if (left < 0) {
+			problems.push({ row, text: FILE_TOO_LONG });
+			break;
+		}
 		const data = readRecipe(cell, defaultServings);
 		if (typeof data === 'string') {
 			problems.push({ row, text: data });
-			return;
+			continue;
 		}
 		const key = foldCase(data.name);
 		const first = rowsByName.get(key);
 		if (first !== undefined) {
 			problems.push({ row, text: `${data.name} is also on row ${first}.` });
-			return;
+			continue;
 		}
 		rowsByName.set(key, row);
 		recipes.push({ row, data });
-	});
+	}
 	if (recipes.length === 0 && problems.length === 0) {
 		problems.push({ row: 1, text: 'add a row under the header for each recipe.' });
 	}

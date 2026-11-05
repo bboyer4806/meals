@@ -7,6 +7,14 @@
  */
 export const NORMALIZE_MAX_LENGTH = 10_000;
 
+/**
+ * The most text one import normalizes in all: a file of recipes, or a page's recipe (design 4.5).
+ * Each piece is checked against NORMALIZE_MAX_LENGTH, but the pieces add up: a 5 MB page of them
+ * took about 20 seconds (MEA-234). This many take under a second however they're written, and
+ * the longest recipe the editor takes holds about 30,000.
+ */
+export const IMPORT_MAX_LENGTH = 100_000;
+
 /** Throws for text longer than NORMALIZE_MAX_LENGTH, which a check before this one missed. */
 function requireNormalizable(text: string): void {
 	if (text.length > NORMALIZE_MAX_LENGTH) {
