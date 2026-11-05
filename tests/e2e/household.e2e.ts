@@ -27,8 +27,24 @@ test('sets up a household on first sign-in', async ({ page, db, context, baseURL
 	await expect(page.getByRole('banner')).toContainText('The Robins');
 	const household = db
 		.prepare('select h.* from households h join users u on u.household_id = h.id where u.id = ?')
-		.get(userId);
+		.get(userId) as { id: number };
 	expect(household).toMatchObject({ default_servings: 3, time_zone: 'America/Denver' });
+
+	// Its catalog starts with the standard items, ready to pick, and the list is empty (6.13).
+	const items = db.prepare('select count(*) from items where household_id = ?').pluck();
+	expect(items.get(household.id)).toBe(288);
+	// Past the first-time tour, which would cover the list, as the person fixture is.
+	db.prepare('update users set tour_seen = 0 where id = ?').run(userId);
+	await open(page, '/groceries');
+	await expect(page.getByText('Nothing on the list. Add something above.')).toBeVisible();
+	const add = page.getByRole('form', { name: 'Add to the list' });
+	await add.getByRole('combobox', { name: 'Item' }).fill('bananas');
+	await expect(page.getByRole('listbox').getByRole('option')).toHaveText(['Bananas']);
+	await page.getByRole('option', { name: 'Bananas' }).click();
+	await add.getByRole('button', { name: 'Add' }).click();
+	await expect(page.getByRole('button', { name: /^Bananas/ })).toBeVisible();
+	await page.goto('/groceries/items');
+	await expect(page.getByRole('button', { name: /^Zucchini/ })).toBeVisible();
 });
 
 test('manages stores and invites', async ({ page, person: _ }) => {

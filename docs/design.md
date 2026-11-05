@@ -317,6 +317,7 @@ src/lib/server/
                           dishes, dinners, requests. Every function takes
                           householdId first, except whats-new (a person's seen
                           release), which takes the person's id.
+  standard-items.ts       the items every household's catalog starts with (6.13)
   photos.ts               save, delete and serve photos and item images, and get the image
                           an image link points at
   jira.ts                 create a feedback ticket in Jira and attach its screenshot
@@ -339,7 +340,9 @@ Conventions:
 - `archived_at` is empty for active records (E3, section 6.10).
 
 **households:** `name`, `default_servings` (the usual number of people, at least 1;
-Q28), `time_zone` (an IANA name such as `America/Chicago`), `created_at`.
+Q28), `time_zone` (an IANA name such as `America/Chicago`), `created_at`,
+`standard_items_added_at` (when its catalog got the standard items, which happens once; empty
+until then; 6.13).
 
 **users:** `household_id` (empty only until household setup is done), `google_sub`
 (Google's permanent account ID, unique), `email` (unique, lowercase), `name`,
@@ -682,6 +685,28 @@ comes back. If two people change the same thing, the last save wins.
   (6.11).
 - Requests have no statuses, dates or link to dinners. One stays until someone removes it,
   without being asked first, or adds it to a date. Removing a member removes their requests.
+
+### 6.13 Standard items
+
+Every household's catalog starts with 288 common groceries and household goods, from Apples to
+Cat Litter, so people can pick them instead of typing each one (MEA-61). They're listed in
+`src/lib/server/standard-items.ts`, grouped by kind only so the list is easy to review; the app has
+no categories (Q23).
+
+- A new household gets them as it's set up (6.1): it's set up with all of them or not at all. A
+  household set up before them gets them when the app starts, and so does one set up on the old
+  version during a deploy (4.4), at the next start.
+- A name the household already has, matched ignoring case as item names are (2.3), keeps its item
+  as it is, with its name, notes, store, image and history. An archived item counts, and stays
+  archived (6.10). Every other name is added as an active item with nothing filled in. None goes
+  on the grocery list.
+- A household gets them once, in one transaction, and `standard_items_added_at` records when.
+  Nothing adds them again, so an item renamed, archived or removed since stays that way, and a
+  change to the list reaches only households set up after it. If adding them fails when the app
+  starts, that household's catalog stays as it was and the app doesn't start, as with a failed
+  migration; the next start tries again.
+- They're ordinary items: listed on Items, suggested in the add bar and for recipe ingredients,
+  and renamed, given notes or an image, and archived like any other.
 
 ## 7. Screens
 

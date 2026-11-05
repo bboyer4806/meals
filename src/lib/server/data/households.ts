@@ -2,10 +2,15 @@ import { error } from '@sveltejs/kit';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db, transaction } from '../db/index.ts';
 import { dishRatings, households, invites, users } from '../db/schema.ts';
+import { STANDARD_ITEMS } from '../standard-items.ts';
+import { createItem, findItemByName } from './items.ts';
 
 export type HouseholdSettings = { name: string; defaultServings: number; timeZone: string };
 
-/** Creates a household for a signed-in person who doesn't have one yet (the setup page). */
+/**
+ * Creates a household for a signed-in person who doesn't have one yet (the setup page). Its
+ * catalog starts with the standard items (design 6.13).
+ */
 export function createHousehold(userId: number, settings: HouseholdSettings, now: number): number {
 	return transaction(() => {
 		const user = db()
@@ -21,7 +26,41 @@ export function createHousehold(userId: number, settings: HouseholdSettings, now
 			.returning({ id: households.id })
 			.get();
 		db().update(users).set({ householdId: household.id }).where(eq(users.id, userId)).run();
+		addStandardItems(household.id, now);
 		return household.id;
+	});
+}
+
+/**
+ * Gives each household that hasn't had the standard items its own, oldest first, such as one set
+ * up before they came. The app does this when it starts (design 6.13).
+ */
+export function addStandardItemsToAllHouseholds(now: number): void {
+	const waiting = db()
+		.select({ id: households.id })
+		.from(households)
+		.where(isNull(households.standardItemsAddedAt))
+		.orderBy(asc(households.id))
+		.all();
+	for (const { id } of waiting) addStandardItems(id, now);
+}
+
+/**
+ * Adds the standard items the household's catalog doesn't have, matching names as everywhere
+ * else, so an item it has, archived or not, stays as it is. Once per household: changes to its
+ * items or to the standard items afterward never add any again (design 6.13).
+ */
+function addStandardItems(householdId: number, now: number): void {
+	transaction(() => {
+		if (getHousehold(householdId).standardItemsAddedAt !== null) return;
+		for (const name of STANDARD_ITEMS) {
+			if (!findItemByName(householdId, name)) createItem(householdId, name, now);
+		}
+		db()
+			.update(households)
+			.set({ standardItemsAddedAt: now })
+			.where(eq(households.id, householdId))
+			.run();
 	});
 }
 

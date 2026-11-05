@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
 import { checkBodySize } from '#lib/server/body-size.ts';
 import { config, loadConfig } from '#lib/server/config.ts';
+import { addStandardItemsToAllHouseholds } from '#lib/server/data/households.ts';
 import { openDb } from '#lib/server/db/index.ts';
 import {
 	SESSION_COOKIE,
@@ -17,6 +18,8 @@ export const init: ServerInit = () => {
 	// and writing anyway would put the database where the next deploy deletes it.
 	if (!existsSync(DATA_DIR)) throw new Error(`DATA_DIR ${DATA_DIR} does not exist`);
 	openDb(join(DATA_DIR, 'meals.db'));
+	// Households set up before the standard items get them, once each (design 6.13).
+	addStandardItemsToAllHouseholds(Date.now());
 };
 
 export const handle: Handle = async ({ event, resolve }) => {
