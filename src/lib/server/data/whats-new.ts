@@ -19,7 +19,10 @@ function position(version: string): number {
  * Whether `release` is new to the person: newer than the newest release they've seen, and
  * released later than the day their account was created in `timeZone`, so people who join later
  * don't get a dot for older releases. Newer goes by place in RELEASES rather than date, so a
- * newer release on the same day as the one they saw is still new (MEA-25).
+ * newer release on the same day as the one they saw is still new (MEA-25). A seen version that
+ * RELEASES doesn't list, such as one a newer build recorded while a deploy overlapped or before a
+ * rollback, counts as having seen every listed release, so checking for the dot never fails a
+ * page (MEA-63).
  */
 export function isReleaseNew(userId: number, release: Release, timeZone: string): boolean {
 	const user = db()
@@ -28,7 +31,9 @@ export function isReleaseNew(userId: number, release: Release, timeZone: string)
 		.where(eq(users.id, userId))
 		.get();
 	if (!user) error(404, 'Not found');
-	const newer = user.seen === null || position(release.version) < position(user.seen);
+	const place = position(release.version);
+	if (user.seen !== null && !RELEASES.some((listed) => listed.version === user.seen)) return false;
+	const newer = user.seen === null || place < position(user.seen);
 	return newer && release.released > dateIn(user.createdAt, timeZone);
 }
 

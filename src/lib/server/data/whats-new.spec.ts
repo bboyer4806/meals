@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { RELEASES, type Release } from '../../whats-new.ts';
 import { db } from '../db/index.ts';
 import { users } from '../db/schema.ts';
-import { freshDb, makeHousehold } from '../testing.ts';
+import { expectHttpError, freshDb, makeHousehold } from '../testing.ts';
 import { isReleaseNew, recordReleaseSeen } from './whats-new.ts';
 
 const ZONE = 'America/Chicago';
@@ -45,6 +45,11 @@ function seen(user = userId): string | null {
 		.from(users)
 		.where(eq(users.id, user))
 		.get()!.seen;
+}
+
+/** Saves `value` straight into the person's whats_new_seen. */
+function saveSeen(value: string | null) {
+	db().update(users).set({ whatsNewSeen: value }).where(eq(users.id, userId)).run();
 }
 
 describe('recordReleaseSeen', () => {
@@ -99,10 +104,39 @@ describe('isReleaseNew', () => {
 		expect(isReleaseNew(userId, release('1.5'), 'UTC')).toBe(false);
 	});
 
-	it("fails when the person's release isn't listed", () => {
-		db().update(users).set({ whatsNewSeen: '2026-10-21' }).where(eq(users.id, userId)).run();
-		expect(() => isReleaseNew(userId, release('1.8'), ZONE)).toThrow(
-			"What's new has no release 2026-10-21"
-		);
+	// Opening What's new records the build's newest release. While a deploy overlaps, or after a
+	// rollback, an older build then reads a version it doesn't list (MEA-63).
+	it("is not new to someone who has seen a newer build's release, for that person only", () => {
+		const newer = RELEASES[0].version.replace(/\d+$/, (minor) => String(Number(minor) + 1));
+		saveSeen(newer);
+		for (const listed of RELEASES) {
+			expect(isReleaseNew(userId, listed, ZONE), listed.version).toBe(false);
+		}
+		expect(seen()).toBe(newer);
+		expect(isReleaseNew(memberId, RELEASES[0], ZONE)).toBe(true);
+		// Opening What's new on this build records its newest release instead.
+		recordReleaseSeen(userId, RELEASES[0]);
+		expect(seen()).toBe(RELEASES[0].version);
+		expect(isReleaseNew(userId, RELEASES[0], ZONE)).toBe(false);
+	});
+
+	it('is not new to someone whose saved value is unexpected, such as a date', () => {
+		// A date is what builds from before MEA-25 save, such as after a rollback to one.
+		for (const value of ['2026-10-21', '', 'unknown']) {
+			saveSeen(value);
+			expect(isReleaseNew(userId, RELEASES[0], ZONE), value).toBe(false);
+			expect(seen()).toBe(value);
+		}
+	});
+
+	it("fails for someone who doesn't exist or a release that isn't listed", () => {
+		expectHttpError(() => isReleaseNew(9999, RELEASES[0], ZONE), 404);
+		const unlisted: Release = { ...RELEASES[0], version: '0.1' };
+		for (const value of [null, '1.6', '2026-10-21']) {
+			saveSeen(value);
+			expect(() => isReleaseNew(userId, unlisted, ZONE), String(value)).toThrow(
+				"What's new has no release 0.1"
+			);
+		}
 	});
 });
