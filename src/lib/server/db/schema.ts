@@ -23,7 +23,10 @@ export const households = sqliteTable(
 		name: text('name').notNull(),
 		defaultServings: integer('default_servings').notNull(),
 		timeZone: text('time_zone').notNull(),
-		createdAt: integer('created_at').notNull()
+		createdAt: integer('created_at').notNull(),
+		// When its catalog got the standard items, which happens once; empty until then
+		// (design 6.13).
+		standardItemsAddedAt: integer('standard_items_added_at')
 	},
 	(t) => [check('households_default_servings', sql`${t.defaultServings} >= 1`)]
 );

@@ -1,0 +1,1 @@
+ALTER TABLE `households` ADD `standard_items_added_at` integer;
