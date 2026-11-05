@@ -209,6 +209,27 @@ describe('schemaRecipeValues', () => {
 		}
 	});
 
+	it('reads spaces between thousands in nutrition, and a period as a decimal point', () => {
+		const nutrition = {
+			calories: '1 250 kcal',
+			// A no-break space, and a narrow one, as French pages write thousands.
+			proteinContent: '1\u00a0000.5 g',
+			carbohydrateContent: '1\u202f250\u202f000 g',
+			fatContent: '1.250 g'
+		};
+		expect(fromRecipe({ nutrition })).toMatchObject({
+			calories: '1250',
+			proteinG: '1000.5',
+			carbsG: '1250000',
+			// A period isn't a comma: it's a decimal point even before three digits (MEA-233).
+			fatG: '1.250'
+		});
+		// A space after something other than a digit doesn't join numbers.
+		expect(fromRecipe({ nutrition: { calories: 'Approx. 250 kcal' } }).calories).toBe('250');
+		// Other commas are still left blank (MEA-76).
+		expect(fromRecipe({ nutrition: { calories: '1 250,5 kcal' } }).calories).toBe('');
+	});
+
 	it('reads steps written as text, one step per line', () => {
 		// As King Arthur Baking writes them: paragraphs, with a comma between them.
 		const paragraphs = '<p>Preheat the oven to 325°F.</p>\n, <p>Weigh your flour.</p>\n, ';

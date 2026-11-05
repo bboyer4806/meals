@@ -891,8 +891,11 @@ fetch the page (4.5) and fills in the editor from it: the name, servings, prep a
 ingredients, steps one per line, calories, protein, carbs and fat, with Source set to the link.
 Servings are the first whole number in the page's yield, such as 4 in "4 servings". Calories,
 protein, carbs and fat are the number each value starts with, such as 12.5 in "12.5 g". A comma
-before exactly three digits separates thousands, so "1,250 kcal" is 1250 (MEA-76); a value with
-any other comma in its number, such as "12,5 g", is left blank rather than guessed. Each
+or space between a digit and exactly three more separates thousands, even after a lone 0, so
+"1,250 kcal" and "1 250 kcal" are 1250 and "0,125 g" is 125 (MEA-76, MEA-233); a value with any
+other comma in its number, such as "12,5 g", is left blank rather than guessed. A period is always
+a decimal point, even before three digits, so "1.250 kcal" is 1.25 and "1.125 g" is 1.125
+(MEA-233). Each
 ingredient is split as Import recipes splits one, so "1 1/2 cups flour, sifted" is 1 1/2, cups,
 flour and sifted. Steps grouped in sections keep their order without the section names, and
 HTML and character references such as `&amp;` are taken out of the text. Text over 10,000
