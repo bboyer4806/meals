@@ -153,13 +153,15 @@ function steps(instructions: unknown): string | null {
 	return lines.length > 0 ? lines.join('\n') : null;
 }
 
-// A comma followed by exactly three digits, as between the thousands in 1,250.
-const THOUSANDS = /,(?=\d{3}(?!\d))/g;
+// A comma or space between a digit and exactly three more, as between the thousands in 1,250 or
+// 1 250 (MEA-76, MEA-233). The digit before keeps "approx. 250 kcal" from reading as .250.
+const THOUSANDS = /(?<=\d)[\s,](?=\d{3}(?!\d))/g;
 
 /**
  * The number a nutrition value starts with, such as 240 in "240 kcal", 12.5 in "12.5 g" or 1250
- * in "1,250 kcal". Null when its digits go on after any other comma, as in "12,5 g", rather than
- * guess whether that comma is a decimal point (MEA-76).
+ * in "1,250 kcal" and "1 250 kcal". A period is always a decimal point, so "1.250 kcal" is 1.25
+ * (MEA-233). Null when its digits go on after any other comma, as in "12,5 g", rather than guess
+ * whether that comma is a decimal point (MEA-76).
  */
 function nutrient(value: unknown): string | null {
 	if (typeof value !== 'string' && typeof value !== 'number') return null;
