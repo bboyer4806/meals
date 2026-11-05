@@ -1,5 +1,5 @@
 import { splitIngredient } from './ingredient-text.ts';
-import { NORMALIZE_MAX_LENGTH, normalizeName } from './text.ts';
+import { IMPORT_MAX_LENGTH, NORMALIZE_MAX_LENGTH, normalizeName } from './text.ts';
 import type { RecipeFormValues, RecipeRow } from './server/recipe-form.ts';
 
 // Reading a web page's schema.org Recipe, which most recipe sites embed as JSON-LD for search
@@ -74,14 +74,24 @@ const BREAK = /<\/?(?:br|p|div|li|ol|ul|h[1-6])\b[^<>]*>/gi;
 // Any other tag, such as a link around an ingredient's name.
 const TAG = /<\/?[a-z][^<>]*>/gi;
 
+/** Reads one piece of a page's text (plainReader). */
+type Plain = (text: string) => string;
+
 /**
- * Text that can hold HTML, as one line without tags or character references. Text over the most
- * normalizing takes (text.ts) is cut to it first, as the editor then shows before anything is
- * saved.
+ * Reads pieces of text that can hold HTML, each as one line without tags or character
+ * references. A piece over the most normalizing takes (text.ts) is cut to it first. Once the
+ * pieces come to the most one import reads (text.ts), the piece there is cut and the rest read as
+ * blank (MEA-234). The editor shows what was read before anything is saved.
  */
-function plain(text: string): string {
-	const line = decodeEntities(text.replace(BREAK, ' ').replace(TAG, ''));
-	return normalizeName(line.slice(0, NORMALIZE_MAX_LENGTH));
+function plainReader(): Plain {
+	let left = IMPORT_MAX_LENGTH;
+	return (text) => {
+		if (left === 0) return '';
+		const line = decodeEntities(text.replace(BREAK, ' ').replace(TAG, ''));
+		const read = line.slice(0, Math.min(NORMALIZE_MAX_LENGTH, left));
+		left -= read.length;
+		return normalizeName(read);
+	};
 }
 
 /** Whether a line says anything: some sites put a comma alone between paragraphs. */
@@ -90,7 +100,7 @@ function hasText(line: string): boolean {
 }
 
 /** The recipe's name, or null when it has none. */
-function recipeName(value: unknown): string | null {
+function recipeName(value: unknown, plain: Plain): string | null {
 	const text = typeof value === 'string' ? plain(value) : '';
 	return hasText(text) ? text : null;
 }
@@ -119,7 +129,7 @@ function minutes(duration: unknown): string | null {
 }
 
 /** Each entry of recipeIngredient as an editor row, split as Import recipes splits them. */
-function ingredientRows(recipeIngredient: unknown): RecipeRow[] | null {
+function ingredientRows(recipeIngredient: unknown, plain: Plain): RecipeRow[] | null {
 	const rows = [recipeIngredient]
 		.flat()
 		.filter((entry) => typeof entry === 'string')
@@ -133,23 +143,25 @@ function ingredientRows(recipeIngredient: unknown): RecipeRow[] | null {
  * recipeInstructions as one line per step: text, such as paragraphs, split into its lines; or
  * steps, with or without HowToSections around them, whose names are left out.
  */
-function stepLines(instructions: unknown): string[] {
+function stepLines(instructions: unknown, plain: Plain): string[] {
 	if (typeof instructions === 'string') {
 		return instructions.replace(BREAK, '\n').split('\n').map(plain);
 	}
 	if (Array.isArray(instructions)) {
 		return instructions.flatMap((step) =>
-			typeof step === 'string' ? [plain(step)] : stepLines(step)
+			typeof step === 'string' ? [plain(step)] : stepLines(step, plain)
 		);
 	}
 	if (!isNode(instructions)) return [];
 	// A HowToSection holds its HowToSteps in itemListElement.
-	if (instructions.itemListElement !== undefined) return stepLines(instructions.itemListElement);
+	if (instructions.itemListElement !== undefined) {
+		return stepLines(instructions.itemListElement, plain);
+	}
 	return typeof instructions.text === 'string' ? [plain(instructions.text)] : [];
 }
 
-function steps(instructions: unknown): string | null {
-	const lines = stepLines(instructions).filter(hasText);
+function steps(instructions: unknown, plain: Plain): string | null {
+	const lines = stepLines(instructions, plain).filter(hasText);
 	return lines.length > 0 ? lines.join('\n') : null;
 }
 
@@ -173,21 +185,27 @@ function nutrient(value: unknown): string | null {
  * The editor's fields filled in from a Recipe: its name, servings, prep and cook minutes,
  * ingredients, steps one per line, and calories, protein, carbs and fat. A field the Recipe leaves
  * out, or that can't be read, keeps its value in `start`, as do tags, notes and source. Values are
- * as the page writes them, and the editor checks them when the recipe is saved.
+ * as the page writes them, and the editor checks them when the recipe is saved. The text is read
+ * in the editor's order, the name, the ingredients and then the steps, so a page with more than
+ * one import reads loses its last steps first (plainReader).
  */
 export function schemaRecipeValues(recipe: JsonLdNode, start: RecipeFormValues): RecipeFormValues {
 	const nutrition = isNode(recipe.nutrition) ? recipe.nutrition : {};
+	const plain = plainReader();
+	const name = recipeName(recipe.name, plain);
+	const rows = ingredientRows(recipe.recipeIngredient, plain);
+	const stepText = steps(recipe.recipeInstructions, plain);
 	return {
 		...start,
-		name: recipeName(recipe.name) ?? start.name,
+		name: name ?? start.name,
 		servings: servings(recipe.recipeYield) ?? start.servings,
 		prepMinutes: minutes(recipe.prepTime) ?? start.prepMinutes,
 		cookMinutes: minutes(recipe.cookTime) ?? start.cookMinutes,
-		steps: steps(recipe.recipeInstructions) ?? start.steps,
+		steps: stepText ?? start.steps,
 		calories: nutrient(nutrition.calories) ?? start.calories,
 		proteinG: nutrient(nutrition.proteinContent) ?? start.proteinG,
 		carbsG: nutrient(nutrition.carbohydrateContent) ?? start.carbsG,
 		fatG: nutrient(nutrition.fatContent) ?? start.fatG,
-		rows: ingredientRows(recipe.recipeIngredient) ?? start.rows
+		rows: rows ?? start.rows
 	};
 }

@@ -289,6 +289,31 @@ describe('schemaRecipeValues', () => {
 		expect(fromRecipe({ name: marks }).name.length).toBeLessThanOrEqual(NORMALIZE_MAX_LENGTH);
 	});
 
+	it('reads up to 100000 characters in all, the name, ingredients and then steps (MEA-234)', () => {
+		const most = 'x'.repeat(NORMALIZE_MAX_LENGTH);
+		// The name and ingredients come to 40,005 characters, and the steps pass 100,000 in their
+		// sixth line, which is cut. The lines after it are left out.
+		const values = fromRecipe({
+			recipeInstructions: [...Array<string>(7).fill(most), 'Serve.'],
+			recipeIngredient: Array<string>(4).fill(most),
+			name: 'Toast'
+		});
+		expect(values.name).toBe('Toast');
+		expect(ingredients(values)).toEqual(Array(4).fill(['', '', most, '']));
+		expect(values.steps.split('\n')).toEqual([...Array<string>(5).fill(most), 'x'.repeat(9_995)]);
+	});
+
+	it('reads a page written to be slow to normalize in under a second (MEA-234)', () => {
+		// Runs of 10,000 combining marks, each of which takes a few hundredths of a second to
+		// normalize (text.ts). The 250 lines, 5 MB as a page sends them, would take seconds.
+		const run = `a${'\u0301\u0316'.repeat(4_999)}\u0301`;
+		const started = performance.now();
+		const values = fromRecipe({ recipeInstructions: Array<string>(250).fill(run) });
+		expect(performance.now() - started).toBeLessThan(1000);
+		// 10 lines come to 100,000 characters.
+		expect(values.steps.split('\n')).toHaveLength(10);
+	});
+
 	it("keeps a new recipe's fields when the Recipe has none of them", () => {
 		expect(fromRecipe({})).toEqual(START);
 		const empty = { name: ' ', recipeIngredient: [], recipeInstructions: [], nutrition: 'None' };
