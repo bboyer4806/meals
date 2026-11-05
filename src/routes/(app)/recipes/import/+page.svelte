@@ -50,7 +50,8 @@
 	<title>Import recipes · Meals</title>
 </svelte:head>
 
-<a class="link-tap back" href="/recipes">‹ Recipes</a>
+<!-- Without adding a Back step, as Cancel does (MEA-241). -->
+<a class="link-tap back" href="/recipes" onclick={returnOnClick}>‹ Recipes</a>
 
 <h1>Import recipes</h1>
 

@@ -793,12 +793,13 @@ chips stay. The address has one `tag` for each selected tag, so a link with one,
 recipe's tag, still works.
 The sort, search, tags and archived switch are kept in the address, so Back and shared links keep
 them, and changing any one keeps the others; "Show all recipes" clears the search and tags. An
-unknown sort shows Name. Opening Recipes from the tab bar or "‹ Recipes" starts at Name.
+unknown sort shows Name. Opening Recipes from the tab bar or a recipe's "‹ Recipes" starts at Name.
 
 **Import recipes.** Households bringing recipes from elsewhere (MEA-37; Q37b assumed none) add
 many at once from a CSV file saved from a spreadsheet. Import beside New recipe opens it, with
 "‹ Recipes", Download template, a file field, Import and Cancel; its Help explains the layout.
-Cancel returns to Recipes without adding a Back step, as the editor's does (MEA-156).
+"‹ Recipes" and Cancel return to Recipes without adding a Back step, as the editor's Cancel
+does (MEA-156, MEA-241).
 The template is the header row alone: Recipe, Servings, Prep (min), Cook (min), Tags,
 Ingredients, Steps, Notes, Source, Calories, Protein (g), Carbs (g), Fat (g). It starts with a
 UTF-8 byte order mark, so Excel opens it as CSV UTF-8 and saves it that way (MEA-71). Columns are
