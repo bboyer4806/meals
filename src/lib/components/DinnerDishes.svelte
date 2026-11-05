@@ -215,6 +215,20 @@
 		return adding || restoring ? '' : normalizeName(name);
 	}
 
+	/**
+	 * The name in the field as typed, while leaving would ask about it, or null. The page keeps it
+	 * for when it loads again or Back or Forward returns to it; the role beside it isn't kept
+	 * (design 7, Dinner; MEA-240).
+	 */
+	export function keptName(): string | null {
+		return typedName() === '' ? null : name;
+	}
+
+	/** Puts back a name that was typed and not added. */
+	export function putBackName(kept: string | null): void {
+		if (kept !== null) name = kept;
+	}
+
 	function archivedIn(data: unknown): Archived | null {
 		return (data as { archived?: Archived | null } | undefined)?.archived ?? null;
 	}

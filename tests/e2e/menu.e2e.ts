@@ -215,12 +215,12 @@ async function saveToWeek(page: Page, date: string) {
 	await expect(day(page, date).getByRole('status')).toHaveText('Saved');
 }
 
-const LEAVE = 'Leave without saving? What you typed will be lost.';
+const LEAVE = 'Leave without saving? What you typed may be lost.';
 const CHANGED = 'Someone changed this dinner since you opened it.';
 
 /** What leaving asks with a dish name typed and not added, which Save doesn't add (MEA-127). */
 function leaveDish(name: string): string {
-	return `Leave without adding ${name}? What you typed will be lost.`;
+	return `Leave without adding ${name}? What you typed may be lost.`;
 }
 
 test('plans a week with all four dinner types, with dishes and roles', async ({
@@ -595,7 +595,8 @@ test("opens each dish's recipe at the servings shown, and asks before leaving wi
 	await servings.fill('12');
 	await expect(cake).toHaveAttribute('href', `/recipes/${cakeId}?servings=12`);
 
-	// Opening the recipe drops the unsaved servings, so it asks first.
+	// Opening the recipe can drop the unsaved servings, so it asks first. Back brings them back,
+	// still not saved (MEA-240).
 	const questions: string[] = [];
 	page.once('dialog', (dialog) => {
 		questions.push(dialog.message());
@@ -606,8 +607,11 @@ test("opens each dish's recipe at the servings shown, and asks before leaving wi
 	await expect(page.getByRole('status')).toHaveText('12 servings');
 	expect(questions).toEqual([LEAVE]);
 	await page.goBack();
-	await expect(servings).toHaveValue('4');
+	await expect(servings).toHaveValue('12');
+	await expect(cake).toHaveAttribute('href', `/recipes/${cakeId}?servings=12`);
 	expect(dinnerRow(db, person.householdId, date)?.servings).toBe(4);
+	// Back to what's saved, so leaving has nothing to ask about.
+	await servings.fill('4');
 
 	// An unsaved note keeps the person on the page when they say so, however they leave.
 	await page.goto(`/menu?week=${date}`);
@@ -2310,8 +2314,9 @@ test('keeps what was typed when the page reloads while its own change is on its 
 });
 
 // A phone can drop the app in the background to free memory, and coming back loads the page
-// again. What was typed in a dinner's details and not saved comes back (design 7, Dinner; MEA-202).
-test.describe('keeping what was typed when the page loads again', () => {
+// again. What was typed in a dinner's details and dish field and not saved comes back, and also
+// when Back or Forward returns to the page (design 7, Dinner; MEA-202, MEA-240).
+test.describe('keeping what was typed when the page loads again or is returned to', () => {
 	// A dropped app hears nothing more once it's hidden, so a page marked dropped isn't told it's
 	// hidden again or being left as it reloads. Added before the page's own scripts, so it comes
 	// before their listeners.
@@ -2468,34 +2473,110 @@ test.describe('keeping what was typed when the page loads again', () => {
 		expect(dinnerRow(db, person.householdId, date)).toMatchObject({ note: null, servings: 4 });
 	});
 
-	test("doesn't bring back what the person agreed to lose when Back or Forward returns (MEA-202)", async ({
+	test('brings back a dish name typed and not added, but not one on its way (MEA-240)', async ({
 		page,
 		db,
 		person
 	}) => {
 		const date = addDays(today(), 1);
-		addDinner(db, person.householdId, date, { note: 'Taco night' });
+		const dinnerId = addDinner(db, person.householdId, date, { note: 'Taco night' });
+		const questions: string[] = [];
+		page.on('dialog', (dialog) => {
+			questions.push(dialog.message());
+			void dialog.dismiss();
+		});
+
+		await open(page, `/menu/${date}`);
+		await dishField(page).fill('Guacamole');
+		await dropAndComeBack(page);
+		await expect(dishField(page)).toHaveValue('Guacamole');
+		// Still not added, so leaving asks about it.
+		await page.getByRole('link', { name: /^‹ Week of/ }).click();
+		await expect.poll(() => questions).toEqual([leaveDish('Guacamole')]);
+		await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+		expect(dinnerDishes(db, dinnerId)).toEqual([]);
+
+		// A dish on its way to the dinner when the app is dropped is on the dinner after, not back
+		// in the field.
+		const addAnswered = await holdAnswers(page, (url) => url.search === '?/addDish');
+		await addButton(page).click();
+		await expect
+			.poll(() => dinnerDishes(db, dinnerId))
+			.toEqual([{ name: 'Guacamole', role: 'main' }]);
+		await dropAndComeBack(page);
+		// The reload dropped the request, so its held answer goes nowhere.
+		await page.unrouteAll({ behavior: 'ignoreErrors' });
+		addAnswered();
+		await expect(dishLinks(page)).toHaveText(['Guacamole']);
+		await expect(dishField(page)).toHaveValue('');
+	});
+
+	test('brings back a dish name typed on a day with no dinner, also once a type plans it (MEA-240)', async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		const bringing = typeButton(page, 'Bringing a dish');
+
+		await open(page, `/menu/${date}`);
+		await dishField(page).fill('Corn salad');
+		await dropAndComeBack(page);
+		await expect(page.getByText('Not planned yet.')).toBeVisible();
+		await expect(dishField(page)).toHaveValue('Corn salad');
+
+		// The type plans the day, so the dish field, with the name in it, is now that dinner's.
+		await bringing.click();
+		await expect(bringing).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByText('Not planned yet.')).toHaveCount(0);
+		await dropAndComeBack(page);
+		await expect(bringing).toHaveAttribute('aria-pressed', 'true');
+		await expect(dishField(page)).toHaveValue('Corn salad');
+		expect(dinnerRow(db, person.householdId, date)).toMatchObject({ type: 'going' });
+	});
+
+	test('brings back what was typed when Back or Forward returns, and still asks before leaving (MEA-240)', async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		const dinnerId = addDinner(db, person.householdId, date, { note: 'Taco night' });
 		const questions: string[] = [];
 		page.on('dialog', (dialog) => {
 			questions.push(dialog.message());
 			void dialog.accept();
 		});
 		const note = page.getByLabel('Note', { exact: true });
+		const week = new RegExp(`/menu\\?week=${sundayOf(date)}$`);
+		const asked = leaveDish('Guacamole');
 
 		await open(page, `/menu?week=${sundayOf(date)}`);
 		await day(page, date).click();
 		await note.fill('Taco night at 6');
+		await dishField(page).fill('Guacamole');
 		await page.goBack();
-		await expect.poll(() => questions).toEqual([LEAVE]);
+		await expect.poll(() => questions).toEqual([asked]);
 		// The week shows, so the day's page is gone.
 		await expect(day(page, date)).toBeVisible();
 		await page.goForward();
-		await expect(note).toHaveValue('Taco night');
+		await expect(note).toHaveValue('Taco night at 6');
+		await expect(dishField(page)).toHaveValue('Guacamole');
 
-		// Nothing typed came back, so leaving again doesn't ask.
+		// Still not saved, so leaving asks again.
 		await page.getByRole('link', { name: /^‹ Week of/ }).click();
-		await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sundayOf(date)}$`));
-		expect(questions).toEqual([LEAVE]);
+		await expect.poll(() => questions).toEqual([asked, asked]);
+		await expect(page).toHaveURL(week);
+
+		// Opened again from the week, the day shows what's saved, so leaving doesn't ask.
+		await day(page, date).click();
+		await expect(note).toHaveValue('Taco night');
+		await expect(dishField(page)).toHaveValue('');
+		await page.getByRole('link', { name: /^‹ Week of/ }).click();
+		await expect(page).toHaveURL(week);
+		expect(questions).toEqual([asked, asked]);
+		expect(dinnerRow(db, person.householdId, date)).toMatchObject({ note: 'Taco night' });
+		expect(dinnerDishes(db, dinnerId)).toEqual([]);
 	});
 });
 
