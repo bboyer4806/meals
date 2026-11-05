@@ -978,15 +978,18 @@ change is refused, what waited isn't sent, and the page says why (MEA-128). Save
 or restaurant and note goes to the dinner's week, scrolled so that dinner's day is on screen,
 clear of the header and tabs (MEA-192), where that dinner's line says "Saved" for 3 seconds; on a
 date with no dinner it plans it as the type shown. Leaving with something typed
-asks first. A name in the dish field that isn't added counts, since Save doesn't add it, and the
-question names it: "Leave without adding Garlic bread?" (MEA-127). A dish on its way to the
-dinner doesn't. If someone cleared or moved the dinner meanwhile, Save plans the date again when
-it has no dinner left, and the page stays to say so (6.11). When the page loads again in its tab,
-as when a phone drops the app in the background to free memory and coming back reloads it, what
-was typed in the servings, label, restaurant and note and not saved comes back to each dinner
-still on the date (MEA-202). Only fields that differed from what was saved come back, so a field
-saved before the app was hidden shows what's saved now, and leaving still asks. A dish name that
-wasn't added doesn't come back. Back and Forward bring nothing back, since leaving asked first.
+asks first: "Leave without saving? What you typed may be lost." A name in the dish field that
+isn't added counts, since Save doesn't add it, and the question names it: "Leave without adding
+Garlic bread?" (MEA-127). A dish on its way to the dinner doesn't. If someone cleared or moved the
+dinner meanwhile, Save plans the date again when it has no dinner left, and the page stays to say
+so (6.11). When the page loads again in its tab, as when a phone drops the app in the background
+to free memory and coming back reloads it, what was typed in the servings, label, restaurant and
+note and not saved comes back to each dinner still on the date (MEA-202). Only fields that
+differed from what was saved come back, so a field saved before the app was hidden shows what's
+saved now, and leaving still asks. A name typed in the dish field and not added comes back too,
+while the dinner's type has dishes; the role beside it shows its usual default. Back and Forward
+bring all of it back the same way, also after the person agreed to leave, which is why the
+question says "may" (MEA-240).
 
 **What's new.** What each release changed, newest first, in words for the people using the
 app; every household sees the same page. Each release's heading is its version, such as "1.2"

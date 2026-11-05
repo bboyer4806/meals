@@ -117,8 +117,8 @@
 	// When a phone drops the app in the background to free memory, coming back loads the page
 	// again, which would lose what was typed here without a word. The tab keeps what's typed and
 	// not saved, under the dinner the form is for, and gets it back when the page loads again
-	// (design 7, Dinner; MEA-202). Only the fields saving would change are kept, so a field saved
-	// by then shows what's saved. Back and Forward don't bring it back, since leaving asked first.
+	// (design 7, Dinner; MEA-202) or Back or Forward returns to it (MEA-240). Only the fields
+	// saving would change are kept, so a field saved by then shows what's saved.
 	type TypedFields = { note?: string; servings?: number; label?: string; restaurant?: string };
 
 	/** The fields typed and not saved, as typed. */
@@ -146,7 +146,8 @@
 		return typed === null && typedDish === '' ? null : JSON.stringify([typed, typedDish]);
 	}
 
-	const LEAVE = 'Leave without saving? What you typed will be lost.';
+	// "May", since Back or Forward brings back what was typed (MEA-240).
+	const LEAVE = 'Leave without saving? What you typed may be lost.';
 	// What the person agreed to lose, so going on with it doesn't ask again.
 	let dropped: string | null = null;
 
@@ -159,7 +160,7 @@
 		if (typed === null || typed === dropped) return true;
 		// A dish is named, since right after Save, "without saving" would seem not to apply (MEA-127).
 		const question =
-			typedDish === '' ? LEAVE : `Leave without adding ${typedDish}? What you typed will be lost.`;
+			typedDish === '' ? LEAVE : `Leave without adding ${typedDish}? What you typed may be lost.`;
 		if (!confirm(question)) return false;
 		dropped = typed;
 		return true;

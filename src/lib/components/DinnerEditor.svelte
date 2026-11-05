@@ -10,6 +10,7 @@
 	import DinnerDetails from './DinnerDetails.svelte';
 	import DinnerDishes from './DinnerDishes.svelte';
 	import Sheet from './Sheet.svelte';
+	import Snapshot from './Snapshot.svelte';
 
 	// One dinner on a date's page (design 7, Dinner; 6.9): its type, dishes, servings or
 	// restaurant, and note, Copy a dinner and Clear. Each of a date's dinners has its own, and a
@@ -187,6 +188,17 @@
 		};
 	};
 </script>
+
+<!-- A name typed in the dish field and not added comes back with the details form's typing, kept
+under the same dinner, which can change while the editor stays, as when the page's own change
+plans the date (MEA-202, MEA-240). -->
+{#key editing.id}
+	<Snapshot
+		id="dinner-{editing.id ?? 'new'}-dish"
+		capture={() => dishEditor?.keptName() ?? null}
+		restore={(name) => dishEditor?.putBackName(name)}
+	/>
+{/key}
 
 <!-- Which dinner this is, so a change meant for it isn't made to another one. -->
 {#snippet shownDinner()}
