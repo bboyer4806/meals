@@ -39,19 +39,21 @@ test('Download template gives the header row', async ({ page, person: _signedIn 
 	);
 });
 
-test('goes back to Recipes on Cancel, so Back leaves Recipes', async ({
+test('goes back to Recipes on ‹ Recipes and Cancel, so Back leaves Recipes', async ({
 	page,
 	person: _signedIn
 }) => {
-	await open(page, '/groceries');
-	await page.getByRole('navigation', { name: 'Main' }).getByText('Recipes').click();
-	await page.getByRole('link', { name: 'Import', exact: true }).click();
-	await expect(page.getByRole('heading', { name: 'Import recipes' })).toBeVisible();
-	await page.getByRole('link', { name: 'Cancel' }).click();
-	await expect(page).toHaveURL(/\/recipes$/);
-	await expect(page.getByRole('heading', { name: 'Recipes', level: 1 })).toBeVisible();
-	await page.goBack();
-	await expect(page).toHaveURL(/\/groceries$/);
+	for (const link of ['‹ Recipes', 'Cancel']) {
+		await open(page, '/groceries');
+		await page.getByRole('navigation', { name: 'Main' }).getByText('Recipes').click();
+		await page.getByRole('link', { name: 'Import', exact: true }).click();
+		await expect(page.getByRole('heading', { name: 'Import recipes' })).toBeVisible();
+		await page.getByRole('link', { name: link, exact: true }).click();
+		await expect(page).toHaveURL(/\/recipes$/);
+		await expect(page.getByRole('heading', { name: 'Recipes', level: 1 })).toBeVisible();
+		await page.goBack();
+		await expect(page).toHaveURL(/\/groceries$/);
+	}
 });
 
 test('imports a recipe with a section, a range and an extra column', async ({

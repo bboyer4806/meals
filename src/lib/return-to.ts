@@ -2,10 +2,10 @@ import { goto, type AfterNavigate } from '$app/navigation';
 import { navigating } from '$app/state';
 
 // Returning from a page without adding a Back step (MEA-156), for the editor's Save and Cancel,
-// the cooking view's Back to recipe and Import recipes' Cancel (design 7). When the page they
-// return to is the one before in history, they go back to it, as it was left: a recipe at its
-// servings, Recipes with its search. Otherwise it takes this page's place, so Back from it
-// doesn't open this page again.
+// the cooking view's Back to recipe and Import recipes' "‹ Recipes" and Cancel (design 7). When
+// the page they return to is the one before in history, they go back to it, as it was left: a
+// recipe at its servings, Recipes with its search. Otherwise it takes this page's place, so Back
+// from it doesn't open this page again.
 
 // The path of the page before this one in history, or null when it isn't known: this page was
 // opened or reloaded, or reached with Back or with Forward more than one step. It's where the
