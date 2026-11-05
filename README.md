@@ -131,8 +131,8 @@ The storage folder belongs to uid 1000, the image's `node` user, and the app lis
 `ports:set` points the site at port 3000 straight away, so run it just before a deploy: the site
 shows an error until the deploy finishes.
 
-`nginx:set` raises nginx's upload limit from 1 MB to 5 MB, so recipe photos and feedback
-screenshots get through. The app's own limit is `BODY_SIZE_LIMIT` in the Dockerfile. On an app
+`nginx:set` raises nginx's upload limit from 1 MB to 5 MB, so recipe photos, item images and
+feedback screenshots get through. The app's own limit is `BODY_SIZE_LIMIT` in the Dockerfile. On an app
 that's already deployed, also run `dokku proxy:build-config meals` so nginx uses the new limit.
 
 If a deploy fails, its log shows the app's error. "Invalid environment variables" means a setting

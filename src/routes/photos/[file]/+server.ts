@@ -8,7 +8,7 @@ import { householdOwnsPhoto, photoPath } from '#lib/server/photos.ts';
 // "..%2Fmeals.db" arrives here as "../meals.db".
 const FILE_NAME = /^([0-9a-f]{32})(-thumb)?\.jpg$/;
 
-// A recipe photo, only for the household whose dish has it (design 4.5).
+// A recipe photo or an item image, only for the household whose dish or item has it (design 4.5).
 export async function GET({ locals, params }) {
 	const user = requireHousehold(locals);
 	const match = FILE_NAME.exec(params.file);
@@ -20,7 +20,8 @@ export async function GET({ locals, params }) {
 	try {
 		file = await open(photoPath(key, match[2] ? 'thumb' : 'full'));
 	} catch (e) {
-		// The dish has the photo but its file is gone, as after a restore that skipped the photos.
+		// The dish or item has the photo but its file is gone, as after a restore that skipped the
+		// photos.
 		if ((e as NodeJS.ErrnoException).code === 'ENOENT') error(404, 'Not found');
 		throw e;
 	}

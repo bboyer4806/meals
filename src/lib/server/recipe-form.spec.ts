@@ -14,7 +14,7 @@ import {
 	type DishInput
 } from './data/dishes.ts';
 import { createItem, findItemByName, setItemArchived } from './data/items.ts';
-import { deletePhoto, PHOTO_MAX_BYTES, photoPath, THUMB_MAX_BYTES } from './photos.ts';
+import { PHOTO_MAX_BYTES, photoPath, THUMB_MAX_BYTES } from './photos.ts';
 import {
 	archivedItemsFailure,
 	nameTakenFailure,
@@ -34,9 +34,10 @@ vi.mock('./data/dishes.ts', async (importOriginal) => {
 	const dishes = await importOriginal<typeof import('./data/dishes.ts')>();
 	return { ...dishes, setDishPhoto: vi.fn(dishes.setDishPhoto) };
 });
-vi.mock('./photos.ts', async (importOriginal) => {
-	const photos = await importOriginal<typeof import('./photos.ts')>();
-	return { ...photos, deletePhoto: vi.fn(photos.deletePhoto) };
+// Deletes files, as when a photo is deleted (photos.ts).
+vi.mock('node:fs', async (importOriginal) => {
+	const fs = await importOriginal<typeof import('node:fs')>();
+	return { ...fs, rmSync: vi.fn(fs.rmSync) };
 });
 
 function activeDishes(householdId: number) {
@@ -808,7 +809,7 @@ describe('saveRecipe', () => {
 	afterEach(() => {
 		rmSync(dataDir, { recursive: true, force: true });
 		vi.mocked(setDishPhoto).mockClear();
-		vi.mocked(deletePhoto).mockClear();
+		vi.mocked(rmSync).mockClear();
 	});
 
 	function storedFiles(): string[] {
@@ -1053,7 +1054,7 @@ describe('saveRecipe', () => {
 	it("still saves when the old photo's files can't be deleted", async () => {
 		const id = await save(null, {}, newPhoto(1));
 		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
-		vi.mocked(deletePhoto).mockImplementationOnce(() => {
+		vi.mocked(rmSync).mockImplementationOnce(() => {
 			throw new Error('permission denied');
 		});
 		try {

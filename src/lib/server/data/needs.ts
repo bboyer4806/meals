@@ -16,6 +16,7 @@ export type GroceryLine = {
 	itemId: number;
 	itemName: string;
 	itemNotes: string | null;
+	itemPhotoKey: string | null;
 	quantity: number;
 	unit: string | null;
 	storeId: number | null;
@@ -33,6 +34,7 @@ function selectLines() {
 			itemId: groceryNeeds.itemId,
 			itemName: items.name,
 			itemNotes: items.notes,
+			itemPhotoKey: items.photoKey,
 			quantity: groceryNeeds.quantity,
 			unit: groceryNeeds.unit,
 			storeId: groceryNeeds.storeId,

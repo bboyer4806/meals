@@ -50,8 +50,11 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
   database check is the direct-query route exception.
 - Simple form actions use a zod schema and `parseForm`, then `attempt` for synchronous data
   changes; both helpers are in `src/lib/server/forms.ts`. Data-layer HTTP 400s become form
-  messages, shown to people as written. Recipe/photo saves use the specialized async
-  `saveRecipe` in `src/lib/server/recipe-form.ts`; do not force them through `attempt`.
+  messages, shown to people as written. Saves that can carry a photo or image use the
+  specialized async `saveRecipe` in `src/lib/server/recipe-form.ts` and `saveItem` in
+  `src/lib/server/item-form.ts`; do not force them through `attempt`.
+- The server fetches a link people give only through `fetchLink` in
+  `src/lib/server/fetch-link.ts`, which keeps it to public websites (design 4.5).
 - Check the length of text people send before it's normalized: names with `nameField` or
   `sentName` in `src/lib/server/forms.ts`, longer text against `NORMALIZE_MAX_LENGTH` in
   `src/lib/text.ts`, and an import's text in all against `IMPORT_MAX_LENGTH` there.

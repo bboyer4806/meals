@@ -1,10 +1,10 @@
-import { fail } from '@sveltejs/kit';
 import { z } from 'zod';
 import { dateIn } from '#lib/dates.ts';
 import { requireHousehold } from '#lib/server/auth/guards.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
-import { listCatalog, setItemArchived, updateItem } from '#lib/server/data/items.ts';
-import { id, nameField, optionalText, parseForm } from '#lib/server/forms.ts';
+import { listCatalog, setItemArchived } from '#lib/server/data/items.ts';
+import { id, parseForm } from '#lib/server/forms.ts';
+import { saveItem } from '#lib/server/item-form.ts';
 
 export function load({ locals, url }) {
 	const user = requireHousehold(locals);
@@ -20,26 +20,11 @@ export function load({ locals, url }) {
 	return { archived, search, items, today: dateIn(Date.now(), timeZone) };
 }
 
-const updateSchema = z.object({
-	id,
-	name: nameField(80, 'a name'),
-	notes: optionalText(200)
-});
-
 export const actions = {
+	// Name, notes and image, saved together (item-form.ts).
 	update: async ({ locals, request }) => {
 		const user = requireHousehold(locals);
-		const parsed = parseForm(updateSchema, await request.formData(), 'item');
-		if ('failure' in parsed) return parsed.failure;
-		const { id: itemId, ...changes } = parsed.data;
-		const result = updateItem(user.householdId, itemId, changes);
-		if (result.kind === 'taken') {
-			const error = result.archived
-				? `An archived item is already called ${changes.name}.`
-				: `An item is already called ${changes.name}.`;
-			return fail(400, { action: 'item', error });
-		}
-		return { action: 'item' };
+		return saveItem(user.householdId, await request.formData());
 	},
 
 	archive: async ({ locals, request }) => {

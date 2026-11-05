@@ -124,7 +124,7 @@ export function addItem(
 	db: Database.Database,
 	householdId: number,
 	name: string,
-	fields: { defaultStoreId?: number | null; alwaysHave?: boolean } = {}
+	fields: { defaultStoreId?: number | null; alwaysHave?: boolean; photoKey?: string | null } = {}
 ): number {
 	const existing = db
 		.prepare('select id from items where household_id = ? and lower(name) = lower(?)')
@@ -134,10 +134,16 @@ export function addItem(
 	return Number(
 		db
 			.prepare(
-				'insert into items (household_id, name, default_store_id, always_have, created_at) values (?, ?, ?, ?, ?)'
+				'insert into items (household_id, name, default_store_id, always_have, photo_key, created_at) values (?, ?, ?, ?, ?, ?)'
 			)
-			.run(householdId, name, fields.defaultStoreId ?? null, fields.alwaysHave ? 1 : 0, Date.now())
-			.lastInsertRowid
+			.run(
+				householdId,
+				name,
+				fields.defaultStoreId ?? null,
+				fields.alwaysHave ? 1 : 0,
+				fields.photoKey ?? null,
+				Date.now()
+			).lastInsertRowid
 	);
 }
 

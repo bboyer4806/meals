@@ -142,7 +142,7 @@ export type PageAnswer = {
 };
 
 /**
- * Answers GETs of these links in place of the network (recipe-page.ts), and gives the links
+ * Answers GETs of these links in place of the network (fetch-link.ts), and gives the links
  * asked for, in order. A link to localhost gets the real request, which refuses it as it
  * connects; any other link fails. vi.restoreAllMocks() puts the network back.
  */

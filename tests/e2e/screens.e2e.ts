@@ -29,8 +29,17 @@ test('screens', async ({ page, db, person }) => {
 		['Paper towels', null, 6, 'rolls', null, 'to_order'],
 		['Eggs', null, 1, 'dozen', walmart, 'received']
 	];
+	// Some items have an image (MEA-50), and the rest show without one.
+	const image = async (hue: number) =>
+		addPhotoFiles(
+			await makeJpeg(page, { width: 800, height: 600, hue }),
+			await makeJpeg(page, { width: 400, height: 300, hue })
+		);
+	const images: Record<string, string> = { Milk: await image(200), Bananas: await image(45) };
+	const setImage = db.prepare('update items set photo_key = ? where id = ?');
 	for (const [name, notes, quantity, unit, store, status] of rows) {
 		const itemId = add.run(person.householdId, name, notes, store, now).lastInsertRowid;
+		if (images[name]) setImage.run(images[name], itemId);
 		line.run(
 			person.householdId,
 			itemId,
@@ -63,6 +72,9 @@ test('screens', async ({ page, db, person }) => {
 	await shot('more');
 	await page.goto('/groceries/items');
 	await shot('items');
+	await page.getByRole('button', { name: /^Milk/ }).click();
+	await shot('item-sheet');
+	await page.keyboard.press('Escape');
 	await page.goto('/groceries/history');
 	await shot('history');
 	await page.goto('/household');

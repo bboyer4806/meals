@@ -120,6 +120,13 @@
       "when": 1793803137258,
       "tag": "0016_household-member-keys",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1793891269710,
+      "tag": "0017_item-photo",
+      "breakpoints": true
     }
   ]
 }

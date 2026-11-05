@@ -5,6 +5,7 @@ import { isHttpError, isRedirect } from '@sveltejs/kit';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { loadConfig } from '#lib/server/config.ts';
 import { setDishArchived, setDishPhoto } from '#lib/server/data/dishes.ts';
+import { createItem, setItemArchived, setItemPhoto } from '#lib/server/data/items.ts';
 import { deletePhoto, savePhoto } from '#lib/server/photos.ts';
 import { TEST_ENV, freshDb, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
 import { GET } from './+server.ts';
@@ -74,6 +75,24 @@ it("serves an archived dish's photo", async () => {
 	setDishArchived(householdId, dishId, true, 0);
 	const response = await get(`${key}-thumb.jpg`);
 	expect(new Uint8Array(await response.arrayBuffer())).toEqual(THUMB);
+});
+
+it("serves an item's image, archived or not, only to its household", async () => {
+	const itemKey = await savePhoto(new File([PHOTO], 'photo.jpg'), new File([THUMB], 'thumb.jpg'));
+	const itemId = createItem(householdId, 'Milk', 0).id;
+	setItemPhoto(householdId, itemId, itemKey);
+
+	expect(new Uint8Array(await (await get(`${itemKey}.jpg`)).arrayBuffer())).toEqual(PHOTO);
+	setItemArchived(householdId, itemId, true, 0);
+	expect(new Uint8Array(await (await get(`${itemKey}-thumb.jpg`)).arrayBuffer())).toEqual(THUMB);
+
+	const other = makeHousehold();
+	await expectNotFound(`${itemKey}.jpg`, other.householdId);
+	await expectNotFound(`${itemKey}-thumb.jpg`, other.householdId);
+
+	// Removed, it's gone even while its files are still on disk.
+	setItemPhoto(householdId, itemId, null);
+	await expectNotFound(`${itemKey}.jpg`);
 });
 
 it("answers 404 for another household's photo", async () => {

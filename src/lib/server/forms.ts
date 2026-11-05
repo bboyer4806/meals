@@ -72,6 +72,30 @@ export const householdSettings = z.object({
 	timeZone: z.string().refine(isValidTimeZone, 'Pick a time zone')
 });
 
+/** A photo picked on a device and resized there before upload, with its thumbnail. */
+export type PhotoUpload = { photo: File; thumb: File };
+
+/** A file that was sent, null for none, or undefined for something that isn't a file. */
+function sentFile(value: FormDataEntryValue | null): File | null | undefined {
+	if (value === null) return null;
+	if (!(value instanceof File)) return undefined;
+	// A file input left empty sends an empty file.
+	return value.size === 0 ? null : value;
+}
+
+/**
+ * The photo a form sent as two files, `photo` and `thumb`, or null when it sent neither.
+ * Undefined when they can't be read: one without the other, or text in place of a file.
+ */
+export function sentPhoto(formData: FormData): PhotoUpload | null | undefined {
+	const photo = sentFile(formData.get('photo'));
+	const thumb = sentFile(formData.get('thumb'));
+	if (photo === undefined || thumb === undefined || (photo === null) !== (thumb === null)) {
+		return undefined;
+	}
+	return photo && thumb ? { photo, thumb } : null;
+}
+
 export type FormFailure = { action: string; error: string };
 
 /** Parses form data, or returns the first problem as a message for the form named `action`. */

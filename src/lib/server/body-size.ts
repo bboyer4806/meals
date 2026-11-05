@@ -8,11 +8,12 @@ import type { RouteId } from '$app/types';
 
 export const MAX_BODY_BYTES = 64 * 1024;
 
-// The recipe editor, Import recipes and feedback send a photo, a file or a screenshot as
-// multipart/form-data, up to BODY_SIZE_LIMIT (Dockerfile).
+// The recipe editor, Items, Import recipes and feedback send a photo, an image, a file or a
+// screenshot as multipart/form-data, up to BODY_SIZE_LIMIT (Dockerfile).
 const FILE_ROUTES = new Set<RouteId>([
 	'/(app)/recipes/new',
 	'/(app)/recipes/[id]/edit',
+	'/(app)/groceries/items',
 	'/(app)/recipes/import',
 	'/(app)/feedback'
 ]);
@@ -29,7 +30,7 @@ function isMultipart(request: Request): boolean {
 /**
  * Refuses a request before its body is read: a POST that doesn't state its body's length (411),
  * and a body over MAX_BODY_BYTES (413), unless it's multipart/form-data to the recipe editor,
- * Import recipes or feedback.
+ * Items, Import recipes or feedback.
  */
 export function checkBodySize(request: Request, routeId: RouteId | null): void {
 	const length = request.headers.get('content-length');

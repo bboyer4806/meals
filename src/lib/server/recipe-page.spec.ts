@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import http from 'node:http';
 import https from 'node:https';
 import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,129 +16,30 @@ const PIE = 'https://recipes.example/pie';
 const BRULEE = '<h1>Grandma’s crème brûlée</h1><p>½ cup sugar at 325°F</p>';
 const BRULEE_1252 = Buffer.from(BRULEE.replace('’', '\x92'), 'latin1');
 
-// Addresses on this computer or a network beside it, written in the link.
-const PRIVATE_LINKS = [
-	'http://127.0.0.1/',
-	'http://10.0.0.1/',
-	'http://192.168.1.1/',
-	'http://169.254.169.254/latest/meta-data/',
-	'http://[::1]/',
-	'http://0.0.0.0/',
-	'http://172.16.0.1/',
-	'http://100.64.0.1/',
-	'http://[fe80::1]/',
-	'http://[fd00::1]/',
-	'http://[::ffff:169.254.169.254]/',
-	// 127.0.0.1 as one number.
-	'https://2130706433:8443/'
-];
-
+// Fetching itself, only from a public website, is fetch-link.spec.ts.
 describe('fetchPage', () => {
-	it("gets a page's HTML", async () => {
+	it("gets a page's HTML, asking for HTML as Meals recipe import", async () => {
 		const requested = servePages({ [PIE]: { status: 200, body: '<h1>Pie</h1>' } });
 		expect(await fetchPage(new URL(PIE))).toBe('<h1>Pie</h1>');
 		expect(requested).toEqual([PIE]);
-	});
-
-	it('gets a page from a public address written in the link', async () => {
-		servePages({ 'http://93.184.215.14/pie': { status: 200, body: 'Pie' } });
-		expect(await fetchPage(new URL('http://93.184.215.14/pie'))).toBe('Pie');
-	});
-
-	it.each(['ftp://recipes.example/pie', 'file:///etc/passwd', 'data:text/html,<p>Pie</p>'])(
-		'only fetches http and https, not %s',
-		async (link) => {
-			const requested = servePages({});
-			await expect(fetchPage(new URL(link))).rejects.toThrow("links can't be fetched");
-			expect(requested).toEqual([]);
-		}
-	);
-
-	it.each(PRIVATE_LINKS)('refuses %s without connecting', async (link) => {
-		const requested = servePages({});
-		await expect(fetchPage(new URL(link))).rejects.toThrow('is a private address');
-		expect(requested).toEqual([]);
-	});
-
-	it('refuses a name with a private address as it connects', async () => {
-		const requested = servePages({});
-		await expect(fetchPage(new URL('http://localhost:5173/'))).rejects.toThrow(
-			/^localhost is at (127\.0\.0\.1|::1), a private address$/
-		);
-		expect(requested).toEqual(['http://localhost:5173/']);
-	});
-
-	it.each([...PRIVATE_LINKS, 'http://localhost/', 'ftp://recipes.example/pie'])(
-		'refuses a redirect to %s',
-		async (target) => {
-			const requested = servePages({ [PIE]: { status: 302, headers: { location: target } } });
-			await expect(fetchPage(new URL(PIE))).rejects.toThrow(
-				/a private address$|links can't be fetched$/
-			);
-			// Only a name is requested, and it's refused as it connects.
-			expect(requested).toEqual(target === 'http://localhost/' ? [PIE, target] : [PIE]);
-		}
-	);
-
-	it('follows redirects one at a time', async () => {
-		const requested = servePages({
-			'http://recipes.example/pie': { status: 301, headers: { location: PIE } },
-			[PIE]: { status: 302, headers: { location: '/recipes/pie?print=1' } },
-			'https://recipes.example/recipes/pie?print=1': { status: 200, body: 'Pie' }
-		});
-		expect(await fetchPage(new URL('http://recipes.example/pie'))).toBe('Pie');
-		expect(requested).toEqual([
-			'http://recipes.example/pie',
-			PIE,
-			'https://recipes.example/recipes/pie?print=1'
-		]);
-	});
-
-	it('follows up to 5 redirects', async () => {
-		// Each page redirects to the next, and the last is the recipe.
-		const chain = (redirects: number) => {
-			const pages: Record<string, { status: number; headers?: Record<string, string> }> = {};
-			for (let page = 0; page < redirects; page += 1) {
-				pages[`https://recipes.example/${page}`] = {
-					status: 307,
-					headers: { location: `/${page + 1}` }
-				};
-			}
-			pages[`https://recipes.example/${redirects}`] = { status: 200 };
-			return pages;
+		const headers = {
+			accept: 'text/html,application/xhtml+xml',
+			'user-agent': 'Mozilla/5.0 (compatible; Meals recipe import)',
+			'accept-encoding': 'identity'
 		};
-		servePages(chain(5));
-		expect(await fetchPage(new URL('https://recipes.example/0'))).toBe('');
-
-		vi.restoreAllMocks();
-		const requested = servePages(chain(6));
-		await expect(fetchPage(new URL('https://recipes.example/0'))).rejects.toThrow(
-			'https://recipes.example/0 redirects too many times'
-		);
-		expect(requested).toHaveLength(6);
-	});
-
-	it("fails when the page doesn't answer 200", async () => {
-		servePages({
-			[PIE]: { status: 403, body: 'Forbidden' },
-			'https://recipes.example/moved': { status: 301 }
-		});
-		await expect(fetchPage(new URL(PIE))).rejects.toThrow(`${PIE} answered 403`);
-		// A redirect without a Location.
-		await expect(fetchPage(new URL('https://recipes.example/moved'))).rejects.toThrow(
-			'answered 301'
+		expect(https.get).toHaveBeenCalledExactlyOnceWith(
+			expect.anything(),
+			expect.objectContaining({ headers }),
+			expect.any(Function)
 		);
 	});
 
-	it('stops reading after 5 MB', async () => {
-		servePages({
-			'https://recipes.example/big': { status: 200, body: Buffer.alloc(5_000_001, 'a') },
-			'https://recipes.example/fits': { status: 200, body: Buffer.alloc(5_000_000, 'a') }
-		});
-		await expect(fetchPage(new URL('https://recipes.example/big'))).rejects.toThrow(
-			'The page is over 5000000 bytes'
+	it('refuses a link to this computer, as fetchLink does', async () => {
+		const requested = servePages({});
+		await expect(fetchPage(new URL('http://127.0.0.1/'))).rejects.toThrow(
+			'127.0.0.1 is a private address'
 		);
-		expect(await fetchPage(new URL('https://recipes.example/fits'))).toHaveLength(5_000_000);
+		expect(requested).toEqual([]);
 	});
 
 	it('reads the page in the charset its Content-Type names', async () => {
@@ -219,53 +119,9 @@ describe('fetchPage', () => {
 				status: 200,
 				headers: { 'content-encoding': 'gzip' },
 				body: gzipSync(Buffer.concat([Buffer.from(meta), BRULEE_1252]))
-			},
-			'https://recipes.example/tart': {
-				status: 200,
-				headers: { 'content-encoding': 'identity' },
-				body: 'Tart'
 			}
 		});
 		expect(await fetchPage(new URL(PIE))).toBe(`${meta}${BRULEE}`);
-		expect(await fetchPage(new URL('https://recipes.example/tart'))).toBe('Tart');
-	});
-
-	it('stops unzipping after 5 MB', async () => {
-		const gzipped = (bytes: number) => ({
-			status: 200,
-			headers: { 'content-encoding': 'gzip' },
-			body: gzipSync(Buffer.alloc(bytes, 'a'))
-		});
-		servePages({
-			'https://recipes.example/big': gzipped(5_000_001),
-			'https://recipes.example/fits': gzipped(5_000_000)
-		});
-		await expect(fetchPage(new URL('https://recipes.example/big'))).rejects.toThrow(
-			'Cannot create a Buffer larger than 5000000 bytes'
-		);
-		expect(await fetchPage(new URL('https://recipes.example/fits'))).toHaveLength(5_000_000);
-	});
-
-	it.each(['br', 'deflate', 'gzip, gzip'])("can't read a page compressed as %s", async (coding) => {
-		servePages({ [PIE]: { status: 200, headers: { 'content-encoding': coding }, body: 'Pie' } });
-		await expect(fetchPage(new URL(PIE))).rejects.toThrow(`The page is compressed as ${coding}`);
-	});
-
-	it('gives every request, and reading the page, 10 seconds in all', async () => {
-		const timeout = vi.spyOn(AbortSignal, 'timeout');
-		servePages({
-			'http://recipes.example/pie': { status: 301, headers: { location: PIE } },
-			[PIE]: { status: 200, body: 'Pie' }
-		});
-		await fetchPage(new URL('http://recipes.example/pie'));
-		expect(timeout).toHaveBeenCalledExactlyOnceWith(10_000);
-		// Aborting a request also stops reading its answer.
-		const signal = timeout.mock.results[0]?.value;
-		const requests = [...vi.mocked(http.get).mock.calls, ...vi.mocked(https.get).mock.calls];
-		expect(requests.map(([, options]) => options)).toEqual([
-			expect.objectContaining({ signal }),
-			expect.objectContaining({ signal })
-		]);
 	});
 });
 

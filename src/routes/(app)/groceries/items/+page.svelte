@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
+	import ItemImage, { type ImageChoice } from '#lib/components/ItemImage.svelte';
+	import ItemThumb from '#lib/components/ItemThumb.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
 	import SearchBox from '#lib/components/SearchBox.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
@@ -14,16 +16,39 @@
 	// Rebuilt every time the sheet opens, so edits abandoned last time don't come back.
 	let editKey = $state(0);
 	let sheetError = $state('');
+	// What Save does to the image (MEA-50). A link goes in the image's own field.
+	let image = $state<ImageChoice>({ kind: 'keep' });
+	let preparingImage = $state(false);
+	// Downloading an image from a link can take a few seconds.
+	let saving = $state(false);
 
 	function edit(item: Item) {
 		editing = item;
 		editKey += 1;
 		sheetError = '';
+		image = { kind: 'keep' };
+		preparingImage = false;
 		open = true;
 	}
 
-	const submitSheet: SubmitFunction = () => {
+	const submitSheet: SubmitFunction = ({ action, formData, cancel }) => {
+		if (saving || preparingImage) {
+			cancel();
+			return;
+		}
+		// Archive and Restore leave the image as it is, so only Save sends it.
+		if (action.search === '?/update') {
+			if (image.kind === 'new') {
+				formData.set('photo', image.photo, 'photo.jpg');
+				formData.set('thumb', image.thumb, 'thumb.jpg');
+			} else if (image.kind === 'remove') {
+				formData.set('removePhoto', '1');
+			}
+		}
+		saving = true;
 		return async ({ result, update }) => {
+			saving = false;
+			// Nothing here resets the sheet, so what was typed and the picked image stay for another try.
 			if (result.type === 'failure') {
 				sheetError = (result.data as { error?: string } | undefined)?.error ?? 'Please try again.';
 				return;
@@ -66,17 +91,20 @@
 		{#each data.items as item (item.id)}
 			<li>
 				<button class="item" onclick={() => edit(item)}>
-					<span class="name">{item.name}</span>
-					{#if item.notes}<span class="muted small">{item.notes}</span>{/if}
-					<span class="muted small">
-						{item.defaultStoreName ?? 'No store yet'}
-						{#if item.lastBoughtDate}
-							· last bought {formatDateLabel(item.lastBoughtDate, {
-								today: data.today
-							})}{item.lastBoughtStoreName
-								? ` at ${item.lastBoughtStoreName}`
-								: ''}
-						{/if}
+					{#if item.photoKey}<ItemThumb photoKey={item.photoKey} size={48} />{/if}
+					<span class="text">
+						<span class="name">{item.name}</span>
+						{#if item.notes}<span class="muted small">{item.notes}</span>{/if}
+						<span class="muted small">
+							{item.defaultStoreName ?? 'No store yet'}
+							{#if item.lastBoughtDate}
+								· last bought {formatDateLabel(item.lastBoughtDate, {
+									today: data.today
+								})}{item.lastBoughtStoreName
+									? ` at ${item.lastBoughtStoreName}`
+									: ''}
+							{/if}
+						</span>
 					</span>
 				</button>
 			</li>
@@ -87,7 +115,12 @@
 <Sheet bind:open title={editing?.name ?? ''}>
 	{#if editing}
 		{#key editKey}
-			<form method="POST" action="?/update" use:enhance={submitSheet}>
+			<form
+				method="POST"
+				action="?/update"
+				enctype="multipart/form-data"
+				use:enhance={submitSheet}
+			>
 				{#if sheetError}<p class="error" role="alert">{sheetError}</p>{/if}
 				<input type="hidden" name="id" value={editing.id} />
 				<div class="field">
@@ -104,8 +137,18 @@
 						value={editing.notes ?? ''}
 					/>
 				</div>
+				<div class="field" role="group" aria-labelledby="item-image-label">
+					<span class="label" id="item-image-label">Image</span>
+					<ItemImage
+						savedKey={editing.photoKey}
+						bind:choice={image}
+						bind:busy={preparingImage}
+					/>
+				</div>
 				<div class="row">
-					<button class="primary">Save</button>
+					<button class="primary" disabled={saving || preparingImage}>
+						{saving ? 'Saving…' : 'Save'}
+					</button>
 					{#if editing.archivedAt === null}
 						<ConfirmButton
 							label="Archive"
@@ -138,8 +181,9 @@
 	.item {
 		width: 100%;
 		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
+		align-items: center;
+		justify-content: flex-start;
+		gap: 0.75rem;
 		text-align: left;
 		background: none;
 		border: none;
@@ -147,8 +191,21 @@
 		font-weight: 400;
 	}
 
+	.text {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		min-width: 0;
+	}
+
 	.name {
 		font-weight: 700;
+	}
+
+	.label {
+		display: block;
+		font-weight: 600;
+		margin-bottom: 0.25rem;
 	}
 
 	.small {

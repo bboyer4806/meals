@@ -4,6 +4,7 @@
 	import { refreshAll } from '$app/navigation';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import ItemInput from '#lib/components/ItemInput.svelte';
+	import ItemThumb from '#lib/components/ItemThumb.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
 	import Tour from '#lib/components/Tour.svelte';
 	import { foldCase, formatQuantity, normalizeName } from '#lib/text.ts';
@@ -383,10 +384,13 @@
 {/snippet}
 
 {#snippet lineText(line: Line)}
-	<span class="name">{line.itemName}</span>
-	<span class="amount">{amount(line)}</span>
-	{#if line.itemNotes}<span class="notes muted">{line.itemNotes}</span>{/if}
-	{#if line.note}<span class="notes">{line.note}</span>{/if}
+	{#if line.itemPhotoKey}<ItemThumb photoKey={line.itemPhotoKey} size={40} />{/if}
+	<span class="text">
+		<span class="name">{line.itemName}</span>
+		<span class="amount">{amount(line)}</span>
+		{#if line.itemNotes}<span class="notes muted">{line.itemNotes}</span>{/if}
+		{#if line.note}<span class="notes">{line.note}</span>{/if}
+	</span>
 {/snippet}
 
 <Sheet bind:open={promptOpen} title={prompt?.itemName ?? ''}>
@@ -709,16 +713,13 @@
 		color: var(--surface);
 	}
 
-	/* A long name or note without spaces, such as a dish name a pantry check put in the note,
-	   wraps rather than widening the list past the screen. */
+	/* The item's image, if it has one, then its text. */
 	.body {
 		flex: 1;
 		min-width: 0;
-		overflow-wrap: anywhere;
 		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		column-gap: 0.5rem;
+		align-items: center;
+		gap: 0.75rem;
 		justify-content: flex-start;
 		text-align: left;
 		background: none;
@@ -726,6 +727,18 @@
 		padding: 0.6rem 0.25rem;
 		font-weight: 400;
 		min-height: var(--tap);
+	}
+
+	/* A long name or note without spaces, such as a dish name a pantry check put in the note,
+	   wraps rather than widening the list past the screen. */
+	.text {
+		flex: 1;
+		min-width: 0;
+		overflow-wrap: anywhere;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		column-gap: 0.5rem;
 	}
 
 	.name {
