@@ -6,12 +6,13 @@ import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { config } from './config.ts';
 import { db } from './db/index.ts';
-import { dishes } from './db/schema.ts';
+import { dishes, items } from './db/schema.ts';
+import { fetchLink } from './fetch-link.ts';
 
-// Recipe photos are files in $DATA_DIR/photos: <key>.jpg and <key>-thumb.jpg (design 4.4). The
-// phone resizes them before upload (photo-resize.ts), so the server only checks and stores them.
-// A file is never written twice: a new photo gets a new key. The nightly backup hard-links these
-// files, so changing one in place would change it in the older backups too.
+// Recipe photos and item images are files in $DATA_DIR/photos: <key>.jpg and <key>-thumb.jpg
+// (design 4.4). The phone resizes them before upload (photo-resize.ts), so the server only checks
+// and stores them. A file is never written twice: a new photo gets a new key. The nightly backup
+// hard-links these files, so changing one in place would change it in the older backups too.
 
 export const PHOTO_MAX_BYTES = 3_000_000;
 export const THUMB_MAX_BYTES = 400_000;
@@ -79,12 +80,58 @@ export function deletePhoto(key: string): void {
 	rmSync(photoPath(key, 'thumb'), { force: true });
 }
 
-/** Whether a dish in this household, archived or not, has this photo. */
+/**
+ * Removes a photo's files when nothing should point at them. A file left behind only takes up
+ * space, so a failure here is logged rather than failing a save that has already happened.
+ */
+export function discardPhoto(key: string): void {
+	try {
+		deletePhoto(key);
+	} catch (e) {
+		console.error(`Couldn't delete photo ${key}`, e);
+	}
+}
+
+/** Whether a dish or an item in this household, archived or not, has this photo. */
 export function householdOwnsPhoto(householdId: number, key: string): boolean {
 	const dish = db()
 		.select({ id: dishes.id })
 		.from(dishes)
 		.where(and(eq(dishes.householdId, householdId), eq(dishes.photoKey, key)))
 		.get();
-	return dish !== undefined;
+	const item = db()
+		.select({ id: items.id })
+		.from(items)
+		.where(and(eq(items.householdId, householdId), eq(items.photoKey, key)))
+		.get();
+	return dish !== undefined || item !== undefined;
+}
+
+const IMAGE_HEADERS = {
+	accept: 'image/jpeg,image/png,image/webp,image/gif',
+	'user-agent': 'Mozilla/5.0 (compatible; Meals item image)'
+};
+
+/** Whether the bytes start as a JPEG, PNG, GIF or WebP (a RIFF file of type WEBP) does. */
+function isImage(bytes: Buffer): boolean {
+	const start = bytes.toString('latin1', 0, 12);
+	return (
+		start.startsWith('\xff\xd8\xff') ||
+		start.startsWith('\x89PNG\r\n\x1a\n') ||
+		start.startsWith('GIF8') ||
+		(start.startsWith('RIFF') && start.slice(8) === 'WEBP')
+	);
+}
+
+/**
+ * The image a link points at, for the browser to resize as it does one picked on the device, so
+ * the server never decodes an image (design 7, Item images). Throws if fetchLink can't get it
+ * (design 4.5), or if it isn't a JPEG, PNG, GIF or WebP, such as the web page an image is on.
+ */
+export async function fetchImage(link: URL): Promise<Uint8Array> {
+	const { body } = await fetchLink(link, IMAGE_HEADERS);
+	if (!isImage(body)) throw new Error(`${link.href} isn't a JPEG, PNG, GIF or WebP`);
+	// A copy of its own: a small Buffer can be part of a larger shared one, which sending it to
+	// the browser would send whole.
+	return new Uint8Array(body);
 }

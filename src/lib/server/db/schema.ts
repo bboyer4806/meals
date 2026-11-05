@@ -99,12 +99,15 @@ export const items = sqliteTable(
 		defaultStoreId: integer('default_store_id'),
 		// Left off pantry checklists, like water or salt (addition 2.2.1).
 		alwaysHave: integer('always_have', { mode: 'boolean' }).notNull().default(false),
+		// Random; the image files are named after it, as a recipe's photo is (photos.ts, MEA-50).
+		photoKey: text('photo_key'),
 		archivedAt: integer('archived_at'),
 		createdAt: integer('created_at').notNull()
 	},
 	(t) => [
 		unique('items_household_id').on(t.householdId, t.id),
 		uniqueIndex('items_household_name').on(t.householdId, sql`lower(${t.name})`),
+		uniqueIndex('items_photo_key').on(t.photoKey),
 		foreignKey({
 			columns: [t.householdId, t.defaultStoreId],
 			foreignColumns: [stores.householdId, stores.id]

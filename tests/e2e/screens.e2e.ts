@@ -44,6 +44,20 @@ test('screens', async ({ page, db, person }) => {
 		);
 	}
 
+	// Some items have an image, and the rest show as they did before images.
+	const setImage = db.prepare('update items set photo_key = ? where household_id = ? and name = ?');
+	for (const [name, hue] of [
+		['Milk', 210],
+		['Dog food', 30],
+		['Eggs', 45]
+	] as const) {
+		const key = addPhotoFiles(
+			await makeJpeg(page, { width: 1600, height: 1200, hue }),
+			await makeJpeg(page, { width: 400, height: 300, hue })
+		);
+		setImage.run(key, person.householdId, name);
+	}
+
 	const shot = (name: string) =>
 		page.screenshot({ path: `test-results/screens/${name}.png`, fullPage: true });
 
@@ -63,6 +77,8 @@ test('screens', async ({ page, db, person }) => {
 	await shot('more');
 	await page.goto('/groceries/items');
 	await shot('items');
+	await page.getByRole('button', { name: /^Milk/ }).click();
+	await shot('item-sheet');
 	await page.goto('/groceries/history');
 	await shot('history');
 	await page.goto('/household');

@@ -1,6 +1,10 @@
-<script lang="ts" generics="T extends { id: number; name: string; timesAdded: number }">
+<script
+	lang="ts"
+	generics="T extends { id: number; name: string; timesAdded: number; photoKey?: string | null }"
+>
 	import { onMount, tick, type Snippet } from 'svelte';
 	import { foldCase, normalizeName } from '../text.ts';
+	import ItemThumb from './ItemThumb.svelte';
 
 	// A text field that suggests existing items as you type: names that start with the text
 	// first, then names that contain it, most often added first within each. A name that
@@ -9,7 +13,8 @@
 	// editor suggests dishes, so its new option says "new dish", and it adds a dish picked from
 	// them right away, with its role and Add under the field (MEA-56). The dish request sheet
 	// suggests dishes too, with the name's limit warning under the field, so they show in the
-	// sheet rather than over its Note and Request (6.12, MEA-151).
+	// sheet rather than over its Note and Request (6.12, MEA-151). The grocery list's suggestions
+	// show each item's image, if it has one (design 7, Item images).
 	let {
 		items,
 		value = $bindable(''),
@@ -189,6 +194,7 @@
 					}}
 				>
 					{#if option.kind === 'item'}
+						<ItemThumb photoKey={option.item.photoKey} size={32} />
 						{option.item.name}
 					{:else}
 						Add “{typed}” as a new {noun}
@@ -239,6 +245,7 @@
 	li {
 		display: flex;
 		align-items: center;
+		gap: 0.5rem;
 		min-height: var(--tap);
 		padding: 0 0.75rem;
 		border-radius: 8px;

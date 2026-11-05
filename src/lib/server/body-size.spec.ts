@@ -9,6 +9,7 @@ const MULTIPART = 'multipart/form-data; boundary=----WebKitFormBoundaryq3TqUvBbV
 const FILE_ROUTES: RouteId[] = [
 	'/(app)/recipes/new',
 	'/(app)/recipes/[id]/edit',
+	'/(app)/groceries/items',
 	'/(app)/recipes/import',
 	'/(app)/feedback'
 ];
@@ -49,7 +50,7 @@ describe('checkBodySize', () => {
 		expect(refusal(post(MAX_BODY_BYTES + 1, MULTIPART), null)).toBe(413);
 	});
 
-	it('reads a larger multipart body on the recipe editor, Import recipes and feedback', () => {
+	it('reads a larger multipart body on the recipe editor, Items, Import recipes and feedback', () => {
 		for (const route of FILE_ROUTES) {
 			expect(refusal(post(PHOTO_SAVE, MULTIPART), route), route).toBeNull();
 		}

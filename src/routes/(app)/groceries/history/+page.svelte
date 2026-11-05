@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ItemThumb from '#lib/components/ItemThumb.svelte';
 	import SearchBox from '#lib/components/SearchBox.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
 	import { formatQuantity } from '#lib/text.ts';
@@ -28,6 +29,7 @@
 		<ul class="list">
 			{#each day.lines as line (line.id)}
 				<li class="row">
+					<ItemThumb photoKey={line.itemPhotoKey} size={40} />
 					<span class="grow">
 						<strong>{line.itemName}</strong>
 						{formatQuantity(line.quantity)}{line.unit ? ` ${line.unit}` : ''}

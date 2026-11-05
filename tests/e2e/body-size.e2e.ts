@@ -1,7 +1,7 @@
-import { expect, makeJpeg, open, test } from './fixtures.ts';
+import { addItem, expect, makeJpeg, open, test } from './fixtures.ts';
 
-// Request bodies over 64 KB are refused before anything reads them, except a photo or a file
-// sent to the recipe editor or Import recipes (design 4.5).
+// Request bodies over 64 KB are refused before anything reads them, except a photo, an image or a
+// file sent to the recipe editor, Items or Import recipes (design 4.5).
 
 const LIMIT = 64 * 1024;
 const PADDING = 'x'.repeat(LIMIT);
@@ -68,6 +68,29 @@ test('saves a recipe with a photo over 64 KB', async ({ page, db, person, baseUR
 			.pluck()
 			.get(person.householdId, 'Pound cake')
 	).toMatch(/^[0-9a-f]{32}$/);
+});
+
+test("saves an item's image over 64 KB", async ({ page, db, person, baseURL }) => {
+	const headers = { origin: baseURL ?? '', 'x-sveltekit-action': 'true' };
+	const milk = addItem(db, person.householdId, 'Milk');
+	const photo = await makeJpeg(page, { width: 3000, height: 2250 });
+	const thumb = await makeJpeg(page, { width: 400, height: 300 });
+	expect(photo.length).toBeGreaterThan(LIMIT);
+
+	const saved = await page.request.post('/groceries/items?/update', {
+		multipart: {
+			id: String(milk),
+			name: 'Milk',
+			notes: '',
+			photo: { name: 'photo.jpg', mimeType: 'image/jpeg', buffer: photo },
+			thumb: { name: 'thumb.jpg', mimeType: 'image/jpeg', buffer: thumb }
+		},
+		headers
+	});
+	expect(await saved.json()).toMatchObject({ type: 'success' });
+	expect(db.prepare('select photo_key from items where id = ?').pluck().get(milk)).toMatch(
+		/^[0-9a-f]{32}$/
+	);
 });
 
 test('refuses a recipe over 64 KB sent without multipart', async ({

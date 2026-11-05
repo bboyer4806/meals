@@ -50,6 +50,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Everything your household has added to the list or to a recipe.',
 			'Each item shows its usual store and when and where it was last bought.',
 			'Tap an item to rename it or add notes, like a brand or size. Notes show under its name on the list.',
+			'To give an item an image, tap Add image to pick one, or paste its link and tap Get image. Then tap Save.',
 			"Archive an item you don't buy anymore. It stops being suggested, and recipes and history keep it.",
 			'Show archived items to find one and restore it.',
 			'‹ Groceries goes back to the list.'

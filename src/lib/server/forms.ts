@@ -98,3 +98,34 @@ export function attempt<T>(action: string, run: () => T): T | ActionFailure<Form
 		throw e;
 	}
 }
+
+/** A photo picked in a form and resized on the phone, with its thumbnail. */
+export type PhotoUpload = { photo: File; thumb: File };
+
+/** A file that was sent, null for none, or undefined for something that isn't a file. */
+function upload(value: FormDataEntryValue | null): File | null | undefined {
+	if (value === null) return null;
+	if (!(value instanceof File)) return undefined;
+	// A file input left empty sends an empty file.
+	return value.size === 0 ? null : value;
+}
+
+/**
+ * What a form asks for its photo or image (design 7, Edit recipe and Item images): a new one, sent
+ * as two files, `photo` and `thumb`, or none to keep the current one. `removePhoto` set to '1'
+ * asks to clear it, and is never true with a new one, which replaces it anyway. Undefined when the
+ * files can't be read: one without the other, or a field that isn't a file.
+ */
+export function sentPhoto(
+	formData: FormData
+): { photo: PhotoUpload | null; removePhoto: boolean } | undefined {
+	const photo = upload(formData.get('photo'));
+	const thumb = upload(formData.get('thumb'));
+	if (photo === undefined || thumb === undefined || (photo === null) !== (thumb === null)) {
+		return undefined;
+	}
+	return {
+		photo: photo && thumb ? { photo, thumb } : null,
+		removePhoto: photo === null && formData.get('removePhoto') === '1'
+	};
+}

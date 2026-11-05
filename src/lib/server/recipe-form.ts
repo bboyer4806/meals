@@ -11,8 +11,8 @@ import {
 	type DishSaveResult,
 	type IngredientInput
 } from './data/dishes.ts';
-import { idList, nameField, sentMax } from './forms.ts';
-import { deletePhoto, savePhoto } from './photos.ts';
+import { idList, nameField, sentMax, sentPhoto, type PhotoUpload } from './forms.ts';
+import { discardPhoto, savePhoto } from './photos.ts';
 
 // The recipe editor's form (design 7, Edit recipe): the text its fields start with, what it
 // sends back, checked and normalized for createDish and updateDish, and saving it. The editor's
@@ -42,9 +42,6 @@ export type RecipeFormValues = {
 	fatG: string;
 	rows: RecipeRow[];
 };
-
-/** A photo picked in the editor and resized on the phone, with its thumbnail. */
-export type PhotoUpload = { photo: File; thumb: File };
 
 export type RecipeSubmission = {
 	data: DishInput;
@@ -457,14 +454,6 @@ export const recipeDetailFields = recipeFields.omit({ ingredients: true });
  */
 const restoreItemsField = z.string().max(1000).pipe(idList);
 
-/** A file that was sent, null for none, or undefined for something that isn't a file. */
-function upload(value: FormDataEntryValue | null): File | null | undefined {
-	if (value === null) return null;
-	if (!(value instanceof File)) return undefined;
-	// A file input left empty sends an empty file.
-	return value.size === 0 ? null : value;
-}
-
 /**
  * The failure for fields with problems (MEA-207): each field's first problem, and each ingredient
  * row's, by the row's place and field. A problem with the ingredients as a whole isn't about one
@@ -503,9 +492,8 @@ export function parseRecipeForm(
 	if (!parsed.success) return { failure: fieldsFailure(parsed.error.issues) };
 	const data: DishInput = parsed.data;
 
-	const photo = upload(formData.get('photo'));
-	const thumb = upload(formData.get('thumb'));
-	if (photo === undefined || thumb === undefined || (photo === null) !== (thumb === null)) {
+	const sent = sentPhoto(formData);
+	if (sent === undefined) {
 		return { failure: failure("The photo couldn't be uploaded. Choose it again.") };
 	}
 
@@ -520,12 +508,7 @@ export function parseRecipeForm(
 		}
 		restoreItemIds = ids.data;
 	}
-	return {
-		data,
-		photo: photo && thumb ? { photo, thumb } : null,
-		removePhoto: photo === null && formData.get('removePhoto') === '1',
-		restoreItemIds
-	};
+	return { data, ...sent, restoreItemIds };
 }
 
 /**
@@ -558,18 +541,6 @@ export function archivedItemsFailure(
 		? `${list} is archived. Restore it and save the recipe?`
 		: `${list} are archived. Restore them and save the recipe?`;
 	return fail(400, { action: ACTION, error, archivedItems: items });
-}
-
-/**
- * Removes a photo's files when nothing should point at them. A file left behind only takes up
- * space, so a failure here is logged rather than failing a save that has already happened.
- */
-function discardPhoto(key: string): void {
-	try {
-		deletePhoto(key);
-	} catch (e) {
-		console.error(`Couldn't delete photo ${key}`, e);
-	}
 }
 
 /**

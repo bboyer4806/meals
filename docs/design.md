@@ -218,8 +218,8 @@ No `ORIGIN` setting is needed: in SvelteKit 3, adapter-node builds the app's ori
 
 ```
 /data/meals.db                        database (WAL mode, foreign keys on)
-/data/photos/<key>.jpg                photo, longest side 1600 px
-/data/photos/<key>-thumb.jpg          thumbnail, longest side 400 px
+/data/photos/<key>.jpg                recipe photo or item image, longest side 1600 px
+/data/photos/<key>-thumb.jpg          its thumbnail, longest side 400 px
 /data/backups/<YYYY-MM-DD>/meals.db   nightly copy of the database
 /data/backups/<YYYY-MM-DD>/photos/    nightly snapshot of the photos
 ```
@@ -257,8 +257,8 @@ lost, so is everything. Moving backups off the server later is a small change.
   points at another household's data, even if someone tampers with a form. That includes who
   asked for a request and who rated a recipe, so neither can be another household's member
   (MEA-70).
-- **Photos** are served through a route that checks the photo belongs to the signed-in
-  household.
+- **Photos** of recipes and **images** of items are served through a route that checks the photo
+  belongs to one of the signed-in household's recipes or items, archived or not.
 - **Sessions** use a random token in an `httpOnly`, `Secure`, `SameSite=Lax` cookie, and
   only a SHA-256 hash of the token is stored. Sessions last 30 days and are extended when
   used. Signing out deletes the session, and each sign-in deletes every expired one.
@@ -277,21 +277,23 @@ lost, so is everything. Moving backups off the server later is a small change.
   its length: one crafted 5 MB form would hold up the server for every household for minutes. So
   a request's body may be at most 64 KB, checked against the length the request states before
   anything reads it, and a POST that doesn't state its length is refused. The largest form people
-  send this way, a dinner's note, comes to about 25 KB. Only the recipe editor, Import recipes and
-  feedback send more, a photo, a file or a screenshot as multipart/form-data, which they may send
-  up to 5 MB (`BODY_SIZE_LIMIT`, 4.2).
+  send this way, a dinner's note, comes to about 25 KB. Only the recipe editor, Items, Import
+  recipes and feedback send more, a photo, an image, a file or a screenshot as multipart/form-data,
+  which they may send up to 5 MB (`BODY_SIZE_LIMIT`, 4.2).
 - **No raw HTML** from user input is ever rendered (no `{@html}`), and SvelteKit's
   built-in Content Security Policy is turned on.
 - **Admin** is only the `ADMIN_EMAIL` account. It sees household names and member
   emails, not household data.
-- **Importing from a link** (7) has the server fetch a web page, so a link could aim it at the
-  server itself. Only http and https are fetched, and never from an address on this computer
-  or a private or link-local network (such as 127.0.0.1, 10.0.0.1, 192.168.1.1, ::1, or the
-  cloud's metadata service at 169.254.169.254). Every address a name resolves to is checked
-  as the connection is made, so the name can't resolve to a public address for a check and a
-  private one for the fetch. Redirects are followed one at a time, up to 5, each checked the
-  same way. A fetch stops after 10 seconds or 5 MB, and a page sent gzipped stops unzipping at
-  5 MB.
+- **Importing from a link** and an **image link** (7) have the server fetch a web page or an
+  image, so a link could aim it at the server itself. Only http and https are fetched, and never
+  from an address on this computer or a private or link-local network (such as 127.0.0.1,
+  10.0.0.1, 192.168.1.1, ::1, or the cloud's metadata service at 169.254.169.254). Every address a
+  name resolves to is checked as the connection is made, so the name can't resolve to a public
+  address for a check and a private one for the fetch. Redirects are followed one at a time, up to
+  5, each checked the same way. A fetch stops after 10 seconds or 5 MB, and a page sent gzipped
+  stops unzipping at 5 MB. An image link's answer goes back to the page's script as data, and only
+  when it starts as a JPEG, PNG, GIF or WebP does. The phone decodes and resizes it, so the server
+  never decodes an image (MEA-50).
 
 ### 4.6 Code layout
 
@@ -315,9 +317,11 @@ src/lib/server/
                           dishes, dinners, requests. Every function takes
                           householdId first, except whats-new (a person's seen
                           release), which takes the person's id.
-  photos.ts               save, delete and serve photos
+  photos.ts               save, delete and serve photos and item images, and get the image
+                          an image link points at
   jira.ts                 create a feedback ticket in Jira and attach its screenshot
-  recipe-page.ts          fetch a recipe's web page (4.5) and read its JSON-LD
+  fetch-link.ts           fetch a link from a public website (4.5)
+  recipe-page.ts          fetch a recipe's web page and read its JSON-LD
 src/routes/               pages and form actions; database access only through data/
 drizzle/                  generated SQL migrations
 scripts/backup.js         the nightly backup job
@@ -355,7 +359,8 @@ household"), `created_at` (E5).
 
 **items:** `name` (unique per household, ignoring case), `notes` (brand, size; Q25),
 `default_store_id` (the store it was last ordered or bought from; Q17), `always_have`
-(addition 2.2.1), `archived_at`, `created_at` (Q1).
+(addition 2.2.1), `photo_key` (its image, optional, stored as a recipe's photo is and unique to
+the item; MEA-50, section 7, "Item images"), `archived_at`, `created_at` (Q1).
 
 **grocery_needs** (lines on the list): `item_id`, `quantity` (more than 0), `unit`
 (optional free text such as "bags"; Q16), `store_id` (required unless the status is To
@@ -597,10 +602,10 @@ The rest of this section describes it as built.
 
 ### 6.10 Archiving
 
-Stores, items and dishes are archived instead of deleted (E3). Archiving hides a record
-from pickers, suggestions and default lists (the Items and Recipes pages have a "show
-archived" switch). Everything that already uses it keeps working: past dinners, recipes,
-history, and lines on the list. It can be restored at any time. Its name stays taken, so
+Stores, items and dishes are archived instead of deleted (E3). Archiving hides a record from
+pickers, suggestions and default lists (the Items and Recipes pages have a "show archived"
+switch). Everything that already uses it keeps working: past dinners, recipes, history, and lines
+on the list. An item keeps its image. It can be restored at any time. Its name stays taken, so
 adding the same name offers to restore it.
 
 ### 6.11 Freshness
@@ -692,7 +697,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Household setup  | `/setup`                             | First sign-in for a new household: name, usual servings, time zone.                                                                 |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | History          | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
-| Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, archive and restore. Shows each item's default store and when and where it was last bought. |
+| Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. |
 | Recipes          | `/recipes`                           | Search by name, filter by tags, sort by name or rating (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, Import and New recipe. |
 | Import recipes   | `/recipes/import`                    | See below.                                                                                                                           |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
@@ -765,7 +770,28 @@ lists its To Order lines, then Ordered, then Received today (struck through). St
 groups have "Mark all ordered" and "Mark all received"; "No store" has neither. After either,
 the group says how many lines it changed (6.2). A row's circle checks it off as Received.
 Tapping a row opens an edit sheet: quantity, unit, store, note, Mark ordered, Didn't come, Got
-fewer, and Delete. An item's notes (brand, size) show under its name.
+fewer, and Delete. An item's notes (brand, size) show under its name, and its image, if it has
+one, beside it (Item images, below).
+
+**Item images.** An item can have one image, so the household can tell items apart at a glance
+(MEA-50). An item's sheet on Items has Image above Name and Notes. Add image picks a photo or file
+on the device. Image link, with Get image, has the server download the image a link points at
+(4.5), such as one copied with a browser's Copy image address. Either way the phone resizes it as
+it does a recipe's photo (2.3), to at most 1600 px with a 400 px thumbnail, and the sheet shows
+it; the link field empties once its image shows. Change image picks another, Remove image clears
+it, and Keep the old image takes back a removal. Nothing changes until Save, which saves the name,
+notes and image together, and closing the sheet drops an image picked or downloaded there. The
+server keeps its own copy, so the image stays when the page it came from changes or goes, and it's
+kept, backed up and shown only to the household like a recipe's photo (4.4, 4.5). A link must
+start with http:// or https://, be up to 2,000 characters, and lead to a JPEG, PNG, GIF or WebP of
+up to 5 MB. Any other link, such as one to the page an image is on, says "Couldn't get an image
+from that link. Use the image's own link, not the page it's on." and changes nothing, as does an
+image the phone can't read ("This image couldn't be read. Try a JPEG or PNG."). A save that fails,
+such as for a name another item has, changes nothing, the image included, and keeps what was
+picked and typed for another try. The image shows beside the item's name on Items (48 px), the
+grocery list (40 px), the add bar's suggestions (32 px) and History (40 px). An item without one
+shows as it always has, with no placeholder. Renaming, archiving and restoring an item keep its
+image (6.10).
 
 **Search.** Recipes, History and Items search as people type (MEA-36): the list updates 300 ms
 after typing stops, and Enter, or a phone keyboard's search key, searches right away. There's no
