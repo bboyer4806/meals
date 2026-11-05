@@ -134,6 +134,13 @@
       "when": 1793910899031,
       "tag": "0018_standard-items",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1793914737976,
+      "tag": "0019_standard-images",
+      "breakpoints": true
     }
   ]
 }

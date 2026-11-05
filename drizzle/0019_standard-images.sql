@@ -1,0 +1,1 @@
+ALTER TABLE `items` ADD `standard_image_checked_at` integer;

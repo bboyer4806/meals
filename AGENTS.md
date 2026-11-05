@@ -43,8 +43,8 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
   Derive household identity from the signed-in session, never from request input.
 - Household data goes through `src/lib/server/data/`, one module per area. Operations on
   household-owned data take `householdId` first; household creation, administrative
-  listing, adding standard items at startup and a person's What's new seen release have
-  different signatures. Preserve household isolation in reads and writes.
+  listing, adding standard items and their images at startup and a person's What's new seen
+  release have different signatures. Preserve household isolation in reads and writes.
 - Routes use that data layer rather than querying the database. Sign-in and sessions live
   in `src/lib/server/auth/`, photo files in `src/lib/server/photos.ts`. The `/healthz`
   database check is the direct-query route exception.
@@ -60,6 +60,9 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
 - Request bodies over 64 KB are refused before they're read (design 4.5). A form that sends a
   photo or a file uses `multipart/form-data`, and its route goes in `FILE_ROUTES` in
   `src/lib/server/body-size.ts`.
+- Each standard item in `src/lib/server/standard-items.ts` has a photo in `standard-images/`,
+  `<name>.jpg` and `<name>-thumb.jpg`, and a row in its `credits.csv` (design 6.14). The tests,
+  and the app when it starts, check that every one is there.
 - Routes import shared code as `#lib/...` (`package.json` imports).
 
 ## Database

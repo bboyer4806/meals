@@ -117,6 +117,7 @@ describe('standard items', () => {
 			defaultStoreId: null,
 			alwaysHave: false,
 			photoKey: null,
+			standardImageCheckedAt: null,
 			archivedAt: null,
 			createdAt: at
 		}));

@@ -13,7 +13,7 @@ import {
 	updateDish,
 	type DishInput
 } from './data/dishes.ts';
-import { createItem, findItemByName, setItemArchived } from './data/items.ts';
+import { createItem, findItemByName, setItemArchived, setStandardImage } from './data/items.ts';
 import { PHOTO_MAX_BYTES, photoPath, THUMB_MAX_BYTES } from './photos.ts';
 import {
 	archivedItemsFailure,
@@ -866,6 +866,15 @@ describe('saveRecipe', () => {
 		});
 	});
 
+	it('gives new ingredient items with standard names their images (design 6.14)', async () => {
+		await save(null, { rows: [row('2', '', 'Eggs'), row('1', 'cup', 'Cake flour')] });
+
+		const eggs = findItemByName(householdId, 'Eggs')?.photoKey;
+		expect(eggs).toMatch(/^[0-9a-f]{32}$/);
+		expect(findItemByName(householdId, 'Cake flour')?.photoKey).toBeNull();
+		expect(storedFiles()).toEqual(filesFor(eggs!));
+	});
+
 	it('saves over an existing recipe', async () => {
 		const id = makeDish(householdId, recipe('Pound cake', { tags: ['Dessert'] }));
 		expect(await save(id, { name: 'Lemon pound cake', servings: '10', tags: '' })).toBe(id);
@@ -905,6 +914,8 @@ describe('saveRecipe', () => {
 
 	it('asks before restoring archived items, changing nothing and keeping no photo', async () => {
 		const salt = createItem(householdId, 'Salt', 0).id;
+		// Checked for a standard image long ago (design 6.14), so saving stores only the photo.
+		setStandardImage(householdId, salt, null, 0);
 		setItemArchived(householdId, salt, true, 0);
 		const rows = [row('1', 'tsp', 'salt')];
 		expect(await refused(null, { rows }, newPhoto())).toEqual({

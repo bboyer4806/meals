@@ -1,9 +1,13 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { loadConfig } from './config.ts';
 import { getDish, listDishes, rateDish, setDishArchived, setDishTried } from './data/dishes.ts';
 import { createItem, findItemByName, setItemArchived } from './data/items.ts';
 import { transaction } from './db/index.ts';
 import { importRecipeFile, templateCsv } from './recipe-import.ts';
-import { freshDb, ingredient, makeDish, makeHousehold, recipe } from './testing.ts';
+import { TEST_ENV, freshDb, ingredient, makeDish, makeHousehold, recipe } from './testing.ts';
 import { NORMALIZE_MAX_LENGTH } from '../text.ts';
 
 const NOW = Date.UTC(2026, 9, 3, 17, 0);
@@ -11,9 +15,18 @@ const NOW = Date.UTC(2026, 9, 3, 17, 0);
 let householdId: number;
 let userId: number;
 
+// Where new items' standard images go (design 6.14).
+let dataDir: string;
+
 beforeEach(() => {
 	freshDb();
 	({ householdId, userId } = makeHousehold());
+	dataDir = mkdtempSync(join(tmpdir(), 'meals-recipe-import-'));
+	loadConfig({ ...TEST_ENV, DATA_DIR: dataDir });
+});
+
+afterEach(() => {
+	rmSync(dataDir, { recursive: true, force: true });
 });
 
 function form(csv: BlobPart, fields: Record<string, string> = {}): FormData {
@@ -337,6 +350,21 @@ describe('importRecipeFile', () => {
 			});
 		}
 		expect(names()).toEqual(['Soup', 'Toast']);
+	});
+
+	it('gives new items with standard names their images, and stores none when nothing is imported', async () => {
+		const csv = ['Recipe,Ingredients', 'Omelet,3 eggs|1/4 cup shredded gruyère'].join('\r\n');
+		expect(await importRecipeFile(householdId, form('Recipe\r\n,'), NOW)).toMatchObject({
+			kind: 'problems'
+		});
+		expect(readdirSync(dataDir)).toEqual([]);
+
+		await importRecipeFile(householdId, form(csv), NOW);
+
+		const eggs = findItemByName(householdId, 'eggs')?.photoKey;
+		expect(eggs).toMatch(/^[0-9a-f]{32}$/);
+		expect(findItemByName(householdId, 'shredded gruyère')?.photoKey).toBeNull();
+		expect(readdirSync(join(dataDir, 'photos')).sort()).toEqual([`${eggs}-thumb.jpg`, `${eggs}.jpg`]);
 	});
 
 	it("rolls back recipes saved earlier when a later save throws", () => {

@@ -7,6 +7,7 @@ import { findItemByName } from './data/items.ts';
 import { transaction } from './db/index.ts';
 import { nameField } from './forms.ts';
 import { readRows, recipeDetailFields, type RecipeRow } from './recipe-form.ts';
+import { assignStandardImages } from './standard-images.ts';
 
 // Import recipes (design 7): a CSV file with one recipe per row, checked as the recipe editor
 // checks a recipe, then added all together or not at all.
@@ -314,7 +315,7 @@ export async function importRecipeFile(
 		return { kind: 'problems', problems: ['Save the file as CSV UTF-8, then import it again.'] };
 	}
 
-	return transaction((): ImportResult => {
+	const result = transaction((): ImportResult => {
 		const { recipes, problems, ignored } = readFile(
 			text,
 			getHousehold(householdId).defaultServings
@@ -374,4 +375,7 @@ export async function importRecipeFile(
 		}
 		return { kind: 'imported', imported, replaced, skipped, ignored };
 	});
+	// New ingredient items get their standard images (design 6.14).
+	if (result.kind === 'imported') await assignStandardImages(householdId, now);
+	return result;
 }

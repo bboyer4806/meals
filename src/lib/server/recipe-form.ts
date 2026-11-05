@@ -13,6 +13,7 @@ import {
 } from './data/dishes.ts';
 import { idList, nameField, sentMax, sentPhoto, type PhotoUpload } from './forms.ts';
 import { discardPhoto, savePhoto } from './photos.ts';
+import { assignStandardImages } from './standard-images.ts';
 
 // The recipe editor's form (design 7, Edit recipe): the text its fields start with, what it
 // sends back, checked and normalized for createDish and updateDish, and saving it. The editor's
@@ -597,5 +598,7 @@ export async function saveRecipe(
 		return { failure: archivedItemsFailure(saved.items) };
 	}
 	if (previousKey !== null) discardPhoto(previousKey);
+	// New ingredient items get their standard images (design 6.14).
+	await assignStandardImages(householdId, now);
 	return { id: saved.id };
 }

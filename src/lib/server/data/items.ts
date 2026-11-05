@@ -163,6 +163,58 @@ export function setItemPhoto(
 	});
 }
 
+/** Households with items not yet checked for a standard image, oldest first (design 6.14). */
+export function listHouseholdsToCheck(): number[] {
+	return db()
+		.selectDistinct({ householdId: items.householdId })
+		.from(items)
+		.where(isNull(items.standardImageCheckedAt))
+		.orderBy(asc(items.householdId))
+		.all()
+		.map((row) => row.householdId);
+}
+
+/** The household's items not yet checked for a standard image, archived ones included (6.14). */
+export function listUncheckedItems(
+	householdId: number
+): { id: number; name: string; photoKey: string | null }[] {
+	return db()
+		.select({ id: items.id, name: items.name, photoKey: items.photoKey })
+		.from(items)
+		.where(and(eq(items.householdId, householdId), isNull(items.standardImageCheckedAt)))
+		.orderBy(asc(items.id))
+		.all();
+}
+
+/**
+ * Records that the item has been checked for a standard image, which happens once (design 6.14).
+ * The first time, it takes `photoKey` if it still has no image. Returns whether it took it, so the
+ * caller can delete the files of a key it didn't.
+ */
+export function setStandardImage(
+	householdId: number,
+	itemId: number,
+	photoKey: string | null,
+	now: number
+): boolean {
+	return transaction(() => {
+		const item = db()
+			.select({ photoKey: items.photoKey, checkedAt: items.standardImageCheckedAt })
+			.from(items)
+			.where(and(eq(items.id, itemId), eq(items.householdId, householdId)))
+			.get();
+		if (!item) error(404, 'Not found');
+		if (item.checkedAt !== null) return false;
+		const takes = photoKey !== null && item.photoKey === null;
+		db()
+			.update(items)
+			.set(takes ? { photoKey, standardImageCheckedAt: now } : { standardImageCheckedAt: now })
+			.where(eq(items.id, itemId))
+			.run();
+		return takes;
+	});
+}
+
 /** Archiving only hides an item from suggestions and lists; everything using it keeps working. */
 export function setItemArchived(
 	householdId: number,

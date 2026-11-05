@@ -104,6 +104,9 @@ export const items = sqliteTable(
 		alwaysHave: integer('always_have', { mode: 'boolean' }).notNull().default(false),
 		// Random; the image files are named after it, as a recipe's photo is (photos.ts, MEA-50).
 		photoKey: text('photo_key'),
+		// When it was checked for a standard image, which happens once; empty until then
+		// (design 6.14).
+		standardImageCheckedAt: integer('standard_image_checked_at'),
 		archivedAt: integer('archived_at'),
 		createdAt: integer('created_at').notNull()
 	},
