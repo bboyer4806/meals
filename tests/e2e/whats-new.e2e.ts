@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.10 was released on 2026-11-04, after 1.9.
+// What's new (design 7). 1.11 was released on 2026-11-05, after 1.10.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -28,8 +28,8 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
-	const [v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
+	const [v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
 		page.locator('section').nth(2),
@@ -39,8 +39,18 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 		page.locator('section').nth(6),
 		page.locator('section').nth(7),
 		page.locator('section').nth(8),
-		page.locator('section').nth(9)
+		page.locator('section').nth(9),
+		page.locator('section').nth(10)
 	];
+	await expect(v111.getByText('Released November 5, 2026')).toBeVisible();
+	await expect(v111.getByRole('listitem')).toHaveText([
+		'Send feedback can include a screenshot. Tap Add screenshot to pick a PNG or JPEG up to 3 MB, and it goes along with your message.',
+		"On a dinner's page, Back and Forward bring back what you typed and didn't save, including a dish name typed in Add a dish.",
+		"Import recipes' ‹ Recipes returns to Recipes as you left it, and going back from there no longer opens Import recipes again.",
+		'Imports read amounts such as 1 and 1/3 cup as one amount. Import from a link also reads nutrition such as 1 250 kcal in full.',
+		'Import recipes takes up to 100,000 characters in one file. A longer file says which row to split it at.',
+		"A date's browser tab shows the year when the date is in another year."
+	]);
 	await expect(v110.getByText('Released November 4, 2026')).toBeVisible();
 	await expect(v110.getByRole('listitem')).toHaveText([
 		"Coming back to Meals without a connection keeps the page and what you typed instead of showing Something went wrong. The page says Couldn't refresh at the bottom and reloads once you're back online.",
@@ -170,14 +180,14 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	browser,
 	baseURL
 }) => {
-	// Two members of the household who joined before 1.10 and have seen 1.9.
+	// Two members of the household who joined before 1.11 and have seen 1.10.
 	const joined = Date.UTC(2026, 9, 1, 17);
 	setCreatedAt(db, person.userId, joined);
-	db.prepare("update users set whats_new_seen = '1.9' where id = ?").run(person.userId);
+	db.prepare("update users set whats_new_seen = '1.10' where id = ?").run(person.userId);
 	const memberId = Number(
 		db
 			.prepare(
-				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.9')"
+				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.10')"
 			)
 			.run(
 				person.householdId,
@@ -193,7 +203,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	await link(page).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
-	expect(seen(db, person.userId)).toBe('1.10');
+	expect(seen(db, person.userId)).toBe('1.11');
 
 	// Opening it cleared only their own dot.
 	const other = await browser.newContext();
@@ -201,7 +211,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	const phone = await other.newPage();
 	await phone.goto('/groceries');
 	await expect(more(phone).locator('.dot')).toBeVisible();
-	expect(seen(db, memberId)).toBe('1.9');
+	expect(seen(db, memberId)).toBe('1.10');
 	await other.close();
 });
 
@@ -210,7 +220,7 @@ test('shows no dot to someone who joined after the newest release', async ({
 	db,
 	person
 }) => {
-	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 4, 17));
+	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 5, 17));
 	await page.goto('/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);

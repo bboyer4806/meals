@@ -14,6 +14,18 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.11',
+		released: '2026-11-05',
+		lines: [
+			'Send feedback can include a screenshot. Tap Add screenshot to pick a PNG or JPEG up to 3 MB, and it goes along with your message.',
+			"On a dinner's page, Back and Forward bring back what you typed and didn't save, including a dish name typed in Add a dish.",
+			"Import recipes' ‹ Recipes returns to Recipes as you left it, and going back from there no longer opens Import recipes again.",
+			'Imports read amounts such as 1 and 1/3 cup as one amount. Import from a link also reads nutrition such as 1 250 kcal in full.',
+			'Import recipes takes up to 100,000 characters in one file. A longer file says which row to split it at.',
+			"A date's browser tab shows the year when the date is in another year."
+		]
+	},
+	{
 		version: '1.10',
 		released: '2026-11-04',
 		lines: [
