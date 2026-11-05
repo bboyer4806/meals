@@ -125,6 +125,28 @@ describe('splitIngredient', () => {
 		expect(splitIngredient('½ onion')).toMatchObject({ amount: '½', item: 'onion' });
 	});
 
+	it('reads "1 and 1/3" as one amount, without the "and" (MEA-242)', () => {
+		expect(splitIngredient('1 and 1/3 cup flour')).toEqual({
+			amount: '1 1/3',
+			unit: 'cup',
+			item: 'flour',
+			prepNote: ''
+		});
+		expect(splitIngredient('2 And ½ Cups milk')).toMatchObject({ amount: '2 ½', unit: 'Cups' });
+		expect(splitIngredient('1 and 1/2cups flour')).toMatchObject({ amount: '1 1/2', unit: 'cups' });
+		expect(splitIngredient('1 to 1 and 1/2 cups milk')).toEqual({
+			amount: '1',
+			unit: 'cups',
+			item: 'milk',
+			prepNote: '1 to 1 1/2'
+		});
+		// Only an "and" before a fraction.
+		expect(splitIngredient('1 andouille sausage')).toMatchObject({
+			amount: '1',
+			item: 'andouille sausage'
+		});
+	});
+
 	it('leaves the item empty after an amount and unit alone', () => {
 		expect(splitIngredient('2 cups')).toEqual({ amount: '2', unit: 'cups', item: '', prepNote: '' });
 	});
