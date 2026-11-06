@@ -722,10 +722,12 @@ Each standard item (6.13) has a photo, so people can tell common groceries apart
 - The photos are in `standard-images/`, packaged with the app, so nothing is searched for or
   downloaded while it runs. Each standard item has a JPEG of up to 800 px square and a 400 px
   thumbnail, as Items stores an image (7, Item images), named after the item without case, accents
-  or punctuation: `jalapenos.jpg` and `jalapenos-thumb.jpg` for Jalapeños. They're photos from
-  Wikimedia Commons that anyone may reuse without credit (CC0 or public domain), chosen to show the
-  item plainly and without a brand where possible, then cropped square and resized.
-  `standard-images/credits.csv` records each one's source, author and license.
+  or punctuation: `jalapenos.jpg` and `jalapenos-thumb.jpg` for Jalapeños. They're photos anyone
+  may reuse without credit: CC0 or public domain photos from Wikimedia Commons and Openverse, many
+  by US agencies such as the National Cancer Institute and USDA, and Pixabay photos under the
+  Pixabay Content License. Each was chosen to show the item plainly and without a brand where
+  possible, then cropped square and resized. `standard-images/credits.csv` records each one's
+  source, author and license.
 - An item is checked for a standard image once, and `standard_image_checked_at` records when. If
   its name is a standard item's, matched ignoring case as item names are (2.3), and it has no
   image, it gets a copy of that photo of its own, stored as an image picked on Items is: shown
@@ -737,8 +739,8 @@ Each standard item (6.13) has a photo, so people can tell common groceries apart
   the old version during a deploy (4.2), and one whose check failed.
 - Checking stops at a failure, such as a full disk: the items checked so far keep their copies,
   the copy being stored is deleted, and the rest are checked at the household's next such save or
-  the next start. A failure when the app starts stops it from starting, as a failed migration
-  does (6.13). The app also doesn't start if a standard item's photo is missing from
+  the next start. After a save, the failure shows as an error, although the save stays done. A
+  failure when the app starts stops it from starting, as a failed migration does (6.13). The app also doesn't start if a standard item's photo is missing from
   `standard-images/`, as when it wasn't packaged with the app.
 - Since each item is checked once, nothing gives it an image afterward: an image removed stays
   removed, a replaced one stays, and renaming an item keeps its image, or its lack of one, even

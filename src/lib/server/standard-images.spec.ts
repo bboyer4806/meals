@@ -95,9 +95,9 @@ describe('the library', () => {
 		expect(header).toEqual(['Item', 'Source', 'Author', 'License']);
 		expect(rows.map((row) => row[0])).toEqual([...STANDARD_ITEMS]);
 		for (const [item, source, author, license] of rows) {
-			expect(source, item).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File:\S+$/);
+			expect(source, item).toMatch(/^https:\/\/\S+$/);
 			expect(author, item).not.toBe('');
-			expect(['CC0', 'Public domain'], item).toContain(license);
+			expect(['CC0', 'Public domain', 'Pixabay Content License'], item).toContain(license);
 		}
 	});
 });
