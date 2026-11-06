@@ -52,6 +52,8 @@ test('sets up a household on first sign-in', async ({ page, db, context, baseURL
 	const zucchini = page.getByRole('button', { name: /^Zucchini/ });
 	await expect(zucchini).toBeVisible();
 	await expect(zucchini.locator('img')).toHaveAttribute('src', /^\/photos\/[0-9a-f]{32}-thumb\.jpg$/);
+	// Images load as they scroll into view, and Zucchini is last.
+	await zucchini.scrollIntoViewIfNeeded();
 	await expect
 		.poll(() => zucchini.locator('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
 		.toBe(400);
