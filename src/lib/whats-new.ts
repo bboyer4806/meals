@@ -14,6 +14,21 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.13',
+		released: '2026-11-07',
+		lines: [
+			"Everyone was signed out once with this release, because Meals now keeps your sign-in so other websites can't tamper with it.",
+			"On Recipes, tap Grouped, under the search box, to see recipes by when they were last on the Menu: Recently made for the past 60 days, Haven't made in a long time and Never made. Each card there shows when it was last made, and List shows them as before.",
+			'On the Menu, each request now has Complete beside Remove. Complete moves it to Completed requests, under Requests, with who asked and when it was completed. Tap Completed requests to open it.',
+			"On a day's page, tapping Add on a request now moves it to Completed requests too, instead of removing it. On the Menu, Remove still deletes a request for good, and no longer takes you back to this week.",
+			'On the Menu, the days now slide with your finger as you swipe to the next or previous week, and the page stays scrolled where it was instead of jumping to the top.',
+			"On a recipe's page, tapping a star twice before the stars change, as with a double tap or on a slow connection, now keeps that rating instead of clearing it.",
+			'Copy a dinner now copies the dishes it showed you, even if that dinner changed after you opened the page. If no past dinner still has those dishes, it says that dinner has changed and asks you to pick again.',
+			"On Recipes, what you type in the search box right after tapping a tag no longer disappears when the tag's list loads.",
+			'After an import, Recipes sums up ignored columns, such as Step, Rating and 12 more, rather than listing every one. A file with hundreds of extra columns now gets that summary too, instead of an error page.'
+		]
+	},
+	{
 		version: '1.12',
 		released: '2026-11-06',
 		lines: [

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.12 was released on 2026-11-06, after 1.11.
+// What's new (design 7). 1.13 was released on 2026-11-07, after 1.12.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -28,8 +28,8 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.12', '1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
-	const [v112, v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.13', '1.12', '1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
+	const [v113, v112, v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
 		page.locator('section').nth(2),
@@ -41,8 +41,21 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 		page.locator('section').nth(8),
 		page.locator('section').nth(9),
 		page.locator('section').nth(10),
-		page.locator('section').nth(11)
+		page.locator('section').nth(11),
+		page.locator('section').nth(12)
 	];
+	await expect(v113.getByText('Released November 7, 2026')).toBeVisible();
+	await expect(v113.getByRole('listitem')).toHaveText([
+		"Everyone was signed out once with this release, because Meals now keeps your sign-in so other websites can't tamper with it.",
+		"On Recipes, tap Grouped, under the search box, to see recipes by when they were last on the Menu: Recently made for the past 60 days, Haven't made in a long time and Never made. Each card there shows when it was last made, and List shows them as before.",
+		'On the Menu, each request now has Complete beside Remove. Complete moves it to Completed requests, under Requests, with who asked and when it was completed. Tap Completed requests to open it.',
+		"On a day's page, tapping Add on a request now moves it to Completed requests too, instead of removing it. On the Menu, Remove still deletes a request for good, and no longer takes you back to this week.",
+		'On the Menu, the days now slide with your finger as you swipe to the next or previous week, and the page stays scrolled where it was instead of jumping to the top.',
+		"On a recipe's page, tapping a star twice before the stars change, as with a double tap or on a slow connection, now keeps that rating instead of clearing it.",
+		'Copy a dinner now copies the dishes it showed you, even if that dinner changed after you opened the page. If no past dinner still has those dishes, it says that dinner has changed and asks you to pick again.',
+		"On Recipes, what you type in the search box right after tapping a tag no longer disappears when the tag's list loads.",
+		'After an import, Recipes sums up ignored columns, such as Step, Rating and 12 more, rather than listing every one. A file with hundreds of extra columns now gets that summary too, instead of an error page.'
+	]);
 	await expect(v112.getByText('Released November 6, 2026')).toBeVisible();
 	await expect(v112.getByRole('listitem')).toHaveText([
 		"Grocery items can have an image. On Items, tap an item, then tap Add image to pick one, or paste an image's link and tap Get image. The image shows beside the item's name on the grocery list, on Items and in History.",
@@ -187,14 +200,14 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	browser,
 	baseURL
 }) => {
-	// Two members of the household who joined before 1.12 and have seen 1.11.
+	// Two members of the household who joined before 1.13 and have seen 1.12.
 	const joined = Date.UTC(2026, 9, 1, 17);
 	setCreatedAt(db, person.userId, joined);
-	db.prepare("update users set whats_new_seen = '1.11' where id = ?").run(person.userId);
+	db.prepare("update users set whats_new_seen = '1.12' where id = ?").run(person.userId);
 	const memberId = Number(
 		db
 			.prepare(
-				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.11')"
+				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.12')"
 			)
 			.run(
 				person.householdId,
@@ -210,7 +223,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	await link(page).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
-	expect(seen(db, person.userId)).toBe('1.12');
+	expect(seen(db, person.userId)).toBe('1.13');
 
 	// Opening it cleared only their own dot.
 	const other = await browser.newContext();
@@ -218,7 +231,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	const phone = await other.newPage();
 	await phone.goto('/groceries');
 	await expect(more(phone).locator('.dot')).toBeVisible();
-	expect(seen(db, memberId)).toBe('1.11');
+	expect(seen(db, memberId)).toBe('1.12');
 	await other.close();
 });
 
@@ -227,7 +240,7 @@ test('shows no dot to someone who joined after the newest release', async ({
 	db,
 	person
 }) => {
-	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 6, 17));
+	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 7, 17));
 	await page.goto('/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
