@@ -890,7 +890,9 @@ image (6.10).
 **Search.** Recipes, History and Items search as people type (MEA-36): the list updates 300 ms
 after typing stops, and Enter, or a phone keyboard's search key, searches right away. There's no
 Search button. The box keeps focus while the list updates, so a phone's keyboard stays open, and
-what's typed meanwhile stays in the box, spaces included. Clearing the box shows the list with no
+what's typed meanwhile stays in the box, spaces included. So does what's typed while another page
+of the list loads, such as a tag's list tapped just before: that page's search doesn't replace it,
+and the search then runs with that page's tags (MEA-246). Clearing the box shows the list with no
 search. Each list keeps its search in the address, so Back and shared links keep it, but typing
 replaces the address instead of adding Back steps: Back from a searched list leaves the list, and
 Back from a recipe opened from a search returns to that search. A search box only matches what
@@ -1087,7 +1089,14 @@ week as the buttons do, address included (MEA-45): to the left for the next week
 for the previous one, one week per swipe however far it goes. A swipe takes one finger going at
 least 60 pixels across and twice as far across as up or down, so a short, slanted or two-finger
 swipe, or scrolling, changes nothing, and a swipe never opens a day. Swiping elsewhere on the page
-doesn't change the week. Tapping a day opens its dinner. With a mouse or trackpad, dragging a planned day onto another day of the week
+doesn't change the week. The days follow a finger that sets off across, at least twice as far
+across as up or down over its first 10 pixels, with the week before or after beside them showing
+its days and dinners, and when it lifts they slide on into that week, or back into place when the
+swipe doesn't change the week, as when it's short or slanted, becomes a pinch or is interrupted
+(MEA-249). Only the days move: the heading, buttons and Requests stay put, and the page never
+scrolls sideways. The new week shows once its days are in place, with the page still scrolled where
+it was, and until then another swipe does nothing, so none skips a week. With reduced motion, the
+days go straight into place. Tapping a day opens its dinner. With a mouse or trackpad, dragging a planned day onto another day of the week
 works like Move to another date (2.2.2, 6.9): the two days swap their dinners, and the week stays
 open. The day under the pointer is outlined while dragging; "Not planned" days can't be dragged,
 and releasing on the same day or outside the days changes nothing. Touch never drags, so tapping

@@ -102,6 +102,73 @@ test('keeps what is typed while the list is updating', async ({ page, db, person
 	await expect(search).toBeFocused();
 });
 
+/**
+ * Holds the page's next data request until `release` is called, as on a slow connection, and
+ * lets every later one through. `sent` resolves once the held request has gone out.
+ */
+async function holdNextLoad(page: Page) {
+	let release = () => {};
+	const held = new Promise<void>((resolve) => (release = resolve));
+	let first = true;
+	await page.route('**/__data.json*', async (route) => {
+		if (first) {
+			first = false;
+			await held;
+		}
+		await route.continue();
+	});
+	return { sent: page.waitForRequest('**/__data.json*'), release };
+}
+
+// A tag tapped just before typing is a navigation of its own, which can land after the typing
+// (MEA-246).
+test("keeps what is typed while a tapped tag's list is loading", async ({ page, db, person }) => {
+	addRecipe(db, person.householdId, { name: 'Apple pie', tags: ['Dessert'] });
+	addRecipe(db, person.householdId, { name: 'Brownies', tags: ['Dessert'] });
+	addRecipe(db, person.householdId, { name: 'Pot pie', tags: ['Dinner'] });
+	const search = page.getByLabel('Search recipes');
+	const names = page.locator('.recipes .name');
+	const tags = page.getByRole('list', { name: 'Filter by tag' });
+
+	await open(page, '/recipes');
+	const { sent, release } = await holdNextLoad(page);
+	await tags.getByRole('link', { name: 'Dessert', exact: true }).tap();
+	await sent;
+	await search.fill('pie');
+	// The tag's list lands before the search runs, which then searches with the tag.
+	release();
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert&q=pie&sort=name$/);
+	await expect(search).toHaveValue('pie');
+	await expect(names).toHaveText(['Apple pie']);
+});
+
+test('keeps the search when the sort changes while it is loading', async ({ page, db, person }) => {
+	const rate = db.prepare(
+		'insert into dish_ratings (household_id, dish_id, user_id, stars) values (?, ?, ?, ?)'
+	);
+	const appleId = addRecipe(db, person.householdId, { name: 'Apple pie' });
+	const pecanId = addRecipe(db, person.householdId, { name: 'Pecan pie' });
+	addRecipe(db, person.householdId, { name: 'Tacos' });
+	rate.run(person.householdId, appleId, person.userId, 3);
+	rate.run(person.householdId, pecanId, person.userId, 5);
+	const search = page.getByLabel('Search recipes');
+	const names = page.locator('.recipes .name');
+
+	await open(page, '/recipes');
+	const { sent, release } = await holdNextLoad(page);
+	await search.fill('pie');
+	await search.press('Enter');
+	await sent;
+	await page.getByLabel('Sort').selectOption('Rating');
+	await expect(page).toHaveURL(/\/recipes\?q=pie&sort=rating$/);
+	await expect(names).toHaveText(['Pecan pie', 'Apple pie']);
+	// The search's own list, landing late, changes nothing.
+	release();
+	await expect(page).toHaveURL(/\/recipes\?q=pie&sort=rating$/);
+	await expect(search).toHaveValue('pie');
+	await expect(names).toHaveText(['Pecan pie', 'Apple pie']);
+});
+
 test('keeps the list and what is typed when typing offline', async ({
 	page,
 	context,

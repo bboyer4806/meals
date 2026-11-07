@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { prefersReducedMotion } from 'svelte/motion';
 	import { enhance, type SubmitFunction } from '$app/forms';
-	import { afterNavigate, goto, refreshAll } from '$app/navigation';
+	import { afterNavigate, goto, onNavigate, refreshAll } from '$app/navigation';
 	import ItemInput from '#lib/components/ItemInput.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
@@ -179,31 +180,110 @@
 	// twice as far across as up or down, so taps, pinches, scrolling and slanted swipes change
 	// nothing. Nothing here stops the browser scrolling, and a swipe moves too far to be a tap, so
 	// the browser sends no click and the day it started on doesn't open.
+	//
+	// The days follow a finger that sets off across rather than up or down, with the weeks before
+	// and after beside them, and when it lifts they slide on into the week it opens, or back into
+	// place (MEA-249). That week shows once they're in place, with the page scrolled where it was.
+	// Until the days are in place and the week has opened, another swipe does nothing.
 
 	const SWIPE_DISTANCE = 60;
+	// How far a finger goes before it's clear whether it's moving the days or scrolling the page.
+	const SWIPE_SLOP = 10;
+	const SLIDE_MS = 250;
 
-	let swipeStart: { x: number; y: number } | null = null;
+	// Where the finger started, and whether the days follow it, once it's gone SWIPE_SLOP pixels.
+	let swipe: { x: number; y: number; follow?: boolean } | null = null;
+	let track: HTMLElement;
+	// How far the finger has moved the days, in pixels; to the left is negative.
+	let dragged = $state(0);
+	// The days sliding into place once the finger lifts.
+	let settling = $state<Promise<void> | null>(null);
+	// The week the days slid away from, and which way, until the week they slid to opens.
+	let slid = $state<{ from: string; to: 'previous' | 'next' } | null>(null);
+	const slidTo = $derived(slid?.from === data.start ? slid.to : null);
+	// A week over is the days' width and the 2rem between weeks.
+	const shift = $derived(
+		slidTo === 'next'
+			? 'calc(-100% - 2rem)'
+			: slidTo === 'previous'
+				? 'calc(100% + 2rem)'
+				: `${dragged}px`
+	);
+	const moving = $derived(dragged !== 0 || settling !== null || slidTo !== null);
+
+	// A new week or page shows once the days are in place.
+	onNavigate(() => settling ?? undefined);
 
 	function startSwipe(event: TouchEvent) {
+		// A second finger makes it a pinch.
+		if (event.touches.length > 1) return cancelSwipe();
 		const touch = event.touches[0];
-		swipeStart =
-			touch && event.touches.length === 1 ? { x: touch.clientX, y: touch.clientY } : null;
+		swipe =
+			touch && settling === null && slid === null ? { x: touch.clientX, y: touch.clientY } : null;
 	}
 
 	// A second finger, even off the days, makes it a pinch.
 	function moveSwipe(event: TouchEvent) {
-		if (event.touches.length > 1) swipeStart = null;
+		if (event.touches.length > 1) return cancelSwipe();
+		const touch = event.touches[0];
+		if (!swipe || !touch) return;
+		const across = touch.clientX - swipe.x;
+		const down = touch.clientY - swipe.y;
+		if (swipe.follow === undefined && Math.hypot(across, down) >= SWIPE_SLOP) {
+			swipe.follow = Math.abs(across) >= 2 * Math.abs(down);
+		}
+		if (swipe.follow) dragged = across;
 	}
 
 	function endSwipe(event: TouchEvent) {
-		const start = swipeStart;
+		const start = swipe;
 		const end = event.changedTouches[0];
-		swipeStart = null;
+		swipe = null;
 		if (!start || !end) return;
 		const across = end.clientX - start.x;
 		const down = end.clientY - start.y;
-		if (Math.abs(across) < SWIPE_DISTANCE || Math.abs(across) < 2 * Math.abs(down)) return;
-		void goto(`/menu?week=${across < 0 ? data.next : data.previous}`);
+		if (Math.abs(across) < SWIPE_DISTANCE || Math.abs(across) < 2 * Math.abs(down)) {
+			slideBack();
+			return;
+		}
+		void slideTo(across < 0 ? 'next' : 'previous');
+	}
+
+	// An interrupted swipe, or one that becomes a pinch, changes nothing.
+	function cancelSwipe() {
+		swipe = null;
+		slideBack();
+	}
+
+	function slideBack() {
+		if (dragged !== 0) settle(() => (dragged = 0));
+	}
+
+	async function slideTo(to: 'previous' | 'next') {
+		const week = to === 'next' ? data.next : data.previous;
+		const from = data.start;
+		settle(() => {
+			slid = { from, to };
+			dragged = 0;
+		});
+		try {
+			await goto(`/menu?week=${week}`, { reset: false });
+		} finally {
+			slid = null;
+		}
+	}
+
+	/** Slides the days from where they are to where `move` puts them. */
+	function settle(move: () => void) {
+		const from = `translateX(${shift})`;
+		move();
+		const animation = track.animate(
+			[{ transform: from }, { transform: `translateX(${shift})` }],
+			{ duration: prefersReducedMotion.current ? 0 : SLIDE_MS, easing: 'ease-out' }
+		);
+		settling = animation.finished.then(() => {
+			settling = null;
+		});
 	}
 
 	// Dragging a day onto another swaps their dinners, like Move to another date (2.2.2, 6.9).
@@ -365,55 +445,88 @@
 	<input type="hidden" name="dinnerId" value={move.dinnerId} />
 </form>
 
-<ol
-	class="days"
-	class:dragging={dragging !== null}
-	ontouchstart={startSwipe}
-	ontouchmove={moveSwipe}
-	ontouchend={endSwipe}
->
-	{#each data.days as day (day.date)}
-		{@const isToday = day.date === data.today}
-		{@const { dinners } = day}
-		{@const only = dinners.length === 1 ? dinners[0] : undefined}
-		<li>
-			<!-- draggable="false" keeps the browser's own link drag out of the way. -->
-			<a
-				class="day card"
-				class:today={isToday}
-				class:source={dragging?.from === day.date}
-				class:target={dragging !== null && dropTarget === day.date && dropTarget !== dragging.from}
-				href="/menu/{day.date}"
-				aria-current={isToday ? 'date' : undefined}
-				data-date={day.date}
-				draggable="false"
-				onpointerdown={(event) => pressDay(event, day.date, dinners[0]?.id)}
-			>
-				<span class="when">
-					<span class="date">{formatDateLabel(day.date)}</span>
-					{#if isToday}<span class="today-badge">Today</span>{/if}
-					<!-- A day's only dinner is its row; with more, each dinner has its own line (6.9). -->
-					{@render savedStatus(only !== undefined && saved === String(only.id))}
+<!-- A day's date, with Today, and its dinners or "Not planned". -->
+{#snippet dayDetails(day: (typeof data.days)[number])}
+	{@const { dinners } = day}
+	{@const only = dinners.length === 1 ? dinners[0] : undefined}
+	<span class="when">
+		<span class="date">{formatDateLabel(day.date)}</span>
+		{#if day.date === data.today}<span class="today-badge">Today</span>{/if}
+		<!-- A day's only dinner is its row; with more, each dinner has its own line (6.9). -->
+		{@render savedStatus(only !== undefined && saved === String(only.id))}
+	</span>
+	{#if only}
+		{@render details(only)}
+	{:else if dinners.length > 0}
+		{#each dinners as dinner (dinner.id)}
+			<span class="dinner">
+				<span class="label">
+					{dinner.label}
+					{@render savedStatus(saved === String(dinner.id))}
 				</span>
-				{#if only}
-					{@render details(only)}
-				{:else if dinners.length > 0}
-					{#each dinners as dinner (dinner.id)}
-						<span class="dinner">
-							<span class="label">
-								{dinner.label}
-								{@render savedStatus(saved === String(dinner.id))}
-							</span>
-							{@render details(dinner)}
-						</span>
-					{/each}
-				{:else}
-					<span class="muted">Not planned</span>
-				{/if}
-			</a>
-		</li>
-	{/each}
-</ol>
+				{@render details(dinner)}
+			</span>
+		{/each}
+	{:else}
+		<span class="muted">Not planned</span>
+	{/if}
+{/snippet}
+
+<!-- The week before or after, beside the days while a swipe moves them (MEA-249). It only shows
+     what that week holds, so it has no links and screen readers skip it. -->
+{#snippet besideWeek(days: typeof data.days | null, side: 'previous' | 'next')}
+	<ol
+		class="days beside"
+		class:previous-week={side === 'previous'}
+		class:next-week={side === 'next'}
+		aria-hidden="true"
+	>
+		{#each days ?? [] as day (day.date)}
+			<li>
+				<div class="day card" class:today={day.date === data.today}>{@render dayDetails(day)}</div>
+			</li>
+		{/each}
+	</ol>
+{/snippet}
+
+<div class="slider">
+	<div class="track" bind:this={track} style:transform="translateX({shift})">
+		<ol
+			class="days"
+			class:dragging={dragging !== null}
+			ontouchstart={startSwipe}
+			ontouchmove={moveSwipe}
+			ontouchend={endSwipe}
+			ontouchcancel={cancelSwipe}
+		>
+			{#each data.days as day (day.date)}
+				{@const isToday = day.date === data.today}
+				<li>
+					<!-- draggable="false" keeps the browser's own link drag out of the way. -->
+					<a
+						class="day card"
+						class:today={isToday}
+						class:source={dragging?.from === day.date}
+						class:target={dragging !== null &&
+							dropTarget === day.date &&
+							dropTarget !== dragging.from}
+						href="/menu/{day.date}"
+						aria-current={isToday ? 'date' : undefined}
+						data-date={day.date}
+						draggable="false"
+						onpointerdown={(event) => pressDay(event, day.date, day.dinners[0]?.id)}
+					>
+						{@render dayDetails(day)}
+					</a>
+				</li>
+			{/each}
+		</ol>
+		{#if moving}
+			{@render besideWeek(data.previousDays, 'previous')}
+			{@render besideWeek(data.nextDays, 'next')}
+		{/if}
+	</div>
+</div>
 
 <!-- A request's dish, linked to its recipe, or "Eating out" and its restaurant, then its note and
      who asked, as both lists show it. -->
@@ -585,6 +698,34 @@
 	.week-buttons [aria-current='page'] {
 		background: var(--surface-sunk);
 		border-color: var(--muted);
+	}
+
+	/* What a swipe moves shows out to the page's edges, past its 1rem padding, with room for a
+	   day's outline above and below. Nothing past them shows or scrolls the page sideways. */
+	.slider {
+		margin: -0.5rem -1rem;
+		padding: 0.5rem 1rem;
+		overflow: clip;
+	}
+
+	.track {
+		position: relative;
+	}
+
+	/* A week over on either side, 2rem away: the page's padding on both sides, as on a page of
+	   its own. */
+	.beside {
+		position: absolute;
+		top: 0;
+		width: 100%;
+	}
+
+	.previous-week {
+		right: calc(100% + 2rem);
+	}
+
+	.next-week {
+		left: calc(100% + 2rem);
 	}
 
 	.days {

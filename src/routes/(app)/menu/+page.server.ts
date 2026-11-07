@@ -31,7 +31,8 @@ import {
 import { attempt, id, nameField, parseForm } from '#lib/server/forms.ts';
 
 // The week view (design 7, Menu): Sunday to Saturday, one row per day with its dinners. ?week=
-// can be any date in the week. Dragging a day onto another with a mouse swaps their dinners, like
+// can be any date in the week. The weeks before and after come too, to show beside it while a
+// swipe moves it (MEA-249). Dragging a day onto another with a mouse swaps their dinners, like
 // Move to another date (2.2.2). Under it, the household's requests for dishes and restaurants, and
 // the ones completed, the same on every week (6.12).
 
@@ -40,8 +41,15 @@ function weekToShow(param: string | null, today: string): string | null {
 	if (param === null) return weekStart(today);
 	if (!isDate(param)) return null;
 	const start = weekStart(param);
-	// The last days of year 9999 can't be written as YYYY-MM-DD.
-	return isDate(addDays(start, 6)) ? start : null;
+	return canShow(start) ? start : null;
+}
+
+/**
+ * Whether every day of the week from `start` can be written as YYYY-MM-DD, which the days before
+ * year 0 and after year 9999 can't.
+ */
+function canShow(start: string): boolean {
+	return isDate(start) && isDate(addDays(start, 6));
 }
 
 const MONTH_DAY = new Intl.DateTimeFormat('en-US', {
@@ -72,6 +80,24 @@ function byRole(dishes: Dinner['dishes']): { role: DishRole; names: string[] }[]
 	})).filter((group) => group.names.length > 0);
 }
 
+/** Each day of the week from `start`, with the household's dinners in the order added (6.9). */
+function weekDays(householdId: number, start: string) {
+	const dinners = getDinners(householdId, start, addDays(start, 6));
+	return weekDates(start).map((date) => ({
+		date,
+		dinners: dinners
+			.filter((dinner) => dinner.date === date)
+			.map((dinner) => ({
+				id: dinner.id,
+				label: dinner.label,
+				type: dinner.type,
+				restaurantName: dinner.restaurantName,
+				note: dinner.note,
+				roles: byRole(dinner.dishes)
+			}))
+	}));
+}
+
 export function load({ locals, url }) {
 	const user = requireHousehold(locals);
 	const { timeZone } = getHousehold(user.householdId);
@@ -79,28 +105,20 @@ export function load({ locals, url }) {
 	const start = weekToShow(url.searchParams.get('week'), today);
 	if (start === null) redirect(303, '/menu');
 	const end = addDays(start, 6);
+	const previous = addDays(start, -7);
+	const next = addDays(start, 7);
 
-	const dinners = getDinners(user.householdId, start, end);
 	return {
 		today,
+		start,
 		label: weekLabel(start, end, today),
 		isThisWeek: start === weekStart(today),
-		previous: addDays(start, -7),
-		next: addDays(start, 7),
-		// Each day's dinners in the order they were added (6.9).
-		days: weekDates(start).map((date) => ({
-			date,
-			dinners: dinners
-				.filter((dinner) => dinner.date === date)
-				.map((dinner) => ({
-					id: dinner.id,
-					label: dinner.label,
-					type: dinner.type,
-					restaurantName: dinner.restaurantName,
-					note: dinner.note,
-					roles: byRole(dinner.dishes)
-				}))
-		})),
+		previous,
+		next,
+		days: weekDays(user.householdId, start),
+		// Null when the week can't be shown, at the ends of the calendar.
+		previousDays: canShow(previous) ? weekDays(user.householdId, previous) : null,
+		nextDays: canShow(next) ? weekDays(user.householdId, next) : null,
 		requests: listRequests(user.householdId),
 		// Newest first, each with the date it was completed in the household's time zone.
 		completed: listCompletedRequests(user.householdId).map((request) => ({

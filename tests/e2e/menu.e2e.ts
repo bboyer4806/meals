@@ -4141,6 +4141,128 @@ test.describe('swiping between weeks', () => {
 		);
 	}
 
+	/**
+	 * A finger pressed on the middle of what's there, which the test moves in steps and then
+	 * lifts, or the browser cancels, as when it takes the touch for itself (MEA-249).
+	 */
+	async function press(on: Locator) {
+		const page = on.page();
+		const cdp = await page.context().newCDPSession(page);
+		let finger = await middle(on);
+		let second: { x: number; y: number } | null = null;
+		const send = (type: 'touchStart' | 'touchMove' | 'touchEnd' | 'touchCancel') =>
+			cdp.send('Input.dispatchTouchEvent', {
+				type,
+				touchPoints:
+					type === 'touchEnd' || type === 'touchCancel'
+						? []
+						: [{ id: 0, ...finger }, ...(second ? [{ id: 1, ...second }] : [])]
+			});
+		await send('touchStart');
+		return {
+			/** `across` pixels to the right (negative is to the left) and `down` pixels down. */
+			async move(across: number, down = 0) {
+				const from = finger;
+				for (let step = 1; step <= 8; step += 1) {
+					finger = { x: from.x + (across * step) / 8, y: from.y + (down * step) / 8 };
+					await send('touchMove');
+				}
+				// The page gets a moving finger's touches with its next frame.
+				await page.evaluate(
+					() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+				);
+			},
+			/** A second finger lands on what's there, as a pinch starts. */
+			async addFinger(at: Locator) {
+				second = await middle(at);
+				await send('touchStart');
+			},
+			async lift() {
+				await send('touchEnd');
+				await cdp.detach();
+			},
+			async cancel() {
+				await send('touchCancel');
+				await cdp.detach();
+			}
+		};
+	}
+
+	async function middle(on: Locator) {
+		const box = await on.boundingBox();
+		if (!box) throw new Error('Nothing there to press');
+		return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	}
+
+	/** Where the left edge of what's there is, in pixels from the screen's left edge. */
+	async function left(on: Locator) {
+		const box = await on.boundingBox();
+		if (!box) throw new Error('Nothing there');
+		return box.x;
+	}
+
+	/**
+	 * Notes where the left edge of what's there is on each frame from now, for as long as it's on
+	 * the page. The function it returns gives what it noted so far.
+	 */
+	async function noteLefts(on: Locator) {
+		const lefts = await on.evaluateHandle((element) => {
+			const noted: number[] = [];
+			const until = performance.now() + 3000;
+			const note = () => {
+				noted.push(element.getBoundingClientRect().x);
+				if (element.isConnected && performance.now() < until) requestAnimationFrame(note);
+			};
+			note();
+			return noted;
+		});
+		return () => lefts.jsonValue();
+	}
+
+	/** The left edges noted went from `from` to `to` all one way, through some in between. */
+	function expectSlide(lefts: number[], from: number, to: number) {
+		const between = lefts.filter((x) => Math.min(from, to) + 1 < x && x < Math.max(from, to) - 1);
+		expect(between, `left edges: ${lefts.join(', ')}`).not.toEqual([]);
+		expect(lefts, 'all one way').toEqual(lefts.toSorted((a, b) => (to > from ? a - b : b - a)));
+	}
+
+	/** The left edges noted went straight from `from` to `to`, with none in between. */
+	function expectJump(lefts: number[], from: number, to: number) {
+		const between = lefts.filter((x) => Math.min(from, to) + 1 < x && x < Math.max(from, to) - 1);
+		expect(between, `left edges: ${lefts.join(', ')}`).toEqual([]);
+	}
+
+	/** How far what's there is from `start`, to the nearest pixel. */
+	async function offset(on: Locator, start: number) {
+		return Math.round((await left(on)) - start);
+	}
+
+	/** The weeks the page loads, by their ?week=. */
+	function weekLoads(page: Page) {
+		const loads: (string | null)[] = [];
+		page.on('request', (request) => {
+			const url = new URL(request.url());
+			if (url.pathname === '/menu/__data.json') loads.push(url.searchParams.get('week'));
+		});
+		return loads;
+	}
+
+	/** Holds back the week from that Sunday until the function it returns is called. */
+	function holdWeek(page: Page, sunday: string) {
+		return holdAnswers(
+			page,
+			(url) => url.pathname === '/menu/__data.json' && url.searchParams.get('week') === sunday
+		);
+	}
+
+	/** The week's seven days, each with the note of its dinner or "Not planned". */
+	function weekDays(sunday: string, notes: Record<string, string> = {}) {
+		return Array.from({ length: 7 }, (_, index) => {
+			const date = addDays(sunday, index);
+			return new RegExp(`^${dayLabel(date)}.*${notes[date] ?? 'Not planned'}`);
+		});
+	}
+
 	test('goes a week on for each swipe left, and a week back for each swipe right', async ({
 		page,
 		db,
@@ -4238,9 +4360,11 @@ test.describe('swiping between weeks', () => {
 		await swipe(wednesday, 70, -300);
 		await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 
-		// Once the page stops moving, a real swipe still goes a week on from the week shown, and
-		// that's the only week loaded. (A tap would leave a mouse pointer over a link, which
-		// loads its page ahead of time.)
+		// Once the page stops moving, and the days the short swipe moved are back in place
+		// (MEA-249), a real swipe still goes a week on from the week shown, and that's the only
+		// week loaded. (A tap would leave a mouse pointer over a link, which loads its page ahead
+		// of time.)
+		await expect(page.locator('.beside')).toHaveCount(0);
 		await wednesday.scrollIntoViewIfNeeded();
 		await swipe(wednesday, -200);
 		await showsWeek(page, addDays(sunday, 7));
@@ -4252,5 +4376,250 @@ test.describe('swiping between weeks', () => {
 		await touch(page, await stroke(wednesday, -200), await stroke(heading, -200));
 		await showsWeek(page, addDays(sunday, 7));
 		expect(loads).toEqual([addDays(sunday, 7)]);
+	});
+
+	test('moves the days with the finger, with the week before or after beside them (MEA-249)', async ({
+		page,
+		db,
+		person
+	}) => {
+		const sunday = sundayOf(today());
+		const [previous, next] = [addDays(sunday, -7), addDays(sunday, 7)];
+		const [mon, previousThu, nextTue] = [addDays(sunday, 1), addDays(previous, 4), addDays(next, 2)];
+		addDinner(db, person.householdId, mon, { note: 'Taco night' });
+		addDinner(db, person.householdId, previousThu, { note: 'Soup' });
+		addDinner(db, person.householdId, nextTue, { note: 'Pizza' });
+		// Another household's dinner, which no week shows.
+		addDinner(db, addPerson(db).householdId, addDays(next, 3), { note: 'Secret' });
+		await open(page, `/menu?week=${sunday}`);
+		const wednesday = day(page, addDays(sunday, 3));
+		const start = await left(wednesday);
+		const unmoved = [
+			page.getByRole('heading', { name: 'Menu', level: 1 }),
+			page.getByRole('navigation', { name: 'Weeks' }),
+			page.getByRole('region', { name: 'Requests' })
+		];
+		const boxes = await Promise.all(unmoved.map((section) => section.boundingBox()));
+		const nextWeek = page.locator('.next-week .day');
+		const previousWeek = page.locator('.previous-week .day');
+		// The weeks either side wait off the page until a swipe moves the days.
+		await expect(page.locator('.beside')).toHaveCount(0);
+
+		// To the left, next week comes in from the right, with its days and dinners.
+		const finger = await press(wednesday);
+		await finger.move(-100);
+		await expect.poll(() => offset(wednesday, start)).toBe(-100);
+		await expect(nextWeek).toHaveText(weekDays(next, { [nextTue]: 'Pizza' }));
+		await expect(nextWeek.first()).toBeInViewport();
+		await expect(previousWeek.first()).not.toBeInViewport();
+		// Only the days move, and the page doesn't scroll sideways.
+		expect(await Promise.all(unmoved.map((section) => section.boundingBox()))).toEqual(boxes);
+		expect(await sideways(page)).toBe(0);
+
+		// Back past where it started, to the right, last week comes in from the left.
+		await finger.move(200);
+		await expect.poll(() => offset(wednesday, start)).toBe(100);
+		await expect(previousWeek).toHaveText(weekDays(previous, { [previousThu]: 'Soup' }));
+		await expect(previousWeek.first()).toBeInViewport();
+		await expect(nextWeek.first()).not.toBeInViewport();
+		expect(await Promise.all(unmoved.map((section) => section.boundingBox()))).toEqual(boxes);
+		expect(await sideways(page)).toBe(0);
+
+		// Let go 40 pixels from where it started, too short a swipe: the days slide back.
+		await finger.move(-60);
+		await finger.lift();
+		await expect.poll(() => offset(wednesday, start)).toBe(0);
+		await expect(page.locator('.beside')).toHaveCount(0);
+		await showsWeek(page, sunday, { [mon]: 'Taco night' });
+	});
+
+	test('slides the days on into the week a swipe opens, from the side it comes in from', async ({
+		page,
+		db,
+		person
+	}) => {
+		const sunday = sundayOf(today());
+		const next = addDays(sunday, 7);
+		const nextTue = addDays(next, 2);
+		addDinner(db, person.householdId, nextTue, { note: 'Pizza' });
+		await open(page, `/menu?week=${sunday}`);
+		const start = await left(day(page, addDays(sunday, 3)));
+
+		// Each week waits to load, so the test sees where the days stop before it shows.
+		let release = await holdWeek(page, next);
+		let finger = await press(day(page, addDays(sunday, 3)));
+		await finger.move(-100);
+		const incoming = page.locator('.next-week .day').nth(3);
+		let from = await left(incoming);
+		let lefts = await noteLefts(incoming);
+		await finger.lift();
+		// Next week's Wednesday slides left, from beside the days into Wednesday's place.
+		await expect.poll(() => offset(incoming, start)).toBe(0);
+		expectSlide(await lefts(), from, start);
+		await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sunday}$`));
+		release();
+		await showsWeek(page, next, { [nextTue]: 'Pizza' });
+		await expect(page.locator('.beside')).toHaveCount(0);
+		expect(await offset(day(page, addDays(next, 3)), start)).toBe(0);
+
+		// To the right, this week's Wednesday slides back in from the left.
+		release = await holdWeek(page, sunday);
+		finger = await press(day(page, addDays(next, 3)));
+		await finger.move(100);
+		const returning = page.locator('.previous-week .day').nth(3);
+		from = await left(returning);
+		lefts = await noteLefts(returning);
+		await finger.lift();
+		await expect.poll(() => offset(returning, start)).toBe(0);
+		expectSlide(await lefts(), from, start);
+		release();
+		await showsWeek(page, sunday);
+		expect(await offset(day(page, addDays(sunday, 3)), start)).toBe(0);
+	});
+
+	test("slides the days back into place when a swipe doesn't change the week", async ({
+		page,
+		person: _
+	}) => {
+		const sunday = sundayOf(today());
+		await open(page, `/menu?week=${sunday}`);
+		const loads = weekLoads(page);
+		const wednesday = day(page, addDays(sunday, 3));
+		const start = await left(wednesday);
+
+		/** What `end` does to the swipe makes the days slide back from where the finger left them. */
+		async function slidesBack(end: () => Promise<void>) {
+			const from = await left(wednesday);
+			const lefts = await noteLefts(wednesday);
+			await end();
+			await expect.poll(() => offset(wednesday, start)).toBe(0);
+			expectSlide(await lefts(), from, start);
+			await expect(page.locator('.beside')).toHaveCount(0);
+		}
+
+		// Less than 60 pixels across.
+		let finger = await press(wednesday);
+		await finger.move(-50);
+		await slidesBack(finger.lift);
+		// Across, then down: more than half as far down as across.
+		finger = await press(wednesday);
+		await finger.move(-120);
+		await finger.move(0, 80);
+		await slidesBack(finger.lift);
+		// Interrupted, as when the browser takes the touch for itself, however far it went.
+		finger = await press(wednesday);
+		await finger.move(-200);
+		await slidesBack(finger.cancel);
+		// A second finger landing off the days, as a pinch starts. It goes last, as full Chrome
+		// then holds that finger down for the rest of the page (MEA-79).
+		finger = await press(wednesday);
+		await finger.move(-120);
+		await slidesBack(async () => {
+			await finger.addFinger(page.getByRole('heading', { name: 'Menu', level: 1 }));
+			await finger.move(-20);
+		});
+		await finger.lift();
+
+		await showsWeek(page, sunday);
+		expect(loads).toEqual([]);
+	});
+
+	test('takes no other swipe until the week a swipe opens shows, so none skips a week', async ({
+		page,
+		person: _
+	}) => {
+		const sunday = sundayOf(today());
+		const [next, after] = [addDays(sunday, 7), addDays(sunday, 14)];
+		await open(page, `/menu?week=${sunday}`);
+		const loads = weekLoads(page);
+		const wednesday = day(page, addDays(sunday, 3));
+		const start = await left(wednesday);
+		// Swipes across Wednesday's place, where this week's days still are as they set off
+		// after a short first swipe.
+		const { x, y } = await middle(wednesday);
+		const short = { from: { x: x + 40, y }, to: { x: x - 40, y } };
+		const toLeft = { from: { x: x + 40, y }, to: { x: x - 160, y } };
+		const toRight = { from: { x: x - 160, y }, to: { x: x + 40, y } };
+		// In slow motion, so the swipes after the first start on this week's days as they slide.
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Animation.enable');
+		await cdp.send('Animation.setPlaybackRate', { playbackRate: 0.02 });
+
+		const release = await holdWeek(page, next);
+		await touch(page, short);
+		// While this week's days slide away, more swipes on them, either way, do nothing.
+		await touch(page, toRight);
+		await touch(page, toLeft);
+		await cdp.send('Animation.setPlaybackRate', { playbackRate: 1 });
+		// Nor do swipes on next week's days once they're in place, while it loads.
+		await expect.poll(() => offset(page.locator('.next-week .day').nth(3), start)).toBe(0);
+		await touch(page, toLeft);
+		await touch(page, toRight);
+		release();
+		await showsWeek(page, next);
+		expect(loads).toEqual([next]);
+
+		// Once it shows, a swipe goes on from it.
+		await touch(page, toLeft);
+		await showsWeek(page, after);
+		expect(loads).toEqual([next, after]);
+	});
+
+	test('opens the week with the page still scrolled where it was', async ({ page, db, person }) => {
+		const sunday = sundayOf(today());
+		const next = addDays(sunday, 7);
+		// A few lines on every day of both weeks, so the days go past the bottom of the screen.
+		const note = 'Line one\nLine two\nLine three';
+		for (let index = 0; index < 14; index += 1) {
+			addDinner(db, person.householdId, addDays(sunday, index), { note });
+		}
+		await open(page, `/menu?week=${sunday}`);
+		const thursday = day(page, addDays(sunday, 4));
+		await thursday.evaluate((row) => row.scrollIntoView({ block: 'center' }));
+		const scrolled = await page.evaluate(() => window.scrollY);
+		expect(scrolled).toBeGreaterThan(0);
+
+		await swipe(thursday, -200);
+		await expect(page).toHaveURL(new RegExp(`/menu\\?week=${next}$`));
+		await expect(page.locator('a.day .date')).toHaveText(
+			Array.from({ length: 7 }, (_, index) => dayLabel(addDays(next, index)))
+		);
+		expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
+	});
+
+	test.describe('with reduced motion', () => {
+		test.use({ reducedMotion: 'reduce' });
+
+		test('puts the days straight into place when the finger lifts', async ({
+			page,
+			person: _
+		}) => {
+			const sunday = sundayOf(today());
+			const next = addDays(sunday, 7);
+			await open(page, `/menu?week=${sunday}`);
+			const wednesday = day(page, addDays(sunday, 3));
+			const start = await left(wednesday);
+
+			// Back from a swipe too short to change the week.
+			let finger = await press(wednesday);
+			await finger.move(-50);
+			let lefts = await noteLefts(wednesday);
+			await finger.lift();
+			await expect.poll(() => offset(wednesday, start)).toBe(0);
+			expectJump(await lefts(), start - 50, start);
+
+			// On into the week a swipe opens.
+			const release = await holdWeek(page, next);
+			finger = await press(wednesday);
+			await finger.move(-100);
+			const incoming = page.locator('.next-week .day').nth(3);
+			const from = await left(incoming);
+			lefts = await noteLefts(incoming);
+			await finger.lift();
+			await expect.poll(() => offset(incoming, start)).toBe(0);
+			expectJump(await lefts(), from, start);
+			release();
+			await showsWeek(page, next);
+		});
 	});
 });
