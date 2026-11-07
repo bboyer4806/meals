@@ -36,7 +36,7 @@ import {
 	promoteDishRequest,
 	promoteRestaurantRequest
 } from '#lib/server/data/requests.ts';
-import { attempt, id, parseForm, sentName } from '#lib/server/forms.ts';
+import { attempt, id, idList, parseForm, sentName } from '#lib/server/forms.ts';
 
 // A date's dinners (design 7, Dinner; 6.9). Each form sends only what it changes and the rest
 // stays as saved, so a page left open doesn't put back what someone else changed meanwhile
@@ -136,8 +136,9 @@ const addDinnerSchema = z.object({
 	label: sentName(DINNER_LABEL_MAX, 'a label', { error: 'Enter a label for each dinner' })
 });
 
-// The past dinner to copy, and the one on this date the page showed.
-const copySchema = z.object({ sourceId: id, dinnerId: shownDinner, replaceDishes: confirmed });
+// The dishes of the past dinner to copy, as the picker showed them (6.9), and the dinner on this
+// date the page showed.
+const copySchema = z.object({ dishIds: idList, dinnerId: shownDinner, replaceDishes: confirmed });
 
 const moveSchema = z.object({
 	to: z.string({ error: 'Pick a date' }).refine(isDate, 'Pick a date'),
@@ -293,18 +294,16 @@ export const actions = {
 		const date = dinnerDate(params);
 		const parsed = parseForm(copySchema, await request.formData(), 'copy');
 		if ('failure' in parsed) return parsed.failure;
-		const { sourceId, dinnerId, replaceDishes } = parsed.data;
+		const { dishIds, dinnerId, replaceDishes } = parsed.data;
 		const dinner = shownOn(user.householdId, date, dinnerId);
 		// Copying replaces the dishes, so the page asks first when there are some (2.3).
-		if (dinner && dinner.id !== sourceId && dinner.dishes.length > 0 && !replaceDishes) {
+		if (dinner && dinner.dishes.length > 0 && !replaceDishes) {
 			return fail(400, {
 				action: 'copy',
 				error: `${CHANGED_SINCE} To replace them, pick the dinner to copy again.`
 			});
 		}
-		return attempt('copy', () =>
-			copyDinner(user.householdId, date, dinnerId, sourceId, Date.now())
-		);
+		return attempt('copy', () => copyDinner(user.householdId, date, dinnerId, dishIds, Date.now()));
 	},
 
 	// Moves all of the date's dinners and lands on the new date, where they are now (2.2.2).

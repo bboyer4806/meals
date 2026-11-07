@@ -598,8 +598,8 @@ The rest of this section describes it as built.
   to 80 characters, or none. It's typed in the dinner's Restaurant field, saved with its note,
   or comes from a restaurant request (6.12). Restaurants aren't kept anywhere else, so there are
   no suggestions. Switching an Eating out dinner to another type removes its restaurant without
-  asking, and switching back starts with none. Copy a dinner sets the restaurant with the type,
-  so a copy that isn't Eating out has none.
+  asking, and switching back starts with none. Copy a dinner copies only dinners with dishes, so
+  it removes the restaurant too.
 - A dinner has a label only when its date has more than one, and then every dinner on it
   needs one: up to 30 characters, unique within the date ignoring case. Adding the second
   dinner asks for both labels. When clearing leaves one dinner, its label is removed. A new
@@ -615,6 +615,11 @@ The rest of this section describes it as built.
   characters as in a dish name, filters to groups with a dish whose name matches, most recent
   first. Copying sets the type and the dishes with their roles. Each dinner counts on its own,
   so a date with Kids and Adults dinners counts as one make for each.
+- A copy has exactly the dishes the picked group showed (MEA-85). The type and roles come from
+  the latest past dinner that still has just those dishes, so a change to the group's latest
+  dinner since the page showed it, such as going out instead or adding a dish, doesn't come
+  along. When no past dinner has them anymore, nothing is copied: the picker says "That dinner has
+  changed. Pick one to copy again." and lists the dinners as they are now.
 - **Move to another date** (addition 2.2.2) moves all of a date's dinners, and swaps them
   with the other date's if it has any; a date's dinners can't be moved separately. Tapping
   the date at the top of its page opens it (7). On a computer, dragging a day onto another in

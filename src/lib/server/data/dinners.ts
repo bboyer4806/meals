@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
+import { dateIn } from '../../dates.ts';
 import {
 	appendNote,
 	defaultRole,
@@ -71,9 +72,19 @@ export type DishDestination = { dinnerId: number } | { labels: NewDinnerLabels }
 export type CopyGroup = {
 	/** The group's most recent dinner, which Copy uses for the type and roles. */
 	dinnerId: number;
-	dishes: { name: string; role: DishRole }[];
+	/** In role order. A copy sends their ids, so it copies exactly these dishes (6.9). */
+	dishes: { dishId: number; name: string; role: DishRole }[];
 	timesMade: number;
 	lastMade: string;
+};
+
+/** A past dinner as Copy a dinner sees it, with only its non-archived dishes (6.9). */
+type PastDinner = {
+	id: number;
+	date: string;
+	type: DinnerType;
+	/** In the order they were added. */
+	dishes: CopyGroup['dishes'];
 };
 
 /** Main, Side, Dessert, Other (6.9). The sort is stable, so each role keeps the order added. */
@@ -639,14 +650,15 @@ export function moveDinners(
 }
 
 /**
- * Past dinners (dated today or earlier) with dishes, grouped by their exact set of
- * non-archived dishes, most made first, then most recently made (6.9).
+ * Past dinners (dated today or earlier) with non-archived dishes, newest first: the dinners Copy
+ * a dinner groups and copies from (6.9).
  */
-export function listCopyGroups(householdId: number, today: string): CopyGroup[] {
+function pastDinners(householdId: number, today: string): PastDinner[] {
 	const rows = db()
 		.select({
 			dinnerId: dinners.id,
 			date: dinners.date,
+			type: dinners.type,
 			dishId: dishes.id,
 			name: dishes.name,
 			role: dinnerDishes.role
@@ -667,27 +679,36 @@ export function listCopyGroups(householdId: number, today: string): CopyGroup[] 
 		.all();
 
 	// Newest dinner first, each with its dishes in the order they were added.
-	const byDinner = new Map<number, { date: string; dishes: typeof rows }>();
-	for (const row of rows) {
-		const dinner = byDinner.get(row.dinnerId);
-		if (dinner) dinner.dishes.push(row);
-		else byDinner.set(row.dinnerId, { date: row.date, dishes: [row] });
+	const byDinner = new Map<number, PastDinner>();
+	for (const { dinnerId, date, type, ...dish } of rows) {
+		const dinner = byDinner.get(dinnerId);
+		if (dinner) dinner.dishes.push(dish);
+		else byDinner.set(dinnerId, { id: dinnerId, date, type, dishes: [dish] });
 	}
+	return [...byDinner.values()];
+}
 
+/** An exact set of dishes as one key, whatever order the ids come in. */
+function dishSet(dishIds: number[]): string {
+	return [...dishIds].sort((a, b) => a - b).join(',');
+}
+
+/**
+ * Past dinners (dated today or earlier) with dishes, grouped by their exact set of
+ * non-archived dishes, most made first, then most recently made (6.9).
+ */
+export function listCopyGroups(householdId: number, today: string): CopyGroup[] {
 	const groups = new Map<string, CopyGroup>();
-	for (const [dinnerId, dinner] of byDinner) {
-		const key = dinner.dishes
-			.map((dish) => dish.dishId)
-			.sort((a, b) => a - b)
-			.join(',');
+	for (const dinner of pastDinners(householdId, today)) {
+		const key = dishSet(dinner.dishes.map((dish) => dish.dishId));
 		const group = groups.get(key);
 		if (group) {
 			group.timesMade += 1;
 		} else {
 			// The first dinner seen is the group's most recent one.
 			groups.set(key, {
-				dinnerId,
-				dishes: dinner.dishes.sort(byRole).map(({ name, role }) => ({ name, role })),
+				dinnerId: dinner.id,
+				dishes: dinner.dishes.sort(byRole),
 				timesMade: 1,
 				lastMade: dinner.date
 			});
@@ -700,31 +721,40 @@ export function listCopyGroups(householdId: number, today: string): CopyGroup[] 
 }
 
 /**
- * Sets the dinner's type and dishes (with roles) from another dinner, keeping its label, note
- * and servings; a new dinner gets the usual servings (2.3). Archived dishes aren't copied. The
- * restaurant goes with the type, since only an Eating out dinner has one (6.9).
+ * The past dinner a copy of these dishes comes from: the most recent one whose non-archived
+ * dishes are exactly these, which is the picker's group as it is now (6.9). It isn't named by id,
+ * since the dinner the picker showed may have changed since, such as becoming Eating out. Refuses
+ * when no past dinner has exactly these dishes, so the person picks again.
+ */
+function copySource(householdId: number, dishIds: number[], now: number): PastDinner {
+	const today = dateIn(now, getHousehold(householdId).timeZone);
+	const wanted = dishSet(dishIds);
+	const source = pastDinners(householdId, today).find(
+		(dinner) => dishSet(dinner.dishes.map((dish) => dish.dishId)) === wanted
+	);
+	if (!source) error(400, 'That dinner has changed. Pick one to copy again.');
+	return source;
+}
+
+/**
+ * Sets the dinner's type and dishes (with roles) from the most recent past dinner with exactly
+ * these non-archived dishes, keeping its label, note and servings; a new dinner gets the usual
+ * servings (2.3). Archived dishes aren't copied. A dinner with dishes has no restaurant, so the
+ * copy has none (6.9).
  */
 export function copyDinner(
 	householdId: number,
 	date: string,
 	dinnerId: number | null,
-	sourceDinnerId: number,
+	dishIds: number[],
 	now: number
 ): void {
 	transaction(() => {
-		const source = db()
-			.select({ id: dinners.id, type: dinners.type, restaurantName: dinners.restaurantName })
-			.from(dinners)
-			.where(and(eq(dinners.id, sourceDinnerId), eq(dinners.householdId, householdId)))
-			.get();
-		if (!source) error(404, 'Not found');
+		const source = copySource(householdId, dishIds, now);
 		const target = shownDinner(householdId, date, dinnerId);
 		// Copying a dinner onto itself would only drop its archived dishes.
 		if (target?.id === source.id) return;
 
-		const copied = hasDishes(source.type)
-			? dinnerDishRows(and(eq(dinnerDishes.dinnerId, source.id), isNull(dishes.archivedAt)))
-			: [];
 		let targetId: number;
 		if (target) {
 			targetId = target.id;
@@ -732,17 +762,16 @@ export function copyDinner(
 		} else {
 			targetId = insertDinner(householdId, date, source.type, now);
 		}
-		const { type, restaurantName } = source;
 		db()
 			.update(dinners)
-			.set({ type, restaurantName, updatedAt: now })
+			.set({ type: source.type, restaurantName: null, updatedAt: now })
 			.where(eq(dinners.id, targetId))
 			.run();
 		// Inserted in display order, so the copy lists them the same way.
-		const rows = copied
+		const rows = source.dishes
 			.sort(byRole)
 			.map(({ dishId, role }) => ({ householdId, dinnerId: targetId, dishId, role }));
-		if (rows.length > 0) db().insert(dinnerDishes).values(rows).run();
+		db().insert(dinnerDishes).values(rows).run();
 	});
 }
 

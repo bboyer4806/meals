@@ -175,7 +175,7 @@ describe('loading a date', () => {
 			copyGroups: [
 				{
 					dinnerId: expect.any(Number),
-					dishes: [{ name: 'Tacos', role: 'main' }],
+					dishes: [{ dishId: tacos, name: 'Tacos', role: 'main' }],
 					timesMade: 1,
 					lastMade: YESTERDAY
 				}
@@ -660,6 +660,8 @@ describe('removing a dish', () => {
 
 describe('copying a dinner', () => {
 	let past: number;
+	/** The past dinner's dishes, as the picker sends them. */
+	let dishIds: string;
 
 	beforeEach(() => {
 		past = makeDinner(householdId, YESTERDAY, {
@@ -671,10 +673,11 @@ describe('copying a dinner', () => {
 				[tacos, 'main']
 			]
 		});
+		dishIds = `${tacos},${rice}`;
 	});
 
 	it("plans a date with the dinner's type and dishes, at the usual servings (2.3)", async () => {
-		expect(await post('copy', { sourceId: String(past) })).toBeUndefined();
+		expect(await post('copy', { dishIds })).toBeUndefined();
 		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'going',
 			note: null,
@@ -687,7 +690,7 @@ describe('copying a dinner', () => {
 		const dinnerId = shown(
 			makeDinner(householdId, TOMORROW, { type: 'eat_out', note: 'Maybe', servings: 2 })
 		);
-		await post('copy', { sourceId: String(past), dinnerId });
+		await post('copy', { dishIds, dinnerId });
 		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({
 			type: 'going',
 			note: 'Maybe',
@@ -700,26 +703,32 @@ describe('copying a dinner', () => {
 
 		// The page showed this dinner before the dish was added, so it didn't ask.
 		expectFailure(
-			await post('copy', { sourceId: String(past), dinnerId }),
+			await post('copy', { dishIds, dinnerId }),
 			'copy',
 			'Someone has added dishes to this dinner since you opened it. To replace them, pick the dinner to copy again.'
 		);
 		expect(dishesOn(TOMORROW)).toEqual(['Pound cake (dessert)']);
 
-		await post('copy', { sourceId: String(past), replaceDishes: '1', dinnerId });
+		await post('copy', { dishIds, replaceDishes: '1', dinnerId });
 		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)', 'Rice (side)']);
 	});
 
 	it('changes nothing when copied onto itself', async () => {
-		expect(
-			await post('copy', { sourceId: String(past), dinnerId: String(past) }, { date: YESTERDAY })
-		).toBeUndefined();
+		const fields = { dishIds, replaceDishes: '1', dinnerId: String(past) };
+		expect(await post('copy', fields, { date: YESTERDAY })).toBeUndefined();
 		expect(dishesOn(YESTERDAY)).toEqual(['Tacos (main)', 'Rice (side)']);
 	});
 
-	it("is not found for another household's dinner", async () => {
-		const theirs = makeDinner(otherId, YESTERDAY, { dishes: [] });
-		expectNotFound(await post('copy', { sourceId: String(theirs) }));
+	it('says to pick again when no past dinner has exactly those dishes (MEA-85)', async () => {
+		const theirs = makeDish(otherId, recipe('Lasagna'));
+		makeDinner(otherId, YESTERDAY, { dishes: [[theirs, 'main']] });
+		for (const sent of [`${tacos}`, `${tacos},${rice},${cake}`, `${theirs}`]) {
+			expectFailure(
+				await post('copy', { dishIds: sent }),
+				'copy',
+				'That dinner has changed. Pick one to copy again.'
+			);
+		}
 		expect(dinnerOn(householdId, TOMORROW)).toBeNull();
 	});
 });
@@ -840,8 +849,8 @@ describe('more than one dinner on a date (6.9)', () => {
 			'Little ones: going, Early, 2, Tacos (other)'
 		]);
 
-		const past = makeDinner(householdId, YESTERDAY, { dishes: [[cake, 'dessert']] });
-		await post('copy', { sourceId: String(past), dinnerId: String(adults), replaceDishes: '1' });
+		makeDinner(householdId, YESTERDAY, { dishes: [[cake, 'dessert']] });
+		await post('copy', { dishIds: String(cake), dinnerId: String(adults), replaceDishes: '1' });
 		await post('type', { type: 'eat_out', removeDishes: '1', dinnerId });
 		expect(day()).toEqual([
 			'Adults: cook, Late, 4, Pound cake (dessert)',
@@ -880,10 +889,9 @@ describe('more than one dinner on a date (6.9)', () => {
 describe('a page left open while someone changed its date (6.11)', () => {
 	const CHANGED = 'Someone changed this dinner since you opened it.';
 	const LATER = '2026-10-09';
-	let past: number;
 
 	beforeEach(() => {
-		past = makeDinner(householdId, YESTERDAY, { dishes: [[cake, 'dessert']] });
+		makeDinner(householdId, YESTERDAY, { dishes: [[cake, 'dessert']] });
 	});
 
 	it("refuses to change or remove a dinner moved onto the date, which the page didn't show", async () => {
@@ -903,7 +911,7 @@ describe('a page left open while someone changed its date (6.11)', () => {
 			['type', { type: 'eat_out', removeDishes: '1' }, 'type'],
 			['type', { type: 'going' }, 'type'],
 			['details', { type: 'cook', servings: '2', note: 'Bring candles' }, 'details'],
-			['copy', { sourceId: String(past), replaceDishes: '1' }, 'copy'],
+			['copy', { dishIds: String(cake), replaceDishes: '1' }, 'copy'],
 			['move', { to: '2026-10-12' }, 'move']
 		];
 		for (const [action, fields, name] of tries) {
@@ -937,7 +945,7 @@ describe('a page left open while someone changed its date (6.11)', () => {
 			['details', { type: 'cook', servings: '2', note: 'Soup' }, 'details'],
 			['addDish', { name: 'Rice', role: 'side' }, 'dish'],
 			['restoreDish', { dishId: String(rice), role: 'side' }, 'dish'],
-			['copy', { sourceId: String(past) }, 'copy'],
+			['copy', { dishIds: String(cake) }, 'copy'],
 			['move', { to: '2026-10-12' }, 'move']
 		];
 		for (const [action, fields, name] of tries) {
@@ -958,7 +966,7 @@ describe('a page left open while someone changed its date (6.11)', () => {
 		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ type: 'eat_out', servings: 3 });
 		clearOn(TOMORROW);
 
-		expect(await post('copy', { sourceId: String(past), dinnerId: gone })).toBeUndefined();
+		expect(await post('copy', { dishIds: String(cake), dinnerId: gone })).toBeUndefined();
 		expect(dishesOn(TOMORROW)).toEqual(['Pound cake (dessert)']);
 		clearOn(TOMORROW);
 
@@ -1170,7 +1178,7 @@ describe('every action', () => {
 		restoreDish: { dishId: '1', role: 'main' },
 		role: { dishId: '1', role: 'main', dinnerId: '1' },
 		removeDish: { dishId: '1', dinnerId: '1' },
-		copy: { sourceId: '1' },
+		copy: { dishIds: '1' },
 		move: { to: TODAY },
 		clear: {},
 		promoteDishRequest: { requestId: '1' },
