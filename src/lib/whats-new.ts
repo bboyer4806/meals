@@ -14,6 +14,15 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.14',
+		released: '2026-11-07',
+		lines: [
+			'Import recipes now handles a large file much faster, without freezing Meals for everyone meanwhile. It takes up to 1,000 recipes in one file, and a file with more says which row to split it at.',
+			'On Items, Household and Admin, and for stores on the grocery list, a name that starts with an accented letter, such as Éclairs, now sorts with that letter instead of after Z.',
+			"A recipe's photo and the rest of its changes now save together or not at all. Before, a failed save could keep the other changes with the photo unchanged, and trying again on a new recipe said a recipe was already called that."
+		]
+	},
+	{
 		version: '1.13',
 		released: '2026-11-07',
 		lines: [
