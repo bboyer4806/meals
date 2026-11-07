@@ -1,6 +1,12 @@
 import { parseCsv } from '../csv.ts';
 import { splitIngredient } from '../ingredient-text.ts';
-import { foldCase, IMPORT_MAX_LENGTH, NORMALIZE_MAX_LENGTH, normalizeName } from '../text.ts';
+import {
+	foldCase,
+	IMPORT_MAX_LENGTH,
+	joinAnd,
+	NORMALIZE_MAX_LENGTH,
+	normalizeName
+} from '../text.ts';
 import { createDish, findDishByName, updateDish, type DishInput } from './data/dishes.ts';
 import { getHousehold } from './data/households.ts';
 import { findItemByName } from './data/items.ts';
@@ -378,4 +384,27 @@ export async function importRecipeFile(
 	// New ingredient items get their standard images (design 6.14).
 	if (result.kind === 'imported') await assignStandardImages(householdId, now);
 	return result;
+}
+
+/**
+ * What an import did, for Recipes to say, leaving out the parts that are 0 or empty: "Imported 9
+ * recipes, replaced 2 and skipped 3. Ignored columns: Step, Rating and 12 more." (design 7).
+ */
+export function importSummary({
+	imported,
+	replaced,
+	skipped,
+	ignored
+}: Extract<ImportResult, { kind: 'imported' }>): string {
+	const parts = [
+		`Imported ${imported} ${imported === 1 ? 'recipe' : 'recipes'}`,
+		...(replaced > 0 ? [`replaced ${replaced}`] : []),
+		...(skipped > 0 ? [`skipped ${skipped}`] : [])
+	];
+	const summary = `${joinAnd(parts)}.`;
+	if (ignored.length === 0) return summary;
+	// At most three, so a file with hundreds of extra columns still gets a short line (MEA-81).
+	const named =
+		ignored.length <= 3 ? ignored : [...ignored.slice(0, 2), `${ignored.length - 2} more`];
+	return `${summary} Ignored ${ignored.length === 1 ? 'column' : 'columns'}: ${joinAnd(named)}.`;
 }

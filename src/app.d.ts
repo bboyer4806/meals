@@ -5,6 +5,11 @@ declare global {
 		interface Locals {
 			user: SessionUser | null;
 		}
+
+		interface PageState {
+			/** What Import recipes did, for Recipes to say (design 7, Import recipes). */
+			importSummary?: string;
+		}
 	}
 }
 
