@@ -33,8 +33,7 @@ export async function GET({ locals, params }) {
 				'content-type': 'image/jpeg',
 				'content-length': String(size),
 				// A changed photo gets a new key, so a browser never needs to ask again.
-				'cache-control': 'private, max-age=31536000, immutable',
-				'x-content-type-options': 'nosniff'
+				'cache-control': 'private, max-age=31536000, immutable'
 			}
 		});
 	} catch (e) {
