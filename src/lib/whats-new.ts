@@ -14,6 +14,15 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.12',
+		released: '2026-11-06',
+		lines: [
+			"Grocery items can have an image. On Items, tap an item, then tap Add image to pick one, or paste an image's link and tap Get image. The image shows beside the item's name on the grocery list, on Items and in History.",
+			"Items now lists 288 common groceries and household goods, from Apples to Cat Litter, ready to pick when you add to the grocery list or a recipe. Your list stays as it was, and items you already had aren't added again.",
+			'Each of those 288 items comes with a photo, and items you already had with those names got one too, unless they had an image. Change or remove any photo on Items.'
+		]
+	},
+	{
 		version: '1.11',
 		released: '2026-11-05',
 		lines: [
