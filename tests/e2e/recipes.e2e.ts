@@ -759,6 +759,55 @@ test("rates a recipe from its page, shown with the household's average on its ca
 	await expect(cardRating).toHaveCount(0);
 });
 
+/**
+ * Taps the star twice before the page hears back, as with a double tap or on a slow phone
+ * connection: the server saves both taps before the page gets either answer.
+ */
+async function tapTwiceUnanswered(page: Page, star: Locator) {
+	let answered = 0;
+	let release!: () => void;
+	const released = new Promise<void>((resolve) => (release = resolve));
+	await page.route(
+		(url) => url.search === '?/rate',
+		async (route) => {
+			const response = await route.fetch();
+			answered += 1;
+			await released;
+			await route.fulfill({ response });
+		}
+	);
+	await star.click();
+	await star.click();
+	await expect.poll(() => answered).toBe(2);
+	release();
+}
+
+test('keeps what a star did when it is tapped again before the page shows it (MEA-86)', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Omelet' });
+	const ownStars = () =>
+		db.prepare('select stars from dish_ratings where dish_id = ?').pluck().get(dishId);
+	const average = page.locator('.rating .average');
+	const fourStars = page.getByRole('button', { name: '4 stars' });
+
+	// Shown unrated, both taps set 4 stars.
+	await open(page, `/recipes/${dishId}`);
+	await tapTwiceUnanswered(page, fourStars);
+	expect(ownStars()).toBe(4);
+	await expect(average).toHaveText('★ 4 (1)');
+	await expect(fourStars).toHaveAttribute('aria-pressed', 'true');
+
+	// Shown as yours, both taps clear them.
+	await open(page, `/recipes/${dishId}`);
+	await tapTwiceUnanswered(page, fourStars);
+	expect(ownStars()).toBeUndefined();
+	await expect(average).toHaveCount(0);
+	await expect(fourStars).toHaveAttribute('aria-pressed', 'false');
+});
+
 test('lists who rated a recipe, with a removed member as Former member', async ({
 	page,
 	db,

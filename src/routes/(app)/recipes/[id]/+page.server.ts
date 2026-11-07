@@ -21,7 +21,10 @@ const triedSchema = z.object({
 		.transform((value) => value !== undefined)
 });
 
-const rateSchema = z.object({ stars: z.coerce.number().int().min(1).max(5) });
+// 1 to 5 stars, or none, which clears them.
+const rateSchema = z.object({
+	stars: z.union([z.literal('').transform(() => null), z.coerce.number().int().min(1).max(5)])
+});
 
 function dishIdIn(params: { id: string }): number {
 	const dishId = parseRecipeId(params.id);
@@ -66,7 +69,9 @@ export const actions = {
 		return attempt('tried', () => setDishTried(user.householdId, dishId, parsed.data.tried));
 	},
 
-	// Saved as soon as a star is tapped; the current star again clears it (section 7, "Recipe").
+	// Saved as soon as a star is tapped. Each star sends its stars, or none from the one shown as
+	// the person's own, so a tap sent twice saves the same thing twice (section 7, "Recipe";
+	// MEA-86).
 	rate: async ({ locals, params, request }) => {
 		const user = requireHousehold(locals);
 		const dishId = dishIdIn(params);

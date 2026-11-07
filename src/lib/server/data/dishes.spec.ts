@@ -896,17 +896,29 @@ describe('ratings', () => {
 		]);
 	});
 
-	it('clears your rating when you tap your current star again', () => {
+	it('keeps your stars when the same ones come again, as from a tap sent twice (MEA-86)', () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		rateDish(householdId, id, userId, 4);
+		rateDish(householdId, id, userId, 4);
+		expect(getOwnRating(householdId, id, userId)).toBe(4);
+		expect(getDish(householdId, id).rating).toEqual({ average: 4, count: 1 });
+		expect(listDishRatings(householdId, id)).toEqual([{ name: nameOf(userId), stars: 4 }]);
+	});
+
+	it("clears your rating, and nobody else's, when no stars come", () => {
 		const id = makeDish(householdId, recipe('Omelet'));
 		const sam = addMember('sam');
 		rateDish(householdId, id, userId, 4);
 		rateDish(householdId, id, sam, 4);
-		rateDish(householdId, id, userId, 4);
+		rateDish(householdId, id, userId, null);
 		expect(getOwnRating(householdId, id, userId)).toBeNull();
 		expect(getOwnRating(householdId, id, sam)).toBe(4);
 		expect(getDish(householdId, id).rating).toEqual({ average: 4, count: 1 });
 		expect(listDishRatings(householdId, id)).toEqual([{ name: 'sam', stars: 4 }]);
-		rateDish(householdId, id, sam, 4);
+		// Cleared again, as from a tap sent twice, it stays cleared (MEA-86).
+		rateDish(householdId, id, userId, null);
+		expect(getOwnRating(householdId, id, userId)).toBeNull();
+		rateDish(householdId, id, sam, null);
 		expect(getDish(householdId, id).rating).toBeNull();
 		expect(listDishRatings(householdId, id)).toEqual([]);
 	});
@@ -1027,6 +1039,7 @@ describe('households', () => {
 		expectHttpError(() => setDishPhoto(other.householdId, id, KEY_A, NOW), 404);
 		expectHttpError(() => setDishTried(other.householdId, id, true), 404);
 		expectHttpError(() => rateDish(other.householdId, id, other.userId, 5), 404);
+		expectHttpError(() => rateDish(other.householdId, id, other.userId, null), 404);
 		expect(getDish(householdId, id)).toMatchObject({
 			name: 'Pound cake',
 			tried: false,

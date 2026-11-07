@@ -994,8 +994,11 @@ rating, prep, cook and total time, and a servings control (plus and minus). Trie
 it's tapped, with no Save button, and is shared by the household (6.11); Edit recipe leaves it
 as it was, and it works the same on archived recipes. Your rating is five stars under Tried
 it, your own and nobody else's: tapping a star saves it right away, and tapping your current
-star again clears it. Beside the stars is the household's average, rounded to the nearest half
-star, with the number of ratings, such as "★ 4.5 (2)". A removed member's ratings stay in it.
+star again clears it. Each tap goes by the stars shown when it's made, so tapping a star twice
+before the page shows the first tap, as with a double tap or on a slow connection, keeps that
+rating instead of clearing it (MEA-86). Beside the stars is the household's average, rounded
+to the nearest half star, with the number of ratings, such as "★ 4.5 (2)". A removed member's
+ratings stay in it.
 Under the stars, each rating is listed with the name of the person who gave it and their stars,
 such as "Sam ★★★★☆", yours included (MEA-32): members by name ignoring case, then a removed
 member's ratings, each as "Former member" with its stars and nothing that says who they were.
