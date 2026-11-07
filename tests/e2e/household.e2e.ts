@@ -30,9 +30,14 @@ test('sets up a household on first sign-in', async ({ page, db, context, baseURL
 		.get(userId) as { id: number };
 	expect(household).toMatchObject({ default_servings: 3, time_zone: 'America/Denver' });
 
-	// Its catalog starts with the standard items, ready to pick, and the list is empty (6.13).
+	// Its catalog starts with the standard items, ready to pick, and the list is empty (6.13),
+	// each with a copy of its image of its own (6.14).
 	const items = db.prepare('select count(*) from items where household_id = ?').pluck();
 	expect(items.get(household.id)).toBe(288);
+	const images = db
+		.prepare('select count(distinct photo_key) from items where household_id = ?')
+		.pluck();
+	expect(images.get(household.id)).toBe(288);
 	// Past the first-time tour, which would cover the list, as the person fixture is.
 	db.prepare('update users set tour_seen = 0 where id = ?').run(userId);
 	await open(page, '/groceries');
@@ -44,7 +49,14 @@ test('sets up a household on first sign-in', async ({ page, db, context, baseURL
 	await add.getByRole('button', { name: 'Add' }).click();
 	await expect(page.getByRole('button', { name: /^Bananas/ })).toBeVisible();
 	await page.goto('/groceries/items');
-	await expect(page.getByRole('button', { name: /^Zucchini/ })).toBeVisible();
+	const zucchini = page.getByRole('button', { name: /^Zucchini/ });
+	await expect(zucchini).toBeVisible();
+	await expect(zucchini.locator('img')).toHaveAttribute('src', /^\/photos\/[0-9a-f]{32}-thumb\.jpg$/);
+	// Images load as they scroll into view, and Zucchini is last.
+	await zucchini.scrollIntoViewIfNeeded();
+	await expect
+		.poll(() => zucchini.locator('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
+		.toBe(400);
 });
 
 test('manages stores and invites', async ({ page, person: _ }) => {

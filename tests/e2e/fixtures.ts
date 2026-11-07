@@ -119,7 +119,11 @@ export function addStore(db: Database.Database, householdId: number, name: strin
 	);
 }
 
-/** The household's item with this name (ignoring case), added if it's new. */
+/**
+ * The household's item with this name (ignoring case), added if it's new. A new one has been
+ * checked for a standard image and has none (design 6.14), so a save that checks the household's
+ * items leaves it as it is.
+ */
 export function addItem(
 	db: Database.Database,
 	householdId: number,
@@ -131,12 +135,13 @@ export function addItem(
 		.pluck()
 		.get(householdId, name) as number | undefined;
 	if (existing !== undefined) return existing;
+	const now = Date.now();
 	return Number(
 		db
 			.prepare(
-				'insert into items (household_id, name, default_store_id, always_have, created_at) values (?, ?, ?, ?, ?)'
+				'insert into items (household_id, name, default_store_id, always_have, created_at, standard_image_checked_at) values (?, ?, ?, ?, ?, ?)'
 			)
-			.run(householdId, name, fields.defaultStoreId ?? null, fields.alwaysHave ? 1 : 0, Date.now())
+			.run(householdId, name, fields.defaultStoreId ?? null, fields.alwaysHave ? 1 : 0, now, now)
 			.lastInsertRowid
 	);
 }

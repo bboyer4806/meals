@@ -188,7 +188,8 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
    for before switching traffic to a new version, and the nightly backup job
    (section 4.4).
 4. **Dockerfile:** a build stage (install and build) and a runtime stage (production
-   dependencies, build output, migrations and the backup script). It installs with
+   dependencies, build output, migrations, the standard items' photos (6.14) and the backup
+   script). It installs with
    `npm ci --ignore-scripts`, since no dependency needs its install script (better-sqlite3
    ships prebuilt binaries). It runs as the `node` user and exposes port 3000. In Phase 2 it
    also sets `BODY_SIZE_LIMIT=5M` so the app accepts photo uploads (adapter-node's default is
@@ -318,6 +319,7 @@ src/lib/server/
                           householdId first, except whats-new (a person's seen
                           release), which takes the person's id.
   standard-items.ts       the items every household's catalog starts with (6.13)
+  standard-images.ts      give items their standard images (6.14)
   photos.ts               save, delete and serve photos and item images, and get the image
                           an image link points at
   jira.ts                 create a feedback ticket in Jira and attach its screenshot
@@ -325,6 +327,7 @@ src/lib/server/
   recipe-page.ts          fetch a recipe's web page and read its JSON-LD
 src/routes/               pages and form actions; database access only through data/
 drizzle/                  generated SQL migrations
+standard-images/          the standard items' photos and their credits (6.14)
 scripts/backup.js         the nightly backup job
 ```
 
@@ -363,7 +366,9 @@ household"), `created_at` (E5).
 **items:** `name` (unique per household, ignoring case), `notes` (brand, size; Q25),
 `default_store_id` (the store it was last ordered or bought from; Q17), `always_have`
 (addition 2.2.1), `photo_key` (its image, optional, stored as a recipe's photo is and unique to
-the item; MEA-50, section 7, "Item images"), `archived_at`, `created_at` (Q1).
+the item; MEA-50, section 7, "Item images"), `standard_image_checked_at` (when it was checked
+for a standard image, which happens once; empty until then; 6.14), `archived_at`, `created_at`
+(Q1).
 
 **grocery_needs** (lines on the list): `item_id`, `quantity` (more than 0), `unit`
 (optional free text such as "bags"; Q16), `store_id` (required unless the status is To
@@ -705,8 +710,42 @@ no categories (Q23).
   change to the list reaches only households set up after it. If adding them fails when the app
   starts, that household's catalog stays as it was and the app doesn't start, as with a failed
   migration; the next start tries again.
-- They're ordinary items: listed on Items, suggested in the add bar and for recipe ingredients,
-  and renamed, given notes or an image, and archived like any other.
+- They start with a photo (6.14), and they're ordinary items: listed on Items, suggested in the
+  add bar and for recipe ingredients, and renamed, given notes or another image, and archived like
+  any other.
+
+### 6.14 Standard images
+
+Each standard item (6.13) has a photo, so people can tell common groceries apart at a glance
+(MEA-62).
+
+- The photos are in `standard-images/`, packaged with the app, so nothing is searched for or
+  downloaded while it runs. Each standard item has a JPEG of up to 800 px square and a 400 px
+  thumbnail, as Items stores an image (7, Item images), named after the item without case, accents
+  or punctuation: `jalapenos.jpg` and `jalapenos-thumb.jpg` for Jalapeños. They're photos anyone
+  may reuse without credit: CC0 or public domain photos from Wikimedia Commons and Openverse, many
+  by US agencies such as the National Cancer Institute and USDA, and Pixabay photos under the
+  Pixabay Content License. Each was chosen to show the item plainly and without a brand where
+  possible, then cropped square and resized. `standard-images/credits.csv` records each one's
+  source, author and license.
+- An item is checked for a standard image once, and `standard_image_checked_at` records when. If
+  its name is a standard item's, matched ignoring case as item names are (2.3), and it has no
+  image, it gets a copy of that photo of its own, stored as an image picked on Items is: shown
+  only to its household, backed up, and changed or removed on Items like any other (4.4, 4.5). An
+  archived item counts, and stays archived (6.10). An item with an image keeps it.
+- Items are checked right after a save that makes them: setting up a household (6.1, 6.13), the
+  add bar (6.4), and saving or importing recipes (7). The save comes first and stays done. When the
+  app starts, every item not yet checked is checked: every item when the photos came, one made by
+  the old version during a deploy (4.2), and one whose check failed.
+- Checking stops at a failure, such as a full disk: the items checked so far keep their copies,
+  the copy being stored is deleted, and the rest are checked at the household's next such save or
+  the next start. After a save, the failure shows as an error, although the save stays done. A
+  failure when the app starts stops it from starting, as a failed migration does (6.13). The app also doesn't start if a standard item's photo is missing from
+  `standard-images/`, as when it wasn't packaged with the app.
+- Since each item is checked once, nothing gives it an image afterward: an image removed stays
+  removed, a replaced one stays, and renaming an item keeps its image, or its lack of one, even
+  when the new name is a standard item's. A new item with a standard name gets the photo, such as
+  after the standard item was renamed. A change to the photos reaches only items checked after it.
 
 ## 7. Screens
 
@@ -799,7 +838,7 @@ fewer, and Delete. An item's notes (brand, size) show under its name, and its im
 one, beside it (Item images, below).
 
 **Item images.** An item can have one image, so the household can tell items apart at a glance
-(MEA-50). An item's sheet on Items has Image above Name and Notes. Add image picks a photo or file
+(MEA-50). A standard item starts with a photo (6.14). An item's sheet on Items has Image above Name and Notes. Add image picks a photo or file
 on the device. Image link, with Get image, has the server download the image a link points at
 (4.5), such as one copied with a browser's Copy image address. Either way the phone resizes it as
 it does a recipe's photo (2.3), to at most 1600 px with a 400 px thumbnail, and the sheet shows

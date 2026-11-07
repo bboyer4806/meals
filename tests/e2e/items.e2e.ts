@@ -423,6 +423,41 @@ test('keeps the image of an archived item, and shows it once restored', async ({
 	expect(imageKey(db, milk)).toBe(key);
 });
 
+test('gives a new item with a standard name a copy of its standard image', async ({
+	page,
+	db,
+	person
+}) => {
+	await open(page, '/groceries');
+	const add = page.getByRole('form', { name: 'Add to the list' });
+	for (const name of ['bananas', 'Dragon fruit']) {
+		await add.getByRole('combobox', { name: 'Item' }).fill(name);
+		await add.getByRole('button', { name: 'Add' }).click();
+		await expect(itemRow(page, name)).toBeVisible();
+	}
+
+	// Matched ignoring case, and shown like any image (design 6.14).
+	const thumb = itemRow(page, 'bananas').locator('img');
+	const key = await thumbKey(thumb);
+	expect(await loadedWidth(thumb)).toBe(400);
+	await expect(itemRow(page, 'Dragon fruit').locator('img')).toHaveCount(0);
+	const bananas = db
+		.prepare('select id from items where household_id = ? and name = ?')
+		.pluck()
+		.get(person.householdId, 'bananas') as number;
+	expect(imageKey(db, bananas)).toBe(key);
+
+	// It's the household's own, removed on Items like any other.
+	await open(page, '/groceries/items');
+	await itemRow(page, 'bananas').click();
+	await imageGroup(page).getByRole('button', { name: 'Remove image' }).click();
+	await sheet(page).getByRole('button', { name: 'Save' }).click();
+	await expect(sheet(page)).toHaveCount(0);
+	await expect(itemRow(page, 'bananas').locator('img')).toHaveCount(0);
+	expect(imageKey(db, bananas)).toBeNull();
+	expect(existsSync(photoFile(key, 'full'))).toBe(false);
+});
+
 test.describe('on a computer', () => {
 	test.use({ isMobile: false, hasTouch: false, viewport: { width: 1280, height: 800 } });
 

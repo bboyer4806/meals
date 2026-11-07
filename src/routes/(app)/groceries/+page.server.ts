@@ -20,6 +20,7 @@ import {
 import { listStores } from '#lib/server/data/stores.ts';
 import { needsTour, recordTourSeen } from '#lib/server/data/tour.ts';
 import { attempt, id, idList, nameField, optionalText, parseForm, quantity } from '#lib/server/forms.ts';
+import { assignStandardImages } from '#lib/server/standard-images.ts';
 
 type LineGroup = {
 	key: string;
@@ -110,13 +111,17 @@ export const actions = {
 		const parsed = parseForm(addSchema, await request.formData(), 'add');
 		if ('failure' in parsed) return parsed.failure;
 		const input = parsed.data;
-		return attempt('add', () => {
-			const result = addNeed(user.householdId, input, Date.now());
+		const now = Date.now();
+		const added = attempt('add', () => {
+			const result = addNeed(user.householdId, input, now);
 			const asked = { itemName: input.itemName, unit: input.unit, store: String(input.store) };
 			return result.kind === 'added' || result.kind === 'updated'
 				? { action: 'add', done: true }
 				: { action: 'add', prompt: { ...result, asked: { ...asked, quantity: input.quantity } } };
 		});
+		// A new item gets its standard image (design 6.14).
+		await assignStandardImages(user.householdId, now);
+		return added;
 	},
 
 	receive: async ({ locals, request }) => {
