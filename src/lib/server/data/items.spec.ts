@@ -109,3 +109,16 @@ describe("an item's image", () => {
 		expect(Object.fromEntries(history.map((l) => [l.itemName, l.itemPhotoKey]))).toEqual(images);
 	});
 });
+
+describe('the Items page', () => {
+	it("sorts by name ignoring case, so Éclairs sorts with the E's (MEA-88)", () => {
+		for (const name of ['Zucchini', 'Éclairs', 'apples', 'Eggs']) createItem(householdId, name, 0);
+		expect(listCatalog(householdId, false, '').map((item) => item.name)).toEqual([
+			'apples',
+			'Éclairs',
+			'Eggs',
+			'Milk',
+			'Zucchini'
+		]);
+	});
+});
