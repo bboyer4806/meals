@@ -62,6 +62,9 @@ export const quantity = z.coerce
 
 export const emailField = z.string().trim().toLowerCase().pipe(z.email('Enter an email address'));
 
+/** A party list's name, as it's created or renamed (design 6.15). */
+export const partyListName = nameField(60, 'a name');
+
 export const householdSettings = z.object({
 	name: nameField(60, 'a household name'),
 	defaultServings: z.coerce

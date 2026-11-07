@@ -1,4 +1,4 @@
-import { normalizeName } from './text.ts';
+import { foldCase, normalizeName } from './text.ts';
 
 // Known units and how much each holds (design 6.5), and the ranges that scaled amounts are
 // shown in (6.6). Anything else is a custom unit, which scales but doesn't convert.
@@ -94,6 +94,23 @@ export function unitLabel(unit: string, amount: number): string {
 /** An amount in tsp (volume) or oz (weight). */
 export function toBase(amount: number, unit: KnownUnit): number {
 	return amount * unit.size;
+}
+
+/**
+ * What an amount in one unit is multiplied by to give the same amount in another, for units as
+ * typed or stored, where no unit is a count: 1 between the same unit, ignoring case and spelling
+ * ("lbs" is "lb"), the ratio of their sizes between known units of one kind (6.5), and undefined
+ * between any others, which don't convert. Party lists combine grocery quantities with it (6.15).
+ */
+export function conversionFactor(from: string | null, to: string | null): number | undefined {
+	const fromUnit = from === null ? null : normalizeUnit(from);
+	const toUnit = to === null ? null : normalizeUnit(to);
+	if (fromUnit === null || toUnit === null) return fromUnit === toUnit ? 1 : undefined;
+	if (foldCase(fromUnit) === foldCase(toUnit)) return 1;
+	const fromKnown = knownUnit(fromUnit);
+	const toKnown = knownUnit(toUnit);
+	if (!fromKnown || !toKnown || fromKnown.kind !== toKnown.kind) return undefined;
+	return toBase(1, fromKnown) / toKnown.size;
 }
 
 /**

@@ -1,10 +1,13 @@
 import {
 	addDays,
 	addDinner,
+	addPartyList,
 	addPhotoFiles,
 	addRecipe,
 	addStore,
+	expect,
 	makeJpeg,
+	open,
 	sundayOf,
 	test,
 	today,
@@ -81,6 +84,26 @@ test('screens', async ({ page, db, person }) => {
 	await shot('item-sheet');
 	await page.goto('/groceries/history');
 	await shot('history');
+
+	// A party list with a thing on the grocery list, one bought and the rest still to add.
+	const party = addPartyList(db, person.householdId, 'Birthday party', [
+		{ item: 'Milk', quantity: 1, unit: 'gal' },
+		{ item: 'Balloons', quantity: 12 },
+		{ item: 'Paper plates', quantity: 2, unit: 'packs' },
+		{ item: 'Ice cream', quantity: 2, unit: 'quarts' }
+	]);
+	addPartyList(db, person.householdId, 'Game night');
+	await open(page, `/groceries/parties/${party}`);
+	await page.getByRole('button', { name: 'Add to Groceries: Milk' }).click();
+	await page.getByRole('button', { name: 'Mark bought: Balloons' }).click();
+	await expect(page.getByRole('button', { name: 'Undo bought: Balloons' })).toBeVisible();
+	await expect(page.getByRole('listitem').filter({ hasText: 'Milk' })).toContainText('On Groceries');
+	await shot('party-list');
+	await page.emulateMedia({ colorScheme: 'dark' });
+	await shot('party-list-dark');
+	await page.emulateMedia({ colorScheme: 'light' });
+	await page.goto('/groceries/parties');
+	await shot('party-lists');
 	await page.goto('/household');
 	await shot('household');
 	await page.context().clearCookies();

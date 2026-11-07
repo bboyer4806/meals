@@ -146,6 +146,32 @@ export function addItem(
 	);
 }
 
+/**
+ * Writes a party list straight into the database, adding its items, and returns its id. Nothing
+ * on it is on the grocery list or bought yet.
+ */
+export function addPartyList(
+	db: Database.Database,
+	householdId: number,
+	name: string,
+	things: { item: string; quantity: number; unit?: string | null }[] = []
+): number {
+	const now = Date.now();
+	const listId = Number(
+		db
+			.prepare('insert into party_lists (household_id, name, created_at) values (?, ?, ?)')
+			.run(householdId, name, now).lastInsertRowid
+	);
+	const addThing = db.prepare(
+		'insert into party_items (household_id, party_list_id, item_id, quantity, unit, created_at) values (?, ?, ?, ?, ?, ?)'
+	);
+	for (const thing of things) {
+		const itemId = addItem(db, householdId, thing.item);
+		addThing.run(householdId, listId, itemId, thing.quantity, thing.unit ?? null, now);
+	}
+	return listId;
+}
+
 export type RecipeSeed = {
 	name: string;
 	servings?: number;

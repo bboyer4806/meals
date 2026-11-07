@@ -56,6 +56,26 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'‹ Groceries goes back to the list.'
 		]
 	},
+	'/(app)/groceries/parties': {
+		title: 'Party lists',
+		points: [
+			"Shopping lists for parties, kept apart from your household's grocery list.",
+			'Type a name and tap New list to start one, like Birthday party. Tap a list to open it.',
+			'Each list shows how many of its things are bought.',
+			'‹ Groceries goes back to the grocery list.'
+		]
+	},
+	'/(app)/groceries/parties/[id]': {
+		title: 'Party list',
+		points: [
+			'Add the food, drinks, decorations and supplies the party needs, each with an amount and unit.',
+			'Add to Groceries puts a thing on the grocery list, on the same line as that item when the units match or convert. Add all to Groceries adds everything not there yet.',
+			'Tap the circle when you have it, and tap it again to undo. Things checked off on the grocery list are checked off here too, party lists first.',
+			'Tap a thing to change how much the party needs or to remove it. The grocery list changes to match.',
+			'Edit renames the list or deletes it.',
+			'‹ Party lists goes back to your lists.'
+		]
+	},
 	'/(app)/recipes': {
 		title: 'Recipes',
 		points: [

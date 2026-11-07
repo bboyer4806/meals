@@ -1,5 +1,15 @@
 import type { Page } from '@playwright/test';
-import { addDinner, addRecipe, adminId, expect, open, signInAs, test, today } from './fixtures.ts';
+import {
+	addDinner,
+	addPartyList,
+	addRecipe,
+	adminId,
+	expect,
+	open,
+	signInAs,
+	test,
+	today
+} from './fixtures.ts';
 
 // Help (design 7, "Help"): the header button on every screen after household setup, and the
 // sheet explaining the screen it's opened on.
@@ -10,10 +20,13 @@ const sheet = (page: Page, title: string) => page.getByRole('dialog', { name: `H
 
 test('each screen opens its own help', async ({ page, db, context, baseURL, person }) => {
 	const recipeId = addRecipe(db, person.householdId, { name: 'Pancakes' });
+	const partyListId = addPartyList(db, person.householdId, 'Birthday');
 	const screens: [path: string, title: string][] = [
 		['/groceries', 'Grocery list'],
 		['/groceries/history', 'History'],
 		['/groceries/items', 'Items'],
+		['/groceries/parties', 'Party lists'],
+		[`/groceries/parties/${partyListId}`, 'Party list'],
 		['/recipes', 'Recipes'],
 		['/recipes/new', 'New recipe'],
 		['/recipes/import', 'Import recipes'],
