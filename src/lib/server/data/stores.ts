@@ -1,18 +1,21 @@
 import { error } from '@sveltejs/kit';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.ts';
 import { stores } from '../db/schema.ts';
 
 export type Store = { id: number; name: string; archivedAt: number | null };
 
-/** Every store in the household, archived ones included, sorted by name. */
+/**
+ * Every store in the household, archived ones included, sorted by name in code rather than in
+ * SQL, so "Épicerie" sorts with the E's (MEA-88).
+ */
 export function listStores(householdId: number): Store[] {
 	return db()
 		.select({ id: stores.id, name: stores.name, archivedAt: stores.archivedAt })
 		.from(stores)
 		.where(eq(stores.householdId, householdId))
-		.orderBy(asc(sql`lower(${stores.name})`))
-		.all();
+		.all()
+		.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function getStore(householdId: number, storeId: number): Store {

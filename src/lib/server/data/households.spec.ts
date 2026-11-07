@@ -20,9 +20,11 @@ import {
 	createHousehold,
 	createInvite,
 	getHousehold,
+	listHouseholds,
 	listInvites,
 	listMembers,
-	removeMember
+	removeMember,
+	updateHousehold
 } from './households.ts';
 import {
 	createItem,
@@ -93,6 +95,25 @@ describe('households', () => {
 		// A page that still shows them.
 		removeMember(householdId, userId, other.id);
 		expect(listMembers(householdId).map((m) => m.id)).toEqual([userId]);
+	});
+
+	it("sorts members by name ignoring case, so Émile sorts with the E's (MEA-88)", () => {
+		const { householdId, userId } = makeHousehold();
+		db().update(users).set({ name: 'Zoe' }).where(eq(users.id, userId)).run();
+		for (const [i, name] of ['Émile', 'dana', 'Pat'].entries()) {
+			db()
+				.insert(users)
+				.values({ householdId, googleSub: `g${i}`, email: `${i}@example.com`, name, createdAt: 0 })
+				.run();
+		}
+		expect(listMembers(householdId).map((m) => m.name)).toEqual(['dana', 'Émile', 'Pat', 'Zoe']);
+	});
+
+	it("sorts the admin's list of households by name, so Évora sorts with the E's (MEA-88)", () => {
+		for (const name of ['Zhou', 'Évora', 'adams', 'Fischer']) {
+			updateHousehold(makeHousehold().householdId, { ...settings, name });
+		}
+		expect(listHouseholds().map((h) => h.name)).toEqual(['adams', 'Évora', 'Fischer', 'Zhou']);
 	});
 });
 

@@ -74,13 +74,14 @@ export function updateHousehold(householdId: number, settings: HouseholdSettings
 	db().update(households).set(settings).where(eq(households.id, householdId)).run();
 }
 
+/** Sorted by name in code rather than in SQL, so "Émile" sorts with the E's (MEA-88). */
 export function listMembers(householdId: number) {
 	return db()
 		.select({ id: users.id, name: users.name, email: users.email })
 		.from(users)
 		.where(eq(users.householdId, householdId))
-		.orderBy(asc(sql`lower(${users.name})`))
-		.all();
+		.all()
+		.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -175,7 +176,10 @@ export function cancelInvite(householdId: number | null, inviteId: number): void
 		.run();
 }
 
-/** For the admin page: names and member emails only, never household data. */
+/**
+ * For the admin page: names and member emails only, never household data. Sorted by name in code
+ * rather than in SQL, so "Évora" sorts with the E's (MEA-88).
+ */
 export function listHouseholds() {
 	return db()
 		.select({
@@ -187,6 +191,6 @@ export function listHouseholds() {
 		.from(households)
 		.leftJoin(users, eq(users.householdId, households.id))
 		.groupBy(households.id)
-		.orderBy(asc(sql`lower(${households.name})`))
-		.all();
+		.all()
+		.sort((a, b) => a.name.localeCompare(b.name));
 }
