@@ -1077,7 +1077,10 @@ count too, so a page of millions of either stops there. Lists, @graphs and secti
 up to 32 deep and no further. The page is read in
 the charset its Content-Type names, else the one a meta element in its first 1,024 bytes names,
 else UTF-8, so a page in windows-1252 or ISO-8859-1 keeps its é, ° and ½ (MEA-75). Import asks
-for the page uncompressed, and unzips one its server gzips anyway. Fields the page leaves
+for the page uncompressed, and unzips one its server gzips anyway. JSON-LD that leaves line
+breaks, tabs or other control characters raw in its text, as a page that pastes text into a
+template can, is read as if they were escaped, a line break as `\n` and a tab as `\t`, so steps
+written as lines of text still split at each line break (MEA-90). Fields the page leaves
 out get what a new recipe starts with, such as the household's usual servings. The photo, tags
 and notes are never imported: Import fills in the editor around them, so a photo taken and tags
 or notes typed before it stay (MEA-205). When anything else has been typed or changed since New

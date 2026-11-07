@@ -155,6 +155,32 @@ describe('the import action', () => {
 		});
 	});
 
+	it('reads JSON-LD that leaves line breaks and tabs raw in its text (MEA-90)', async () => {
+		// As a theme writes it when it pastes the recipe's text into its template.
+		const script = [
+			'<script type="application/ld+json">{',
+			'\t"@type": "Recipe",',
+			'\t"name": "Apple\tpie",',
+			'\t"recipeIngredient": ["6 apples"],',
+			'\t"recipeInstructions": "Slice the apples.\nBake for an hour."',
+			'}</script>'
+		].join('\n');
+		const link = 'https://recipes.example/pie';
+		servePages({ [link]: { status: 200, body: `<!doctype html><head>${script}</head>` } });
+		expect(await importLink(link)).toEqual({
+			action: 'import',
+			values: {
+				...newRecipeValues(4),
+				name: 'Apple pie',
+				// Each line break still starts a step.
+				steps: 'Slice the apples.\nBake for an hour.',
+				source: link,
+				rows: [{ kind: 'ingredient', amount: '6', unit: '', item: 'apples', prepNote: '' }]
+			},
+			leftOut: []
+		});
+	});
+
 	it('says what it left out of a page with more than the editor takes (MEA-84)', async () => {
 		const feast = {
 			'@type': 'Recipe',
