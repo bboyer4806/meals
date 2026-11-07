@@ -369,12 +369,13 @@ export async function importRecipeFile(
 			// saves' own transactions are savepoints in this one.
 			let saved;
 			if (duplicate?.choice === 'replace' && dishId !== undefined) {
-				// The details change, and the name stays as it is in Recipes.
-				saved = updateDish(householdId, dishId, { ...recipe.data, name: duplicate.name }, [], now);
+				// The details change, and the name and photo stay as they are in Recipes.
+				const data = { ...recipe.data, name: duplicate.name };
+				saved = updateDish(householdId, dishId, data, 'keep', [], now);
 				replaced += 1;
 			} else {
 				const name = duplicate ? normalizeName(duplicate.rename) : recipe.data.name;
-				saved = createDish(householdId, { ...recipe.data, name }, [], now);
+				saved = createDish(householdId, { ...recipe.data, name }, null, [], now);
 				imported += 1;
 			}
 			if (saved.kind !== 'saved') throw new Error(`Row ${recipe.row} couldn't be saved`);

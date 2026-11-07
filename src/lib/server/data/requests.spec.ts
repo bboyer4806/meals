@@ -163,7 +163,7 @@ describe('addRequest', () => {
 
 	it('keeps the link and the name as typed after the dish is renamed or archived', () => {
 		ask('lasagna');
-		updateDish(householdId, lasagna, recipe('Veggie lasagna'), [], NOW);
+		updateDish(householdId, lasagna, recipe('Veggie lasagna'), 'keep', [], NOW);
 		setDishArchived(householdId, lasagna, true, NOW);
 		expect(listRequests(householdId)[0]).toMatchObject({
 			name: 'lasagna',
@@ -251,7 +251,7 @@ describe('restoreAndAddRequest', () => {
 
 describe('requestDish', () => {
 	it('asks for the dish as it is named now, from the person, with no note', () => {
-		updateDish(householdId, lasagna, recipe('Veggie lasagna'), [], NOW);
+		updateDish(householdId, lasagna, recipe('Veggie lasagna'), 'keep', [], NOW);
 		requestDish(householdId, userId, lasagna, NOW);
 		expect(db().select().from(dishRequests).all()).toEqual([
 			{
@@ -486,7 +486,7 @@ describe('listCompletedRequests', () => {
 		const sam = addMember('Sam');
 		ask('lasagna', 'Extra cheese', NOW, sam);
 		completeRequest(householdId, listRequests(householdId)[0]!.id, NOW);
-		updateDish(householdId, lasagna, recipe('Veggie lasagna'), [], NOW);
+		updateDish(householdId, lasagna, recipe('Veggie lasagna'), 'keep', [], NOW);
 		setDishArchived(householdId, lasagna, true, NOW);
 		db().update(users).set({ name: 'Samantha' }).where(eq(users.id, sam)).run();
 		expect(listCompletedRequests(householdId)).toEqual([

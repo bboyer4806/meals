@@ -45,12 +45,19 @@ export type DishInput = {
 };
 
 /**
- * `taken` names the dish that already has the name, so the page can offer to restore it.
- * `archived` names all the archived items the recipe would start using, so the page can ask
- * before restoring them (6.10).
+ * What saving over a dish does to its photo: `keep` leaves it as it is, and otherwise the dish
+ * takes `photoKey`, a new photo's key (photos.ts), or null for no photo.
+ */
+export type PhotoChange = 'keep' | { photoKey: string | null };
+
+/**
+ * `replacedPhotoKey` is the photo the save replaced or removed, whose files the caller deletes
+ * once the save has committed, or null when there was none or it didn't change. `taken` names the
+ * dish that already has the name, so the page can offer to restore it. `archived` names all the
+ * archived items the recipe would start using, so the page can ask before restoring them (6.10).
  */
 export type DishSaveResult =
-	| { kind: 'saved'; id: number }
+	| { kind: 'saved'; id: number; replacedPhotoKey: string | null }
 	| { kind: 'taken'; archived: boolean; id: number }
 	| { kind: 'archived'; items: { id: number; name: string }[] };
 
@@ -193,16 +200,20 @@ function newlyUsedArchivedItems(
 }
 
 /**
- * Writes the dish and replaces its tags and ingredients, unless it would start using an archived
- * item that isn't in `restoreItemIds`. Callers run it in a transaction.
+ * Writes the dish with its photo and replaces its tags and ingredients, unless it would start
+ * using an archived item that isn't in `restoreItemIds`. `dish` is the dish saved over, as it was
+ * before, or null for a new one. Callers run it in a transaction, so the details and the photo are
+ * saved together or not at all (MEA-87).
  */
 function save(
 	householdId: number,
-	dishId: number | null,
+	dish: { id: number; photoKey: string | null } | null,
 	input: DishInput,
+	photo: PhotoChange,
 	restoreItemIds: number[],
 	now: number
 ): DishSaveResult {
+	const dishId = dish === null ? null : dish.id;
 	const taken = findDishByName(householdId, input.name);
 	if (taken && taken.id !== dishId) {
 		return { kind: 'taken', archived: taken.archivedAt !== null, id: taken.id };
@@ -217,7 +228,8 @@ function save(
 	}
 	for (const itemId of archived.keys()) setItemArchived(householdId, itemId, false, now);
 
-	// Listed one by one, so nothing else in the input (a photo key, say) is ever written.
+	// Listed one by one, so nothing else in the input (a photo key, say) is ever written. The
+	// photo comes from `photo` instead.
 	const fields = {
 		name: input.name,
 		servings: input.servings,
@@ -229,7 +241,8 @@ function save(
 		calories: input.calories,
 		proteinG: input.proteinG,
 		carbsG: input.carbsG,
-		fatG: input.fatG
+		fatG: input.fatG,
+		...(photo === 'keep' ? {} : { photoKey: photo.photoKey })
 	};
 
 	let id: number;
@@ -270,37 +283,41 @@ function save(
 	}));
 	if (ingredientRows.length > 0) db().insert(dishIngredients).values(ingredientRows).run();
 
-	return { kind: 'saved', id };
+	const before = dish === null ? null : dish.photoKey;
+	const replacedPhotoKey = photo === 'keep' || photo.photoKey === before ? null : before;
+	return { kind: 'saved', id, replacedPhotoKey };
 }
 
 /**
- * `restoreItemIds` are the archived items the person agreed to restore. Ids of items the recipe
- * doesn't start using are ignored (6.10).
+ * Saves a new dish with the photo `photoKey` (photos.ts), or none for null. `restoreItemIds` are
+ * the archived items the person agreed to restore. Ids of items the recipe doesn't start using
+ * are ignored (6.10).
  */
 export function createDish(
 	householdId: number,
 	input: DishInput,
+	photoKey: string | null,
 	restoreItemIds: number[],
 	now: number
 ): DishSaveResult {
-	return transaction(() => save(householdId, null, input, restoreItemIds, now));
+	return transaction(() => save(householdId, null, input, { photoKey }, restoreItemIds, now));
 }
 
 /**
- * `restoreItemIds` are the archived items the person agreed to restore. Ids of items the recipe
- * doesn't start using are ignored (6.10).
+ * Saves over a dish, changing its photo as `photo` says. `restoreItemIds` are the archived items
+ * the person agreed to restore. Ids of items the recipe doesn't start using are ignored (6.10).
  */
 export function updateDish(
 	householdId: number,
 	dishId: number,
 	input: DishInput,
+	photo: PhotoChange,
 	restoreItemIds: number[],
 	now: number
 ): DishSaveResult {
-	return transaction(() => {
-		findDish(householdId, dishId);
-		return save(householdId, dishId, input, restoreItemIds, now);
-	});
+	return transaction(() =>
+		save(householdId, findDish(householdId, dishId), input, photo, restoreItemIds, now)
+	);
 }
 
 /** Archiving only hides a dish from lists and pickers; everything using it keeps working (6.10). */
@@ -405,23 +422,6 @@ function ratingTotals(householdId: number) {
 /** The joined totals, which are empty for a dish nobody has rated. */
 function ratingOf(average: number | null, count: number | null): DishRating | null {
 	return average === null || count === null ? null : { average, count };
-}
-
-/**
- * Sets or clears the photo. Returns the previous key, so the caller can delete its files, or
- * null when there was none or it didn't change.
- */
-export function setDishPhoto(
-	householdId: number,
-	dishId: number,
-	photoKey: string | null,
-	now: number
-): string | null {
-	return transaction(() => {
-		const previous = findDish(householdId, dishId).photoKey;
-		db().update(dishes).set({ photoKey, updatedAt: now }).where(eq(dishes.id, dishId)).run();
-		return previous === photoKey ? null : previous;
-	});
 }
 
 export function getDish(householdId: number, dishId: number): DishDetail {
