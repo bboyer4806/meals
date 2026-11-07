@@ -11,10 +11,11 @@
 	// matches no item offers "Add as a new item" (design 6.4). The recipe editor turns off
 	// `required`, since a blank ingredient row is left out rather than refused. The dinner
 	// editor suggests dishes, so its new option says "new dish", and it adds a dish picked from
-	// them right away, with its role and Add under the field (MEA-56). The dish request sheet
-	// suggests dishes too, with the name's limit warning under the field, so they show in the
-	// sheet rather than over its Note and Request (6.12, MEA-151). The grocery list's suggestions
-	// show each item's image, if it has one (design 7, Item images).
+	// them right away, with its role and Add under the field (MEA-56). Its suggestions are kept
+	// above the tab bar as they open (MEA-238). The dish request sheet suggests dishes too, with
+	// the name's limit warning under the field, so they show in the sheet rather than over its
+	// Note and Request (6.12, MEA-151). The grocery list's suggestions show each item's image, if
+	// it has one (design 7, Item images).
 	let {
 		items,
 		value = $bindable(''),
@@ -25,6 +26,7 @@
 		noun = 'item',
 		problemId,
 		onchoose,
+		aboveTabs = false,
 		children
 	}: {
 		items: T[];
@@ -42,6 +44,12 @@
 		problemId?: string;
 		/** Called once the field shows an existing item someone chose from the suggestions. */
 		onchoose?: () => void;
+		/**
+		 * With `children`, whether the page scrolls as the suggestions open, just enough to show
+		 * them above the tab bar. Scrolling the page afterwards can still take them under it
+		 * (MEA-238).
+		 */
+		aboveTabs?: boolean;
 		/**
 		 * Shown under the field, such as the button that adds what's typed. The suggestions then
 		 * show in the page under it, about four at a time, so they never cover or move it.
@@ -104,6 +112,15 @@
 		if (document.activeElement !== input) open = false;
 	}
 
+	// Suggestions in the page that would reach the tab bar as they open have the page scroll just
+	// far enough to show them above it, with the field still clear of the header, by the margins
+	// in .above-tabs. When they fit, the page stays put. This reads the options rather than
+	// showList so it runs again each time they change while they show, since what's typed changes
+	// how many show and how tall they are (MEA-238).
+	$effect(() => {
+		if (aboveTabs && open && options.length > 0) combo.scrollIntoView({ block: 'nearest' });
+	});
+
 	async function choose(option: Option) {
 		open = false;
 		active = -1;
@@ -142,7 +159,7 @@
 
 <svelte:window onmousedowncapture={press} onmouseupcapture={release} />
 
-<div class="combo" class:inline bind:this={combo}>
+<div class="combo" class:inline class:above-tabs={aboveTabs} bind:this={combo}>
 	<input
 		bind:this={input}
 		{id}
@@ -240,6 +257,13 @@
 		z-index: auto;
 		max-height: 13rem;
 		overflow-y: auto;
+	}
+
+	/* Scrolled to as the suggestions open, the field stays clear of the sticky header and the
+	   suggestions end just above the tab bar (MEA-238). */
+	.above-tabs {
+		scroll-margin: calc(4rem + env(safe-area-inset-top)) 0
+			calc(var(--tabs-height) + env(safe-area-inset-bottom) + 0.5rem);
 	}
 
 	li {

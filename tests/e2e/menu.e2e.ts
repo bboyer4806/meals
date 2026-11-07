@@ -109,6 +109,40 @@ function suggestionsAt(locator: Locator) {
 	});
 }
 
+/** Where the element's top and bottom edges are on the screen. */
+function edges(locator: Locator) {
+	return locator.evaluate((element) => {
+		const { top, bottom } = element.getBoundingClientRect();
+		return { top, bottom };
+	});
+}
+
+/** How far down the page is scrolled. */
+function scrolled(page: Page) {
+	return page.evaluate(() => window.scrollY);
+}
+
+/**
+ * Plans a dinner three days from today with four dishes, which put its dish field low enough on a
+ * phone that, with the keyboard closed and the page at its top, the five suggestions for "Cr" (four
+ * dishes and "new dish") would reach the feedback button and the tab bar. Returns its date.
+ */
+function addLowDishField(db: Database.Database, householdId: number): string {
+	const date = addDays(today(), 3);
+	addDinner(db, householdId, date, {
+		dishes: [
+			[addRecipe(db, householdId, { name: 'Roast chicken' }), 'main'],
+			[addRecipe(db, householdId, { name: 'Green salad' }), 'side'],
+			[addRecipe(db, householdId, { name: 'Mashed potatoes' }), 'side'],
+			[addRecipe(db, householdId, { name: 'Apple pie' }), 'dessert']
+		]
+	});
+	for (const name of ['Cranberry sauce', 'Creamed corn', 'Crispy potatoes', 'Croissants']) {
+		addRecipe(db, householdId, { name });
+	}
+	return date;
+}
+
 /** "Tue, Oct 7", with the year when it isn't this year's, as Copy a dinner says when one was made. */
 function madeOn(date: string): string {
 	const year = date.slice(0, 4);
@@ -1010,20 +1044,7 @@ test('keeps the dish suggestions under the header, tab bar and feedback button, 
 	db,
 	person
 }) => {
-	// A few dishes put the field low enough on a phone that, with the keyboard closed, the
-	// suggestions reach the feedback button and the tab bar.
-	const date = addDays(today(), 3);
-	addDinner(db, person.householdId, date, {
-		dishes: [
-			[addRecipe(db, person.householdId, { name: 'Roast chicken' }), 'main'],
-			[addRecipe(db, person.householdId, { name: 'Green salad' }), 'side'],
-			[addRecipe(db, person.householdId, { name: 'Mashed potatoes' }), 'side'],
-			[addRecipe(db, person.householdId, { name: 'Apple pie' }), 'dessert']
-		]
-	});
-	for (const name of ['Cranberry sauce', 'Creamed corn', 'Crispy potatoes', 'Croissants']) {
-		addRecipe(db, person.householdId, { name });
-	}
+	const date = addLowDishField(db, person.householdId);
 	const adds = countAdds(page);
 	const help = page.getByRole('banner').getByRole('button', { name: 'Help', exact: true });
 	const more = page.getByRole('banner').getByText('More', { exact: true });
@@ -1035,6 +1056,8 @@ test('keeps the dish suggestions under the header, tab bar and feedback button, 
 	await dishField(page).fill('Cr');
 	const list = page.getByRole('listbox');
 	await expect(list.getByRole('option')).toHaveCount(5);
+	// They open above the tab bar (MEA-238).
+	expect(await suggestionsAt(recipesTab)).toBe(false);
 
 	// Scrolled up, the suggestions pass under Help and More, which stay on top.
 	await list.evaluate((element) => window.scrollBy(0, element.getBoundingClientRect().top));
@@ -1043,7 +1066,8 @@ test('keeps the dish suggestions under the header, tab bar and feedback button, 
 		expect(await uncovered(control)).toBe(true);
 	}
 
-	// Back at the top, they pass under the feedback button and the tab bar.
+	// Scrolled back to the top while they show, they pass under the feedback button and the tab
+	// bar.
 	await page.evaluate(() => window.scrollTo(0, 0));
 	for (const control of [feedback, recipesTab]) {
 		expect(await suggestionsAt(control)).toBe(true);
@@ -1060,6 +1084,106 @@ test('keeps the dish suggestions under the header, tab bar and feedback button, 
 	await expect(page).toHaveURL(/\/recipes$/);
 	expect(questions).toEqual([leaveDish('Cr')]);
 	expect(adds()).toBe(0);
+});
+
+test('scrolls the dish suggestions above the tab bar as they open, only when and as far as they need (MEA-238)', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addLowDishField(db, person.householdId);
+	const adds = countAdds(page);
+	const tabs = page.getByRole('navigation', { name: 'Main' });
+	const recipesTab = tabs.getByRole('link', { name: 'Recipes' });
+	const list = page.getByRole('listbox');
+	await open(page, `/menu/${date}`);
+	const tabsTop = (await edges(tabs)).top;
+
+	// At the top of the page they'd reach the tab bar, so it scrolls just far enough to show them
+	// above it. The field, the role and Add stay in their places over them, clear of the header.
+	await dishField(page).fill('Cr');
+	await expect(list.getByRole('option')).toHaveCount(5);
+	expect(await scrolled(page)).toBeGreaterThan(0);
+	const shown = await edges(list);
+	expect(tabsTop - shown.bottom).toBeGreaterThan(0);
+	expect(tabsTop - shown.bottom).toBeLessThan(16);
+	const field = await edges(dishField(page));
+	expect(field.top).toBeGreaterThan((await edges(page.getByRole('banner'))).bottom);
+	for (const control of [newRole(page), addButton(page)]) {
+		const { top, bottom } = await edges(control);
+		expect(top).toBeGreaterThan(field.bottom);
+		expect(bottom).toBeLessThan(shown.top);
+		expect(await uncovered(control)).toBe(true);
+	}
+	expect(await suggestionsAt(recipesTab)).toBe(false);
+	expect(await uncovered(recipesTab)).toBe(true);
+
+	// They scroll on their own, leaving the page where it is, and the one at their end is tapped
+	// and added.
+	const pageScroll = await scrolled(page);
+	expect(await list.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+	await list.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+	expect(await scrolled(page)).toBe(pageScroll);
+	await list.getByRole('option', { name: 'Croissants', exact: true }).tap();
+	await expect(dishLinks(page)).toHaveText([
+		'Roast chicken',
+		'Green salad',
+		'Mashed potatoes',
+		'Croissants',
+		'Apple pie'
+	]);
+	await expect(dishField(page)).toHaveValue('');
+	expect(adds()).toBe(1);
+
+	// With the field further up, they fit above the tab bar as they open, and the page stays put.
+	await dishField(page).evaluate((element) =>
+		window.scrollBy(0, element.getBoundingClientRect().top - 200)
+	);
+	const before = await scrolled(page);
+	await dishField(page).fill('Cr');
+	await expect(list.getByRole('option')).toHaveCount(5);
+	expect(await scrolled(page)).toBe(before);
+	expect(await suggestionsAt(recipesTab)).toBe(false);
+});
+
+test.describe('the dish suggestions on a computer', () => {
+	test.use({ isMobile: false, hasTouch: false, viewport: { width: 1280, height: 720 } });
+
+	test('scrolls them above the tab bar as they open, and adds one reached with the keys (MEA-238)', async ({
+		page,
+		db,
+		person
+	}) => {
+		for (const name of ['Rice', 'Rice and beans', 'Rice noodles', 'Rice pudding', 'Rice salad']) {
+			addRecipe(db, person.householdId, { name });
+		}
+		const date = addDays(today(), 3);
+		const tabs = page.getByRole('navigation', { name: 'Main' });
+		const list = page.getByRole('listbox');
+		await open(page, `/menu/${date}`);
+		const tabsTop = (await edges(tabs)).top;
+
+		// The window is short enough that they'd reach the tab bar, so the page scrolls just far
+		// enough to show them above it.
+		await dishField(page).fill('ric');
+		await expect(list.getByRole('option')).toHaveCount(6);
+		expect(await scrolled(page)).toBeGreaterThan(0);
+		const shown = await edges(list);
+		expect(tabsTop - shown.bottom).toBeGreaterThan(0);
+		expect(tabsTop - shown.bottom).toBeLessThan(16);
+
+		// The arrow keys still move through them, and Enter adds the one reached.
+		await dishField(page).press('ArrowDown');
+		await dishField(page).press('ArrowDown');
+		await dishField(page).press('Enter');
+		await expect(dishLinks(page)).toHaveText(['Rice and beans']);
+		await expect(dishField(page)).toHaveValue('');
+		await expect(dishField(page)).toBeFocused();
+
+		// The tab bar takes a click.
+		await tabs.getByRole('link', { name: 'Recipes' }).click();
+		await expect(page).toHaveURL(/\/recipes$/);
+	});
 });
 
 test('sends a picked dish once while it is on its way', async ({ page, db, person }) => {
