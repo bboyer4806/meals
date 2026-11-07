@@ -117,7 +117,10 @@ export type CatalogItem = {
 	lastBoughtStoreName: string | null;
 };
 
-/** The Items page: active items, or archived ones, optionally filtered by name. */
+/**
+ * The Items page: active items, or archived ones, optionally filtered by name. Sorted by name in
+ * code rather than in SQL, so "Éclairs" sorts with the E's (MEA-88).
+ */
 export function listCatalog(householdId: number, archived: boolean, search: string): CatalogItem[] {
 	const lastBought = db()
 		.select({
@@ -152,8 +155,8 @@ export function listCatalog(householdId: number, archived: boolean, search: stri
 				search === '' ? undefined : sql`instr(fold(${items.name}), fold(${search})) > 0`
 			)
 		)
-		.orderBy(asc(sql`lower(${items.name})`))
-		.all();
+		.all()
+		.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export type ItemNameResult = { kind: 'saved' } | { kind: 'taken'; archived: boolean };

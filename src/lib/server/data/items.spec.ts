@@ -113,6 +113,19 @@ describe("an item's image", () => {
 	});
 });
 
+describe('the Items page', () => {
+	it("sorts by name ignoring case, so Éclairs sorts with the E's (MEA-88)", () => {
+		for (const name of ['Zucchini', 'Éclairs', 'apples', 'Eggs']) createItem(householdId, name, 0);
+		expect(listCatalog(householdId, false, '').map((item) => item.name)).toEqual([
+			'apples',
+			'Éclairs',
+			'Eggs',
+			'Milk',
+			'Zucchini'
+		]);
+	});
+});
+
 // Import recipes looks up and adds many items at once (design 7, MEA-89).
 describe('many items at once', () => {
 	it('adds as many as one statement takes, and more', () => {

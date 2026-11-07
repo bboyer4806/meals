@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isHttpError } from '@sveltejs/kit';
+import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from './config.ts';
 import {
@@ -9,11 +10,11 @@ import {
 	getDish,
 	listDishes,
 	setDishArchived,
-	setDishPhoto,
 	updateDish,
 	type DishInput
 } from './data/dishes.ts';
 import { createItem, findItemByName, setItemArchived, setStandardImage } from './data/items.ts';
+import { db } from './db/index.ts';
 import { PHOTO_MAX_BYTES, photoPath, THUMB_MAX_BYTES } from './photos.ts';
 import {
 	archivedItemsFailure,
@@ -28,12 +29,6 @@ import {
 } from './recipe-form.ts';
 import { TEST_ENV, freshDb, ingredient, makeDish, makeHousehold, recipe } from './testing.ts';
 import { NORMALIZE_MAX_LENGTH } from '../text.ts';
-
-// The real function, which a test can make fail once.
-vi.mock('./data/dishes.ts', async (importOriginal) => {
-	const dishes = await importOriginal<typeof import('./data/dishes.ts')>();
-	return { ...dishes, setDishPhoto: vi.fn(dishes.setDishPhoto) };
-});
 
 function activeDishes(householdId: number) {
 	return listDishes(householdId, { search: '', tags: [], archived: false, sort: 'name' });
@@ -713,12 +708,13 @@ describe('the values the editor starts with', () => {
 		});
 
 		it('show it as it was entered, and save it unchanged', () => {
-			const created = createDish(householdId, parse(recipeValues(poundCake)).data, [], 0);
+			const created = createDish(householdId, parse(recipeValues(poundCake)).data, null, [], 0);
 			if (created.kind !== 'saved') throw new Error('Expected it to save');
 			const shown = recipeValues(getDish(householdId, created.id));
 			expect(shown).toEqual(recipeValues(poundCake));
 
-			expect(updateDish(householdId, created.id, parse(shown).data, [], 1)).toEqual(created);
+			const saved = updateDish(householdId, created.id, parse(shown).data, 'keep', [], 1);
+			expect(saved).toEqual(created);
 			expect(recipeValues(getDish(householdId, created.id))).toEqual(shown);
 		});
 	});
@@ -803,7 +799,6 @@ describe('saveRecipe', () => {
 
 	afterEach(() => {
 		rmSync(dataDir, { recursive: true, force: true });
-		vi.mocked(setDishPhoto).mockClear();
 	});
 
 	function storedFiles(): string[] {
@@ -849,6 +844,24 @@ describe('saveRecipe', () => {
 			(e: unknown) => e
 		);
 		expect(isHttpError(thrown, status), `expected HTTP ${status}, got ${String(thrown)}`).toBe(true);
+	}
+
+	/** Makes writing a recipe's photo, or its removal, fail, as a full disk would. */
+	function failToSavePhoto(): void {
+		db().run(
+			sql.raw(`create trigger fail_to_add_photo before insert on dishes
+				when new.photo_key is not null
+				begin select raise(abort, 'Simulated failure'); end`)
+		);
+		db().run(
+			sql.raw(`create trigger fail_to_change_photo before update of photo_key on dishes
+				begin select raise(abort, 'Simulated failure'); end`)
+		);
+	}
+
+	function stopFailing(): void {
+		db().run(sql.raw('drop trigger fail_to_add_photo'));
+		db().run(sql.raw('drop trigger fail_to_change_photo'));
 	}
 
 	it('creates a recipe and returns its id', async () => {
@@ -996,10 +1009,11 @@ describe('saveRecipe', () => {
 		const id = await save(null, {}, newPhoto());
 		const key = getDish(householdId, id).photoKey;
 
+		// The photo isn't written at all.
+		failToSavePhoto();
 		await save(id, { name: 'Lemon pound cake' });
 		expect(getDish(householdId, id).photoKey).toBe(key);
 		expect(storedFiles()).toHaveLength(2);
-		expect(setDishPhoto).toHaveBeenCalledTimes(1);
 	});
 
 	it('removes the photo and its files', async () => {
@@ -1041,19 +1055,35 @@ describe('saveRecipe', () => {
 		expect(storedFiles()).toEqual([]);
 	});
 
-	it("deletes the new photo when it can't be set, keeping the old one", async () => {
+	it("changes nothing when the photo can't be saved, keeping the old one (MEA-87)", async () => {
 		const id = await save(null, {}, newPhoto(1));
 		const oldKey = getDish(householdId, id).photoKey;
 		if (oldKey === null) throw new Error('Expected a photo');
+		failToSavePhoto();
 
-		vi.mocked(setDishPhoto).mockImplementationOnce(() => {
-			throw new Error('disk I/O error');
-		});
-		await expect(saveRecipe(householdId, id, formData({}, newPhoto(2)), 1000)).rejects.toThrow(
-			'disk I/O error'
-		);
-		expect(getDish(householdId, id).photoKey).toBe(oldKey);
-		expect(storedFiles()).toEqual(filesFor(oldKey));
+		// A new photo's files are deleted, and a removed photo's are kept.
+		for (const photo of [newPhoto(2), { removePhoto: '1' }]) {
+			await expect(
+				saveRecipe(householdId, id, formData({ name: 'Lemon pound cake' }, photo), 1000)
+			).rejects.toThrow('Simulated failure');
+			expect(getDish(householdId, id)).toMatchObject({ name: 'Pound cake', photoKey: oldKey });
+			expect(storedFiles()).toEqual(filesFor(oldKey));
+		}
+	});
+
+	it("saves no recipe whose photo can't be saved, so it can be saved again (MEA-87)", async () => {
+		failToSavePhoto();
+		const chili = formData({ name: 'Chili' }, newPhoto());
+		await expect(saveRecipe(householdId, null, chili, 1000)).rejects.toThrow('Simulated failure');
+		expect(activeDishes(householdId)).toEqual([]);
+		expect(storedFiles()).toEqual([]);
+
+		stopFailing();
+		const id = await save(null, { name: 'Chili' }, newPhoto());
+		const key = getDish(householdId, id).photoKey;
+		expect(key).not.toBeNull();
+		if (key === null) return;
+		expect(storedFiles()).toEqual(filesFor(key));
 	});
 
 	it("still saves when the old photo's files can't be deleted", async () => {

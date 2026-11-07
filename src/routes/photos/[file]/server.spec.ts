@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { isHttpError, isRedirect } from '@sveltejs/kit';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { loadConfig } from '#lib/server/config.ts';
-import { setDishArchived, setDishPhoto } from '#lib/server/data/dishes.ts';
+import { setDishArchived, updateDish } from '#lib/server/data/dishes.ts';
 import { createItem, setItemArchived, setItemPhoto } from '#lib/server/data/items.ts';
 import { deletePhoto, savePhoto } from '#lib/server/photos.ts';
 import { TEST_ENV, freshDb, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
@@ -24,9 +24,8 @@ beforeEach(async () => {
 	// The settings the server reads at startup (hooks.server.ts).
 	loadConfig({ ...TEST_ENV, DATA_DIR: dataDir });
 	({ householdId } = makeHousehold());
-	dishId = makeDish(householdId, recipe('Pound cake'));
 	key = await savePhoto(new File([PHOTO], 'photo.jpg'), new File([THUMB], 'thumb.jpg'));
-	setDishPhoto(householdId, dishId, key, 0);
+	dishId = makeDish(householdId, recipe('Pound cake'), 0, key);
 });
 
 afterEach(() => {
@@ -105,7 +104,7 @@ it('answers 404 for a photo no dish has, even if its files are there', async () 
 
 	// Replaced: the old files are still on disk until they're deleted.
 	const next = await savePhoto(new File([PHOTO], 'photo.jpg'), new File([THUMB], 'thumb.jpg'));
-	setDishPhoto(householdId, dishId, next, 0);
+	updateDish(householdId, dishId, recipe('Pound cake'), { photoKey: next }, [], 0);
 	await expectNotFound(`${key}.jpg`);
 	const response = await get(`${next}.jpg`);
 	expect(new Uint8Array(await response.arrayBuffer())).toEqual(PHOTO);

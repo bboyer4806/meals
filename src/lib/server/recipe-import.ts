@@ -394,7 +394,7 @@ export async function importRecipeFile(
 			if (duplicate?.choice === 'skip') {
 				skipped += 1;
 			} else if (duplicate?.choice === 'replace' && dishId !== undefined) {
-				// The details change, and the name stays as it is in Recipes.
+				// The details change, and the name and photo stay as they are in Recipes.
 				saves.push({ dishId, input: { ...recipe.data, name: duplicate.name } });
 				replaced += 1;
 			} else {

@@ -167,7 +167,7 @@ Backups:
 | Form validation        | Zod                                                                                    | Form input is untrusted, so it's checked when it arrives.          |
 | Styles                 | Plain CSS with variables; fonts self-hosted through Fontsource                         | No CSS framework and no requests to other sites.                   |
 | Tests                  | Vitest and Playwright                                                                  | See section 10.                                                    |
-| Runtime                | Node 24 (the current long-term support version) in the `node:24-slim` Docker image     |                                                                    |
+| Runtime                | Node 26 (the current long-term support version) in the `node:26-slim` Docker image     |                                                                    |
 
 ### 4.2 Hosting and deploy
 

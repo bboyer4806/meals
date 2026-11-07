@@ -45,12 +45,19 @@ export type DishInput = {
 };
 
 /**
- * `taken` names the dish that already has the name, so the page can offer to restore it.
- * `archived` names all the archived items the recipe would start using, so the page can ask
- * before restoring them (6.10).
+ * What saving over a dish does to its photo: `keep` leaves it as it is, and otherwise the dish
+ * takes `photoKey`, a new photo's key (photos.ts), or null for no photo.
+ */
+export type PhotoChange = 'keep' | { photoKey: string | null };
+
+/**
+ * `replacedPhotoKey` is the photo the save replaced or removed, whose files the caller deletes
+ * once the save has committed, or null when there was none or it didn't change. `taken` names the
+ * dish that already has the name, so the page can offer to restore it. `archived` names all the
+ * archived items the recipe would start using, so the page can ask before restoring them (6.10).
  */
 export type DishSaveResult =
-	| { kind: 'saved'; id: number }
+	| { kind: 'saved'; id: number; replacedPhotoKey: string | null }
 	| { kind: 'taken'; archived: boolean; id: number }
 	| { kind: 'archived'; items: { id: number; name: string }[] };
 
@@ -212,9 +219,9 @@ function newlyUsedArchivedItems(
 
 /**
  * The dish's own fields, listed one by one, so nothing else in the input (a photo key, say) is
- * ever written.
+ * ever written, and its photo as `photo` changes it (MEA-87).
  */
-function dishFields(input: DishInput) {
+function dishFields(input: DishInput, photo: PhotoChange) {
 	return {
 		name: input.name,
 		servings: input.servings,
@@ -226,15 +233,16 @@ function dishFields(input: DishInput) {
 		calories: input.calories,
 		proteinG: input.proteinG,
 		carbsG: input.carbsG,
-		fatG: input.fatG
+		fatG: input.fatG,
+		...(photo === 'keep' ? {} : { photoKey: photo.photoKey })
 	};
 }
 
 /** Writes an existing dish's new fields and removes its tags and ingredients, for new ones. */
-function rewriteDish(dishId: number, input: DishInput, now: number): void {
+function rewriteDish(dishId: number, input: DishInput, photo: PhotoChange, now: number): void {
 	db()
 		.update(dishes)
-		.set({ ...dishFields(input), updatedAt: now })
+		.set({ ...dishFields(input, photo), updatedAt: now })
 		.where(eq(dishes.id, dishId))
 		.run();
 	db().delete(dishTags).where(eq(dishTags.dishId, dishId)).run();
@@ -274,16 +282,20 @@ function ingredientRows(
 }
 
 /**
- * Writes the dish and replaces its tags and ingredients, unless it would start using an archived
- * item that isn't in `restoreItemIds`. Callers run it in a transaction.
+ * Writes the dish with its photo and replaces its tags and ingredients, unless it would start
+ * using an archived item that isn't in `restoreItemIds`. `dish` is the dish saved over, as it was
+ * before, or null for a new one. Callers run it in a transaction, so the details and the photo are
+ * saved together or not at all (MEA-87).
  */
 function save(
 	householdId: number,
-	dishId: number | null,
+	dish: { id: number; photoKey: string | null } | null,
 	input: DishInput,
+	photo: PhotoChange,
 	restoreItemIds: number[],
 	now: number
 ): DishSaveResult {
+	const dishId = dish === null ? null : dish.id;
 	const taken = findDishByName(householdId, input.name);
 	if (taken && taken.id !== dishId) {
 		return { kind: 'taken', archived: taken.archivedAt !== null, id: taken.id };
@@ -302,12 +314,12 @@ function save(
 	if (dishId === null) {
 		id = db()
 			.insert(dishes)
-			.values({ ...dishFields(input), householdId, createdAt: now, updatedAt: now })
+			.values({ ...dishFields(input, photo), householdId, createdAt: now, updatedAt: now })
 			.returning({ id: dishes.id })
 			.get().id;
 	} else {
 		id = dishId;
-		rewriteDish(id, input, now);
+		rewriteDish(id, input, photo, now);
 	}
 
 	const tags = tagRows(householdId, id, input.tags);
@@ -317,37 +329,41 @@ function save(
 	);
 	if (ingredients.length > 0) db().insert(dishIngredients).values(ingredients).run();
 
-	return { kind: 'saved', id };
+	const before = dish === null ? null : dish.photoKey;
+	const replacedPhotoKey = photo === 'keep' || photo.photoKey === before ? null : before;
+	return { kind: 'saved', id, replacedPhotoKey };
 }
 
 /**
- * `restoreItemIds` are the archived items the person agreed to restore. Ids of items the recipe
- * doesn't start using are ignored (6.10).
+ * Saves a new dish with the photo `photoKey` (photos.ts), or none for null. `restoreItemIds` are
+ * the archived items the person agreed to restore. Ids of items the recipe doesn't start using
+ * are ignored (6.10).
  */
 export function createDish(
 	householdId: number,
 	input: DishInput,
+	photoKey: string | null,
 	restoreItemIds: number[],
 	now: number
 ): DishSaveResult {
-	return transaction(() => save(householdId, null, input, restoreItemIds, now));
+	return transaction(() => save(householdId, null, input, { photoKey }, restoreItemIds, now));
 }
 
 /**
- * `restoreItemIds` are the archived items the person agreed to restore. Ids of items the recipe
- * doesn't start using are ignored (6.10).
+ * Saves over a dish, changing its photo as `photo` says. `restoreItemIds` are the archived items
+ * the person agreed to restore. Ids of items the recipe doesn't start using are ignored (6.10).
  */
 export function updateDish(
 	householdId: number,
 	dishId: number,
 	input: DishInput,
+	photo: PhotoChange,
 	restoreItemIds: number[],
 	now: number
 ): DishSaveResult {
-	return transaction(() => {
-		findDish(householdId, dishId);
-		return save(householdId, dishId, input, restoreItemIds, now);
-	});
+	return transaction(() =>
+		save(householdId, findDish(householdId, dishId), input, photo, restoreItemIds, now)
+	);
 }
 
 /**
@@ -392,7 +408,7 @@ function addDishes(householdId: number, inputs: DishInput[], now: number): Map<s
 			.insert(dishes)
 			.values(
 				batch.map((input) => ({
-					...dishFields(input),
+					...dishFields(input, { photoKey: null }),
 					householdId,
 					createdAt: now,
 					updatedAt: now
@@ -410,10 +426,10 @@ export type ImportedDish = { dishId: number | null; input: DishInput };
 
 /**
  * Saves Import recipes' recipes all at once (design 7, MEA-89): each new one as createDish saves
- * it, and each existing one's new details as updateDish saves them, with their tags and
- * ingredients. `items` is the household's items by name (itemsByName). Callers read it in the
- * transaction they run this in, after checking that the new names are free and that no
- * ingredient names an archived item.
+ * it with no photo, and each existing one's new details as updateDish saves them, keeping its
+ * photo, with their tags and ingredients. `items` is the household's items by name
+ * (itemsByName). Callers read it in the transaction they run this in, after checking that the new
+ * names are free and that no ingredient names an archived item.
  */
 export function importDishes(
 	householdId: number,
@@ -433,7 +449,7 @@ export function importDishes(
 		for (const { dishId, input } of recipes) {
 			if (dishId === null) continue;
 			findDish(householdId, dishId);
-			rewriteDish(dishId, input, now);
+			rewriteDish(dishId, input, 'keep', now);
 		}
 		const newInputs = recipes.filter(({ dishId }) => dishId === null).map(({ input }) => input);
 		const added = addDishes(householdId, newInputs, now);
@@ -554,23 +570,6 @@ function ratingTotals(householdId: number) {
 /** The joined totals, which are empty for a dish nobody has rated. */
 function ratingOf(average: number | null, count: number | null): DishRating | null {
 	return average === null || count === null ? null : { average, count };
-}
-
-/**
- * Sets or clears the photo. Returns the previous key, so the caller can delete its files, or
- * null when there was none or it didn't change.
- */
-export function setDishPhoto(
-	householdId: number,
-	dishId: number,
-	photoKey: string | null,
-	now: number
-): string | null {
-	return transaction(() => {
-		const previous = findDish(householdId, dishId).photoKey;
-		db().update(dishes).set({ photoKey, updatedAt: now }).where(eq(dishes.id, dishId)).run();
-		return previous === photoKey ? null : previous;
-	});
 }
 
 export function getDish(householdId: number, dishId: number): DishDetail {

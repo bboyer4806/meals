@@ -5,7 +5,6 @@ import { foldCase, normalizeName } from '../text.ts';
 import { normalizeUnit } from '../units.ts';
 import {
 	createDish,
-	setDishPhoto,
 	updateDish,
 	type DishInput,
 	type DishSaveResult,
@@ -549,8 +548,9 @@ export function archivedItemsFailure(
  * returns its id. Problems the person can fix come back as a failure, with nothing changed.
  *
  * A new photo is stored before the recipe, so a photo the server refuses changes nothing, and
- * its files are deleted again if the recipe isn't saved or doesn't take the photo. The photo it
- * replaces, or the one removed, is deleted once the recipe no longer points at it.
+ * its files are deleted again if the recipe isn't saved. The recipe's details and its photo are
+ * saved in one transaction, so a save that fails changes neither (design 7, Edit recipe; MEA-87).
+ * The photo it replaces, or the one removed, is deleted once that transaction has committed.
  */
 export async function saveRecipe(
 	householdId: number,
@@ -573,16 +573,14 @@ export async function saveRecipe(
 		}
 	}
 
+	// Saving over a recipe: a new photo replaces the current one, and removing it leaves none.
+	const photoChange = photoKey !== null || removePhoto ? { photoKey } : 'keep';
 	let saved: DishSaveResult;
-	let previousKey: string | null = null;
 	try {
 		saved =
 			dishId === null
-				? createDish(householdId, data, restoreItemIds, now)
-				: updateDish(householdId, dishId, data, restoreItemIds, now);
-		if (saved.kind === 'saved' && (photoKey !== null || removePhoto)) {
-			previousKey = setDishPhoto(householdId, saved.id, photoKey, now);
-		}
+				? createDish(householdId, data, photoKey, restoreItemIds, now)
+				: updateDish(householdId, dishId, data, photoChange, restoreItemIds, now);
 	} catch (e) {
 		if (photoKey !== null) discardPhoto(photoKey);
 		if (isHttpError(e, 400)) return { failure: failure(e.body.message) };
@@ -597,7 +595,7 @@ export async function saveRecipe(
 		if (photoKey !== null) discardPhoto(photoKey);
 		return { failure: archivedItemsFailure(saved.items) };
 	}
-	if (previousKey !== null) discardPhoto(previousKey);
+	if (saved.replacedPhotoKey !== null) discardPhoto(saved.replacedPhotoKey);
 	// New ingredient items get their standard images (design 6.14).
 	await assignStandardImages(householdId, now);
 	return { id: saved.id };

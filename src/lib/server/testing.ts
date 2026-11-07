@@ -81,9 +81,17 @@ export function ingredient(
 	return { section: null, amount, unit, itemName, prepNote: null, ...fields };
 }
 
-/** Saves a recipe, without restoring archived items, and returns its id. */
-export function makeDish(householdId: number, input: DishInput, now = 0): number {
-	const result = createDish(householdId, input, [], now);
+/**
+ * Saves a recipe with the photo `photoKey`, or none for null, without restoring archived items,
+ * and returns its id.
+ */
+export function makeDish(
+	householdId: number,
+	input: DishInput,
+	now = 0,
+	photoKey: string | null = null
+): number {
+	const result = createDish(householdId, input, photoKey, [], now);
 	if (result.kind !== 'saved') throw new Error(`Couldn't save ${input.name}: ${result.kind}`);
 	return result.id;
 }
