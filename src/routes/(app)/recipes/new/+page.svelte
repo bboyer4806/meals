@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import RecipeForm from '#lib/components/RecipeForm.svelte';
-	import type { RecipeFormValues } from '#lib/server/recipe-form.ts';
+	import type { ImportedRecipe, LeftOut } from '#lib/recipe-schema.ts';
+	import { joinAnd } from '#lib/text.ts';
 
 	let { data, form } = $props();
 
@@ -10,9 +11,26 @@
 	// notes, and asks first when that replaces anything else typed or changed. A failed import,
 	// or Cancel, leaves the editor as it was.
 	let editor: ReturnType<typeof RecipeForm>;
-	let filled = $state(false);
+	// What the page says once an import has filled in the editor.
+	let filled = $state<string | null>(null);
 	let importing = $state(false);
 	let problem = $state<string | null>(null);
+
+	// What an import leaves out of a page with more than the editor takes (MEA-84).
+	const LEFT_OUT: Record<LeftOut, string> = {
+		ingredients: 'ingredients after the first 100',
+		steps: 'steps after the first 10,000 characters'
+	};
+
+	/**
+	 * "Filled in from the page. Check it, then tap Save.", or with what was left out: "Filled in
+	 * from the page, leaving out ingredients after the first 100. Check it, then tap Save."
+	 */
+	function filledMessage(leftOut: LeftOut[]): string {
+		const parts = leftOut.map((field) => LEFT_OUT[field]);
+		const left = parts.length > 0 ? `, leaving out ${joinAnd(parts)}` : '';
+		return `Filled in from the page${left}. Check it, then tap Save.`;
+	}
 
 	// Filling the editor in needs the page's script, so Import waits for it.
 	let ready = $state(false);
@@ -27,8 +45,9 @@
 			// Nothing here resets the form, so the link stays in its field.
 			if (result.type === 'success') {
 				if (!editor.confirmFill()) return;
-				editor.fill((result.data as { values: RecipeFormValues }).values);
-				filled = true;
+				const { values, leftOut } = result.data as ImportedRecipe;
+				editor.fill(values);
+				filled = filledMessage(leftOut);
 			} else if (result.type === 'failure') {
 				problem = (result.data as { error: string }).error;
 			} else if (result.type === 'redirect') {
@@ -66,7 +85,7 @@
 	{#if problem}
 		<p class="error" role="alert">{problem}</p>
 	{:else if filled}
-		<p class="muted" role="status">Filled in from the page. Check it, then tap Save.</p>
+		<p class="muted" role="status">{filled}</p>
 	{/if}
 </form>
 

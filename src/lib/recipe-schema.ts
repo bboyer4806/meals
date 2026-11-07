@@ -9,25 +9,43 @@ import type { RecipeFormValues, RecipeRow } from './server/recipe-form.ts';
 /** A JSON-LD node: a parsed JSON object. */
 export type JsonLdNode = { [key: string]: unknown };
 
+/** A field the page has more of than the editor takes, so the rest was left out (MEA-84). */
+export type LeftOut = 'ingredients' | 'steps';
+
+/** A Recipe read into the editor's fields, and the fields it has more of than the editor takes. */
+export type ImportedRecipe = { values: RecipeFormValues; leftOut: LeftOut[] };
+
+// The editor's limits (server/recipe-form.ts): a recipe takes up to 100 ingredients and 10,000
+// characters of steps. Reading stops there, so a page of millions of them can't hold up the
+// server or send the person's phone rows that Save would refuse (MEA-84).
+const MAX_INGREDIENTS = 100;
+const MAX_STEPS_LENGTH = 10_000;
+
+// How many lists, @graphs and sections deep findRecipe and stepTexts look. Pages nest a few, and
+// following a broken page's millions would run out of stack (MEA-84).
+const MAX_DEPTH = 32;
+
 function isNode(value: unknown): value is JsonLdNode {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
  * The first schema.org Recipe in a page's parsed JSON-LD: a node, a list of nodes, or a node
- * whose @graph holds them. Null when there's none.
+ * whose @graph holds them, up to MAX_DEPTH lists and @graphs deep. Null when there's none.
+ * `depth` is how deep `jsonLd` is.
  */
-export function findRecipe(jsonLd: unknown): JsonLdNode | null {
+export function findRecipe(jsonLd: unknown, depth = 0): JsonLdNode | null {
+	if (depth > MAX_DEPTH) return null;
 	if (Array.isArray(jsonLd)) {
 		for (const node of jsonLd) {
-			const recipe = findRecipe(node);
+			const recipe = findRecipe(node, depth + 1);
 			if (recipe) return recipe;
 		}
 		return null;
 	}
 	if (!isNode(jsonLd)) return null;
 	if ([jsonLd['@type']].flat().includes('Recipe')) return jsonLd;
-	return findRecipe(jsonLd['@graph']);
+	return findRecipe(jsonLd['@graph'], depth + 1);
 }
 
 // The character references recipe sites use, such as &amp; and &frac12;. Numeric ones, such as
@@ -128,41 +146,76 @@ function minutes(duration: unknown): string | null {
 	return String(Math.round(days * 24 * 60 + hours * 60 + mins + seconds / 60));
 }
 
-/** Each entry of recipeIngredient as an editor row, split as Import recipes splits them. */
-function ingredientRows(recipeIngredient: unknown, plain: Plain): RecipeRow[] | null {
-	const rows = [recipeIngredient]
-		.flat()
-		.filter((entry) => typeof entry === 'string')
-		.map(plain)
-		.filter(hasText)
-		.map((line): RecipeRow => ({ kind: 'ingredient', ...splitIngredient(line) }));
-	return rows.length > 0 ? rows : null;
+/** A field as read: null when the page has none, and whether the page has more than was read. */
+type Read<T> = { value: T | null; leftOut: boolean };
+
+/** The first `count` texts in a JSON-LD value that's a list of them, or one. */
+function firstTexts(value: unknown, count: number): string[] {
+	const texts: string[] = [];
+	for (const entry of Array.isArray(value) ? value : [value]) {
+		if (texts.length === count) break;
+		if (typeof entry === 'string') texts.push(entry);
+	}
+	return texts;
 }
 
 /**
- * recipeInstructions as one line per step: text, such as paragraphs, split into its lines; or
- * steps, with or without HowToSections around them, whose names are left out.
+ * Each of recipeIngredient's first 100 entries, the most the editor takes, as an editor row split
+ * as Import recipes splits them. Blank entries count but make no row, so a page of millions of
+ * them stops there too.
  */
-function stepLines(instructions: unknown, plain: Plain): string[] {
-	if (typeof instructions === 'string') {
-		return instructions.replace(BREAK, '\n').split('\n').map(plain);
-	}
-	if (Array.isArray(instructions)) {
-		return instructions.flatMap((step) =>
-			typeof step === 'string' ? [plain(step)] : stepLines(step, plain)
-		);
-	}
-	if (!isNode(instructions)) return [];
-	// A HowToSection holds its HowToSteps in itemListElement.
-	if (instructions.itemListElement !== undefined) {
-		return stepLines(instructions.itemListElement, plain);
-	}
-	return typeof instructions.text === 'string' ? [plain(instructions.text)] : [];
+function ingredientRows(recipeIngredient: unknown, plain: Plain): Read<RecipeRow[]> {
+	// One more than are read, to know whether the page has more.
+	const entries = firstTexts(recipeIngredient, MAX_INGREDIENTS + 1);
+	const rows = entries
+		.slice(0, MAX_INGREDIENTS)
+		.map(plain)
+		.filter(hasText)
+		.map((line): RecipeRow => ({ kind: 'ingredient', ...splitIngredient(line) }));
+	return { value: rows.length > 0 ? rows : null, leftOut: entries.length > MAX_INGREDIENTS };
 }
 
-function steps(instructions: unknown, plain: Plain): string | null {
-	const lines = stepLines(instructions, plain).filter(hasText);
-	return lines.length > 0 ? lines.join('\n') : null;
+/**
+ * Gives recipeInstructions' text to `read` one line at a time, in order, until `read` gives false:
+ * text, such as paragraphs, split into its lines; or steps, with or without HowToSections around
+ * them, whose names are left out. Lists and sections more than MAX_DEPTH deep aren't read.
+ * `depth` is how deep `instructions` is. False when `read` stopped it.
+ */
+function stepTexts(instructions: unknown, read: (text: string) => boolean, depth = 0): boolean {
+	if (depth > MAX_DEPTH) return true;
+	if (typeof instructions === 'string') {
+		return instructions.replace(BREAK, '\n').split('\n').every(read);
+	}
+	if (Array.isArray(instructions)) {
+		return instructions.every((step) =>
+			typeof step === 'string' ? read(step) : stepTexts(step, read, depth + 1)
+		);
+	}
+	if (!isNode(instructions)) return true;
+	// A HowToSection holds its HowToSteps in itemListElement.
+	if (instructions.itemListElement !== undefined) {
+		return stepTexts(instructions.itemListElement, read, depth + 1);
+	}
+	return typeof instructions.text === 'string' ? read(instructions.text) : true;
+}
+
+/**
+ * The steps, one per line, in the whole lines that fit in the 10,000 characters the editor takes.
+ * Every line read counts, with a line break between each, blank ones too, so a page of millions of
+ * blank lines stops there as well. Blank lines then make no step.
+ */
+function steps(instructions: unknown, plain: Plain): Read<string> {
+	const lines: string[] = [];
+	// The first line has no line break before it.
+	let length = -1;
+	const leftOut = !stepTexts(instructions, (text) => {
+		const line = plain(text);
+		length += line.length + 1;
+		if (length > MAX_STEPS_LENGTH) return false;
+		if (hasText(line)) lines.push(line);
+		return true;
+	});
+	return { value: lines.length > 0 ? lines.join('\n') : null, leftOut };
 }
 
 // A comma or space between a digit and exactly three more, as between the thousands in 1,250 or
@@ -187,25 +240,32 @@ function nutrient(value: unknown): string | null {
  * out, or that can't be read, keeps its value in `start`, as do tags, notes and source. Values are
  * as the page writes them, and the editor checks them when the recipe is saved. The text is read
  * in the editor's order, the name, the ingredients and then the steps, so a page with more than
- * one import reads loses its last steps first (plainReader).
+ * one import reads loses its last steps first (plainReader). Ingredients and steps are read up to
+ * the most the editor takes, and leftOut names those the page has more of.
  */
-export function schemaRecipeValues(recipe: JsonLdNode, start: RecipeFormValues): RecipeFormValues {
+export function schemaRecipeValues(recipe: JsonLdNode, start: RecipeFormValues): ImportedRecipe {
 	const nutrition = isNode(recipe.nutrition) ? recipe.nutrition : {};
 	const plain = plainReader();
 	const name = recipeName(recipe.name, plain);
 	const rows = ingredientRows(recipe.recipeIngredient, plain);
 	const stepText = steps(recipe.recipeInstructions, plain);
+	const leftOut: LeftOut[] = [];
+	if (rows.leftOut) leftOut.push('ingredients');
+	if (stepText.leftOut) leftOut.push('steps');
 	return {
-		...start,
-		name: name ?? start.name,
-		servings: servings(recipe.recipeYield) ?? start.servings,
-		prepMinutes: minutes(recipe.prepTime) ?? start.prepMinutes,
-		cookMinutes: minutes(recipe.cookTime) ?? start.cookMinutes,
-		steps: stepText ?? start.steps,
-		calories: nutrient(nutrition.calories) ?? start.calories,
-		proteinG: nutrient(nutrition.proteinContent) ?? start.proteinG,
-		carbsG: nutrient(nutrition.carbohydrateContent) ?? start.carbsG,
-		fatG: nutrient(nutrition.fatContent) ?? start.fatG,
-		rows: rows ?? start.rows
+		values: {
+			...start,
+			name: name ?? start.name,
+			servings: servings(recipe.recipeYield) ?? start.servings,
+			prepMinutes: minutes(recipe.prepTime) ?? start.prepMinutes,
+			cookMinutes: minutes(recipe.cookTime) ?? start.cookMinutes,
+			steps: stepText.value ?? start.steps,
+			calories: nutrient(nutrition.calories) ?? start.calories,
+			proteinG: nutrient(nutrition.proteinContent) ?? start.proteinG,
+			carbsG: nutrient(nutrition.carbohydrateContent) ?? start.carbsG,
+			fatG: nutrient(nutrition.fatContent) ?? start.fatG,
+			rows: rows.value ?? start.rows
+		},
+		leftOut
 	};
 }

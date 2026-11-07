@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { findRecipe, schemaRecipeValues, type JsonLdNode } from './recipe-schema.ts';
+import {
+	findRecipe,
+	schemaRecipeValues,
+	type ImportedRecipe,
+	type JsonLdNode
+} from './recipe-schema.ts';
 import { newRecipeValues, type RecipeFormValues } from './server/recipe-form.ts';
 import { NORMALIZE_MAX_LENGTH } from './text.ts';
 
@@ -13,16 +18,33 @@ function page(name: string): unknown {
 // A new recipe's fields at the household's usual 4 servings, with the link as its source.
 const START: RecipeFormValues = { ...newRecipeValues(4), source: 'https://example.com/recipe' };
 
-/** The page's Recipe, filled into a new recipe. */
-function imported(name: string): RecipeFormValues {
+/** The page's Recipe, read into a new recipe. */
+function importedPage(name: string): ImportedRecipe {
 	const recipe = findRecipe(page(name));
 	if (!recipe) throw new Error(`No Recipe in ${name}`);
 	return schemaRecipeValues(recipe, START);
 }
 
+/** The page's Recipe, filled into a new recipe. */
+function imported(name: string): RecipeFormValues {
+	return importedPage(name).values;
+}
+
+/** A Recipe with these fields, read into a new recipe. */
+function readRecipe(fields: JsonLdNode): ImportedRecipe {
+	return schemaRecipeValues({ '@type': 'Recipe', ...fields }, START);
+}
+
 /** A Recipe with these fields, filled into a new recipe. */
 function fromRecipe(fields: JsonLdNode): RecipeFormValues {
-	return schemaRecipeValues({ '@type': 'Recipe', ...fields }, START);
+	return readRecipe(fields).values;
+}
+
+/** The value inside `depth` lists, or inside whatever `wrap` puts around it each time. */
+function nested(value: unknown, depth: number, wrap = (inner: unknown): unknown => [inner]) {
+	let wrapped = value;
+	for (let level = 0; level < depth; level += 1) wrapped = wrap(wrapped);
+	return wrapped;
 }
 
 /** The ingredient rows as [amount, unit, item, prep note]. */
@@ -57,9 +79,27 @@ describe('findRecipe', () => {
 		];
 		expect(findRecipe(notRecipes)).toBeNull();
 	});
+
+	it("looks up to 32 lists and @graphs deep, so nesting can't run out of stack (MEA-84)", () => {
+		const recipe = { '@type': 'Recipe', name: 'Soup' };
+		const inGraph = (inner: unknown) => ({ '@graph': inner });
+		expect(findRecipe(nested(recipe, 32))).toBe(recipe);
+		expect(findRecipe(nested(recipe, 32, inGraph))).toBe(recipe);
+		expect(findRecipe(nested(recipe, 33))).toBeNull();
+		expect(findRecipe(nested(recipe, 33, inGraph))).toBeNull();
+		// Following each would run out of stack.
+		expect(findRecipe(nested(recipe, 1_000_000))).toBeNull();
+		expect(findRecipe(nested(recipe, 1_000_000, inGraph))).toBeNull();
+	});
 });
 
 describe('schemaRecipeValues', () => {
+	it('leaves nothing out of real recipe pages', () => {
+		for (const name of ['allrecipes', 'preppykitchen', 'sallysbakingaddiction', 'tasty']) {
+			expect(importedPage(name).leftOut).toEqual([]);
+		}
+	});
+
 	it('fills in the editor from a recipe page', () => {
 		const values = imported('allrecipes');
 		expect(values).toEqual({
@@ -278,12 +318,12 @@ describe('schemaRecipeValues', () => {
 		const values = fromRecipe({
 			name: long,
 			recipeIngredient: [`2 cups ${long}`],
-			recipeInstructions: [long, 'Bake.']
+			recipeInstructions: [long]
 		});
 		const most = 'x'.repeat(NORMALIZE_MAX_LENGTH);
 		expect(values.name).toBe(most);
 		expect(ingredients(values)).toEqual([['2', 'cups', most.slice('2 cups '.length), '']]);
-		expect(values.steps).toBe(`${most}\nBake.`);
+		expect(values.steps).toBe(most);
 		// Combining marks that would hold up the server for minutes if normalized all together.
 		const marks = 'a' + '\u0301\u0316'.repeat(1_000_000);
 		expect(fromRecipe({ name: marks }).name.length).toBeLessThanOrEqual(NORMALIZE_MAX_LENGTH);
@@ -291,27 +331,97 @@ describe('schemaRecipeValues', () => {
 
 	it('reads up to 100000 characters in all, the name, ingredients and then steps (MEA-234)', () => {
 		const most = 'x'.repeat(NORMALIZE_MAX_LENGTH);
-		// The name and ingredients come to 40,005 characters, and the steps pass 100,000 in their
-		// sixth line, which is cut. The lines after it are left out.
+		// The name and ingredients come to 90,005 characters, and the steps pass 100,000 in their
+		// first line, which is cut. The lines after it read as blank.
 		const values = fromRecipe({
-			recipeInstructions: [...Array<string>(7).fill(most), 'Serve.'],
-			recipeIngredient: Array<string>(4).fill(most),
+			recipeInstructions: [most, 'Serve.'],
+			recipeIngredient: Array<string>(9).fill(most),
 			name: 'Toast'
 		});
 		expect(values.name).toBe('Toast');
-		expect(ingredients(values)).toEqual(Array(4).fill(['', '', most, '']));
-		expect(values.steps.split('\n')).toEqual([...Array<string>(5).fill(most), 'x'.repeat(9_995)]);
+		expect(ingredients(values)).toEqual(Array(9).fill(['', '', most, '']));
+		expect(values.steps).toBe('x'.repeat(9_995));
 	});
 
 	it('reads a page written to be slow to normalize in under a second (MEA-234)', () => {
 		// Runs of 10,000 combining marks, each of which takes a few hundredths of a second to
-		// normalize (text.ts). The 250 lines, 5 MB as a page sends them, would take seconds.
+		// normalize (text.ts). The 100 ingredients read of 250 would take seconds.
 		const run = `a${'\u0301\u0316'.repeat(4_999)}\u0301`;
 		const started = performance.now();
-		const values = fromRecipe({ recipeInstructions: Array<string>(250).fill(run) });
+		const values = fromRecipe({ recipeIngredient: Array<string>(250).fill(run) });
 		expect(performance.now() - started).toBeLessThan(1000);
-		// 10 lines come to 100,000 characters.
-		expect(values.steps.split('\n')).toHaveLength(10);
+		// 10 ingredients come to 100,000 characters.
+		expect(values.rows).toHaveLength(10);
+	});
+
+	it('reads the first 100 ingredients, and says when the page has more (MEA-84)', () => {
+		const hundred = Array.from({ length: 100 }, (_, at) => `${at + 1} cups flour`);
+		const all = readRecipe({ recipeIngredient: hundred });
+		expect(all.values.rows).toHaveLength(100);
+		expect(all.leftOut).toEqual([]);
+
+		const more = readRecipe({ recipeIngredient: [...hundred, '1 egg'] });
+		expect(ingredients(more.values).at(-1)).toEqual(['100', 'cups', 'flour', '']);
+		expect(more.values.rows).toHaveLength(100);
+		expect(more.leftOut).toEqual(['ingredients']);
+
+		// A blank entry counts, though it makes no row.
+		const blank = readRecipe({ recipeIngredient: [' ', ...hundred] });
+		expect(ingredients(blank.values).at(-1)).toEqual(['99', 'cups', 'flour', '']);
+		expect(blank.leftOut).toEqual(['ingredients']);
+	});
+
+	it('reads the whole steps that fit in 10000 characters, and says when there are more (MEA-84)', () => {
+		const x = (length: number) => 'x'.repeat(length);
+		// With the line break between, exactly 10,000.
+		const all = readRecipe({ recipeInstructions: [x(4_999), x(5_000)] });
+		expect(all.values.steps).toBe(`${x(4_999)}\n${x(5_000)}`);
+		expect(all.leftOut).toEqual([]);
+
+		const more = readRecipe({ recipeInstructions: [x(4_999), x(5_001), 'Serve.'] });
+		expect(more.values.steps).toBe(x(4_999));
+		expect(more.leftOut).toEqual(['steps']);
+
+		// Blank lines count, as text does, though they make no step.
+		const blanks = readRecipe({ recipeInstructions: `Mix.${'<br>'.repeat(9_996)}Bake.` });
+		expect(blanks.values.steps).toBe('Mix.');
+		expect(blanks.leftOut).toEqual(['steps']);
+	});
+
+	it('stops reading a page of millions of ingredients or steps in a moment (MEA-84)', () => {
+		// As a 5 MB page could have them, with text and without.
+		const withText = {
+			recipeIngredient: Array<string>(1_000_000).fill('a'),
+			recipeInstructions: Array<string>(1_000_000).fill('a')
+		};
+		const blank = {
+			recipeIngredient: Array<string>(1_000_000).fill(''),
+			recipeInstructions: '\n'.repeat(2_500_000)
+		};
+		const started = performance.now();
+		const texts = readRecipe(withText);
+		const blanks = readRecipe(blank);
+		expect(performance.now() - started).toBeLessThan(1000);
+		expect(texts.values.rows).toHaveLength(100);
+		expect(texts.values.steps).toHaveLength(9_999);
+		expect(texts.leftOut).toEqual(['ingredients', 'steps']);
+		expect(blanks.values).toEqual(START);
+		expect(blanks.leftOut).toEqual(['ingredients', 'steps']);
+	});
+
+	it("reads steps up to 32 lists and sections deep, so nesting can't run out of stack (MEA-84)", () => {
+		const step = { '@type': 'HowToStep', text: 'Bake.' };
+		const inSection = (inner: unknown) => ({ '@type': 'HowToSection', itemListElement: inner });
+		expect(fromRecipe({ recipeInstructions: nested(step, 32) }).steps).toBe('Bake.');
+		expect(fromRecipe({ recipeInstructions: nested(step, 32, inSection) }).steps).toBe('Bake.');
+		expect(fromRecipe({ recipeInstructions: nested(step, 33) }).steps).toBe('');
+		expect(fromRecipe({ recipeInstructions: nested(step, 33, inSection) }).steps).toBe('');
+		// Following each would run out of stack.
+		const deep = readRecipe({ recipeInstructions: [nested(step, 1_000_000), 'Serve.'] });
+		expect(deep.values.steps).toBe('Serve.');
+		expect(deep.leftOut).toEqual([]);
+		const sections = nested(step, 1_000_000, inSection);
+		expect(fromRecipe({ recipeInstructions: sections }).steps).toBe('');
 	});
 
 	it("keeps a new recipe's fields when the Recipe has none of them", () => {

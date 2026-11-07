@@ -292,9 +292,11 @@ lost, so is everything. Moving backups off the server later is a small change.
   name resolves to is checked as the connection is made, so the name can't resolve to a public
   address for a check and a private one for the fetch. Redirects are followed one at a time, up to
   5, each checked the same way. A fetch stops after 10 seconds or 5 MB, and a page sent gzipped
-  stops unzipping at 5 MB. An image link's answer goes back to the page's script as data, and only
-  when it starts as a JPEG, PNG, GIF or WebP does. The phone decodes and resizes it, so the server
-  never decodes an image (MEA-50).
+  stops unzipping at 5 MB. Reading a page stops at the most the editor takes and follows its
+  JSON-LD no more than 32 deep, so a page built to be slow can't hold up the server or run it out
+  of stack (MEA-84; 7, Import from a link). An image link's answer goes back to the page's script
+  as data, and only when it starts as a JPEG, PNG, GIF or WebP does. The phone decodes and resizes
+  it, so the server never decodes an image (MEA-50).
 
 ### 4.6 Code layout
 
@@ -999,7 +1001,11 @@ HTML and character references such as `&amp;` are taken out of the text. Text ov
 characters in one place, such as the name, an ingredient or a step, is cut to 10,000, and the
 text is read in the editor's order, the name, ingredients and then steps, up to 100,000
 characters in all, cutting the piece where it runs out and leaving out the rest (4.5). Save then
-checks it like any other. The page is read in
+checks it like any other. Ingredients and steps are read up to the most the editor takes
+(MEA-84): the page's first 100 ingredients, where a blank one counts though it makes no row, and
+the whole steps that fit in 10,000 characters with a line break between each, where blank lines
+count too, so a page of millions of either stops there. Lists, @graphs and sections are followed
+up to 32 deep and no further. The page is read in
 the charset its Content-Type names, else the one a meta element in its first 1,024 bytes names,
 else UTF-8, so a page in windows-1252 or ISO-8859-1 keeps its é, ° and ½ (MEA-75). Import asks
 for the page uncompressed, and unzips one its server gzips anyway. Fields the page leaves
@@ -1008,10 +1014,13 @@ and notes are never imported: Import fills in the editor around them, so a photo
 or notes typed before it stay (MEA-205). When anything else has been typed or changed since New
 recipe opened, an earlier import included, Import asks first: "Replace what you typed with the
 page's recipe? The photo, tags and notes stay." Cancel leaves the editor as it was. Once it's
-filled in, the page says "Filled in from the page. Check it, then tap Save."
+filled in, the page says "Filled in from the page. Check it, then tap Save.", naming what it left
+out of a page with more than the editor takes: "Filled in from the page, leaving out ingredients
+after the first 100 and steps after the first 10,000 characters. Check it, then tap Save."
 Nothing is saved until Save, which checks the fields as if they were typed, and leaving New
 recipe before Save asks first, as it does once anything is typed. A page without a
-Recipe says "Couldn't find a recipe on that page.", and one that can't be opened says
+Recipe, or one whose reading fails, says "Couldn't find a recipe on that page.", and one that
+can't be opened says
 "Couldn't open that page. Check the link and try again."; either way the link stays in its
 field and the editor stays as it was. The link must start with http:// or https:// and, like
 Source, be up to 500 characters. Pages whose sites block servers or need a sign-in can't be
