@@ -934,7 +934,11 @@ recipe or other row may have. The chosen file stays in the form and is sent agai
 choices; nothing is kept between the two. The whole import is checked and saved in one
 transaction. Recipes then says what it did until the next navigation, such as "Imported 9
 recipes, replaced 2 and skipped 3. Ignored columns: Step and Rating.", leaving out the parts that
-are 0 or empty. New item names join the catalog, as from the editor.
+are 0 or empty. It names at most three ignored columns and counts the rest, as in "Ignored
+columns: Step, Rating and 12 more." The import page hands this to Recipes as navigation state,
+not in the address, so a link can't make Recipes say something else, a file with hundreds of
+extra columns still gets there, and a reload or coming back with Back doesn't say it again
+(MEA-81). New item names join the catalog, as from the editor.
 
 **Recipe.** "‹ Recipes" goes to the Recipes list with no search or filters, sorted by name,
 even when the recipe was opened from a dinner. Photo, name, tags, a **Tried it** checkbox, your
