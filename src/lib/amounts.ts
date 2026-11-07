@@ -27,9 +27,10 @@ const FRACTION = /^(?:(\d+)(?:\s+|\s*-\s*))?(\d+)\s*\/\s*(\d+)$/;
  * number above 0.
  */
 export function parseAmount(text: string): number | null {
-	// "1½" reads as "1 1/2". Pasted text can also use the fraction slash, U+2044.
+	// "1½" reads as "1 1/2", and "½1" as "1/2 1", which isn't an amount (MEA-91). Pasted text
+	// can also use the fraction slash, U+2044.
 	const plain = text
-		.replace(GLYPH, (glyph) => ` ${GLYPHS[glyph]}`)
+		.replace(GLYPH, (glyph) => ` ${GLYPHS[glyph]} `)
 		.replace(/\u2044/g, '/')
 		.trim();
 	const fraction = FRACTION.exec(plain);
