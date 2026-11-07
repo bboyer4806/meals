@@ -29,10 +29,10 @@ import {
 	listDishTags,
 	rateDish,
 	setDishArchived,
-	setDishPhoto,
 	setDishTried,
 	updateDish,
-	type DishSummary
+	type DishSummary,
+	type PhotoChange
 } from './dishes.ts';
 import { removeMember } from './households.ts';
 import { createItem, findItemByName, listCatalog, setItemArchived } from './items.ts';
@@ -196,7 +196,7 @@ describe('saving', () => {
 			]
 		});
 		// With their stored names, in the order of the ingredients, each once.
-		expect(createDish(householdId, soup, [], NOW)).toEqual({
+		expect(createDish(householdId, soup, null, [], NOW)).toEqual({
 			kind: 'archived',
 			items: [
 				{ id: pepper, name: 'Pepper' },
@@ -212,7 +212,7 @@ describe('saving', () => {
 		const beef = ingredient('Beef', 1, 'lb');
 		const id = makeDish(householdId, recipe('Stew', { ingredients: [beef] }), NOW);
 		const stew = recipe('Beef stew', { ingredients: [beef, ingredient('Salt')] });
-		expect(updateDish(householdId, id, stew, [], LATER)).toEqual({
+		expect(updateDish(householdId, id, stew, 'keep', [], LATER)).toEqual({
 			kind: 'archived',
 			items: [{ id: salt, name: 'Salt' }]
 		});
@@ -225,14 +225,14 @@ describe('saving', () => {
 
 		// A name that's taken is still the first thing it says.
 		const copy = recipe('stew', { ingredients: [ingredient('Salt')] });
-		expect(createDish(householdId, copy, [], NOW)).toMatchObject({ kind: 'taken', id });
+		expect(createDish(householdId, copy, null, [], NOW)).toMatchObject({ kind: 'taken', id });
 	});
 
 	it('restores archived items a recipe would start using when allowed to (6.10)', () => {
 		const salt = createItem(householdId, 'Salt', NOW).id;
 		setItemArchived(householdId, salt, true, NOW);
 		const soup = recipe('Soup', { ingredients: [ingredient('salt')] });
-		const created = createDish(householdId, soup, [salt], NOW);
+		const created = createDish(householdId, soup, null, [salt], NOW);
 		if (created.kind !== 'saved') throw new Error('Expected it to save');
 		expect(getDish(householdId, created.id).ingredients[0]?.itemId).toBe(salt);
 		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBeNull();
@@ -241,7 +241,11 @@ describe('saving', () => {
 		const id = makeDish(householdId, recipe('Stew', { ingredients: [beef] }), NOW);
 		setItemArchived(householdId, salt, true, NOW);
 		const stew = recipe('Stew', { ingredients: [beef, ingredient('Salt')] });
-		expect(updateDish(householdId, id, stew, [salt], LATER)).toEqual({ kind: 'saved', id });
+		expect(updateDish(householdId, id, stew, 'keep', [salt], LATER)).toEqual({
+			kind: 'saved',
+			id,
+			replacedPhotoKey: null
+		});
 		expect(getDish(householdId, id).ingredients.map((i) => i.itemName)).toEqual(['Beef', 'Salt']);
 		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBeNull();
 	});
@@ -252,7 +256,7 @@ describe('saving', () => {
 		const cumin = createItem(householdId, 'Cumin', NOW).id;
 		for (const item of [cardamom, nutmeg, cumin]) setItemArchived(householdId, item, true, NOW);
 		const chai = recipe('Chai', { ingredients: [ingredient('Cardamom', 4), ingredient('Nutmeg')] });
-		expect(createDish(householdId, chai, [cardamom], NOW)).toEqual({
+		expect(createDish(householdId, chai, null, [cardamom], NOW)).toEqual({
 			kind: 'archived',
 			items: [
 				{ id: cardamom, name: 'Cardamom' },
@@ -264,7 +268,7 @@ describe('saving', () => {
 		expect(findItemByName(householdId, 'Nutmeg')?.archivedAt).toBe(NOW);
 
 		// Cumin isn't in the recipe, so allowing it changes nothing.
-		const created = createDish(householdId, chai, [nutmeg, cumin, cardamom], LATER);
+		const created = createDish(householdId, chai, null, [nutmeg, cumin, cardamom], LATER);
 		if (created.kind !== 'saved') throw new Error('Expected it to save');
 		expect(getDish(householdId, created.id).ingredients.map((i) => i.itemId)).toEqual([
 			cardamom,
@@ -281,13 +285,15 @@ describe('saving', () => {
 		const salt = findItemByName(householdId, 'Salt')!.id;
 		setItemArchived(householdId, salt, true, NOW);
 		// Saved without asking, and left archived even when restoring is allowed.
-		expect(updateDish(householdId, id, { ...soup, servings: 6 }, [], LATER)).toEqual({
+		expect(updateDish(householdId, id, { ...soup, servings: 6 }, 'keep', [], LATER)).toEqual({
 			kind: 'saved',
-			id
+			id,
+			replacedPhotoKey: null
 		});
-		expect(updateDish(householdId, id, { ...soup, servings: 8 }, [salt], LATER)).toEqual({
+		expect(updateDish(householdId, id, { ...soup, servings: 8 }, 'keep', [salt], LATER)).toEqual({
 			kind: 'saved',
-			id
+			id,
+			replacedPhotoKey: null
 		});
 		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBe(NOW);
 	});
@@ -326,7 +332,11 @@ describe('saving', () => {
 				ingredient('Beans', 2, 'can', { section: 'From the pantry' })
 			]
 		});
-		expect(updateDish(householdId, id, changed, [], LATER)).toEqual({ kind: 'saved', id });
+		expect(updateDish(householdId, id, changed, 'keep', [], LATER)).toEqual({
+			kind: 'saved',
+			id,
+			replacedPhotoKey: null
+		});
 
 		const dish = getDish(householdId, id);
 		expect(dish).toMatchObject({
@@ -350,11 +360,15 @@ describe('saving', () => {
 	});
 
 	it('saves only the recipe fields, never a photo or archive time sent along with them', () => {
-		const id = makeDish(householdId, recipe('Toast', { ingredients: [ingredient('Bread', 2)] }));
-		setDishPhoto(householdId, id, KEY_A, NOW);
+		const toast = recipe('Toast', { ingredients: [ingredient('Bread', 2)] });
+		const id = makeDish(householdId, toast, NOW, KEY_A);
 		// A recipe as loaded, sent back whole with other values.
 		const sent = { ...getDish(householdId, id), photoKey: KEY_B, archivedAt: NOW, servings: 2 };
-		expect(updateDish(householdId, id, sent, [], LATER)).toEqual({ kind: 'saved', id });
+		expect(updateDish(householdId, id, sent, 'keep', [], LATER)).toEqual({
+			kind: 'saved',
+			id,
+			replacedPhotoKey: null
+		});
 		expect(getDish(householdId, id)).toMatchObject({
 			servings: 2,
 			photoKey: KEY_A,
@@ -367,13 +381,13 @@ describe('saving', () => {
 describe('names', () => {
 	it('refuses a name another dish has, ignoring case, and says which dish has it', () => {
 		const cake = makeDish(householdId, recipe('Pound cake'));
-		expect(createDish(householdId, recipe('POUND CAKE'), [], NOW)).toEqual({
+		expect(createDish(householdId, recipe('POUND CAKE'), null, [], NOW)).toEqual({
 			kind: 'taken',
 			archived: false,
 			id: cake
 		});
 		const pie = makeDish(householdId, recipe('Apple pie'));
-		expect(updateDish(householdId, pie, recipe('pound cake'), [], NOW)).toEqual({
+		expect(updateDish(householdId, pie, recipe('pound cake'), 'keep', [], NOW)).toEqual({
 			kind: 'taken',
 			archived: false,
 			id: cake
@@ -383,7 +397,7 @@ describe('names', () => {
 
 	it('matches names ignoring case beyond A to Z', () => {
 		const brulee = makeDish(householdId, recipe('Crème brûlée'));
-		expect(createDish(householdId, recipe('CRÈME BRÛLÉE'), [], NOW)).toMatchObject({
+		expect(createDish(householdId, recipe('CRÈME BRÛLÉE'), null, [], NOW)).toMatchObject({
 			kind: 'taken',
 			id: brulee
 		});
@@ -392,7 +406,7 @@ describe('names', () => {
 	it('counts archived dishes, so the page can offer to restore one (design 6.10)', () => {
 		const cake = makeDish(householdId, recipe('Pound cake'));
 		setDishArchived(householdId, cake, true, NOW);
-		expect(createDish(householdId, recipe('pound cake'), [], NOW)).toEqual({
+		expect(createDish(householdId, recipe('pound cake'), null, [], NOW)).toEqual({
 			kind: 'taken',
 			archived: true,
 			id: cake
@@ -401,13 +415,13 @@ describe('names', () => {
 
 	it('lets a dish keep its name or change its case', () => {
 		const cake = makeDish(householdId, recipe('Pound cake'));
-		expect(updateDish(householdId, cake, recipe('Pound cake', { servings: 6 }), [], NOW)).toEqual({
+		expect(
+			updateDish(householdId, cake, recipe('Pound cake', { servings: 6 }), 'keep', [], NOW)
+		).toEqual({ kind: 'saved', id: cake, replacedPhotoKey: null });
+		expect(updateDish(householdId, cake, recipe('Pound Cake'), 'keep', [], NOW)).toEqual({
 			kind: 'saved',
-			id: cake
-		});
-		expect(updateDish(householdId, cake, recipe('Pound Cake'), [], NOW)).toEqual({
-			kind: 'saved',
-			id: cake
+			id: cake,
+			replacedPhotoKey: null
 		});
 		expect(getDish(householdId, cake).name).toBe('Pound Cake');
 	});
@@ -418,7 +432,7 @@ describe('names', () => {
 			tags: ['Dessert'],
 			ingredients: [ingredient('Butter', 1, 'cup')]
 		});
-		expect(createDish(householdId, copy, [], NOW)).toMatchObject({ kind: 'taken' });
+		expect(createDish(householdId, copy, null, [], NOW)).toMatchObject({ kind: 'taken' });
 		expect(db().select().from(dishes).all()).toHaveLength(1);
 		expect(db().select().from(dishTags).all()).toHaveLength(0);
 		expect(db().select().from(items).all()).toHaveLength(0);
@@ -427,7 +441,7 @@ describe('names', () => {
 	it('lets another household use the same name', () => {
 		makeDish(householdId, recipe('Pound cake'));
 		const other = makeHousehold();
-		expect(createDish(other.householdId, recipe('Pound cake'), [], NOW)).toMatchObject({
+		expect(createDish(other.householdId, recipe('Pound cake'), null, [], NOW)).toMatchObject({
 			kind: 'saved'
 		});
 	});
@@ -437,32 +451,39 @@ describe('failed saves', () => {
 	it('rolls back a new recipe that fails partway', () => {
 		const salt = createItem(householdId, 'Salt', NOW).id;
 		setItemArchived(householdId, salt, true, NOW);
-		// A unit without an amount breaks a database rule only after the dish, its tags and the
-		// items for the earlier rows are written, and Salt is restored, as allowed.
+		// A unit without an amount breaks a database rule only after the dish with its photo, its
+		// tags and the items for the earlier rows are written, and Salt is restored, as allowed.
 		const broken = recipe('Soup', {
 			tags: ['Easy'],
 			ingredients: [ingredient('Salt'), ingredient('Leeks', 2), ingredient('Stock', null, 'cup')]
 		});
-		expect(() => createDish(householdId, broken, [salt], NOW)).toThrow(/CHECK constraint failed/);
+		expect(() => createDish(householdId, broken, KEY_A, [salt], NOW)).toThrow(
+			/CHECK constraint failed/
+		);
 		expect(db().select().from(dishes).all()).toHaveLength(0);
 		expect(db().select().from(dishTags).all()).toHaveLength(0);
 		expect(findItemByName(householdId, 'Leeks')).toBeUndefined();
 		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBe(NOW);
 	});
 
-	it('keeps the saved recipe when an update fails partway', () => {
+	it('keeps the saved recipe and its photo when an update fails partway (MEA-87)', () => {
 		const id = makeDish(
 			householdId,
 			recipe('Soup', { tags: ['Easy'], ingredients: [ingredient('Leeks', 2)] }),
-			NOW
+			NOW,
+			KEY_A
 		);
+		// An amount of 0 breaks a database rule only after the details, the new photo and the
+		// tags are written.
 		const broken = recipe('Leek soup', {
 			tags: ['Hard'],
 			ingredients: [ingredient('Potatoes', 3), ingredient('Stock', 0, 'cup')]
 		});
-		expect(() => updateDish(householdId, id, broken, [], LATER)).toThrow(/CHECK constraint failed/);
+		expect(() => updateDish(householdId, id, broken, { photoKey: KEY_B }, [], LATER)).toThrow(
+			/CHECK constraint failed/
+		);
 		const dish = getDish(householdId, id);
-		expect(dish).toMatchObject({ name: 'Soup', tags: ['Easy'] });
+		expect(dish).toMatchObject({ name: 'Soup', photoKey: KEY_A, tags: ['Easy'] });
 		expect(dish.ingredients.map((i) => i.itemName)).toEqual(['Leeks']);
 		expect(findItemByName(householdId, 'Potatoes')).toBeUndefined();
 		expect(timestamps(id)).toEqual([NOW, NOW]);
@@ -484,7 +505,7 @@ describe('tried', () => {
 	it('keeps the tried mark when the recipe is saved from Edit recipe', () => {
 		const id = makeDish(householdId, recipe('Pound cake'));
 		setDishTried(householdId, id, true);
-		updateDish(householdId, id, recipe('Lemon pound cake'), [], LATER);
+		updateDish(householdId, id, recipe('Lemon pound cake'), 'keep', [], LATER);
 		expect(getDish(householdId, id).tried).toBe(true);
 	});
 
@@ -514,14 +535,22 @@ describe('archiving and photos', () => {
 		expect(getDish(householdId, id).ingredients[0]?.itemName).toBe('Bread');
 	});
 
-	it('sets, replaces and clears the photo, returning the key whose files can go', () => {
-		const id = makeDish(householdId, recipe('Pound cake'), NOW);
-		expect(setDishPhoto(householdId, id, KEY_A, NOW)).toBeNull();
-		expect(setDishPhoto(householdId, id, KEY_B, LATER)).toBe(KEY_A);
+	it('sets, replaces, keeps and clears the photo, returning the key whose files can go', () => {
+		const cake = recipe('Pound cake');
+		const created = createDish(householdId, cake, KEY_A, [], NOW);
+		if (created.kind !== 'saved') throw new Error('Expected it to save');
+		const { id } = created;
+		expect(created.replacedPhotoKey).toBeNull();
+		expect(getDish(householdId, id).photoKey).toBe(KEY_A);
+
+		const saveWith = (photo: PhotoChange) => updateDish(householdId, id, cake, photo, [], LATER);
+		expect(saveWith({ photoKey: KEY_B })).toEqual({ kind: 'saved', id, replacedPhotoKey: KEY_A });
 		expect(getDish(householdId, id).photoKey).toBe(KEY_B);
-		// The same key again leaves nothing to delete.
-		expect(setDishPhoto(householdId, id, KEY_B, LATER)).toBeNull();
-		expect(setDishPhoto(householdId, id, null, LATER)).toBe(KEY_B);
+		// Keeping it, or the same key again, leaves nothing to delete.
+		expect(saveWith('keep')).toEqual({ kind: 'saved', id, replacedPhotoKey: null });
+		expect(saveWith({ photoKey: KEY_B })).toEqual({ kind: 'saved', id, replacedPhotoKey: null });
+		expect(getDish(householdId, id).photoKey).toBe(KEY_B);
+		expect(saveWith({ photoKey: null })).toEqual({ kind: 'saved', id, replacedPhotoKey: KEY_B });
 		expect(getDish(householdId, id).photoKey).toBeNull();
 		expect(timestamps(id)).toEqual([NOW, LATER]);
 	});
@@ -594,9 +623,10 @@ describe('listing', () => {
 	it('gives each row its photo, times and tags', () => {
 		const id = makeDish(
 			householdId,
-			recipe('Chili', { prepMinutes: 15, cookMinutes: 60, tags: ['Spicy', 'Quick'] })
+			recipe('Chili', { prepMinutes: 15, cookMinutes: 60, tags: ['Spicy', 'Quick'] }),
+			NOW,
+			KEY_A
 		);
-		setDishPhoto(householdId, id, KEY_A, NOW);
 		expect(list()).toEqual([
 			{
 				id,
@@ -630,13 +660,14 @@ describe('listing', () => {
 	});
 
 	it('lists the tags on active dishes once each, sorted, in the oldest spelling', () => {
-		const chili = makeDish(householdId, recipe('Chili', { tags: ['Spicy', 'quick'] }));
+		const chiliRecipe = recipe('Chili', { tags: ['Spicy', 'quick'] });
+		const chili = makeDish(householdId, chiliRecipe);
 		makeDish(householdId, recipe('Salad', { tags: ['Quick', 'Vegetarian'] }));
 		const roast = makeDish(householdId, recipe('Roast', { tags: ['Sunday'] }));
 		setDishArchived(householdId, roast, true, NOW);
 		expect(listDishTags(householdId)).toEqual(['quick', 'Spicy', 'Vegetarian']);
 		// Saving the older dish again keeps its spelling first.
-		updateDish(householdId, chili, recipe('Chili', { tags: ['Spicy', 'quick'] }), [], LATER);
+		updateDish(householdId, chili, chiliRecipe, 'keep', [], LATER);
 		expect(listDishTags(householdId)).toEqual(['quick', 'Spicy', 'Vegetarian']);
 	});
 });
@@ -699,11 +730,15 @@ describe('grouping by last made', () => {
 	});
 
 	it("gives each dish the list's summary, with its last date on the Menu", () => {
-		const chili = makeDish(householdId, recipe('Chili', { cookMinutes: 45, tags: ['Spicy'] }));
+		const chili = makeDish(
+			householdId,
+			recipe('Chili', { cookMinutes: 45, tags: ['Spicy'] }),
+			NOW,
+			KEY_A
+		);
 		makeDish(householdId, recipe('Toast', { steps: 'Toast the bread.' }));
 		rateDish(householdId, chili, userId, 4);
 		setDishTried(householdId, chili, true);
-		setDishPhoto(householdId, chili, KEY_A, NOW);
 		cooked('2026-09-30', chili);
 		const [chiliSummary, toastSummary] = list();
 		expect(groupDishesByLastMade(householdId, { search: '', tags: [] }, TODAY)).toEqual({
@@ -1034,9 +1069,11 @@ describe('households', () => {
 			never: []
 		});
 		expectHttpError(() => getDish(other.householdId, id), 404);
-		expectHttpError(() => updateDish(other.householdId, id, recipe('Mine now'), [], NOW), 404);
+		expectHttpError(
+			() => updateDish(other.householdId, id, recipe('Mine now'), { photoKey: KEY_A }, [], NOW),
+			404
+		);
 		expectHttpError(() => setDishArchived(other.householdId, id, true, NOW), 404);
-		expectHttpError(() => setDishPhoto(other.householdId, id, KEY_A, NOW), 404);
 		expectHttpError(() => setDishTried(other.householdId, id, true), 404);
 		expectHttpError(() => rateDish(other.householdId, id, other.userId, 5), 404);
 		expectHttpError(() => rateDish(other.householdId, id, other.userId, null), 404);

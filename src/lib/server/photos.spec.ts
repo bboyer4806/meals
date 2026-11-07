@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { isHttpError } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from './config.ts';
-import { setDishArchived, setDishPhoto } from './data/dishes.ts';
+import { setDishArchived, updateDish } from './data/dishes.ts';
 import { createItem, setItemArchived, setItemPhoto } from './data/items.ts';
 import {
 	deletePhoto,
@@ -215,8 +215,8 @@ describe('householdOwnsPhoto', () => {
 	it("is true only for a photo on one of the household's dishes, archived or not", () => {
 		const { householdId } = makeHousehold();
 		const other = makeHousehold();
-		const dishId = makeDish(householdId, recipe('Pound cake'));
-		setDishPhoto(householdId, dishId, KEY, 0);
+		const cake = recipe('Pound cake');
+		const dishId = makeDish(householdId, cake, 0, KEY);
 
 		expect(householdOwnsPhoto(householdId, KEY)).toBe(true);
 		expect(householdOwnsPhoto(other.householdId, KEY)).toBe(false);
@@ -225,7 +225,7 @@ describe('householdOwnsPhoto', () => {
 		setDishArchived(householdId, dishId, true, 0);
 		expect(householdOwnsPhoto(householdId, KEY)).toBe(true);
 
-		setDishPhoto(householdId, dishId, null, 0);
+		updateDish(householdId, dishId, cake, { photoKey: null }, [], 0);
 		expect(householdOwnsPhoto(householdId, KEY)).toBe(false);
 	});
 
