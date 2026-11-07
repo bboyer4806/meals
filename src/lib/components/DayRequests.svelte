@@ -12,14 +12,14 @@
 	// dinners: the only one that can have dishes, or the one the person picks when several can.
 	// When none can, it goes on a new Cooking at home dinner. A requested restaurant always becomes
 	// a new Eating out dinner. A new dinner on a date that has dinners needs labels, as Add a dinner
-	// asks for (6.9). The request is then removed.
+	// asks for (6.9). The request is then completed, which moves it to the Menu's completed history.
 	let {
 		requests,
 		dinners,
 		send,
 		onadded
 	}: {
-		/** The household's requests, oldest first. */
+		/** The household's active requests, oldest first. */
 		requests: DishRequest[];
 		/** The date's dinners as they are now, in the order they were added. */
 		dinners: Dinner[];
@@ -30,7 +30,7 @@
 	} = $props();
 
 	const uid = $props.id();
-	const GONE = 'Someone removed that request, so nothing was added.';
+	const GONE = 'Someone completed or removed that request, so nothing was added.';
 
 	// The dinners a dish can go on: Cooking at home and Bringing a dish (Q26).
 	const withDishes = $derived(dinners.filter((dinner) => hasDishes(dinner.type)));

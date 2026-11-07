@@ -285,8 +285,9 @@
 		};
 	};
 
-	// Someone else may have removed it already, which is what was wanted.
-	const submitRemove: SubmitFunction = () => {
+	// Complete or Remove on a request. Someone else may have completed or removed it meanwhile, and
+	// the page then shows the requests as they are now (6.11).
+	const submitRequestChange: SubmitFunction = () => {
 		requestsError = '';
 		return async ({ result, update }) => {
 			if (result.type === 'error' && result.status === 404) {
@@ -294,8 +295,10 @@
 			} else if (result.type === 'failure') {
 				requestsError = failureMessage(result.data);
 			} else {
-				await update();
+				// Landing on the action's address would drop ?week= and show this week instead.
+				await update({ navigate: false });
 			}
+			// The request's buttons went with it.
 			await tick();
 			requestButton?.focus();
 		};
@@ -412,6 +415,19 @@
 	{/each}
 </ol>
 
+<!-- A request's dish, linked to its recipe, or "Eating out" and its restaurant, then its note and
+     who asked, as both lists show it. -->
+{#snippet requestDetails(request: (typeof data.requests)[number])}
+	{#if request.kind === 'dish'}
+		<a class="dish link-tap" href="/recipes/{request.dishId}">{request.name}</a>
+	{:else}
+		<span class="kind">{DINNER_TYPE_LABELS.eat_out}</span>
+		<span class="restaurant">{request.name}</span>
+	{/if}
+	{#if request.note}<span class="request-note">{request.note}</span>{/if}
+	<span class="muted">Asked by {request.askedBy}</span>
+{/snippet}
+
 <section class="card requests" aria-labelledby="requests-heading">
 	<h2 id="requests-heading">Requests</h2>
 	{#if requestsError}<p class="error" role="alert">{requestsError}</p>{/if}
@@ -419,20 +435,17 @@
 		<ul class="list">
 			{#each data.requests as request (request.id)}
 				<li class="request">
-					<div class="what">
-						{#if request.kind === 'dish'}
-							<a class="dish link-tap" href="/recipes/{request.dishId}">{request.name}</a>
-						{:else}
-							<span class="kind">{DINNER_TYPE_LABELS.eat_out}</span>
-							<span class="restaurant">{request.name}</span>
-						{/if}
-						{#if request.note}<span class="request-note">{request.note}</span>{/if}
-						<span class="muted">Asked by {request.askedBy}</span>
+					<div class="what">{@render requestDetails(request)}</div>
+					<div class="request-actions">
+						<form method="POST" action="?/completeRequest" use:enhance={submitRequestChange}>
+							<input type="hidden" name="id" value={request.id} />
+							<button class="quiet" aria-label="Complete {request.name}">Complete</button>
+						</form>
+						<form method="POST" action="?/removeRequest" use:enhance={submitRequestChange}>
+							<input type="hidden" name="id" value={request.id} />
+							<button class="quiet" aria-label="Remove {request.name}">Remove</button>
+						</form>
 					</div>
-					<form method="POST" action="?/removeRequest" use:enhance={submitRemove}>
-						<input type="hidden" name="id" value={request.id} />
-						<button class="quiet" aria-label="Remove {request.name}">Remove</button>
-					</form>
 				</li>
 			{/each}
 		</ul>
@@ -446,6 +459,27 @@
 		</button>
 	</div>
 </section>
+
+<!-- Folded away each time the page opens, until its heading is tapped (6.12). -->
+<details class="card completed">
+	<summary><h2>Completed requests</h2></summary>
+	{#if data.completed.length > 0}
+		<ul class="list">
+			{#each data.completed as request (request.id)}
+				<li class="request">
+					<div class="what">
+						{@render requestDetails(request)}
+						<span class="muted">
+							Completed {formatDateLabel(request.completedOn, { today: data.today })}
+						</span>
+					</div>
+				</li>
+			{/each}
+		</ul>
+	{:else}
+		<p class="muted">No completed requests yet.</p>
+	{/if}
+</details>
 
 <Sheet bind:open={requestOpen} title="Request a dish">
 	<form method="POST" action="?/request" use:enhance={submitRequest}>
@@ -698,17 +732,57 @@
 		margin-bottom: 0.75rem;
 	}
 
+	/* Complete and Remove beside the request, or under it, on the right, when they don't fit. */
 	.request {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.5rem;
+		column-gap: 0.5rem;
 	}
 
 	.what {
-		flex: 1;
+		flex: 1 1 10rem;
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
+	}
+
+	.request-actions {
+		display: flex;
+		margin-left: auto;
+	}
+
+	/* Like a store's group on the grocery list, with the arrow turning as it opens. */
+	.completed {
+		padding-block: 0.25rem;
+		overflow-wrap: anywhere;
+	}
+
+	.completed summary {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: var(--tap);
+		cursor: pointer;
+		list-style: none;
+	}
+
+	.completed summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.completed summary::before {
+		content: '▸';
+		color: var(--muted);
+		transition: transform 0.15s;
+	}
+
+	.completed[open] > summary::before {
+		transform: rotate(90deg);
+	}
+
+	.completed h2 {
+		margin: 0;
 	}
 
 	.dish,

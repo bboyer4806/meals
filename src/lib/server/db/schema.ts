@@ -426,18 +426,22 @@ export const pantryMarks = sqliteTable(
 
 export const REQUEST_KINDS = ['dish', 'restaurant'] as const;
 
-// A dish or a restaurant someone asked for. It stays until someone removes it (design 6.12).
+// A dish or a restaurant someone asked for. It's active until someone completes it, by hand or by
+// adding it to a date, which keeps it in the completed history, or removes it, which deletes it
+// (design 6.12).
 export const dishRequests = sqliteTable(
 	'dish_requests',
 	{
-		// Never reused after a request is removed or added to a date, so a page that still shows it
-		// can't remove or add a newer one (6.12).
+		// Never reused after a request is removed, so a page that still shows it can't remove,
+		// complete or add a newer one (6.12).
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		householdId: integer('household_id')
 			.notNull()
 			.references(() => households.id),
-		// Who asked. Removing them from the household removes their requests.
-		userId: integer('user_id').notNull(),
+		// Who asked. Removing them from the household removes their active requests and empties it on
+		// their completed ones, which asked_by still names them on. removeMember empties it, since a
+		// composite key's SET NULL would empty household_id too.
+		userId: integer('user_id'),
 		// Requests made before restaurant requests are dish requests.
 		kind: text('kind', { enum: REQUEST_KINDS }).notNull().default('dish'),
 		// As typed, or the dish's name when requested from its recipe's page. Kept when the linked
@@ -447,7 +451,12 @@ export const dishRequests = sqliteTable(
 		// Only on a dish request: the recipe the name matched when it was asked for, the one the
 		// request made, or the one whose page it was requested from. Nothing changes it later.
 		dishId: integer('dish_id'),
-		createdAt: integer('created_at').notNull()
+		createdAt: integer('created_at').notNull(),
+		// When someone completed it, by hand or by adding it to a date; empty while it's active.
+		completedAt: integer('completed_at'),
+		// Who asked, by name as it was when it was completed, so its history still names them after
+		// they're removed; empty while it's active.
+		askedBy: text('asked_by')
 	},
 	(t) => [
 		foreignKey({
@@ -462,6 +471,9 @@ export const dishRequests = sqliteTable(
 		index('dish_requests_user').on(t.userId),
 		index('dish_requests_dish').on(t.dishId),
 		check('dish_requests_kind', sql`${t.kind} in ('dish', 'restaurant')`),
-		check('dish_requests_kind_dish', sql`(${t.kind} = 'dish') = (${t.dishId} is not null)`)
+		check('dish_requests_kind_dish', sql`(${t.kind} = 'dish') = (${t.dishId} is not null)`),
+		// Only a completed request names who asked, and only one can outlast them.
+		check('dish_requests_asked_by', sql`(${t.completedAt} is null) = (${t.askedBy} is null)`),
+		check('dish_requests_asker', sql`${t.completedAt} is not null or ${t.userId} is not null`)
 	]
 );

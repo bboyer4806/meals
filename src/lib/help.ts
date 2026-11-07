@@ -112,7 +112,8 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Tap a day to plan or change its dinner.',
 			'On a computer, drag a day onto another day to swap their dinners.',
 			'Previous and Next change the week, or swipe the days left or right. This week comes back to today.',
-			'Requests lists dishes and restaurants people in your household would like. Request a dish or Request a restaurant to add one, and Remove one when it is done.'
+			'Requests lists dishes and restaurants people in your household would like. Request a dish or Request a restaurant to add one.',
+			'When a request is done, tap Complete, or add it to a day, and it moves to Completed requests. Remove deletes it.'
 		]
 	},
 	'/(app)/menu/[date]': {
@@ -123,7 +124,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Set the servings (or the restaurant when eating out) and a note, then tap Save. Everything else saves as soon as you do it.',
 			"Copy a dinner reuses the dishes of a dinner you've had before.",
 			'Tap the date at the top to move this dinner to another day. If that day has a dinner, the two swap.',
-			'Requests are at the bottom. Add puts a requested dish or restaurant on this day, with its note, and removes the request.',
+			'Requests are at the bottom. Add puts a requested dish or restaurant on this day, with its note, and moves the request to Completed requests on the Menu.',
 			'Clear removes the dinner. ‹ Week of goes back to the week.'
 		]
 	},

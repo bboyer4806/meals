@@ -410,11 +410,14 @@ an `eat_out` dinner and only there; MEA-58, 6.9), `note`, `servings` (at least 1
 `dessert` or `other`; Q29). Only `cook` and `going` dinners have dishes.
 
 **dish_requests** (requests for a dish or a restaurant): `user_id` (who asked; removing them
-from the household removes their requests), `kind` (`dish` or `restaurant`; requests made
-before restaurant requests are `dish`), `name` (as typed, or the recipe's name when requested
-from its page), `note`, `dish_id` (on a dish request, and only there: the recipe the name
-matched when it was asked for, the one the request made, or the one whose page it was requested
-from), `created_at` (6.12).
+from the household removes their active requests and empties it on their completed ones), `kind`
+(`dish` or `restaurant`; requests made before restaurant requests are `dish`), `name` (as typed,
+or the recipe's name when requested from its page), `note`, `dish_id` (on a dish request, and
+only there: the recipe the name matched when it was asked for, the one the request made, or the
+one whose page it was requested from), `created_at`, `completed_at` (when someone completed it, by
+hand or by adding it to a date; empty while it's active; MEA-245), `asked_by` (who asked, by name
+as it was when it was completed, so the history still names them after they're removed; empty
+while it's active) (6.12).
 
 **pantry_checklists:** at most one per household (Q35). Either `start_date` and
 `end_date` (from the menu), or `dish_id` and `servings` (from one recipe). `created_at`.
@@ -424,11 +427,11 @@ from), `created_at` (6.12).
 the mark).
 
 How they connect: a household has users, invites, stores, items, grocery lines, dishes,
-dinners, requests and at most one checklist. A request points at the member who asked and, for
-a dish, its recipe. A rating points at a dish and, until they're removed, the member
-who rated it. A grocery line points at an item and a store. An
-ingredient points at a dish and an item. A dinner has dishes through `dinner_dishes`. A
-mark points at a checklist, an item and sometimes a grocery line.
+dinners, requests and at most one checklist. A request points at the member who asked (a
+completed one only until they're removed) and, for a dish, its recipe. A rating points at a
+dish and, until they're removed, the member who rated it. A grocery line points at an item and
+a store. An ingredient points at a dish and an item. A dinner has dishes through
+`dinner_dishes`. A mark points at a checklist, an item and sometimes a grocery line.
 
 ## 6. Rules
 
@@ -638,10 +641,11 @@ comes back. If two people change the same thing, the last save wins.
 
 ### 6.12 Requests
 
-- Anyone in the household can ask for a dish or a restaurant, see every request and remove any
-  of them (E2). Requests are listed oldest first, dish and restaurant requests together, each
-  with the dish (or "Eating out" and the restaurant), the note if there is one, and "Asked by"
-  with the asker's name. Showing who asked is an exception to section 12, for requests only.
+- Anyone in the household can ask for a dish or a restaurant, see every request, and complete or
+  remove any of them (E2). A request is active until someone completes or removes it (below).
+  Active requests are listed oldest first, dish and restaurant requests together, each with the
+  dish (or "Eating out" and the restaurant), the note if there is one, and "Asked by" with the
+  asker's name. Showing who asked is an exception to section 12, for requests only.
 - The dish field suggests the household's active dishes and offers a new one, like adding a
   dish to a dinner (6.9). Every dish request links to a recipe. A name that matches an active
   dish, ignoring case, links to it. Any other name adds a dish to Recipes with that name and the
@@ -650,13 +654,13 @@ comes back. If two people change the same thing, the last save wins.
   request**, which restores it and adds the request, and **Cancel**, which adds nothing (6.10).
 - A recipe's page also has **Request** (MEA-41; section 7, "Recipe"), which adds a request for
   that recipe from the signed-in person, linked to it, named as the recipe is named then, with
-  no note. A recipe with any request, from either place, shows "Requested" in its place, and
-  shows Request again once its requests are removed. Tapping Request after someone else
-  requested the recipe adds nothing, so the page never adds a second request; the Menu's sheet
-  still can. An archived recipe has no Request.
+  no note. A recipe with any active request, from either place, shows "Requested" in its place,
+  and shows Request again once its requests are completed or removed. Tapping Request after
+  someone else requested the recipe adds nothing, so the page never adds a second request; the
+  Menu's sheet still can. An archived recipe has no Request.
 - The link is set when the request is made and never changes: a request keeps it, and its
-  name, after the recipe is renamed or archived. Removing a request leaves its recipe in
-  Recipes.
+  name, after the recipe is renamed or archived. Completing or removing a request leaves its
+  recipe in Recipes.
 - Requests made before every request had a recipe were linked once, when that change was
   deployed: to the dish with the name, ignoring case, if there was one (an archived one stayed
   archived), and otherwise to a new one made as above. Requests with the same name shared one
@@ -678,11 +682,11 @@ comes back. If two people change the same thing, the last save wins.
   and Side otherwise, and its role can be changed after (6.9). The request's note, if it has one,
   goes on the end of the dinner's note on a line of its own; when something typed in that note
   isn't saved, it stays with the request's note on its end, for Save. The request is then
-  removed, its recipe stays in Recipes, and the page says "Added Lasagna." ("Added Lasagna to
-  Kids." on a date with more than one dinner). Nothing changes, and the page says why, when the
-  dish is already on that dinner, its recipe is archived (restore it first; 6.10), the note would
-  take the dinner's past 2,500 characters, someone changed the date's dinners meanwhile, or
-  someone removed the request (6.11).
+  completed (below), its recipe stays in Recipes, and the page says "Added Lasagna." ("Added
+  Lasagna to Kids." on a date with more than one dinner). Nothing changes, the request stays
+  active, and the page says why, when the dish is already on that dinner, its recipe is archived
+  (restore it first; 6.10), the note would take the dinner's past 2,500 characters, someone
+  changed the date's dinners meanwhile, or someone completed or removed the request (6.11).
 - A restaurant request there has **Add** too (MEA-58), which plans eating out at its restaurant
   as a new dinner on the date and changes none of the date's dinners: Eating out, with the
   restaurant as the request names it, the request's note as its note, and the usual servings
@@ -690,13 +694,25 @@ comes back. If two people change the same thing, the last save wins.
   with the request's note on its end, for Save, as for a dish. On a date with dinners, Add first
   asks for labels as Add a dinner does (6.9), so the date's first dinner gets a label when this
   is its second. A date that already has 5 dinners gets none, and the page says "This day
-  already has 5 dinners. Clear one to add another." The request is then removed, and the page
-  says "Added Olive Garden." ("Added Olive Garden to Adults." on a date with more than one
-  dinner, with the new dinner's label). Nothing changes, and the page says why, when a label
-  isn't right, someone changed the date's dinners meanwhile, or someone removed the request
-  (6.11).
-- Requests have no statuses, dates or link to dinners. One stays until someone removes it,
-  without being asked first, or adds it to a date. Removing a member removes their requests.
+  already has 5 dinners. Clear one to add another." The request is then completed (below), and
+  the page says "Added Olive Garden." ("Added Olive Garden to Adults." on a date with more than
+  one dinner, with the new dinner's label). Nothing changes, the request stays active, and the
+  page says why, when a label isn't right, someone changed the date's dinners meanwhile, or
+  someone completed or removed the request (6.11).
+- **Complete** (MEA-245), beside Remove on the Menu, completes an active request without asking
+  first, as adding it to a date does. A completed request leaves the active requests for
+  **Completed requests**, under them on the Menu, and stays there as it was: nothing edits,
+  restores, completes again or removes it. It keeps its name as asked for, whether it's a dish
+  (with its recipe's link) or a restaurant, its note, and who asked, named as they were when it
+  was completed, with the date it was completed in the household's time zone. Completed requests
+  are listed newest first.
+- **Remove** deletes an active request for good, without asking first, and it doesn't go in
+  Completed requests. Completing or removing a request that someone completed or removed
+  meanwhile changes nothing, and the page shows the requests as they are now (6.11).
+- Requests have no other statuses, and no link to the dinners they went on. Removing a member
+  removes their active requests; their completed ones stay in Completed requests, still naming
+  them. Requests added to a date or removed before Complete came (MEA-245) were deleted, so
+  Completed requests started empty.
 
 ### 6.13 Standard items
 
@@ -963,7 +979,7 @@ who rated is an exception to section 12, for this list only; the Recipes list st
 the household's average. Rating doesn't change Tried it, and works the same on archived recipes.
 Under the stars and the list, **Request** asks for the dish on the Menu's Requests (6.12), on any recipe that isn't
 archived, "No recipe" ones included. It saves as soon as it's tapped, and the page stays at the
-servings shown. A recipe with any request says "Requested" in its place. Ingredients grouped by section and scaled (section
+servings shown. A recipe with any active request says "Requested" in its place. Ingredients grouped by section and scaled (section
 6.6), numbered steps with warnings when scaled (6.7), notes, source (a link when it's a
 URL), and nutrition per serving. Actions: Cook, Print, Edit, Archive ("Check pantry" is
 hidden for now; 6.8). Print uses a print layout of this page at the current servings,
@@ -1045,14 +1061,19 @@ and releasing on the same day or outside the days changes nothing. Touch never d
 still opens a day and swiping up and down scrolls. If someone cleared or moved the dragged day's dinners
 since the week loaded, nothing moves, the week shows the menu as it is now, and it says "Someone
 cleared or moved that day's dinners, so nothing moved." ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
-**Requests** lists the dish and restaurant requests together (6.12), or "No requests yet.", each
-with Remove. "Request a dish" opens a sheet with Dish (with suggestions, or a new dish), an
+**Requests** lists the active dish and restaurant requests together (6.12), or "No requests
+yet.", each with Complete and Remove side by side, beside it or under it when they don't fit.
+Both keep the week shown. "Request a dish" opens a sheet with Dish (with suggestions, or a new dish), an
 optional Note and Request. The suggestions show in the sheet under Dish, about four at a time
 with the rest scrolling, so they never cover Note or Request, and a tap or click elsewhere closes
 them once it's done, so it lands where it was aimed (MEA-151). "Request a restaurant", beside it,
 opens a sheet with Restaurant, an optional Note and Request, and the week shown stays open. Each
 dish request links to its recipe; a restaurant request shows "Eating out" and the restaurant's
-name, not a link.
+name, not a link. Under Requests, **Completed requests** (MEA-245) is folded away each time the
+page opens, like a store's group on the grocery list, and tapping its heading opens it. It lists
+the completed requests newest first (6.12), or "No completed requests yet.", each as Requests
+shows it, then "Completed" and the date, such as "Completed Sat, Nov 7" (with the year when it
+isn't this year), and no buttons.
 
 **Dinner.** "‹ Week of" goes to the dinner's week. Type (four buttons), note, servings,
 and dishes. You add a dish by searching existing dishes or typing a new name (MEA-56). Picking
@@ -1070,8 +1091,9 @@ note, Copy a dinner and Clear; changing one never changes another (6.9). A plann
 the date at the top is a button, with an icon, that opens Move to another date; on a date
 with no dinner it's plain text. A date with no dinner says "Not planned yet" and shows Cooking
 at home selected, with its servings and note ready to fill in, unsaved (6.9). Under the dinners,
-**Requests** lists the Menu's requests: a dish request's Add puts its dish on one of the date's
-dinners, and a restaurant request's Add makes a new Eating out dinner there (6.12). The type,
+**Requests** lists the Menu's active requests: a dish request's Add puts its dish on one of the
+date's dinners, and a restaurant request's Add makes a new Eating out dinner there, and each
+completes its request (6.12). The type,
 dishes, copying, moving, clearing and adding a request save as soon as they're made, and keep
 anything typed in the servings, restaurant and note for Save. On a date with no dinner, what's
 done while the change that plans it is still on its way, such as picking a dish or tapping Save
