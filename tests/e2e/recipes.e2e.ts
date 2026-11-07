@@ -8,6 +8,7 @@ import {
 	addPerson,
 	addPhotoFiles,
 	addRecipe,
+	dayLabel,
 	expect,
 	makeJpeg,
 	open,
@@ -1992,6 +1993,207 @@ test('keeps every selected tag with the search, sort and archived switch', async
 	await expect(list.getByRole('link')).toHaveText(['Baking', 'Dessert']);
 });
 
+// The Grouped view (section 7, "Recipes"; MEA-246).
+
+/** The Recipes list's view switch, one of its views by name, and the current one. */
+function viewSwitch(page: Page) {
+	const list = page.getByRole('list', { name: 'View' });
+	return {
+		list,
+		view: (name: 'List' | 'Grouped') => list.getByRole('link', { name, exact: true }),
+		current: list.locator('[aria-current="true"]')
+	};
+}
+
+/** The names in one of the Grouped view's groups, found by its heading. */
+function groupNames(page: Page, heading: string) {
+	return page.getByRole('region', { name: heading }).locator('.name');
+}
+
+/** How a card says when a recipe was last made, with the year when it isn't this year. */
+function lastMade(date: string): string {
+	const year = date.slice(0, 4);
+	return `Last made ${dayLabel(date)}${year === today().slice(0, 4) ? '' : `, ${year}`}`;
+}
+
+test('groups recipes by when they were last on the Menu, saying when on each card', async ({
+	page,
+	db,
+	person
+}) => {
+	const day = today();
+	const tacosId = addRecipe(db, person.householdId, { name: 'Tacos', tags: ['Dinner'] });
+	const chiliId = addRecipe(db, person.householdId, {
+		name: 'Chili',
+		tags: ['Dinner'],
+		cookMinutes: 45
+	});
+	const soupId = addRecipe(db, person.householdId, { name: 'Soup', tags: ['Dinner'] });
+	const stewId = addRecipe(db, person.householdId, { name: 'Stew', tags: ['Dinner'] });
+	const lasagnaId = addRecipe(db, person.householdId, { name: 'Lasagna', tags: ['Dinner'] });
+	const pieId = addRecipe(db, person.householdId, { name: 'Apple pie', tags: ['Dessert'] });
+	const barsId = addRecipe(db, person.householdId, { name: 'Lemon bars', archived: true });
+	const tonight = addDinner(db, person.householdId, day, { dishes: [[tacosId, 'main']] });
+	addDinner(db, person.householdId, addDays(day, -100), { dishes: [[tacosId, 'main']] });
+	// 60 and 61 days ago.
+	addDinner(db, person.householdId, addDays(day, -60), { dishes: [[chiliId, 'main']] });
+	addDinner(db, person.householdId, addDays(day, -61), { dishes: [[soupId, 'main']] });
+	addDinner(db, person.householdId, addDays(day, -200), { dishes: [[stewId, 'main']] });
+	// Planned for tomorrow, so not made yet.
+	addDinner(db, person.householdId, addDays(day, 1), { dishes: [[lasagnaId, 'main']] });
+	addDinner(db, person.householdId, addDays(day, -1), { dishes: [[barsId, 'dessert']] });
+	db.prepare('update dishes set tried = 1 where id = ?').run(tacosId);
+	const { view, current } = viewSwitch(page);
+	const names = page.locator('.recipes .name');
+	const card = (name: string) => page.getByRole('link', { name: new RegExp(`^${name}`) });
+	const allNames = ['Apple pie', 'Chili', 'Lasagna', 'Soup', 'Stew', 'Tacos'];
+
+	// The list is the default, as it was.
+	await open(page, '/recipes');
+	await expect(current).toHaveText(['List']);
+	await expect(names).toHaveText(allNames);
+	await expect(page.getByLabel('Sort')).toBeVisible();
+	await expect(page.getByText(/^Last made/)).toHaveCount(0);
+
+	await view('Grouped').tap();
+	await expect(page).toHaveURL(/\/recipes\?view=grouped$/);
+	await expect(current).toHaveText(['Grouped']);
+	await expect(page.getByRole('main').getByRole('heading', { level: 2 })).toHaveText([
+		'Recently made',
+		"Haven't made in a long time",
+		'Never made'
+	]);
+	await expect(groupNames(page, 'Recently made')).toHaveText(['Tacos', 'Chili']);
+	await expect(groupNames(page, "Haven't made in a long time")).toHaveText(['Stew', 'Soup']);
+	await expect(groupNames(page, 'Never made')).toHaveText(['Apple pie', 'Lasagna']);
+	await expect(page.getByText('Lemon bars')).toHaveCount(0);
+	// Grouped has its own order.
+	await expect(page.getByLabel('Sort')).toHaveCount(0);
+
+	// Each card is the list's, with when it was last made.
+	await expect(card('Tacos')).toContainText(lastMade(day));
+	await expect(card('Tacos')).toContainText('Tried');
+	await expect(card('Chili')).toContainText('45 min · Dinner');
+	await expect(card('Chili')).toContainText(lastMade(addDays(day, -60)));
+	await expect(card('Soup')).toContainText(lastMade(addDays(day, -61)));
+	await expect(card('Stew')).toContainText(lastMade(addDays(day, -200)));
+	await expect(card('Lasagna')).not.toContainText('Last made');
+
+	// Apple pie on tonight's dinner moves up the next time the page loads.
+	db.prepare(
+		'insert into dinner_dishes (household_id, dinner_id, dish_id, role) values (?, ?, ?, ?)'
+	).run(person.householdId, tonight, pieId, 'dessert');
+	await page.reload();
+	await expect(groupNames(page, 'Recently made')).toHaveText(['Apple pie', 'Tacos', 'Chili']);
+	await expect(groupNames(page, 'Never made')).toHaveText(['Lasagna']);
+	await expect(card('Apple pie')).toContainText(lastMade(day));
+
+	// A card opens its recipe, and Back comes back to the groups.
+	await card('Soup').click();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${soupId}$`));
+	await page.goBack();
+	await expect(groupNames(page, "Haven't made in a long time")).toHaveText(['Stew', 'Soup']);
+
+	// List goes back to the list, and Back to the groups.
+	await view('List').tap();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(current).toHaveText(['List']);
+	await expect(names).toHaveText(allNames);
+	await page.goBack();
+	await expect(current).toHaveText(['Grouped']);
+	await expect(groupNames(page, 'Never made')).toHaveText(['Lasagna']);
+});
+
+test('keeps the search, tags and sort across views, and only lists archived recipes', async ({
+	page,
+	db,
+	person
+}) => {
+	const day = today();
+	const rate = db.prepare(
+		'insert into dish_ratings (household_id, dish_id, user_id, stars) values (?, ?, ?, ?)'
+	);
+	const appleId = addRecipe(db, person.householdId, { name: 'Apple pie', tags: ['Dessert'] });
+	const pecanId = addRecipe(db, person.householdId, { name: 'Pecan pie', tags: ['Dessert'] });
+	addRecipe(db, person.householdId, { name: 'Key lime pie', tags: ['Dessert'] });
+	addRecipe(db, person.householdId, { name: 'Brownies', tags: ['Dessert'] });
+	addRecipe(db, person.householdId, { name: 'Pot pie', tags: ['Dinner'] });
+	addRecipe(db, person.householdId, { name: 'Cherry pie', tags: ['Dessert'], archived: true });
+	addDinner(db, person.householdId, addDays(day, -3), { dishes: [[pecanId, 'dessert']] });
+	addDinner(db, person.householdId, addDays(day, -90), { dishes: [[appleId, 'dessert']] });
+	rate.run(person.householdId, appleId, person.userId, 5);
+	rate.run(person.householdId, pecanId, person.userId, 3);
+	const { list: switcher, view, current } = viewSwitch(page);
+	const { chip, selected } = tagChips(page);
+	const search = page.getByLabel('Search recipes');
+	const sort = page.getByLabel('Sort');
+	const names = page.locator('.recipes .name');
+
+	// Filtered and sorted in the list first.
+	await open(page, '/recipes');
+	await chip('Dessert').tap();
+	await search.fill('pie');
+	await search.press('Enter');
+	await sort.selectOption('Rating');
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert&q=pie&sort=rating$/);
+	await expect(names).toHaveText(['Apple pie', 'Pecan pie', 'Key lime pie']);
+
+	// Grouped keeps the search and the tag for every group, and the sort for coming back.
+	await view('Grouped').tap();
+	await expect(page).toHaveURL(/\/recipes\?q=pie&tag=Dessert&view=grouped&sort=rating$/);
+	await expect(search).toHaveValue('pie');
+	await expect(selected).toHaveText(['Dessert']);
+	await expect(groupNames(page, 'Recently made')).toHaveText(['Pecan pie']);
+	await expect(groupNames(page, "Haven't made in a long time")).toHaveText(['Apple pie']);
+	await expect(groupNames(page, 'Never made')).toHaveText(['Key lime pie']);
+
+	// Tapping a tag and searching there keep the view, and a group with nothing in it goes.
+	await chip('Dessert').tap();
+	await expect(page).toHaveURL(/\/recipes\?q=pie&view=grouped&sort=rating$/);
+	await expect(groupNames(page, 'Never made')).toHaveText(['Key lime pie', 'Pot pie']);
+	await search.fill('apple');
+	await search.press('Enter');
+	await expect(page).toHaveURL(/\/recipes\?view=grouped&q=apple&sort=rating$/);
+	await expect(page.getByRole('region')).toHaveCount(1);
+	await expect(groupNames(page, "Haven't made in a long time")).toHaveText(['Apple pie']);
+
+	// Nothing matching says so, and Show all recipes keeps the view.
+	await search.fill('zzz');
+	await search.press('Enter');
+	await expect(page.getByText('No recipes matching “zzz”.')).toBeVisible();
+	await page.getByRole('link', { name: 'Show all recipes' }).click();
+	await expect(page).toHaveURL(/\/recipes\?view=grouped&sort=rating$/);
+	await expect(groupNames(page, 'Never made')).toHaveText(['Brownies', 'Key lime pie', 'Pot pie']);
+
+	// The list comes back with its sort.
+	await view('List').tap();
+	await expect(page).toHaveURL(/\/recipes\?sort=rating$/);
+	await expect(sort).toHaveValue('rating');
+	await expect(names).toHaveText(['Apple pie', 'Pecan pie', 'Brownies', 'Key lime pie', 'Pot pie']);
+
+	// Archived recipes are only listed, without the switch, and Show active shows the list.
+	await view('Grouped').tap();
+	await page.getByRole('link', { name: 'Show archived' }).click();
+	await expect(page).toHaveURL(/\/recipes\?archived=1&sort=rating$/);
+	await expect(switcher).toHaveCount(0);
+	await expect(names).toHaveText(['Cherry pie']);
+	await page.getByRole('link', { name: 'Show active' }).click();
+	await expect(page).toHaveURL(/\/recipes\?sort=rating$/);
+	await expect(current).toHaveText(['List']);
+	await open(page, '/recipes?archived=1&view=grouped');
+	await expect(switcher).toHaveCount(0);
+	await expect(names).toHaveText(['Cherry pie']);
+
+	// An unknown view is the list, and the tab bar starts at the list.
+	await open(page, '/recipes?view=cards');
+	await expect(current).toHaveText(['List']);
+	await expect(sort).toBeVisible();
+	await view('Grouped').tap();
+	await page.getByRole('link', { name: 'Recipes', exact: true }).click();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(current).toHaveText(['List']);
+});
+
 test.describe('on a computer', () => {
 	test.use({ isMobile: false, hasTouch: false, viewport: { width: 1280, height: 800 } });
 
@@ -2093,6 +2295,8 @@ test('fits long names and words on a phone screen without scrolling sideways', a
 		`https://example.com/${'a'.repeat(400)}`,
 		dishId
 	);
+	// So the Grouped view says when it was last made.
+	addDinner(db, person.householdId, addDays(today(), -400), { dishes: [[dishId, 'main']] });
 	const sideways = () =>
 		page.evaluate(
 			() => document.documentElement.scrollWidth - document.documentElement.clientWidth
@@ -2100,6 +2304,7 @@ test('fits long names and words on a phone screen without scrolling sideways', a
 
 	for (const path of [
 		'/recipes',
+		'/recipes?view=grouped',
 		`/recipes/${dishId}?servings=7`,
 		`/recipes/${dishId}/edit`,
 		`/recipes/${dishId}/cook?servings=7`

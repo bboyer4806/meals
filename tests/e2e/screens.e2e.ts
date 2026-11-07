@@ -126,7 +126,7 @@ test('recipe screens', async ({ page, db, person }) => {
 	db.prepare(
 		'update dishes set source = ?, calories = 420, protein_g = 5, carbs_g = 52, fat_g = 21 where id = ?'
 	).run('https://example.com/pound-cake', cakeId);
-	addRecipe(db, person.householdId, {
+	const tacosId = addRecipe(db, person.householdId, {
 		name: 'Chicken tacos',
 		cookMinutes: 30,
 		tags: ['Dinner', 'Quick'],
@@ -144,12 +144,16 @@ test('recipe screens', async ({ page, db, person }) => {
 		tags: ['Dessert'],
 		steps: 'Mix.\nBake.'
 	});
+	addDinner(db, person.householdId, addDays(today(), -3), { dishes: [[tacosId, 'main']] });
+	addDinner(db, person.householdId, addDays(today(), -90), { dishes: [[cakeId, 'dessert']] });
 	const shot = (name: string) =>
 		page.screenshot({ path: `test-results/screens/${name}.png`, fullPage: true });
 
 	await page.emulateMedia({ colorScheme: 'light' });
 	await page.goto('/recipes');
 	await shot('recipes');
+	await page.goto('/recipes?view=grouped');
+	await shot('recipes-grouped');
 	await page.goto(`/recipes/${cakeId}?servings=12`);
 	await shot('recipe');
 	await page.goto(`/recipes/${cakeId}/edit`);
