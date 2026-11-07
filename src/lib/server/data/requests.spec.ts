@@ -24,7 +24,9 @@ import { removeMember } from './households.ts';
 import {
 	addRequest,
 	addRestaurantRequest,
+	completeRequest,
 	hasRequest,
+	listCompletedRequests,
 	listRequests,
 	promoteDishRequest,
 	promoteRestaurantRequest,
@@ -260,7 +262,9 @@ describe('requestDish', () => {
 				name: 'Veggie lasagna',
 				note: null,
 				dishId: lasagna,
-				createdAt: NOW
+				createdAt: NOW,
+				completedAt: null,
+				askedBy: null
 			}
 		]);
 	});
@@ -303,6 +307,20 @@ describe('hasRequest', () => {
 		expect(hasRequest(otherId, lasagna)).toBe(false);
 		removeRequest(householdId, listRequests(householdId)[0]!.id);
 		expect(hasRequest(householdId, lasagna)).toBe(false);
+	});
+
+	it('counts only active requests, so a recipe whose request was completed can be requested again', () => {
+		ask('lasagna');
+		completeRequest(householdId, listRequests(householdId)[0]!.id, NOW);
+		expect(hasRequest(householdId, lasagna)).toBe(false);
+		requestDish(householdId, userId, lasagna, NOW + 1);
+		expect(hasRequest(householdId, lasagna)).toBe(true);
+		expect(listRequests(householdId)).toEqual([
+			expect.objectContaining({ name: 'Lasagna', dishId: lasagna })
+		]);
+		expect(listCompletedRequests(householdId)).toEqual([
+			expect.objectContaining({ name: 'lasagna', dishId: lasagna })
+		]);
 	});
 });
 
@@ -367,6 +385,120 @@ describe('removeRequest', () => {
 		expectHttpError(() => removeRequest(householdId, soup!.id), 404);
 		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Pie']);
 	});
+
+	it('deletes it for good, without adding it to the completed history', () => {
+		askRestaurant('Olive Garden', 'For her birthday');
+		removeRequest(householdId, listRequests(householdId)[0]!.id);
+		expect(listCompletedRequests(householdId)).toEqual([]);
+		expect(db().select().from(dishRequests).all()).toEqual([]);
+	});
+
+	it('is not found for a completed request, which stays in the history', () => {
+		ask('Soup');
+		const [soup] = listRequests(householdId);
+		completeRequest(householdId, soup!.id, NOW);
+		const before = everything();
+		expectHttpError(() => removeRequest(householdId, soup!.id), 404);
+		expect(everything()).toEqual(before);
+		expect(listCompletedRequests(householdId).map((request) => request.name)).toEqual(['Soup']);
+	});
+});
+
+describe('completeRequest', () => {
+	it('moves the request to the completed history, as it was, with who asked and when', () => {
+		const sam = addMember('Sam');
+		ask('Soup', 'With crackers', NOW, sam);
+		askRestaurant('Olive Garden', null, NOW + 1, addMember('Kim'));
+		ask('Pie', null, NOW + 2);
+		const [soup, olive] = listRequests(householdId);
+		completeRequest(householdId, soup!.id, NOW + 10);
+		completeRequest(householdId, olive!.id, NOW + 20);
+		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Pie']);
+		expect(listCompletedRequests(householdId)).toEqual([
+			{
+				id: olive!.id,
+				kind: 'restaurant',
+				name: 'Olive Garden',
+				note: null,
+				askedBy: 'Kim',
+				completedAt: NOW + 20
+			},
+			{
+				id: soup!.id,
+				kind: 'dish',
+				name: 'Soup',
+				note: 'With crackers',
+				dishId: dishNamed('Soup')!.id,
+				askedBy: 'Sam',
+				completedAt: NOW + 10
+			}
+		]);
+		// Its recipe stays in Recipes, and the request stays tied to who asked.
+		expect(dishNamed('Soup')).toMatchObject({ archivedAt: null });
+		const row = db().select().from(dishRequests).where(eq(dishRequests.id, soup!.id)).get();
+		expect(row).toMatchObject({ userId: sam, completedAt: NOW + 10, askedBy: 'Sam' });
+	});
+
+	it('is not found once someone completed or removed it, so it is never completed twice', () => {
+		ask('Soup');
+		ask('Pie');
+		const [soup, pie] = listRequests(householdId);
+		completeRequest(householdId, soup!.id, NOW);
+		removeRequest(householdId, pie!.id);
+		const before = everything();
+		expectHttpError(() => completeRequest(householdId, soup!.id, NOW + 1), 404);
+		expectHttpError(() => completeRequest(householdId, pie!.id, NOW + 1), 404);
+		expect(everything()).toEqual(before);
+		expect(listCompletedRequests(householdId)).toEqual([
+			expect.objectContaining({ name: 'Soup', completedAt: NOW })
+		]);
+	});
+
+	it("refuses another household's request with a 404, changing nothing", () => {
+		addRestaurantRequest(otherId, otherUserId, { name: 'Diner', note: null }, NOW);
+		const [theirs] = listRequests(otherId);
+		expectHttpError(() => completeRequest(householdId, theirs!.id, NOW), 404);
+		expect(listRequests(otherId)).toHaveLength(1);
+		expect(listCompletedRequests(otherId)).toEqual([]);
+	});
+});
+
+describe('listCompletedRequests', () => {
+	it("lists the household's own completed requests, newest first, leaving out active ones", () => {
+		for (const name of ['Soup', 'Pie', 'Stew', 'Chili']) ask(name);
+		addRequest(otherId, otherUserId, { name: 'Curry', note: null }, NOW);
+		const [soup, pie, stew] = listRequests(householdId);
+		completeRequest(householdId, pie!.id, NOW + 1);
+		completeRequest(householdId, soup!.id, NOW + 2);
+		// Completed at the same time, the newer request comes first.
+		completeRequest(householdId, stew!.id, NOW + 1);
+		completeRequest(otherId, listRequests(otherId)[0]!.id, NOW + 3);
+		expect(listCompletedRequests(householdId).map((request) => request.name)).toEqual([
+			'Soup',
+			'Stew',
+			'Pie'
+		]);
+		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Chili']);
+		expect(listCompletedRequests(otherId).map((request) => request.name)).toEqual(['Curry']);
+	});
+
+	it('keeps the name as asked for, and who asked as they were named, whatever changes after', () => {
+		const sam = addMember('Sam');
+		ask('lasagna', 'Extra cheese', NOW, sam);
+		completeRequest(householdId, listRequests(householdId)[0]!.id, NOW);
+		updateDish(householdId, lasagna, recipe('Veggie lasagna'), [], NOW);
+		setDishArchived(householdId, lasagna, true, NOW);
+		db().update(users).set({ name: 'Samantha' }).where(eq(users.id, sam)).run();
+		expect(listCompletedRequests(householdId)).toEqual([
+			expect.objectContaining({
+				kind: 'dish',
+				name: 'lasagna',
+				note: 'Extra cheese',
+				dishId: lasagna,
+				askedBy: 'Sam'
+			})
+		]);
+	});
 });
 
 describe('promoteDishRequest', () => {
@@ -402,13 +534,16 @@ describe('promoteDishRequest', () => {
 		);
 	}
 
-	it('puts the recipe on the dinner the page picked, as Main, and removes only that request', () => {
+	it('puts the recipe on the dinner the page picked, as Main, and completes only that request', () => {
 		const dinnerId = makeDinner(householdId, DATE);
 		const request = requested('Lasagna');
 		requested('Soup');
 		expect(promote(request, { dinnerId })).toBe(dinnerId);
 		expect(day()).toEqual(['null: cook, null, Lasagna (main)']);
 		expect(listRequests(householdId).map((other) => other.name)).toEqual(['Soup']);
+		expect(listCompletedRequests(householdId)).toEqual([
+			expect.objectContaining({ id: request, name: 'Lasagna', dishId: lasagna, completedAt: NOW })
+		]);
 		// Its recipe stays in Recipes.
 		expect(dishNamed('Lasagna')).toMatchObject({ id: lasagna, archivedAt: null });
 		expect(db().select().from(dinners).get()?.updatedAt).toBe(NOW);
@@ -595,6 +730,18 @@ describe('promoteDishRequest', () => {
 		expectHttpError(() => promote(removed, { dinnerId }), 404);
 		expect(everything()).toEqual(before);
 	});
+
+	it('is not found for a request completed meanwhile, so it goes on no dinner twice (6.11)', () => {
+		const dinnerId = makeDinner(householdId, DATE);
+		const added = requested('Lasagna');
+		promote(added, { dinnerId });
+		const completed = requested('Rice');
+		completeRequest(householdId, completed, NOW);
+		const before = everything();
+		expectHttpError(() => promote(added, newDinner(), '2026-10-09'), 404);
+		expectHttpError(() => promote(completed, { dinnerId }), 404);
+		expect(everything()).toEqual(before);
+	});
 });
 
 describe('promoteRestaurantRequest', () => {
@@ -623,7 +770,7 @@ describe('promoteRestaurantRequest', () => {
 		);
 	}
 
-	it('plans a date with no dinner as Eating out there, with the note, and removes only that request', () => {
+	it('plans a date with no dinner as Eating out there, with the note, and completes only that request', () => {
 		const request = requested('Olive Garden', 'For her birthday');
 		requested('Taco Bar');
 		ask('Soup');
@@ -642,6 +789,15 @@ describe('promoteRestaurantRequest', () => {
 		]);
 		expect(db().select().from(dinners).get()).toMatchObject({ createdAt: NOW, updatedAt: NOW });
 		expect(listRequests(householdId).map((other) => other.name)).toEqual(['Taco Bar', 'Soup']);
+		expect(listCompletedRequests(householdId)).toEqual([
+			expect.objectContaining({
+				id: request,
+				kind: 'restaurant',
+				name: 'Olive Garden',
+				note: 'For her birthday',
+				completedAt: NOW
+			})
+		]);
 
 		// A request without a note makes a dinner without one.
 		promote(requested('Diner'), undefined, '2026-10-09');
@@ -739,9 +895,21 @@ describe('promoteRestaurantRequest', () => {
 		}
 		expect(everything()).toEqual(before);
 	});
+
+	it('is not found for a request completed meanwhile, so it plans no second dinner (6.11)', () => {
+		const added = requested('Olive Garden');
+		promote(added);
+		const completed = requested('Taco Bar');
+		completeRequest(householdId, completed, NOW);
+		const before = everything();
+		for (const requestId of [added, completed]) {
+			expectHttpError(() => promote(requestId, undefined, '2026-10-09'), 404);
+		}
+		expect(everything()).toEqual(before);
+	});
 });
 
-it("removing a member removes their requests, dish and restaurant, and keeps everyone else's", () => {
+it("removing a member removes their active requests, dish and restaurant, and keeps everyone else's", () => {
 	const memberId = addMember('Sam');
 	ask('Soup', null, NOW, memberId);
 	askRestaurant('Olive Garden', null, NOW, memberId);
@@ -749,6 +917,34 @@ it("removing a member removes their requests, dish and restaurant, and keeps eve
 	askRestaurant('Taco Bar', null, NOW + 2);
 	removeMember(householdId, userId, memberId);
 	expect(listRequests(householdId).map((request) => request.name)).toEqual(['Pie', 'Taco Bar']);
+});
+
+it('removing a member keeps their completed requests in the history, still naming them', () => {
+	const memberId = addMember('Sam');
+	ask('Soup', null, NOW, memberId);
+	ask('Stew', null, NOW, memberId);
+	askRestaurant('Diner', 'Late lunch', NOW, memberId);
+	ask('Pie', null, NOW + 1);
+	askRestaurant('Taco Bar', null, NOW + 2);
+	const [, stew, diner, , taco] = listRequests(householdId);
+	completeRequest(householdId, stew!.id, NOW + 3);
+	promoteRestaurantRequest(householdId, DATE, diner!.id, { first: null, added: null }, NOW + 4);
+	completeRequest(householdId, taco!.id, NOW + 5);
+	removeMember(householdId, userId, memberId);
+	expect(listRequests(householdId).map((request) => request.name)).toEqual(['Pie']);
+	expect(listCompletedRequests(householdId)).toEqual([
+		expect.objectContaining({ name: 'Taco Bar', askedBy: expect.stringMatching(/^Person \d+$/) }),
+		expect.objectContaining({ name: 'Diner', note: 'Late lunch', askedBy: 'Sam' }),
+		expect.objectContaining({ name: 'Stew', askedBy: 'Sam' })
+	]);
+	// Theirs are off their account, which is gone; everyone else's stay tied to who asked.
+	const asker = (name: string) =>
+		db()
+			.select({ userId: dishRequests.userId })
+			.from(dishRequests)
+			.where(eq(dishRequests.name, name))
+			.get()?.userId;
+	expect([asker('Taco Bar'), asker('Diner'), asker('Stew')]).toEqual([userId, null, null]);
 });
 
 it('the database rejects a dish from another household', () => {
@@ -783,6 +979,31 @@ it("the database rejects another household's member as who asked (4.5)", () => {
 			.run()
 	).toThrow(/FOREIGN KEY/);
 	expect(listRequests(householdId)).toEqual([]);
+});
+
+it('the database names who asked on every completed request, and only there, and keeps who asked on every active one', () => {
+	const insert =
+		(fields: { userId: number | null; completedAt: number | null; askedBy: string | null }) =>
+		() =>
+			db()
+				.insert(dishRequests)
+				.values({ householdId, kind: 'restaurant', name: 'Diner', createdAt: NOW, ...fields })
+				.run();
+	expect(insert({ userId, completedAt: NOW, askedBy: null })).toThrow(
+		/CHECK constraint failed: dish_requests_asked_by/
+	);
+	expect(insert({ userId, completedAt: null, askedBy: 'Sam' })).toThrow(
+		/CHECK constraint failed: dish_requests_asked_by/
+	);
+	expect(insert({ userId: null, completedAt: null, askedBy: null })).toThrow(
+		/CHECK constraint failed: dish_requests_asker/
+	);
+	expect(db().select().from(dishRequests).all()).toEqual([]);
+	// A completed request outlasts who asked.
+	insert({ userId: null, completedAt: NOW, askedBy: 'Sam' })();
+	expect(listCompletedRequests(householdId)).toEqual([
+		expect.objectContaining({ name: 'Diner', askedBy: 'Sam' })
+	]);
 });
 
 it('the database refuses a restaurant request with a dish, and a dish request without one', () => {

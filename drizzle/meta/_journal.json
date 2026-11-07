@@ -141,6 +141,20 @@
       "when": 1793914737976,
       "tag": "0019_standard-images",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1794026166611,
+      "tag": "0020_completed-requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1794026182594,
+      "tag": "0021_completed-request-checks",
+      "breakpoints": true
     }
   ]
 }

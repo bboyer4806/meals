@@ -2915,6 +2915,157 @@ test('removes a request for everyone, keeping its recipe', async ({ page, db, pe
 			.get(person.householdId)
 	).toBe(0);
 	expect(dishCount(db, person.householdId)).toBe(2);
+	// Gone for good, not completed.
+	await openCompleted(page);
+	await expect(completedSection(page).getByText('No completed requests yet.')).toBeVisible();
+});
+
+// Completed requests (design 6.12, MEA-245), under Requests.
+
+/** Completed requests, folded away until its heading is tapped. */
+function completedSection(page: Page) {
+	return page.locator('details', {
+		has: page.getByRole('heading', { name: 'Completed requests', exact: true })
+	});
+}
+
+async function openCompleted(page: Page) {
+	await completedSection(page).getByRole('heading', { name: 'Completed requests' }).click();
+	await expect(completedSection(page)).toHaveAttribute('open');
+}
+
+test('completes a request for everyone, into Completed requests, folded away until opened', async ({
+	page,
+	db,
+	person
+}) => {
+	const gumbo = addRecipe(db, person.householdId, { name: 'Gumbo' });
+	const gumboRequest = askFor(db, person, 'Gumbo', { dishId: gumbo, note: 'Extra okra', at: 1 });
+	askFor(db, person, 'Olive Garden', { note: 'For her birthday', at: 2 });
+	// Completed last year, and asked for by someone removed since.
+	db.prepare(
+		"insert into dish_requests (household_id, kind, name, created_at, completed_at, asked_by) values (?, 'restaurant', 'Taco Bar', 0, ?, 'Sam')"
+	).run(person.householdId, Date.UTC(2025, 5, 7, 18));
+	const sunday = sundayOf(addDays(today(), 21));
+	await open(page, `/menu?week=${sunday}`);
+	const section = requestsSection(page);
+	const completed = completedSection(page);
+	const done = completed.getByRole('listitem');
+	await expect(completed).not.toHaveAttribute('open');
+	await expect(completed.getByText('Taco Bar')).toBeHidden();
+
+	await section.getByRole('button', { name: 'Complete Gumbo' }).click();
+	await expect(section.getByRole('listitem')).toHaveText([/^Eating out/]);
+	await expect(section.getByRole('button', { name: 'Request a dish' })).toBeFocused();
+	// The week shown stays open, and so does the section's folding.
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sunday}$`));
+	await expect(completed).not.toHaveAttribute('open');
+	await section.getByRole('button', { name: 'Complete Olive Garden' }).click();
+	await expect(section.getByText('No requests yet.')).toBeVisible();
+
+	// Newest first, each as it was asked for, with who asked and when, and nothing to change it.
+	await openCompleted(page);
+	await expect(done).toHaveText([/Olive Garden/, /Gumbo/, /Taco Bar/]);
+	await expect(done.nth(0).getByText('Eating out', { exact: true })).toBeVisible();
+	await expect(done.nth(0).getByText('For her birthday')).toBeVisible();
+	await expect(done.nth(1).getByRole('link', { name: 'Gumbo' })).toHaveAttribute(
+		'href',
+		`/recipes/${gumbo}`
+	);
+	await expect(done.nth(1).getByText('Extra okra')).toBeVisible();
+	await expect(done.nth(1).getByText(/^Asked by Person \d+$/)).toBeVisible();
+	await expect(done.nth(1).getByText(`Completed ${dayLabel(today())}`)).toBeVisible();
+	await expect(done.nth(2).getByText('Asked by Sam')).toBeVisible();
+	await expect(done.nth(2).getByText('Completed Sat, Jun 7, 2025')).toBeVisible();
+	await expect(done.getByRole('button')).toHaveCount(0);
+	expect(
+		db
+			.prepare(
+				'select completed_at is not null as completed, asked_by as askedBy from dish_requests where id = ?'
+			)
+			.get(gumboRequest)
+	).toEqual({ completed: 1, askedBy: expect.stringMatching(/^Person \d+$/) });
+
+	// Folded away again when the page opens.
+	await open(page, '/menu');
+	await expect(completed).not.toHaveAttribute('open');
+	await expect(completed.getByText('Gumbo')).toBeHidden();
+
+	// Menu help tells people about it.
+	await page.getByRole('banner').getByRole('button', { name: 'Help', exact: true }).click();
+	await expect(page.getByRole('dialog', { name: 'Help: Menu' })).toContainText(
+		'tap Complete, or add it to a day, and it moves to Completed requests'
+	);
+});
+
+test("keeps a removed member's completed requests, naming them, and removes their others", async ({
+	page,
+	db,
+	person
+}) => {
+	const tag = `${test.info().workerIndex}-${Date.now()}`;
+	const sam = {
+		householdId: person.householdId,
+		userId: Number(
+			db
+				.prepare(
+					'insert into users (household_id, google_sub, email, name, created_at) values (?, ?, ?, ?, 0)'
+				)
+				.run(person.householdId, `sam-${tag}`, `sam-${tag}@example.com`, 'Sam').lastInsertRowid
+		)
+	};
+	const gumbo = addRecipe(db, person.householdId, { name: 'Gumbo' });
+	askFor(db, sam, 'Gumbo', { dishId: gumbo, at: 1 });
+	askFor(db, sam, 'Olive Garden', { at: 2 });
+	await open(page, '/menu');
+	const section = requestsSection(page);
+	await section.getByRole('button', { name: 'Complete Gumbo' }).click();
+	await expect(section.getByRole('listitem')).toHaveText([/^Eating out/]);
+
+	await open(page, '/household');
+	await page.getByRole('button', { name: 'Remove' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
+	await expect(page.getByText('Sam', { exact: true })).toHaveCount(0);
+
+	await open(page, '/menu');
+	await expect(section.getByText('No requests yet.')).toBeVisible();
+	await openCompleted(page);
+	await expect(completedSection(page).getByRole('listitem')).toHaveText([/^Gumbo/]);
+	await expect(completedSection(page).getByText('Asked by Sam')).toBeVisible();
+	expect(
+		db
+			.prepare(
+				'select name, user_id as userId, asked_by as askedBy from dish_requests where household_id = ?'
+			)
+			.all(person.householdId)
+	).toEqual([{ name: 'Gumbo', userId: null, askedBy: 'Sam' }]);
+});
+
+test('fits long requests, their buttons and Completed requests on a phone and a computer', async ({
+	page,
+	db,
+	person
+}) => {
+	const long = 'Grandmas'.repeat(10);
+	const dishId = addRecipe(db, person.householdId, { name: long });
+	askFor(db, person, long, { dishId, note: 'n'.repeat(200), at: 1 });
+	// 80 characters without a space, the longest a restaurant can be.
+	const restaurant = `${'Trattoria'.repeat(8)}Romanaaa`;
+	const completedId = askFor(db, person, restaurant, { note: 'n'.repeat(200), at: 2 });
+	db.prepare("update dish_requests set completed_at = ?, asked_by = 'Sam' where id = ?").run(
+		Date.now(),
+		completedId
+	);
+	await open(page, '/menu');
+	await openCompleted(page);
+	const section = requestsSection(page);
+	for (const size of [null, { width: 1280, height: 800 }]) {
+		if (size) await page.setViewportSize(size);
+		await expect(section.getByRole('button', { name: `Complete ${long}` })).toBeVisible();
+		await expect(section.getByRole('button', { name: `Remove ${long}` })).toBeVisible();
+		await expect(completedSection(page).getByText(restaurant, { exact: true })).toBeVisible();
+		expect(await sideways(page)).toBe(0);
+	}
 });
 
 test('requests a restaurant by name, listed after an older dish request, and removes it', async ({
@@ -3039,9 +3190,12 @@ function askFor(
 	);
 }
 
+/** The ids of the household's active requests: the ones not completed or removed. */
 function requestIds(db: Database.Database, householdId: number) {
 	return db
-		.prepare('select id from dish_requests where household_id = ? order by id')
+		.prepare(
+			'select id from dish_requests where household_id = ? and completed_at is null order by id'
+		)
 		.pluck()
 		.all(householdId);
 }
@@ -3119,10 +3273,15 @@ test("lists the requests under a day's dinners, and adds one to the dinner that 
 	);
 	await page.keyboard.press('Escape');
 
-	// Its recipe stays, and the week's list no longer has it.
+	// Its recipe stays, and the week's list no longer has it: it's completed.
 	expect(dishCount(db, person.householdId)).toBe(3);
 	await open(page, '/menu');
 	await expect(requestsSection(page).getByRole('listitem')).toHaveText([/^Eating out/, /^Gumbo/]);
+	await openCompleted(page);
+	const done = completedSection(page).getByRole('listitem');
+	await expect(done).toHaveText([/^Lasagna/]);
+	await expect(done.getByText('Extra cheese')).toBeVisible();
+	await expect(done.getByText(`Completed ${dayLabel(today())}`)).toBeVisible();
 });
 
 test('asks which dinner when several can have dishes, and labels a new one when none can', async ({
@@ -3293,7 +3452,7 @@ test("keeps what was typed, with the request's note on the end of a typed note",
 	db.prepare('delete from dish_requests where id = ?').run(gumboRequest);
 	await section.getByRole('button', { name: 'Add Gumbo' }).click();
 	await expect(section.getByRole('alert')).toHaveText(
-		'Someone removed that request, so nothing was added.'
+		'Someone completed or removed that request, so nothing was added.'
 	);
 	await expect(section.getByText('No requests yet.')).toBeVisible();
 	await expect(dishLinks(page)).toHaveText(['Lasagna']);
@@ -3481,7 +3640,7 @@ test("changes nothing when a requested restaurant can't go on the day", async ({
 	db.prepare('delete from dish_requests where id = ?').run(removed);
 	await section.getByRole('button', { name: 'Add Taco Bar' }).click();
 	await expect(section.getByRole('alert')).toHaveText(
-		'Someone removed that request, so nothing was added.'
+		'Someone completed or removed that request, so nothing was added.'
 	);
 	await expect(section.getByRole('listitem')).toHaveText([/^Eating out/]);
 	await expect(section.getByRole('button', { name: 'Add Olive Garden' })).toBeVisible();

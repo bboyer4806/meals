@@ -12,6 +12,8 @@ import { getDish, setDishArchived } from '#lib/server/data/dishes.ts';
 import {
 	addRequest,
 	addRestaurantRequest,
+	completeRequest,
+	listCompletedRequests,
 	listRequests,
 	removeRequest
 } from '#lib/server/data/requests.ts';
@@ -187,10 +189,13 @@ describe('loading a date', () => {
 		});
 	});
 
-	it("gives the Menu's requests, dish and restaurant, oldest first, and no other household's", () => {
+	it("gives the Menu's active requests, dish and restaurant, oldest first, and no other household's", () => {
 		addRequest(householdId, userId, { name: 'Tacos', note: 'Fish ones' }, NOW + 1);
 		addRestaurantRequest(householdId, userId, { name: 'Olive Garden', note: null }, NOW);
 		addRequest(otherId, otherUserId, { name: 'Curry', note: null }, NOW);
+		addRestaurantRequest(householdId, userId, { name: 'Diner', note: null }, NOW);
+		const diner = listRequests(householdId).find((request) => request.name === 'Diner');
+		completeRequest(householdId, diner!.id, NOW);
 		expect((loadPage(TOMORROW) as { requests: unknown }).requests).toEqual([
 			{
 				id: expect.any(Number),
@@ -974,7 +979,7 @@ describe('adding a requested dish (6.12)', () => {
 		return String(request.id);
 	}
 
-	it('puts it on the dinner the page picked, removes the request and says where it went', async () => {
+	it('puts it on the dinner the page picked, completes the request and says where it went', async () => {
 		const dinnerId = makeDinner(householdId, TOMORROW, { note: 'Busy', dishes: [[tacos, 'main']] });
 		const requestId = requestFor('Rice', 'Brown, please');
 		requestFor('Pound cake');
@@ -985,6 +990,12 @@ describe('adding a requested dish (6.12)', () => {
 		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)', 'Rice (side)']);
 		expect(dinnerOn(householdId, TOMORROW)?.note).toBe('Busy\nBrown, please');
 		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Pound cake']);
+		expect(listCompletedRequests(householdId)).toEqual([
+			expect.objectContaining({ id: Number(requestId), name: 'Rice', completedAt: NOW })
+		]);
+		// A request completed meanwhile goes on no dinner twice.
+		expectNotFound(await post('promoteDishRequest', { requestId, dinnerId: shown(dinnerId) }));
+		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)', 'Rice (side)']);
 	});
 
 	it("plans a date with no dinner, and adds a labeled dinner when none of the date's can have dishes", async () => {
@@ -1065,7 +1076,7 @@ describe('adding a requested restaurant (6.12)', () => {
 		return String(request.id);
 	}
 
-	it('plans a date with no dinner as Eating out there, removes the request and says where it went', async () => {
+	it('plans a date with no dinner as Eating out there, completes the request and says where it went', async () => {
 		const requestId = requestFor('Olive Garden', 'For her birthday');
 		requestFor('Taco Bar');
 		expect(await post('promoteRestaurantRequest', { requestId })).toEqual({
@@ -1081,6 +1092,9 @@ describe('adding a requested restaurant (6.12)', () => {
 			dishes: []
 		});
 		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Taco Bar']);
+		expect(listCompletedRequests(householdId)).toEqual([
+			expect.objectContaining({ id: Number(requestId), name: 'Olive Garden', completedAt: NOW })
+		]);
 	});
 
 	it('adds a separate dinner to a date with dinners, with the labels the page asked for', async () => {

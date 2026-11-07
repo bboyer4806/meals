@@ -404,7 +404,8 @@ describe('never-reuse-ids', () => {
 
 		migrate(sqlite, 'drizzle');
 
-		expect(rows()).toEqual(before);
+		// Later migrations add columns, which these rows didn't have.
+		expect(rows()).toMatchObject(before);
 		for (const [table, add] of [
 			['grocery_needs', line],
 			['dish_requests', request],
@@ -469,7 +470,47 @@ describe('household-member-keys', () => {
 
 		migrate(sqlite, 'drizzle');
 
-		expect(rows()).toEqual(before);
+		// Later migrations add columns, which these rows didn't have.
+		expect(rows()).toMatchObject(before);
 		expect(request()).toBe(removed + 1);
+	});
+});
+
+// The change that keeps completed requests (design 6.12, MEA-245).
+describe('completed-requests', () => {
+	it('keeps every request as it was, and active', () => {
+		const sqlite = new Database(':memory:');
+		migrate(sqlite, foldersBefore('0020_completed-requests'));
+		const run = (statement: string, ...values: unknown[]) =>
+			Number(sqlite.prepare(statement).run(...values).lastInsertRowid);
+		const household = run(
+			"insert into households (name, default_servings, time_zone, created_at) values ('H', 4, 'UTC', 0)"
+		);
+		const user = run(
+			"insert into users (household_id, google_sub, email, name, created_at) values (?, 'sub', 'p@example.com', 'P', 0)",
+			household
+		);
+		const chili = run(
+			"insert into dishes (household_id, name, servings, created_at, updated_at) values (?, 'Chili', 2, 0, 0)",
+			household
+		);
+		run(
+			"insert into dish_requests (household_id, user_id, kind, name, note, dish_id, created_at) values (?, ?, 'dish', 'CHILI', 'Extra beans', ?, 1)",
+			household,
+			user,
+			chili
+		);
+		run(
+			"insert into dish_requests (household_id, user_id, kind, name, created_at) values (?, ?, 'restaurant', 'Diner', 2)",
+			household,
+			user
+		);
+		const rows = () =>
+			sqlite.prepare('select * from dish_requests order by id').all() as Record<string, unknown>[];
+		const before = rows();
+
+		migrate(sqlite, 'drizzle');
+
+		expect(rows()).toEqual(before.map((row) => ({ ...row, completed_at: null, asked_by: null })));
 	});
 });

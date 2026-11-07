@@ -1,7 +1,7 @@
 import { asc, eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../db/index.ts';
-import { households, items, sessions, users } from '../db/schema.ts';
+import { dishRequests, households, items, sessions, users } from '../db/schema.ts';
 import { createSession } from '../auth/session.ts';
 import { signIn } from '../auth/sign-in.ts';
 import { STANDARD_ITEMS } from '../standard-items.ts';
@@ -34,6 +34,7 @@ import {
 	updateItem
 } from './items.ts';
 import { addNeed, listActiveLines, listHistory, markReceived } from './needs.ts';
+import { addRestaurantRequest, completeRequest, listRequests } from './requests.ts';
 
 beforeEach(freshDb);
 
@@ -65,14 +66,20 @@ describe('households', () => {
 		expect(db().select().from(sessions).all()).toHaveLength(0);
 	});
 
-	it("can't remove someone from another household or change their ratings", () => {
+	it("can't remove someone from another household or change their ratings or requests", () => {
 		const mine = makeHousehold();
 		const theirs = makeHousehold();
 		const omelet = makeDish(theirs.householdId, recipe('Omelet'));
 		rateDish(theirs.householdId, omelet, theirs.userId, 4);
+		for (const name of ['Diner', 'Cafe']) {
+			addRestaurantRequest(theirs.householdId, theirs.userId, { name, note: null }, 0);
+		}
+		completeRequest(theirs.householdId, listRequests(theirs.householdId)[0]!.id, 1);
+		const requests = db().select().from(dishRequests).all();
 		removeMember(mine.householdId, mine.userId, theirs.userId);
 		expect(listMembers(theirs.householdId).map((m) => m.id)).toEqual([theirs.userId]);
 		expect(getOwnRating(theirs.householdId, omelet, theirs.userId)).toBe(4);
+		expect(db().select().from(dishRequests).all()).toEqual(requests);
 	});
 
 	it('counts a member someone else already removed as removed (6.1)', () => {

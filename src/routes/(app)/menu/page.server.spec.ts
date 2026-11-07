@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addDinner, getDinners } from '#lib/server/data/dinners.ts';
 import { setDishArchived } from '#lib/server/data/dishes.ts';
 import { listMembers } from '#lib/server/data/households.ts';
-import { addRequest, addRestaurantRequest, listRequests } from '#lib/server/data/requests.ts';
+import {
+	addRequest,
+	addRestaurantRequest,
+	listCompletedRequests,
+	listRequests
+} from '#lib/server/data/requests.ts';
 import { freshDb, makeDinner, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
 import { actions, load } from './+page.server.ts';
 
@@ -287,7 +292,7 @@ describe('requests (6.12)', () => {
 		expect(week().dishes.map((dish) => dish.name)).toEqual(['Chili']);
 	});
 
-	it("remove one, and not another household's", async () => {
+	it("remove one for good, and not another household's", async () => {
 		const other = makeHousehold(TZ);
 		addRequest(other.householdId, other.userId, { name: 'Curry', note: null }, NOW);
 		addRequest(householdId, userId, { name: 'Soup', note: null }, NOW);
@@ -297,6 +302,58 @@ describe('requests (6.12)', () => {
 		expect(await post('removeRequest', { id: String(ours!.id) })).toBeUndefined();
 		expect(listRequests(householdId)).toEqual([]);
 		expect(listRequests(other.householdId)).toHaveLength(1);
+		// It doesn't go in the completed history.
+		expect(week().completed).toEqual([]);
+	});
+
+	it('are completed into the history, newest first, dated in the household time zone, on every week', async () => {
+		addRequest(householdId, userId, { name: 'Soup', note: 'With crackers' }, NOW);
+		addRestaurantRequest(householdId, userId, { name: 'Olive Garden', note: null }, NOW);
+		addRequest(householdId, userId, { name: 'Pie', note: null }, NOW);
+		const [soup, olive] = listRequests(householdId);
+		expect(await post('completeRequest', { id: String(olive!.id), userId: '999' })).toBeUndefined();
+		vi.spyOn(Date, 'now').mockReturnValue(NOW + 60_000);
+		expect(await post('completeRequest', { id: String(soup!.id) })).toBeUndefined();
+		for (const param of [undefined, '2027-03-10']) {
+			const data = week(param);
+			expect(data.requests.map((request) => request.name)).toEqual(['Pie']);
+			// Sat Oct 3 in Chicago, though already Oct 4 in UTC.
+			expect(data.completed).toEqual([
+				{ ...soup, completedAt: NOW + 60_000, completedOn: '2026-10-03' },
+				{ ...olive, completedAt: NOW, completedOn: '2026-10-03' }
+			]);
+		}
+	});
+
+	it("complete one once, and not another household's or a removed one", async () => {
+		const other = makeHousehold(TZ);
+		addRequest(other.householdId, other.userId, { name: 'Curry', note: null }, NOW);
+		addRequest(householdId, userId, { name: 'Soup', note: null }, NOW);
+		addRequest(householdId, userId, { name: 'Pie', note: null }, NOW);
+		const [theirs] = listRequests(other.householdId);
+		const [soup, pie] = listRequests(householdId);
+		expect(await post('completeRequest', { id: String(theirs!.id) })).toMatchObject({
+			status: 404
+		});
+		expect(await post('completeRequest', { id: String(soup!.id) })).toBeUndefined();
+		await post('removeRequest', { id: String(pie!.id) });
+		// A page that still shows them, after someone else completed or removed them.
+		vi.spyOn(Date, 'now').mockReturnValue(NOW + 60_000);
+		for (const request of [soup, pie]) {
+			for (const action of ['completeRequest', 'removeRequest'] as const) {
+				expect(await post(action, { id: String(request!.id) })).toMatchObject({ status: 404 });
+			}
+		}
+		expect(week().completed).toMatchObject([{ name: 'Soup', completedAt: NOW }]);
+		expect(listRequests(other.householdId)).toHaveLength(1);
+		expect(listCompletedRequests(other.householdId)).toEqual([]);
+	});
+
+	it('need a request to complete', async () => {
+		expect(await post('completeRequest', { id: 'soup' })).toMatchObject({
+			status: 400,
+			data: { action: 'requests' }
+		});
 	});
 });
 
