@@ -64,8 +64,7 @@ it('serves the photo and its thumbnail as long-lived private JPEGs', async () =>
 		expect(Object.fromEntries(response.headers)).toEqual({
 			'content-type': 'image/jpeg',
 			'content-length': String(bytes.length),
-			'cache-control': 'private, max-age=31536000, immutable',
-			'x-content-type-options': 'nosniff'
+			'cache-control': 'private, max-age=31536000, immutable'
 		});
 		expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
 	}

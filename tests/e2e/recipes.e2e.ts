@@ -80,6 +80,8 @@ async function expectJpeg(page: Page, url: string) {
 	expect(response.status()).toBe(200);
 	expect(response.headers()['content-type']).toBe('image/jpeg');
 	expect(response.headers()['cache-control']).toBe('private, max-age=31536000, immutable');
+	// People send photos, so the browser must go by the type stated, not guess (4.5).
+	expect(response.headers()['x-content-type-options']).toBe('nosniff');
 	const body = await response.body();
 	expect([...body.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
 }

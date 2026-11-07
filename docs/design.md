@@ -290,6 +290,16 @@ lost, so is everything. Moving backups off the server later is a small change.
   which they may send up to 5 MB (`BODY_SIZE_LIMIT`, 4.2).
 - **No raw HTML** from user input is ever rendered (no `{@html}`), and SvelteKit's
   built-in Content Security Policy is turned on.
+- **Headers** (MEA-82). Pages and endpoints send `x-content-type-options: nosniff`, so a browser
+  goes by the type a response states instead of guessing from its content,
+  `referrer-policy: strict-origin-when-cross-origin`, so other sites see this site's address but
+  not the page's, and `permissions-policy: camera=(), microphone=(), geolocation=()`, which leaves
+  the screen wake lock the cooking view uses (7) allowed. An endpoint's error page, such as the one
+  a cancelled sign-in gets, has no Content Security Policy from SvelteKit, so it gets
+  `content-security-policy: frame-ancestors 'none'` and no other site can show it in a frame. On
+  the server, Dokku's nginx adds `strict-transport-security: max-age=15724800; includeSubdomains`
+  to every response, its default for an app with a certificate, so a browser that has been here
+  goes straight to https for the next 6 months.
 - **Admin** is only the `ADMIN_EMAIL` account. It sees household names and member
   emails, not household data.
 - **Importing from a link** and an **image link** (7) have the server fetch a web page or an
