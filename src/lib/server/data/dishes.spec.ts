@@ -6,14 +6,24 @@ import {
 	expectHttpError,
 	freshDb,
 	ingredient,
+	makeDinner,
 	makeDish,
 	makeHousehold,
 	recipe
 } from '../testing.ts';
 import {
+	addDinnerDish,
+	clearDinner,
+	getDay,
+	moveDinners,
+	removeDinnerDish,
+	saveDinner
+} from './dinners.ts';
+import {
 	createDish,
 	getDish,
 	getOwnRating,
+	groupDishesByLastMade,
 	listDishes,
 	listDishRatings,
 	listDishTags,
@@ -631,6 +641,218 @@ describe('listing', () => {
 	});
 });
 
+// The Recipes page's Grouped view (section 7, "Recipes"; MEA-246).
+describe('grouping by last made', () => {
+	// The household's date: Sat 2026-10-03, so 60 days before is Tue 2026-08-04.
+	const TODAY = '2026-10-03';
+
+	/** Each group by name, with the last date on the Menu where there is one. */
+	function grouped(filter: { search?: string; tags?: string[] } = {}, today = TODAY) {
+		const groups = groupDishesByLastMade(householdId, { search: '', tags: [], ...filter }, today);
+		return {
+			recent: groups.recent.map((dish) => [dish.name, dish.lastMade]),
+			longAgo: groups.longAgo.map((dish) => [dish.name, dish.lastMade]),
+			never: groups.never.map((dish) => dish.name)
+		};
+	}
+
+	/** A Cooking at home dinner on the date: the first dish as the main, the rest as sides. */
+	function cooked(date: string, ...dishIds: number[]): number {
+		return makeDinner(householdId, date, {
+			dishes: dishIds.map((dishId, index) => [dishId, index === 0 ? 'main' : 'side'])
+		});
+	}
+
+	it('puts each dish in one group by its last date on the Menu, each group in its order', () => {
+		const chili = makeDish(householdId, recipe('Chili'));
+		const tacos = makeDish(householdId, recipe('Tacos'));
+		const rice = makeDish(householdId, recipe('Rice'));
+		const soup = makeDish(householdId, recipe('Soup'));
+		const stew = makeDish(householdId, recipe('Stew'));
+		const salad = makeDish(householdId, recipe('Salad'));
+		const bread = makeDish(householdId, recipe('Bread'));
+		makeDish(householdId, recipe('Pancakes'));
+		makeDish(householdId, recipe('Apple pie'));
+		cooked(TODAY, chili);
+		// Only the latest of a dish's dinners counts, and the same date falls back to name.
+		cooked('2026-09-30', tacos, rice);
+		cooked('2026-06-01', tacos);
+		cooked('2026-06-01', soup);
+		cooked('2026-06-01', bread);
+		cooked('2025-12-25', stew);
+		// Bringing a dish counts too.
+		makeDinner(householdId, '2026-07-04', { type: 'going', dishes: [[salad, 'main']] });
+		expect(grouped()).toEqual({
+			recent: [
+				['Chili', TODAY],
+				['Rice', '2026-09-30'],
+				['Tacos', '2026-09-30']
+			],
+			longAgo: [
+				['Stew', '2025-12-25'],
+				['Bread', '2026-06-01'],
+				['Soup', '2026-06-01'],
+				['Salad', '2026-07-04']
+			],
+			never: ['Apple pie', 'Pancakes']
+		});
+	});
+
+	it("gives each dish the list's summary, with its last date on the Menu", () => {
+		const chili = makeDish(householdId, recipe('Chili', { cookMinutes: 45, tags: ['Spicy'] }));
+		makeDish(householdId, recipe('Toast', { steps: 'Toast the bread.' }));
+		rateDish(householdId, chili, userId, 4);
+		setDishTried(householdId, chili, true);
+		setDishPhoto(householdId, chili, KEY_A, NOW);
+		cooked('2026-09-30', chili);
+		const [chiliSummary, toastSummary] = list();
+		expect(groupDishesByLastMade(householdId, { search: '', tags: [] }, TODAY)).toEqual({
+			recent: [{ ...chiliSummary, lastMade: '2026-09-30' }],
+			longAgo: [],
+			never: [toastSummary]
+		});
+	});
+
+	it('counts 60 days before today as recent and earlier as long ago, moving as days pass', () => {
+		const tacos = makeDish(householdId, recipe('Tacos'));
+		const soup = makeDish(householdId, recipe('Soup'));
+		// 60 and 61 days before Sat Oct 3.
+		cooked('2026-08-04', tacos);
+		cooked('2026-08-03', soup);
+		expect(grouped()).toEqual({
+			recent: [['Tacos', '2026-08-04']],
+			longAgo: [['Soup', '2026-08-03']],
+			never: []
+		});
+		// The next day, with nothing changed on the Menu, Tacos was 61 days ago.
+		expect(grouped({}, '2026-10-04')).toEqual({
+			recent: [],
+			longAgo: [
+				['Soup', '2026-08-03'],
+				['Tacos', '2026-08-04']
+			],
+			never: []
+		});
+	});
+
+	it("leaves out dinners planned after today, which aren't made yet", () => {
+		const tacos = makeDish(householdId, recipe('Tacos'));
+		const soup = makeDish(householdId, recipe('Soup'));
+		cooked('2026-10-04', tacos);
+		cooked('2026-05-01', soup);
+		cooked('2026-10-10', soup);
+		expect(grouped()).toEqual({
+			recent: [],
+			longAgo: [['Soup', '2026-05-01']],
+			never: ['Tacos']
+		});
+		// Once its day comes, it counts.
+		expect(grouped({}, '2026-10-04')).toEqual({
+			recent: [['Tacos', '2026-10-04']],
+			longAgo: [['Soup', '2026-05-01']],
+			never: []
+		});
+	});
+
+	it('follows the Menu as dinners are planned, changed, moved and cleared', () => {
+		const tacos = makeDish(householdId, recipe('Tacos'));
+		const rice = makeDish(householdId, recipe('Rice'));
+		/** The id of the date's only dinner. */
+		const dinnerOn = (date: string) => {
+			const dinner = getDay(householdId, date)[0];
+			if (!dinner) throw new Error(`No dinner on ${date}`);
+			return dinner.id;
+		};
+
+		addDinnerDish(householdId, '2026-10-02', null, { id: tacos }, 'main', NOW);
+		const dinnerId = dinnerOn('2026-10-02');
+		addDinnerDish(householdId, '2026-10-02', dinnerId, { id: rice }, 'side', NOW);
+		expect(grouped()).toEqual({
+			recent: [
+				['Rice', '2026-10-02'],
+				['Tacos', '2026-10-02']
+			],
+			longAgo: [],
+			never: []
+		});
+
+		removeDinnerDish(householdId, '2026-10-02', dinnerId, rice, NOW);
+		expect(grouped()).toEqual({ recent: [['Tacos', '2026-10-02']], longAgo: [], never: ['Rice'] });
+
+		moveDinners(householdId, '2026-10-02', '2026-07-01', dinnerId, NOW);
+		expect(grouped()).toEqual({ recent: [], longAgo: [['Tacos', '2026-07-01']], never: ['Rice'] });
+
+		moveDinners(householdId, '2026-07-01', '2026-10-09', dinnerId, NOW);
+		expect(grouped()).toEqual({ recent: [], longAgo: [], never: ['Rice', 'Tacos'] });
+
+		// Switching to Leftovers takes its dishes off.
+		moveDinners(householdId, '2026-10-09', '2026-10-01', dinnerId, NOW);
+		expect(grouped()).toEqual({ recent: [['Tacos', '2026-10-01']], longAgo: [], never: ['Rice'] });
+		const leftovers = { label: null, type: 'leftovers' as const, restaurantName: null, note: null };
+		saveDinner(householdId, '2026-10-01', dinnerId, { ...leftovers, servings: 4 }, NOW);
+		expect(grouped()).toEqual({ recent: [], longAgo: [], never: ['Rice', 'Tacos'] });
+
+		addDinnerDish(householdId, '2026-09-01', null, { id: rice }, 'main', NOW);
+		expect(grouped()).toEqual({ recent: [['Rice', '2026-09-01']], longAgo: [], never: ['Tacos'] });
+		clearDinner(householdId, '2026-09-01', dinnerOn('2026-09-01'), NOW);
+		expect(grouped()).toEqual({ recent: [], longAgo: [], never: ['Rice', 'Tacos'] });
+	});
+
+	it('applies the search and tags to every group', () => {
+		const apple = makeDish(householdId, recipe('Apple pie', { tags: ['Dessert'] }));
+		const pecan = makeDish(householdId, recipe('Pecan pie', { tags: ['Dessert', 'Holiday'] }));
+		const pumpkin = makeDish(householdId, recipe('Pumpkin pie', { tags: ['dessert'] }));
+		const chili = makeDish(householdId, recipe('Chili'));
+		makeDish(householdId, recipe('Key lime pie', { tags: ['Dessert'] }));
+		makeDish(householdId, recipe('Cherry cobbler', { tags: ['Dessert'] }));
+		cooked('2026-09-20', apple, chili);
+		cooked('2025-11-26', pecan);
+		cooked('2026-05-01', pumpkin);
+		expect(grouped({ search: 'PIE' })).toEqual({
+			recent: [['Apple pie', '2026-09-20']],
+			longAgo: [
+				['Pecan pie', '2025-11-26'],
+				['Pumpkin pie', '2026-05-01']
+			],
+			never: ['Key lime pie']
+		});
+		expect(grouped({ tags: ['DESSERT'] })).toEqual({
+			recent: [['Apple pie', '2026-09-20']],
+			longAgo: [
+				['Pecan pie', '2025-11-26'],
+				['Pumpkin pie', '2026-05-01']
+			],
+			never: ['Cherry cobbler', 'Key lime pie']
+		});
+		expect(grouped({ search: 'p', tags: ['Dessert', 'holiday'] })).toEqual({
+			recent: [],
+			longAgo: [['Pecan pie', '2025-11-26']],
+			never: []
+		});
+		expect(grouped({ search: 'zzz' })).toEqual({ recent: [], longAgo: [], never: [] });
+	});
+
+	it('leaves out archived dishes, which are only listed', () => {
+		const tacos = makeDish(householdId, recipe('Tacos'));
+		const soup = makeDish(householdId, recipe('Soup'));
+		const stew = makeDish(householdId, recipe('Stew'));
+		cooked('2026-09-30', tacos, soup);
+		setDishArchived(householdId, soup, true, NOW);
+		setDishArchived(householdId, stew, true, NOW);
+		expect(grouped()).toEqual({ recent: [['Tacos', '2026-09-30']], longAgo: [], never: [] });
+		// Restored, it's grouped by the dinners it was on all along.
+		setDishArchived(householdId, soup, false, NOW);
+		expect(grouped()).toEqual({
+			recent: [
+				['Soup', '2026-09-30'],
+				['Tacos', '2026-09-30']
+			],
+			longAgo: [],
+			never: []
+		});
+	});
+});
+
 describe('ratings', () => {
 	function addMember(name: string): number {
 		return db()
@@ -794,6 +1016,11 @@ describe('households', () => {
 		expect(listDishes(other.householdId, all)).toEqual([]);
 		expect(listDishes(other.householdId, { ...all, tags: ['Dessert'] })).toEqual([]);
 		expect(listDishTags(other.householdId)).toEqual([]);
+		expect(groupDishesByLastMade(other.householdId, all, '2026-10-03')).toEqual({
+			recent: [],
+			longAgo: [],
+			never: []
+		});
 		expectHttpError(() => getDish(other.householdId, id), 404);
 		expectHttpError(() => updateDish(other.householdId, id, recipe('Mine now'), [], NOW), 404);
 		expectHttpError(() => setDishArchived(other.householdId, id, true, NOW), 404);
@@ -807,6 +1034,24 @@ describe('households', () => {
 			photoKey: null
 		});
 		expectHttpError(() => getDish(householdId, id + 1000), 404);
+	});
+
+	it("groups by the household's own Menu, never another household's (MEA-246)", () => {
+		makeDish(householdId, recipe('Tacos'));
+		const other = makeHousehold();
+		const theirs = makeDish(other.householdId, recipe('Tacos'));
+		makeDinner(other.householdId, '2026-10-01', { dishes: [[theirs, 'main']] });
+		const all = { search: '', tags: [] };
+		expect(groupDishesByLastMade(householdId, all, '2026-10-03')).toMatchObject({
+			recent: [],
+			longAgo: [],
+			never: [{ name: 'Tacos' }]
+		});
+		expect(groupDishesByLastMade(other.householdId, all, '2026-10-03')).toMatchObject({
+			recent: [{ id: theirs, lastMade: '2026-10-01' }],
+			longAgo: [],
+			never: []
+		});
 	});
 
 	it("keeps ratings in their household; the database rejects another household's dish", () => {

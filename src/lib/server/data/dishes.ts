@@ -1,9 +1,19 @@
 import { error } from '@sveltejs/kit';
-import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { addDays } from '../../menu.ts';
 import { splitSteps } from '../../steps.ts';
 import { foldCase, normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
-import { dishes, dishIngredients, dishRatings, dishTags, items, users } from '../db/schema.ts';
+import {
+	dinnerDishes,
+	dinners,
+	dishes,
+	dishIngredients,
+	dishRatings,
+	dishTags,
+	items,
+	users
+} from '../db/schema.ts';
 import { getHousehold } from './households.ts';
 import { createItem, findItemByName, setItemArchived } from './items.ts';
 
@@ -535,6 +545,62 @@ export function listDishes(
 			hasRecipe: ingredientCount !== null || splitSteps(steps).length > 0
 		}))
 		.sort(filter.sort === 'rating' ? byRating : byName);
+}
+
+/** A dish on the Menu this many days before today or fewer was recently made (MEA-246). */
+const RECENT_DAYS = 60;
+
+/** A dish in the Recipes page's Grouped view, with the last date it was on the Menu. */
+export type MadeDishSummary = DishSummary & { lastMade: string };
+
+/** The Recipes page's Grouped view (section 7, "Recipes"; MEA-246). */
+export type DishGroups = {
+	/** Last on the Menu 60 days before today or later, newest first. */
+	recent: MadeDishSummary[];
+	/** Last on the Menu earlier than that, oldest first. */
+	longAgo: MadeDishSummary[];
+	/** Never on the Menu up to today, A to Z. */
+	never: DishSummary[];
+};
+
+/**
+ * Each dish's last date on the Menu up to today. A dinner planned for a later date isn't made
+ * yet. Dishes that were never on it are left out.
+ */
+function lastMadeDates(householdId: number, today: string): Map<number, string> {
+	const rows = db()
+		.select({ dishId: dinnerDishes.dishId, date: sql<string>`max(${dinners.date})` })
+		.from(dinnerDishes)
+		.innerJoin(dinners, eq(dinners.id, dinnerDishes.dinnerId))
+		.where(and(eq(dinners.householdId, householdId), lte(dinners.date, today)))
+		.groupBy(dinnerDishes.dishId)
+		.all();
+	return new Map(rows.map(({ dishId, date }) => [dishId, date]));
+}
+
+/**
+ * The Recipes page's Grouped view: the active dishes the list shows for `search` and `tags`,
+ * each in one group by its last date on the Menu up to `today`, the household's date (section 7,
+ * "Recipes"). Equal dates fall back to name.
+ */
+export function groupDishesByLastMade(
+	householdId: number,
+	filter: { search: string; tags: string[] },
+	today: string
+): DishGroups {
+	const lastMade = lastMadeDates(householdId, today);
+	const cutoff = addDays(today, -RECENT_DAYS);
+	const groups: DishGroups = { recent: [], longAgo: [], never: [] };
+	for (const dish of listDishes(householdId, { ...filter, archived: false, sort: 'name' })) {
+		const date = lastMade.get(dish.id);
+		if (date === undefined) groups.never.push(dish);
+		// YYYY-MM-DD dates compare and sort as text.
+		else if (date >= cutoff) groups.recent.push({ ...dish, lastMade: date });
+		else groups.longAgo.push({ ...dish, lastMade: date });
+	}
+	groups.recent.sort((a, b) => b.lastMade.localeCompare(a.lastMade) || byName(a, b));
+	groups.longAgo.sort((a, b) => a.lastMade.localeCompare(b.lastMade) || byName(a, b));
+	return groups;
 }
 
 /**

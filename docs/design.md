@@ -792,7 +792,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | History          | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
 | Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. |
-| Recipes          | `/recipes`                           | Search by name, filter by tags, sort by name or rating (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, Import and New recipe. |
+| Recipes          | `/recipes`                           | Search by name, filter by tags, sort by name or rating, or group by when each was last on the Menu (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, Import and New recipe. |
 | Import recipes   | `/recipes/import`                    | See below.                                                                                                                           |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
 | Edit recipe      | `/recipes/new`, `/recipes/[id]/edit` | See below.                                                                                                                           |
@@ -903,7 +903,21 @@ typing doesn't search, so the list and what's typed stay on screen; Enter still 
 Back step.
 Rating uses the household's exact average, not the rounded one shown; unrated recipes go last,
 and equal averages fall back to name.
-Under the search box, the tags on active recipes are chips that filter the list (MEA-42). Tapping
+Under the search box, **List** and **Grouped** switch the view (MEA-246). List, the default, shows
+the recipes in the Sort's order. Grouped puts each active recipe the search and tags match in one
+of three groups by the last date it was on the Menu: **Recently made** for 60 days before today or
+later, newest first; **Haven't made in a long time** for earlier dates, oldest first; and **Never
+made**, A to Z. Equal dates fall back to name, and a group with no recipes isn't shown. Only
+dinners dated today or earlier count, in the household's time zone (2.3), since one planned for a
+later date isn't made yet; Bringing a dish counts as well as Cooking at home. The groups come from
+the Menu each time the page loads, so planning, moving or clearing a dinner, and each day that
+passes, move recipes between them with nothing else to keep up to date. The 60 days are fixed. A
+card in Grouped is the list's card with "Last made" and the date under its details, such as "Last
+made Sat, Oct 3" (with the year when it isn't this year); Never made cards have no date. Grouped
+has its own order, so it has no Sort. Each switch adds a Back step. Archived recipes are only
+listed: their page has no switch, and Show archived from Grouped, then Show active, comes back to
+List.
+Next, the tags on active recipes are chips that filter the list (MEA-42). Tapping
 a chip selects it and fills it in, and the list shows only recipes with every selected tag,
 ignoring case. Tapping a selected chip removes just that tag, and removing the last one shows the
 list without a tag filter. Each tap updates the list right away, with no Apply button, and adds a
@@ -911,9 +925,11 @@ Back step. A selected tag keeps its chip even when no active recipe has it, so i
 When nothing matches, the list says so, such as "No recipes tagged Dessert and Baking.", and the
 chips stay. The address has one `tag` for each selected tag, so a link with one, such as a
 recipe's tag, still works.
-The sort, search, tags and archived switch are kept in the address, so Back and shared links keep
-them, and changing any one keeps the others; "Show all recipes" clears the search and tags. An
-unknown sort shows Name. Opening Recipes from the tab bar or a recipe's "‹ Recipes" starts at Name.
+The sort, search, tags, view and archived switch are kept in the address, so Back and shared links
+keep them, and changing any one keeps the others, but for the view, which archived recipes don't
+have. Grouped keeps the sort for going back to List. "Show all recipes" clears the search and
+tags. An unknown sort shows Name, and an unknown view shows List. Opening Recipes from the tab bar
+or a recipe's "‹ Recipes" starts at List, by Name.
 
 **Import recipes.** Households bringing recipes from elsewhere (MEA-37; Q37b assumed none) add
 many at once from a CSV file saved from a spreadsheet. Import beside New recipe opens it, with
