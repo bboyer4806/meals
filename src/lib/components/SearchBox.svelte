@@ -15,17 +15,26 @@
 	// svelte-ignore state_referenced_locally
 	let text = $state(value);
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	// Typed and not searched yet. A page that lands meanwhile, such as a tag's list tapped just
+	// before, doesn't replace it, and the search then runs with that page's tags (MEA-246).
+	let unsearched = false;
 
 	// Other navigations, such as Show all recipes or Back, set the box from the address.
 	afterNavigate(({ type }) => {
-		if (type !== 'form') text = value;
+		if (type !== 'form' && !unsearched) text = value;
 	});
 
 	function cancel() {
 		clearTimeout(timer);
 	}
 
+	function searched() {
+		cancel();
+		unsearched = false;
+	}
+
 	function typed() {
+		unsearched = true;
 		cancel();
 		timer = setTimeout(() => {
 			// Offline, a search would put an error page in place of the list and lose what's
@@ -38,8 +47,8 @@
 	$effect(() => {
 		const form = input.form;
 		if (!form) throw new Error('SearchBox must be inside a form');
-		form.addEventListener('submit', cancel);
-		return () => form.removeEventListener('submit', cancel);
+		form.addEventListener('submit', searched);
+		return () => form.removeEventListener('submit', searched);
 	});
 
 	onDestroy(cancel);

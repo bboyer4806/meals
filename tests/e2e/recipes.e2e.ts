@@ -2132,6 +2132,7 @@ test('keeps the search, tags and sort across views, and only lists archived reci
 	// Filtered and sorted in the list first.
 	await open(page, '/recipes');
 	await chip('Dessert').tap();
+	await expect(page).toHaveURL(/\/recipes\?tag=Dessert$/);
 	await search.fill('pie');
 	await search.press('Enter');
 	await sort.selectOption('Rating');
@@ -2173,6 +2174,7 @@ test('keeps the search, tags and sort across views, and only lists archived reci
 
 	// Archived recipes are only listed, without the switch, and Show active shows the list.
 	await view('Grouped').tap();
+	await expect(current).toHaveText(['Grouped']);
 	await page.getByRole('link', { name: 'Show archived' }).click();
 	await expect(page).toHaveURL(/\/recipes\?archived=1&sort=rating$/);
 	await expect(switcher).toHaveCount(0);
@@ -2189,6 +2191,7 @@ test('keeps the search, tags and sort across views, and only lists archived reci
 	await expect(current).toHaveText(['List']);
 	await expect(sort).toBeVisible();
 	await view('Grouped').tap();
+	await expect(current).toHaveText(['Grouped']);
 	await page.getByRole('link', { name: 'Recipes', exact: true }).click();
 	await expect(page).toHaveURL(/\/recipes$/);
 	await expect(current).toHaveText(['List']);

@@ -890,7 +890,9 @@ image (6.10).
 **Search.** Recipes, History and Items search as people type (MEA-36): the list updates 300 ms
 after typing stops, and Enter, or a phone keyboard's search key, searches right away. There's no
 Search button. The box keeps focus while the list updates, so a phone's keyboard stays open, and
-what's typed meanwhile stays in the box, spaces included. Clearing the box shows the list with no
+what's typed meanwhile stays in the box, spaces included. So does what's typed while another page
+of the list loads, such as a tag's list tapped just before: that page's search doesn't replace it,
+and the search then runs with that page's tags (MEA-246). Clearing the box shows the list with no
 search. Each list keeps its search in the address, so Back and shared links keep it, but typing
 replaces the address instead of adding Back steps: Back from a searched list leaves the list, and
 Back from a recipe opened from a search returns to that search. A search box only matches what
