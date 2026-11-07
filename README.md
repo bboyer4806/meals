@@ -8,7 +8,7 @@ Built with SvelteKit 3 and TypeScript, with a SQLite database stored on the serv
 
 ## Running it locally
 
-You need Node 24 and a Google OAuth client whose redirect URIs include
+You need Node 26 and a Google OAuth client whose redirect URIs include
 `http://localhost:5173/login/google/callback` (see [Google sign-in](#google-sign-in)).
 
 ```sh

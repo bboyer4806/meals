@@ -25,7 +25,7 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
-  # node:24-slim already picks up each Node 24 release when the image is built,
+  # node:26-slim already picks up each Node 26 release when the image is built,
   # so this proposes only new Node majors. A new major also changes deploy.yml's
   # node-version and @types/node. The cooldown is off because Dependabot dates a
   # tag by its last push, so it would pass over a tag rebuilt within the week,
