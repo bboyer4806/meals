@@ -1,4 +1,5 @@
 import type { Dialog, Page } from '@playwright/test';
+import type { LeftOut } from '#lib/recipe-schema.ts';
 import type { RecipeFormValues } from '#lib/server/recipe-form.ts';
 import { addRecipe, expect, makeJpeg, open, test } from './fixtures.ts';
 
@@ -42,11 +43,11 @@ const toast: RecipeFormValues = {
 };
 
 /**
- * Answers Import as the server does for a page with this recipe. SvelteKit sends an action's
- * data as devalue writes it: a list of every value, where objects and lists hold the places of
- * what's in them.
+ * Answers Import as the server does for a page with this recipe, and more of the fields in
+ * `leftOut` than the editor takes. SvelteKit sends an action's data as devalue writes it: a list
+ * of every value, where objects and lists hold the places of what's in them.
  */
-async function answerImport(page: Page, values: RecipeFormValues) {
+async function answerImport(page: Page, values: RecipeFormValues, leftOut: LeftOut[] = []) {
 	const flat: unknown[] = [];
 	const place = (value: unknown): number => {
 		const index = flat.push(null) - 1;
@@ -57,7 +58,7 @@ async function answerImport(page: Page, values: RecipeFormValues) {
 				: value;
 		return index;
 	};
-	place({ action: 'import', values });
+	place({ action: 'import', values, leftOut });
 	await page.route(
 		(url) => url.pathname === '/recipes/new' && url.search === '?/import',
 		(route) =>
@@ -150,6 +151,23 @@ test('fills in an untouched recipe without asking, and asks before leaving it un
 	await page.getByRole('button', { name: 'Save' }).click();
 	await expect(page.getByRole('heading', { name: 'Cinnamon toast', level: 1 })).toBeVisible();
 	expect(questions).toEqual([LEAVE]);
+});
+
+test('says what it left out of a page with more than the editor takes (MEA-84)', async ({
+	page,
+	person: _signedIn
+}) => {
+	await answerImport(page, toast, ['ingredients', 'steps']);
+	await open(page, '/recipes/new');
+	await link(page).fill(toast.source);
+	await importButton(page).click();
+	await expect(
+		page.getByText(
+			'Filled in from the page, leaving out ingredients after the first 100 and steps after ' +
+				'the first 10,000 characters. Check it, then tap Save.'
+		)
+	).toBeVisible();
+	await expect(name(page)).toHaveValue('Cinnamon toast');
 });
 
 test('keeps the photo, tags and notes, and asks before replacing anything else typed', async ({

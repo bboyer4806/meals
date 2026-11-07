@@ -47,7 +47,8 @@ export const actions = {
 		redirect(303, `/recipes/${saved.id}`);
 	},
 
-	// Gives the editor's fields filled in from the page's recipe, and saves nothing.
+	// Gives the editor's fields filled in from the page's recipe, and what the page has more of
+	// than the editor takes, and saves nothing.
 	import: async ({ locals, request }) => {
 		const user = requireHousehold(locals);
 		const parsed = parseForm(importForm, await request.formData(), ACTION);
@@ -60,10 +61,16 @@ export const actions = {
 			console.error(`Couldn't open ${link} to import it:`, e);
 			return fail(400, { action: ACTION, error: NOT_OPENED });
 		}
-		const recipe = findRecipe(jsonLdBlocks(html));
-		if (!recipe) return fail(400, { action: ACTION, error: NO_RECIPE });
 		// What the page leaves out stays as a new recipe starts.
 		const start = newRecipeValues(getHousehold(user.householdId).defaultServings);
-		return { action: ACTION, values: schemaRecipeValues(recipe, { ...start, source: link }) };
+		try {
+			const recipe = findRecipe(jsonLdBlocks(html));
+			if (!recipe) return fail(400, { action: ACTION, error: NO_RECIPE });
+			return { action: ACTION, ...schemaRecipeValues(recipe, { ...start, source: link }) };
+		} catch (e) {
+			// A page broken in a way reading it didn't expect (MEA-84).
+			console.error(`Couldn't read the recipe on ${link}:`, e);
+			return fail(400, { action: ACTION, error: NO_RECIPE });
+		}
 	}
 };
