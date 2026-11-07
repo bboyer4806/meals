@@ -2,11 +2,13 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { createSession } from '#lib/server/auth/session.ts';
+import { loadConfig } from '#lib/server/config.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
 import { listCatalog } from '#lib/server/data/items.ts';
 import { openDb } from '#lib/server/db/index.ts';
-import { TEST_ENV, makeHousehold } from '#lib/server/testing.ts';
-import { init } from './hooks.server.ts';
+import { TEST_ENV, freshDb, makeHousehold } from '#lib/server/testing.ts';
+import { handle, init } from './hooks.server.ts';
 
 // Real files unless a test says otherwise.
 vi.mock('node:fs', async (importOriginal) => {
@@ -66,4 +68,28 @@ it("doesn't start without the standard images, as when they weren't packaged wit
 	} finally {
 		vi.mocked(existsSync).mockImplementation(exists);
 	}
+});
+
+it('over https, takes the session only from the __Host-session cookie (MEA-83)', async () => {
+	freshDb();
+	loadConfig({ ...TEST_ENV, DATA_DIR: dataDir });
+	const { userId } = makeHousehold();
+	const { token } = createSession(userId, Date.now());
+	const url = new URL('https://meals.dev.boyersoftware.com/groceries');
+	const signedIn = async (stored: Record<string, string>) => {
+		const event = {
+			request: new Request(url),
+			route: { id: '/(app)/groceries' },
+			url,
+			cookies: { get: (name: string) => stored[name], set: vi.fn(), delete: vi.fn() },
+			locals: {} as App.Locals
+		};
+		const input = { event, resolve: async () => new Response() };
+		await handle(input as unknown as Parameters<typeof handle>[0]);
+		return event.locals.user;
+	};
+
+	// Another dev.boyersoftware.com app can set a cookie with the plain name for Meals.
+	expect(await signedIn({ session: token })).toBeNull();
+	expect(await signedIn({ '__Host-session': token })).toMatchObject({ id: userId });
 });

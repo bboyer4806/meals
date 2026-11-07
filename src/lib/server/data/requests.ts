@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import { REQUEST_NAME_MAX, REQUEST_NOTE_MAX } from '../../menu.ts';
 import { normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
@@ -13,10 +13,11 @@ import {
 import { findDishByName, insertDish } from './dishes.ts';
 
 // Requests (design 6.12): anyone in the household asks for a dish or a restaurant, and anyone
-// removes the request once it's been made, or adds it to a date, which removes it: a requested
-// dish goes on a dinner, and a requested restaurant becomes an Eating out dinner. Each shows who
-// asked. A dish request links to its recipe; a restaurant request is only the name typed, since
-// restaurants aren't kept anywhere.
+// completes the request, by hand or by adding it to a date: a requested dish goes on a dinner, and
+// a requested restaurant becomes an Eating out dinner. A completed request stays in the completed
+// history as it was, and nothing changes it. Removing an active request deletes it instead. Each
+// shows who asked. A dish request links to its recipe; a restaurant request is only the name
+// typed, since restaurants aren't kept anywhere.
 
 /** What every request shows: its name, the note if there is one, and who asked. */
 type Shown = { id: number; name: string; note: string | null; askedBy: string };
@@ -26,11 +27,26 @@ export type DishRequest =
 	| (Shown & { kind: 'dish'; dishId: number })
 	| (Shown & { kind: 'restaurant' });
 
+/** A request in the completed history, with when it was completed. */
+export type CompletedRequest = DishRequest & { completedAt: number };
+
 export type AddRequestResult = { kind: 'added' } | { kind: 'archived'; dishId: number; name: string };
 
-/** The household's requests, dish and restaurant requests together, oldest first. */
+/** A request as it's shown, linked to its recipe when it's a dish request. */
+function shown({
+	kind,
+	dishId,
+	...rest
+}: Shown & { kind: DishRequest['kind']; dishId: number | null }): DishRequest {
+	if (kind === 'restaurant') return { kind, ...rest };
+	// The database keeps a dish on every dish request (dish_requests_kind_dish).
+	if (dishId === null) throw new Error(`Dish request ${rest.id} has no dish`);
+	return { kind, dishId, ...rest };
+}
+
+/** The household's active requests, dish and restaurant requests together, oldest first. */
 export function listRequests(householdId: number): DishRequest[] {
-	const rows = db()
+	return db()
 		.select({
 			id: dishRequests.id,
 			kind: dishRequests.kind,
@@ -41,23 +57,52 @@ export function listRequests(householdId: number): DishRequest[] {
 		})
 		.from(dishRequests)
 		.innerJoin(users, eq(users.id, dishRequests.userId))
-		.where(eq(dishRequests.householdId, householdId))
+		.where(and(eq(dishRequests.householdId, householdId), isNull(dishRequests.completedAt)))
 		.orderBy(asc(dishRequests.createdAt), asc(dishRequests.id))
+		.all()
+		.map(shown);
+}
+
+/**
+ * The household's completed requests, newest first, each as it was asked for, with who asked by
+ * the name they had when it was completed (6.12).
+ */
+export function listCompletedRequests(householdId: number): CompletedRequest[] {
+	const rows = db()
+		.select({
+			id: dishRequests.id,
+			kind: dishRequests.kind,
+			name: dishRequests.name,
+			note: dishRequests.note,
+			dishId: dishRequests.dishId,
+			askedBy: dishRequests.askedBy,
+			completedAt: dishRequests.completedAt
+		})
+		.from(dishRequests)
+		.where(and(eq(dishRequests.householdId, householdId), isNotNull(dishRequests.completedAt)))
+		.orderBy(desc(dishRequests.completedAt), desc(dishRequests.id))
 		.all();
-	return rows.map(({ kind, dishId, ...shown }) => {
-		if (kind === 'restaurant') return { kind, ...shown };
-		// The database keeps a dish on every dish request (dish_requests_kind_dish).
-		if (dishId === null) throw new Error(`Dish request ${shown.id} has no dish`);
-		return { kind, dishId, ...shown };
+	return rows.map(({ askedBy, completedAt, ...row }) => {
+		// The database names who asked on every completed request (dish_requests_asked_by).
+		if (askedBy === null || completedAt === null) {
+			throw new Error(`Completed request ${row.id} doesn't say who asked`);
+		}
+		return { ...shown({ ...row, askedBy }), completedAt };
 	});
 }
 
-/** Whether any request links to the dish, made from its recipe's page or the Menu (6.12). */
+/** Whether any active request links to the dish, made from its recipe's page or the Menu (6.12). */
 export function hasRequest(householdId: number, dishId: number): boolean {
 	const request = db()
 		.select({ id: dishRequests.id })
 		.from(dishRequests)
-		.where(and(eq(dishRequests.householdId, householdId), eq(dishRequests.dishId, dishId)))
+		.where(
+			and(
+				eq(dishRequests.householdId, householdId),
+				eq(dishRequests.dishId, dishId),
+				isNull(dishRequests.completedAt)
+			)
+		)
 		.get();
 	return request !== undefined;
 }
@@ -172,8 +217,8 @@ export function restoreAndAddRequest(
 
 /**
  * Requests the dish from its recipe's page, asked by the signed-in member, named as the dish is
- * named now and with no note. Adds nothing when a request already links to it, from either place,
- * so someone else's request since the page loaded doesn't make a second one (6.12).
+ * named now and with no note. Adds nothing when an active request already links to it, from either
+ * place, so someone else's request since the page loaded doesn't make a second one (6.12).
  */
 export function requestDish(
 	householdId: number,
@@ -195,9 +240,18 @@ export function requestDish(
 	});
 }
 
+/** The household's request with this id while it's active. */
+function isActive(householdId: number, requestId: number) {
+	return and(
+		eq(dishRequests.id, requestId),
+		eq(dishRequests.householdId, householdId),
+		isNull(dishRequests.completedAt)
+	);
+}
+
 /**
- * The household's request of this kind, as it is now. Not found when someone removed it meanwhile,
- * or for the other kind.
+ * The household's active request of this kind, as it is now. Not found when someone completed or
+ * removed it meanwhile, or for the other kind.
  */
 function findRequest(householdId: number, requestId: number, kind: DishRequest['kind']) {
 	const request = db()
@@ -208,17 +262,17 @@ function findRequest(householdId: number, requestId: number, kind: DishRequest['
 			dishId: dishRequests.dishId
 		})
 		.from(dishRequests)
-		.where(and(eq(dishRequests.id, requestId), eq(dishRequests.householdId, householdId)))
+		.where(isActive(householdId, requestId))
 		.get();
 	if (!request || request.kind !== kind) error(404, 'Not found');
 	return request;
 }
 
 /**
- * Puts a dish request's recipe on one of the date's dinners, with the request's note, and removes
+ * Puts a dish request's recipe on one of the date's dinners, with the request's note, and completes
  * the request, in one transaction (6.12; addRequestedDish says where it goes). When that can't be
- * done, nothing changes: the request stays, and so do the date's dinners. Not found when someone
- * removed the request meanwhile. Returns the dinner's id.
+ * done, nothing changes: the request stays active, and the date's dinners stay as they are. Not
+ * found when someone completed or removed the request meanwhile. Returns the dinner's id.
  */
 export function promoteDishRequest(
 	householdId: number,
@@ -234,17 +288,17 @@ export function promoteDishRequest(
 		if (request.dishId === null) throw new Error(`Dish request ${requestId} has no dish`);
 		const requested = { dishId: request.dishId, note: request.note };
 		const dinnerId = addRequestedDish(householdId, date, to, requested, now);
-		removeRequest(householdId, requestId);
+		completeRequest(householdId, requestId, now);
 		return dinnerId;
 	});
 }
 
 /**
  * Adds a restaurant request to the date as a new Eating out dinner at its restaurant, with its
- * note, and removes the request, in one transaction (6.12; addEatingOut says how). The date's
- * dinners stay as they are. When that can't be done, nothing changes: the request stays, and so
- * do the date's dinners. Not found when someone removed the request meanwhile. Returns the new
- * dinner's id.
+ * note, and completes the request, in one transaction (6.12; addEatingOut says how). The date's
+ * dinners stay as they are. When that can't be done, nothing changes: the request stays active,
+ * and the date's dinners stay as they are. Not found when someone completed or removed the request
+ * meanwhile. Returns the new dinner's id.
  */
 export function promoteRestaurantRequest(
 	householdId: number,
@@ -257,16 +311,40 @@ export function promoteRestaurantRequest(
 		const request = findRequest(householdId, requestId, 'restaurant');
 		const eatingOut = { restaurantName: request.name, note: request.note };
 		const dinnerId = addEatingOut(householdId, date, labels, eatingOut, now);
-		removeRequest(householdId, requestId);
+		completeRequest(householdId, requestId, now);
 		return dinnerId;
 	});
 }
 
-/** Removes the request, a dish's or a restaurant's. A dish request's recipe stays in Recipes. */
+/**
+ * Completes an active request, a dish's or a restaurant's, by hand or as it's added to a date. It
+ * leaves the active requests for the completed history, kept as it is now, with who asked named as
+ * they're named now (6.12). Not found when someone completed or removed it meanwhile, so it's never
+ * completed twice.
+ */
+export function completeRequest(householdId: number, requestId: number, now: number): void {
+	transaction(() => {
+		const request = db()
+			.select({ askedBy: users.name })
+			.from(dishRequests)
+			.innerJoin(users, eq(users.id, dishRequests.userId))
+			.where(isActive(householdId, requestId))
+			.get();
+		if (!request) error(404, 'Not found');
+		db()
+			.update(dishRequests)
+			.set({ completedAt: now, askedBy: request.askedBy })
+			.where(isActive(householdId, requestId))
+			.run();
+	});
+}
+
+/**
+ * Removes an active request, a dish's or a restaurant's, for good: it doesn't go in the completed
+ * history. A dish request's recipe stays in Recipes. Not found when someone completed or removed it
+ * meanwhile, so the completed history never loses one.
+ */
 export function removeRequest(householdId: number, requestId: number): void {
-	const result = db()
-		.delete(dishRequests)
-		.where(and(eq(dishRequests.id, requestId), eq(dishRequests.householdId, householdId)))
-		.run();
+	const result = db().delete(dishRequests).where(isActive(householdId, requestId)).run();
 	if (result.changes === 0) error(404, 'Not found');
 }

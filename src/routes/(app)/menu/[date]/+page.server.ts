@@ -330,7 +330,7 @@ export const actions = {
 		return attempt('clear', () => clearDinner(user.householdId, date, dinnerId, Date.now()));
 	},
 
-	// Puts a requested dish on one of the date's dinners and removes the request. The page uses the
+	// Puts a requested dish on one of the date's dinners and completes the request. The page uses the
 	// dinner it went on to say so (6.12).
 	promoteDishRequest: async ({ locals, params, request }) => {
 		const user = requireHousehold(locals);
@@ -347,7 +347,7 @@ export const actions = {
 		return { action: 'request', dinnerId: promoted };
 	},
 
-	// Adds a requested restaurant to the date as a new Eating out dinner and removes the request.
+	// Adds a requested restaurant to the date as a new Eating out dinner and completes the request.
 	// The page uses the new dinner to say so (6.12).
 	promoteRestaurantRequest: async ({ locals, params, request }) => {
 		const user = requireHousehold(locals);

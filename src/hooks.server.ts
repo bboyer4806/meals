@@ -7,8 +7,8 @@ import { addStandardItemsToAllHouseholds } from '#lib/server/data/households.ts'
 import { openDb } from '#lib/server/db/index.ts';
 import { assignAllStandardImages, checkLibrary } from '#lib/server/standard-images.ts';
 import {
-	SESSION_COOKIE,
 	deleteSessionCookie,
+	sessionCookieName,
 	setSessionCookie,
 	validateSession
 } from '#lib/server/auth/session.ts';
@@ -32,14 +32,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// First, so a body too large to read is refused before anything reads it (4.5).
 	checkBodySize(event.request, event.route.id);
 	event.locals.user = null;
-	const token = event.cookies.get(SESSION_COOKIE);
+	const token = event.cookies.get(sessionCookieName(event.url));
 	if (token) {
 		const session = validateSession(token, config().ADMIN_EMAIL, Date.now());
 		if (session) {
 			event.locals.user = session.user;
-			if (session.renewed) setSessionCookie(event.cookies, token, session.expiresAt);
+			if (session.renewed) setSessionCookie(event.cookies, event.url, token, session.expiresAt);
 		} else {
-			deleteSessionCookie(event.cookies);
+			deleteSessionCookie(event.cookies, event.url);
 		}
 	}
 	const response = await resolve(event);

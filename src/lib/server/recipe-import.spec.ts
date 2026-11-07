@@ -6,7 +6,7 @@ import { loadConfig } from './config.ts';
 import { getDish, listDishes, rateDish, setDishArchived, setDishTried } from './data/dishes.ts';
 import { createItem, findItemByName, setItemArchived } from './data/items.ts';
 import { transaction } from './db/index.ts';
-import { importRecipeFile, templateCsv } from './recipe-import.ts';
+import { importRecipeFile, importSummary, templateCsv } from './recipe-import.ts';
 import { TEST_ENV, freshDb, ingredient, makeDish, makeHousehold, recipe } from './testing.ts';
 import { NORMALIZE_MAX_LENGTH } from '../text.ts';
 
@@ -376,5 +376,36 @@ describe('importRecipeFile', () => {
 			})
 		).toThrow('Broken');
 		expect(names()).toEqual([]);
+	});
+});
+
+describe('importSummary', () => {
+	// One recipe imported, and nothing replaced, skipped or ignored.
+	const one = { kind: 'imported' as const, imported: 1, replaced: 0, skipped: 0, ignored: [] };
+
+	it('says what was imported, leaving out the parts that are 0 or empty', () => {
+		expect(importSummary(one)).toBe('Imported 1 recipe.');
+		expect(importSummary({ ...one, imported: 9, replaced: 2, skipped: 3 })).toBe(
+			'Imported 9 recipes, replaced 2 and skipped 3.'
+		);
+		expect(importSummary({ ...one, imported: 0, skipped: 3 })).toBe(
+			'Imported 0 recipes and skipped 3.'
+		);
+	});
+
+	it('names at most three ignored columns, counting the rest (MEA-81)', () => {
+		expect(importSummary({ ...one, ignored: ['Rating'] })).toBe(
+			'Imported 1 recipe. Ignored column: Rating.'
+		);
+		expect(importSummary({ ...one, ignored: ['Step', 'Rating', 'Photo'] })).toBe(
+			'Imported 1 recipe. Ignored columns: Step, Rating and Photo.'
+		);
+		expect(importSummary({ ...one, ignored: ['Step', 'Rating', 'Photo', 'Cost'] })).toBe(
+			'Imported 1 recipe. Ignored columns: Step, Rating and 2 more.'
+		);
+		const extra = Array.from({ length: 12 }, (_, index) => `Extra ${index + 1}`);
+		expect(importSummary({ ...one, ignored: ['Step', 'Rating', ...extra] })).toBe(
+			'Imported 1 recipe. Ignored columns: Step, Rating and 12 more.'
+		);
 	});
 });

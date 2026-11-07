@@ -1,45 +1,23 @@
 <script lang="ts">
 	import { afterNavigate, goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import SearchBox from '#lib/components/SearchBox.svelte';
 	import { formatMinutes, formatRating, totalMinutes } from '#lib/recipe-view.ts';
 	import { foldCase, joinAnd } from '#lib/text.ts';
 
 	let { data } = $props();
 
-	// Import recipes comes here with what it did in the address (design 7, Import recipes), and
-	// the list says so until the next navigation. The address drops it straight away, so a
-	// reload, or coming back with Back, doesn't say it again.
+	// Import recipes comes here with what it did as navigation state (design 7, Import recipes),
+	// and the list says so until the next navigation. Only the app sets that state, so a link
+	// can't make the list say something else (MEA-81). A reload doesn't apply it, and it's
+	// dropped straight away, so coming back with Back doesn't say it again either.
 	let imported = $state<string | null>(null);
 	afterNavigate(({ to, shallow }) => {
-		// Dropping it from the address is a navigation too.
+		// Dropping it is a navigation too.
 		if (shallow || !to) return;
-		imported = importMessage(to.url.searchParams);
-		if (imported === null) return;
-		const address = new URL(to.url);
-		for (const name of ['imported', 'replaced', 'skipped', 'ignored']) {
-			address.searchParams.delete(name);
-		}
-		void goto(address, { shallow: true, replace: true });
+		imported = page.state.importSummary ?? null;
+		if (imported !== null) void goto(to.url, { state: {}, shallow: true, replace: true });
 	});
-
-	/** "Imported 9 recipes, replaced 2 and skipped 3. Ignored columns: Step and Rating." */
-	function importMessage(params: URLSearchParams): string | null {
-		const count = params.get('imported');
-		if (count === null) return null;
-		const replaced = Number(params.get('replaced'));
-		const skipped = Number(params.get('skipped'));
-		const ignored = params.getAll('ignored');
-		const parts = [
-			`Imported ${count} ${count === '1' ? 'recipe' : 'recipes'}`,
-			...(replaced > 0 ? [`replaced ${replaced}`] : []),
-			...(skipped > 0 ? [`skipped ${skipped}`] : [])
-		];
-		let message = `${joinAnd(parts)}.`;
-		if (ignored.length > 0) {
-			message += ` Ignored ${ignored.length === 1 ? 'column' : 'columns'}: ${joinAnd(ignored)}.`;
-		}
-		return message;
-	}
 
 	type Recipe = (typeof data.recipes)[number];
 

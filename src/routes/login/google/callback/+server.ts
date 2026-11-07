@@ -1,4 +1,5 @@
 import { error, redirect } from '@sveltejs/kit';
+import { cookieName } from '#lib/server/auth/cookies.ts';
 import { exchangeCode, type GoogleClaims } from '#lib/server/auth/google.ts';
 import { createSession, setSessionCookie } from '#lib/server/auth/session.ts';
 import { NOT_INVITED_COOKIE, signIn } from '#lib/server/auth/sign-in.ts';
@@ -7,10 +8,12 @@ import { config } from '#lib/server/config.ts';
 export async function GET({ cookies, url }) {
 	const code = url.searchParams.get('code');
 	const state = url.searchParams.get('state');
-	const storedState = cookies.get('google_oauth_state');
-	const codeVerifier = cookies.get('google_code_verifier');
-	cookies.delete('google_oauth_state', { path: '/' });
-	cookies.delete('google_code_verifier', { path: '/' });
+	const stateCookie = cookieName(url, 'google_oauth_state');
+	const verifierCookie = cookieName(url, 'google_code_verifier');
+	const storedState = cookies.get(stateCookie);
+	const codeVerifier = cookies.get(verifierCookie);
+	cookies.delete(stateCookie, { path: '/' });
+	cookies.delete(verifierCookie, { path: '/' });
 	if (!code || !state || !storedState || !codeVerifier || state !== storedState) {
 		error(400, 'Sign-in was cancelled or expired. Please try again.');
 	}
@@ -38,6 +41,6 @@ export async function GET({ cookies, url }) {
 		redirect(303, '/not-invited');
 	}
 	const session = createSession(result.userId, now);
-	setSessionCookie(cookies, session.token, session.expiresAt);
+	setSessionCookie(cookies, url, session.token, session.expiresAt);
 	redirect(303, '/');
 }

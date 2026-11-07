@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
+	import { goto } from '$app/navigation';
 	import { returnOnClick } from '#lib/return-to.ts';
 	import type { Duplicate, DuplicateChoice } from '#lib/server/recipe-import.ts';
 
 	// Import recipes (design 7). The chosen file stays in the form, so after the duplicate
 	// choices it's sent again with them. Nothing is kept on the server in between.
 
-	type Outcome = { problems?: string[]; duplicates?: Duplicate[] };
+	/** The import's answer: its problems, the duplicates to choose for, or what it imported. */
+	type Outcome = { problems?: string[]; duplicates?: Duplicate[]; summary?: string };
 
 	let outcome = $state<Outcome | null>(null);
 	let choices = $state<Record<number, DuplicateChoice>>({});
@@ -29,11 +31,21 @@
 		messageElement?.focus();
 	}
 
-	const submit: SubmitFunction = ({ cancel }) => {
+	const submit: SubmitFunction<Outcome, Outcome> = ({ cancel }) => {
 		if (importing) return cancel();
 		importing = true;
 		return async ({ result, update }) => {
 			if (result.type === 'redirect') return update();
+			if (result.type === 'success' && result.data?.summary !== undefined) {
+				// Recipes says what was imported. It goes as navigation state, not in the address,
+				// so a link can't make Recipes say something else, and a file with hundreds of
+				// extra columns doesn't make the address too long (MEA-81). refreshAll drops a
+				// preload of Recipes from before the import, such as from hovering Cancel.
+				return goto('/recipes', {
+					state: { importSummary: result.data.summary },
+					refreshAll: true
+				});
+			}
 			importing = false;
 			if (result.type === 'success' || result.type === 'failure') {
 				await show(result.data as Outcome);

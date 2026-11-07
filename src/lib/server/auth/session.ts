@@ -3,8 +3,7 @@ import type { Cookies } from '@sveltejs/kit';
 import { eq, lte } from 'drizzle-orm';
 import { db } from '../db/index.ts';
 import { sessions, users } from '../db/schema.ts';
-
-export const SESSION_COOKIE = 'session';
+import { cookieName } from './cookies.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 const LIFETIME = 30 * DAY;
@@ -80,8 +79,18 @@ export function deleteSession(token: string): void {
 	db().delete(sessions).where(eq(sessions.id, hashToken(token))).run();
 }
 
-export function setSessionCookie(cookies: Cookies, token: string, expiresAt: number): void {
-	cookies.set(SESSION_COOKIE, token, {
+/** `__Host-session` over https, `session` over http (design 4.5). */
+export function sessionCookieName(url: URL): string {
+	return cookieName(url, 'session');
+}
+
+export function setSessionCookie(
+	cookies: Cookies,
+	url: URL,
+	token: string,
+	expiresAt: number
+): void {
+	cookies.set(sessionCookieName(url), token, {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',
@@ -89,6 +98,6 @@ export function setSessionCookie(cookies: Cookies, token: string, expiresAt: num
 	});
 }
 
-export function deleteSessionCookie(cookies: Cookies): void {
-	cookies.delete(SESSION_COOKIE, { path: '/' });
+export function deleteSessionCookie(cookies: Cookies, url: URL): void {
+	cookies.delete(sessionCookieName(url), { path: '/' });
 }

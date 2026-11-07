@@ -22,6 +22,8 @@ import { getHousehold } from '#lib/server/data/households.ts';
 import {
 	addRequest,
 	addRestaurantRequest,
+	completeRequest,
+	listCompletedRequests,
 	listRequests,
 	removeRequest,
 	restoreAndAddRequest
@@ -30,8 +32,8 @@ import { attempt, id, nameField, parseForm } from '#lib/server/forms.ts';
 
 // The week view (design 7, Menu): Sunday to Saturday, one row per day with its dinners. ?week=
 // can be any date in the week. Dragging a day onto another with a mouse swaps their dinners, like
-// Move to another date (2.2.2). Under it, the household's requests for dishes and restaurants,
-// the same on every week (6.12).
+// Move to another date (2.2.2). Under it, the household's requests for dishes and restaurants, and
+// the ones completed, the same on every week (6.12).
 
 /** The Sunday that starts the week to show, or null when ?week= isn't a date it can show. */
 function weekToShow(param: string | null, today: string): string | null {
@@ -72,7 +74,8 @@ function byRole(dishes: Dinner['dishes']): { role: DishRole; names: string[] }[]
 
 export function load({ locals, url }) {
 	const user = requireHousehold(locals);
-	const today = dateIn(Date.now(), getHousehold(user.householdId).timeZone);
+	const { timeZone } = getHousehold(user.householdId);
+	const today = dateIn(Date.now(), timeZone);
 	const start = weekToShow(url.searchParams.get('week'), today);
 	if (start === null) redirect(303, '/menu');
 	const end = addDays(start, 6);
@@ -99,6 +102,11 @@ export function load({ locals, url }) {
 				}))
 		})),
 		requests: listRequests(user.householdId),
+		// Newest first, each with the date it was completed in the household's time zone.
+		completed: listCompletedRequests(user.householdId).map((request) => ({
+			...request,
+			completedOn: dateIn(request.completedAt, timeZone)
+		})),
 		dishes: dishSuggestions(user.householdId)
 	};
 }
@@ -176,6 +184,17 @@ export const actions = {
 		);
 	},
 
+	// Moves the request to the completed history, as adding it to a date does (6.12).
+	completeRequest: async ({ locals, request }) => {
+		const user = requireHousehold(locals);
+		const parsed = parseForm(z.object({ id }), await request.formData(), 'requests');
+		if ('failure' in parsed) return parsed.failure;
+		return attempt('requests', () =>
+			completeRequest(user.householdId, parsed.data.id, Date.now())
+		);
+	},
+
+	// Deletes the request for good, without adding it to the completed history (6.12).
 	removeRequest: async ({ locals, request }) => {
 		const user = requireHousehold(locals);
 		const parsed = parseForm(z.object({ id }), await request.formData(), 'requests');

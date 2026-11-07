@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { isRedirect } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { schemaRecipeValues } from '#lib/recipe-schema.ts';
 import { listDishes } from '#lib/server/data/dishes.ts';
 import { getHousehold, updateHousehold } from '#lib/server/data/households.ts';
 import { listPickerItems } from '#lib/server/data/items.ts';
@@ -9,11 +10,18 @@ import { newRecipeValues } from '#lib/server/recipe-form.ts';
 import { freshDb, makeHousehold, servePages } from '#lib/server/testing.ts';
 import { actions } from './+page.server.ts';
 
+// The real function, which a test can make fail once.
+vi.mock('#lib/recipe-schema.ts', async (importOriginal) => {
+	const schema = await importOriginal<typeof import('#lib/recipe-schema.ts')>();
+	return { ...schema, schemaRecipeValues: vi.fn(schema.schemaRecipeValues) };
+});
+
 const LINK = 'https://www.kingarthurbaking.com/recipes/spiced-rye-ginger-cookies-recipe';
 // The page's head, as saved from King Arthur Baking.
 const PAGE = readFileSync('src/lib/test-pages/kingarthurbaking.html', 'utf8');
 
 const NOT_OPENED = "Couldn't open that page. Check the link and try again.";
+const NO_RECIPE = "Couldn't find a recipe on that page.";
 
 let householdId: number;
 let userId: number;
@@ -66,7 +74,8 @@ describe('the import action', () => {
 				carbsG: '20',
 				fatG: '6',
 				rows: expect.any(Array)
-			}
+			},
+			leftOut: []
 		});
 		if (!('values' in result)) throw new Error('Not imported');
 		const { steps, rows } = result.values;
@@ -113,7 +122,8 @@ describe('the import action', () => {
 				steps: 'Toast the bread.',
 				source: 'https://recipes.example/toast',
 				rows: [{ kind: 'ingredient', amount: '1', unit: 'slice', item: 'bread', prepNote: '' }]
-			}
+			},
+			leftOut: []
 		});
 	});
 
@@ -140,8 +150,26 @@ describe('the import action', () => {
 				steps: 'Bake at 325°F.',
 				source: link,
 				rows: [{ kind: 'ingredient', amount: '½', unit: 'cup', item: 'sugar', prepNote: '' }]
-			}
+			},
+			leftOut: []
 		});
+	});
+
+	it('says what it left out of a page with more than the editor takes (MEA-84)', async () => {
+		const feast = {
+			'@type': 'Recipe',
+			name: 'Feast',
+			recipeIngredient: Array.from({ length: 101 }, (_, at) => `${at + 1} cups flour`),
+			recipeInstructions: Array<string>(2_001).fill('Stir.')
+		};
+		servePages({ 'https://recipes.example/feast': { status: 200, body: pageWith(feast) } });
+		const result = await importLink('https://recipes.example/feast');
+		expect(result).toMatchObject({ action: 'import', leftOut: ['ingredients', 'steps'] });
+		if (!('values' in result)) throw new Error('Not imported');
+		expect(result.values.rows).toHaveLength(100);
+		// 1,666 steps of 5 characters with a line break between come to 9,995, and one more would
+		// pass 10,000.
+		expect(result.values.steps.split('\n')).toHaveLength(1_666);
 	});
 
 	it('says when the page has no recipe', async () => {
@@ -149,8 +177,22 @@ describe('the import action', () => {
 		servePages({ 'https://recipes.example/': { status: 200, body: blog } });
 		expect(await importLink('https://recipes.example/')).toMatchObject({
 			status: 400,
-			data: { action: 'import', error: "Couldn't find a recipe on that page." }
+			data: { action: 'import', error: NO_RECIPE }
 		});
+	});
+
+	it('says there is no recipe when reading the page fails, and logs why (MEA-84)', async () => {
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const failure = new RangeError('Maximum call stack size exceeded');
+		vi.mocked(schemaRecipeValues).mockImplementationOnce(() => {
+			throw failure;
+		});
+		servePages({ [LINK]: { status: 200, body: PAGE } });
+		expect(await importLink(LINK)).toMatchObject({
+			status: 400,
+			data: { action: 'import', error: NO_RECIPE }
+		});
+		expect(logged).toHaveBeenCalledWith(`Couldn't read the recipe on ${LINK}:`, failure);
 	});
 
 	it("says when the page can't be opened", async () => {

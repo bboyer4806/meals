@@ -183,3 +183,50 @@ test('a file with a problem imports nothing and lists it by row', async ({ page,
 	await open(page, '/recipes');
 	await expect(page.getByText('No recipes yet.')).toBeVisible();
 });
+
+test('a file with hundreds of extra columns imports, naming a few of them (MEA-81)', async ({
+	page,
+	person: _signedIn
+}) => {
+	// More than nginx (8 KB) or Node (16 KB) takes in an address, if they were named there.
+	const extra = Array.from({ length: 1000 }, (_, index) => `Extra column ${index + 1}`);
+	await open(page, '/recipes/import');
+	await chooseFile(page, `${['Recipe', ...extra].join(',')}\r\nToast`);
+	await page.getByRole('button', { name: 'Import' }).click();
+
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(page.getByRole('status')).toHaveText(
+		'Imported 1 recipe. Ignored columns: Extra column 1, Extra column 2 and 998 more.'
+	);
+	await expect(recipeLink(page, 'Toast')).toBeVisible();
+});
+
+test('says what it imported until the next navigation, not after Back or a reload', async ({
+	page,
+	person: _signedIn
+}) => {
+	await open(page, '/recipes/import');
+	await chooseFile(page, 'Recipe\nToast\n');
+	await page.getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByRole('status')).toHaveText('Imported 1 recipe.');
+
+	await recipeLink(page, 'Toast').click();
+	await expect(page.getByRole('heading', { name: 'Toast', level: 1 })).toBeVisible();
+	await page.goBack();
+	await expect(recipeLink(page, 'Toast')).toBeVisible();
+	await expect(page.getByRole('status')).toHaveCount(0);
+
+	await page.reload();
+	await expect(page.locator('html[data-started]')).toBeAttached();
+	await expect(recipeLink(page, 'Toast')).toBeVisible();
+	await expect(page.getByRole('status')).toHaveCount(0);
+});
+
+test("a link can't make Recipes say it imported something (MEA-81)", async ({
+	page,
+	person: _signedIn
+}) => {
+	await open(page, '/recipes?imported=0&ignored=Your%20session%20expired.%20Sign%20in%20again');
+	await expect(page.getByRole('heading', { name: 'Recipes', level: 1 })).toBeVisible();
+	await expect(page.getByRole('status')).toHaveCount(0);
+});
