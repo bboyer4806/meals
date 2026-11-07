@@ -104,8 +104,10 @@
 	{#if form?.action === 'tried' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
 </form>
 
-<!-- Your own stars, saved on tap; the current star again clears them. Beside them, the
-household's average (section 7, "Recipe"). -->
+<!-- Your own stars, saved on tap; the current star again clears them. Each star sends its stars,
+or none from your current star, so a second tap sent before the page shows the first saves the
+same again instead of undoing it (MEA-86). Beside them, the household's average (section 7,
+"Recipe"). -->
 <form
 	class="rating no-print"
 	method="POST"
@@ -120,7 +122,7 @@ household's average (section 7, "Recipe"). -->
 			<button
 				class="star"
 				name="stars"
-				value={stars}
+				value={data.ownRating === stars ? '' : stars}
 				aria-label={starsLabel(stars)}
 				aria-pressed={data.ownRating === stars}
 				>{data.ownRating !== null && stars <= data.ownRating ? '★' : '☆'}</button

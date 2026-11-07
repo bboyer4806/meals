@@ -325,20 +325,29 @@ export function setDishTried(householdId: number, dishId: number, tried: boolean
 }
 
 /**
- * Sets the person's own stars for the dish, or clears them when they're the stars it already
- * has, as tapping the current star does. Nobody else's rating changes (section 7, "Recipe").
+ * Sets the person's own stars for the dish, or clears them for null. Nobody else's rating changes
+ * (section 7, "Recipe"). Sending the same stars again keeps them, so a second tap sent before the
+ * page showed the first doesn't undo it (MEA-86).
  */
-export function rateDish(householdId: number, dishId: number, userId: number, stars: number): void {
+export function rateDish(
+	householdId: number,
+	dishId: number,
+	userId: number,
+	stars: number | null
+): void {
 	transaction(() => {
 		findDish(householdId, dishId);
-		const own = and(eq(dishRatings.dishId, dishId), eq(dishRatings.userId, userId));
-		const current = db().select({ stars: dishRatings.stars }).from(dishRatings).where(own).get();
-		if (current === undefined) {
-			db().insert(dishRatings).values({ householdId, dishId, userId, stars }).run();
-		} else if (current.stars === stars) {
-			db().delete(dishRatings).where(own).run();
+		if (stars === null) {
+			db()
+				.delete(dishRatings)
+				.where(and(eq(dishRatings.dishId, dishId), eq(dishRatings.userId, userId)))
+				.run();
 		} else {
-			db().update(dishRatings).set({ stars }).where(own).run();
+			db()
+				.insert(dishRatings)
+				.values({ householdId, dishId, userId, stars })
+				.onConflictDoUpdate({ target: [dishRatings.dishId, dishRatings.userId], set: { stars } })
+				.run();
 		}
 	});
 }
