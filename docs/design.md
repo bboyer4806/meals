@@ -962,10 +962,11 @@ or a common one, such as clove, can, pinch, slice or stick, also when it's writt
 amount, as in 500g or 1/2cup, while any other word starts the item; then the item up to the
 first comma, and the rest as the prep note. Text in parentheses right after the amount or the
 unit, such as a size, goes in the prep note too, and an "of" after the unit is left out
-(MEA-74). A whole number and a fraction joined by "and", as in 1 and 1/3, are one amount,
-1 1/3 (MEA-242). "1 1/2 cups flour, sifted" is 1 1/2, cup, flour and sifted; "1 (14 oz) can of
-tomatoes" is 1, can, tomatoes and 14 oz; "Salt, to taste" has no amount. Fields follow the
-editor's rules and limits, tags are separated by commas, and a blank Servings is the
+(MEA-74). A whole number and a fraction joined by "and" or "&", as in 1 and 1/3 or 1 & 1/3, are
+one amount, 1 1/3 (MEA-242). The fraction can also be a half, a third or a quarter in words, so
+1 and a half is 1 1/2 (MEA-257). "1 1/2 cups flour, sifted" is 1 1/2, cup, flour and sifted;
+"1 (14 oz) can of tomatoes" is 1, can, tomatoes and 14 oz; "Salt, to taste" has no amount. Fields
+follow the editor's rules and limits, tags are separated by commas, and a blank Servings is the
 household's usual servings. A file holds up to 1,000 recipes, not counting blank rows, since
 the app serves no other household while it reads, checks and saves them (MEA-89). A cell holds
 up to 10,000 characters, and the header and the cells in columns that aren't ignored up to
