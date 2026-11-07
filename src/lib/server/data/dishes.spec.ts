@@ -21,9 +21,12 @@ import {
 } from './dinners.ts';
 import {
 	createDish,
+	dishesByName,
+	findDishByName,
 	getDish,
 	getOwnRating,
 	groupDishesByLastMade,
+	importDishes,
 	listDishes,
 	listDishRatings,
 	listDishTags,
@@ -35,7 +38,13 @@ import {
 	type PhotoChange
 } from './dishes.ts';
 import { removeMember } from './households.ts';
-import { createItem, findItemByName, listCatalog, setItemArchived } from './items.ts';
+import {
+	createItem,
+	findItemByName,
+	itemsByName,
+	listCatalog,
+	setItemArchived
+} from './items.ts';
 
 // Sat 2026-10-03 12:00 in Chicago.
 const NOW = Date.UTC(2026, 9, 3, 17, 0);
@@ -445,6 +454,21 @@ describe('names', () => {
 			kind: 'saved'
 		});
 	});
+
+	it('looks up many names at once as findDishByName does, archived ones included (MEA-89)', () => {
+		const brulee = makeDish(householdId, recipe('Crème brûlée'));
+		const cake = makeDish(householdId, recipe('Pound cake'));
+		setDishArchived(householdId, cake, true, NOW);
+		makeDish(makeHousehold().householdId, recipe('Toast'));
+		const byName = dishesByName(householdId);
+		expect(byName.size).toBe(2);
+		expect(byName.get('crème brûlée')).toEqual({
+			id: brulee,
+			name: 'Crème brûlée',
+			archivedAt: null
+		});
+		expect(byName.get('pound cake')).toEqual(findDishByName(householdId, 'POUND CAKE'));
+	});
 });
 
 describe('failed saves', () => {
@@ -487,6 +511,135 @@ describe('failed saves', () => {
 		expect(dish.ingredients.map((i) => i.itemName)).toEqual(['Leeks']);
 		expect(findItemByName(householdId, 'Potatoes')).toBeUndefined();
 		expect(timestamps(id)).toEqual([NOW, NOW]);
+	});
+});
+
+// Import recipes saves its recipes all at once (design 7, MEA-89).
+describe('importing', () => {
+	/** The id of the household's recipe with this name. */
+	function idOf(name: string): number {
+		const dish = list().find((summary) => summary.name === name);
+		if (!dish) throw new Error(`No ${name}`);
+		return dish.id;
+	}
+
+	it('saves new recipes, and new details for existing ones, as createDish and updateDish do', () => {
+		const chili = makeDish(
+			householdId,
+			recipe('Chili', { tags: ['Quick'], ingredients: [ingredient('Beef', 1, 'lb')] }),
+			NOW,
+			KEY_A
+		);
+		setDishTried(householdId, chili, true);
+		const cake = recipe('Pound cake', {
+			servings: 8,
+			notes: 'Better the next day.',
+			tags: ['Dessert', 'Baking', 'DESSERT'],
+			ingredients: [
+				ingredient('Butter', 1, 'cup', { section: 'Cake', prepNote: 'softened' }),
+				ingredient('Flour', 2.25, 'cup', { section: 'Cake' })
+			]
+		});
+		const turkey = recipe('Chili', {
+			servings: 6,
+			tags: ['Healthy'],
+			ingredients: [ingredient('Turkey', 1.5, 'lb'), ingredient('Beans', 2, 'can')]
+		});
+		const recipes = [
+			{ dishId: null, input: cake },
+			{ dishId: chili, input: turkey }
+		];
+		importDishes(householdId, recipes, itemsByName(householdId), LATER);
+
+		const cakeId = idOf('Pound cake');
+		const added = getDish(householdId, cakeId);
+		expect(added).toMatchObject({
+			servings: 8,
+			notes: 'Better the next day.',
+			tags: ['Dessert', 'Baking']
+		});
+		expect(added.ingredients).toMatchObject([
+			{ section: 'Cake', amount: 1, unit: 'cup', itemName: 'Butter', prepNote: 'softened' },
+			{ section: 'Cake', amount: 2.25, unit: 'cup', itemName: 'Flour', prepNote: null }
+		]);
+		expect(timestamps(cakeId)).toEqual([LATER, LATER]);
+
+		// The photo and Tried stay, as with updateDish.
+		const replaced = getDish(householdId, chili);
+		expect(replaced).toMatchObject({
+			name: 'Chili',
+			servings: 6,
+			tags: ['Healthy'],
+			photoKey: KEY_A,
+			tried: true
+		});
+		expect(replaced.ingredients.map((i) => i.itemName)).toEqual(['Turkey', 'Beans']);
+		expect(timestamps(chili)).toEqual([NOW, LATER]);
+		expect(db().select().from(dishTags).all()).toHaveLength(3);
+		expect(db().select().from(dishIngredients).all()).toHaveLength(4);
+		// Items the recipe no longer uses stay in the catalog.
+		expect(catalog()).toEqual(['Beans', 'Beef', 'Butter', 'Flour', 'Turkey']);
+	});
+
+	it("adds each new item once, spelled as the first ingredient naming it, and uses the catalog's (Q1)", () => {
+		const salt = createItem(householdId, 'Salt', NOW).id;
+		const salsa = recipe('Salsa', {
+			ingredients: [ingredient('Jalapeños', 2), ingredient('salt')]
+		});
+		const mole = recipe('Mole', {
+			ingredients: [ingredient('JALAPEÑOS'), ingredient('  SALT ')]
+		});
+		const recipes = [
+			{ dishId: null, input: salsa },
+			{ dishId: null, input: mole }
+		];
+		importDishes(householdId, recipes, itemsByName(householdId), NOW);
+		const itemIds = (name: string) =>
+			getDish(householdId, idOf(name)).ingredients.map((i) => i.itemId);
+		const jalapenos = findItemByName(householdId, 'Jalapeños')?.id;
+		expect(itemIds('Salsa')).toEqual([jalapenos, salt]);
+		expect(itemIds('Mole')).toEqual([jalapenos, salt]);
+		expect(catalog()).toEqual(['Jalapeños', 'Salt']);
+	});
+
+	it('refuses an archived item, which importing never restores', () => {
+		const salt = createItem(householdId, 'Salt', NOW).id;
+		setItemArchived(householdId, salt, true, NOW);
+		const soup = recipe('Soup', { ingredients: [ingredient('Leeks', 2), ingredient('salt')] });
+		expect(() =>
+			importDishes(householdId, [{ dishId: null, input: soup }], itemsByName(householdId), NOW)
+		).toThrow('Salt is archived');
+		expect(names()).toEqual([]);
+		expect(findItemByName(householdId, 'Leeks')).toBeUndefined();
+		expect(findItemByName(householdId, 'Salt')?.archivedAt).toBe(NOW);
+	});
+
+	it('rolls back every recipe when one fails partway', () => {
+		const chili = makeDish(
+			householdId,
+			recipe('Chili', { ingredients: [ingredient('Beef', 1, 'lb')] }),
+			NOW
+		);
+		// A unit without an amount breaks a database rule after everything else is written.
+		const broken = recipe('Soup', {
+			tags: ['Easy'],
+			ingredients: [ingredient('Leeks', 2), ingredient('Stock', null, 'cup')]
+		});
+		const recipes = [
+			{ dishId: chili, input: recipe('Chili', { servings: 6 }) },
+			{ dishId: null, input: broken }
+		];
+		expect(() => importDishes(householdId, recipes, itemsByName(householdId), LATER)).toThrow(
+			/CHECK constraint failed/
+		);
+		expect(names()).toEqual(['Chili']);
+		expect(getDish(householdId, chili)).toMatchObject({
+			servings: 4,
+			ingredients: [{ itemName: 'Beef' }]
+		});
+		expect(timestamps(chili)).toEqual([NOW, NOW]);
+		expect(findItemByName(householdId, 'Leeks')).toBeUndefined();
+		expect(db().select().from(dishTags).all()).toHaveLength(0);
 	});
 });
 
@@ -1071,6 +1224,12 @@ describe('households', () => {
 		expectHttpError(() => getDish(other.householdId, id), 404);
 		expectHttpError(
 			() => updateDish(other.householdId, id, recipe('Mine now'), { photoKey: KEY_A }, [], NOW),
+			404
+		);
+		expect(dishesByName(other.householdId).size).toBe(0);
+		const mine = [{ dishId: id, input: recipe('Mine now') }];
+		expectHttpError(
+			() => importDishes(other.householdId, mine, itemsByName(other.householdId), NOW),
 			404
 		);
 		expectHttpError(() => setDishArchived(other.householdId, id, true, NOW), 404);

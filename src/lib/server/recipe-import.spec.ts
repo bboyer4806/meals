@@ -3,8 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from './config.ts';
-import { getDish, listDishes, rateDish, setDishArchived, setDishTried } from './data/dishes.ts';
-import { createItem, findItemByName, setItemArchived } from './data/items.ts';
+import {
+	getDish,
+	importDishes,
+	listDishes,
+	rateDish,
+	setDishArchived,
+	setDishTried
+} from './data/dishes.ts';
+import { createItem, findItemByName, itemsByName, setItemArchived } from './data/items.ts';
 import { transaction } from './db/index.ts';
 import { importRecipeFile, importSummary, templateCsv } from './recipe-import.ts';
 import { TEST_ENV, freshDb, ingredient, makeDish, makeHousehold, recipe } from './testing.ts';
@@ -229,6 +236,71 @@ describe('importRecipeFile', () => {
 		});
 	});
 
+	it('refuses a file over 1 MB unread', async () => {
+		// Extra is ignored, however long its cell.
+		const start = 'Recipe,Extra\nToast,';
+		const most = `${start}${'x'.repeat(1_000_000 - start.length)}`;
+		expect(await importRecipeFile(householdId, form(`${most}x`), NOW)).toEqual({
+			kind: 'problems',
+			problems: ['Choose a file under 1 MB.']
+		});
+		expect(await importRecipeFile(householdId, form(most), NOW)).toMatchObject({ imported: 1 });
+	});
+
+	it('reads up to 1000 recipes, not counting blank rows, and stops on the row past them (MEA-89)', async () => {
+		const rows = Array.from({ length: 1_000 }, (_, index) => `Dish ${index + 1}`);
+		// Blank rows 3 and 1003 don't count, so row 1004 is the 1001st recipe, and row 1005, named
+		// as row 2 is, isn't read.
+		const file = (after: string[]) =>
+			['Recipe', ...rows.slice(0, 1), '', ...rows.slice(1), '', ...after].join('\n');
+		expect(await importRecipeFile(householdId, form(file(['Toast', 'Dish 1'])), NOW)).toEqual({
+			kind: 'problems',
+			problems: ['Row 1004: the file has more than 1000 recipes. Split it into smaller files.']
+		});
+		expect(names()).toEqual([]);
+		expect(await importRecipeFile(householdId, form(file([])), NOW)).toMatchObject({
+			kind: 'imported',
+			imported: 1_000
+		});
+	});
+
+	it('imports the most recipes a file holds into a full household in well under a second (MEA-89)', async () => {
+		// Each name was looked up among all the household's recipes or items, several times a row,
+		// which took this import about 5 seconds and finding its duplicates about 2.
+		const old = Array.from({ length: 1_000 }, (_, index) => ({
+			dishId: null,
+			input: recipe(`Old ${index}`, { ingredients: [ingredient(`Item ${index}`)] })
+		}));
+		importDishes(householdId, old, itemsByName(householdId), NOW);
+		const rows = Array.from(
+			{ length: 1_000 },
+			(_, index) => `Dish ${index},Item ${index}|New ${index}|salt`
+		);
+		const csv = ['Recipe,Ingredients', ...rows].join('\n');
+
+		let started = performance.now();
+		const result = await importRecipeFile(householdId, form(csv), NOW);
+		expect(performance.now() - started).toBeLessThan(1000);
+		expect(result).toEqual({
+			kind: 'imported',
+			imported: 1_000,
+			replaced: 0,
+			skipped: 0,
+			ignored: []
+		});
+		const last = dishNamed('Dish 999').ingredients;
+		expect(last.map(({ itemName }) => itemName)).toEqual(['Item 999', 'New 999', 'salt']);
+		expect(last[0]?.itemId).toBe(findItemByName(householdId, 'Item 999')?.id);
+		expect(itemsByName(householdId).size).toBe(2_001);
+
+		// Sent again, every recipe is already in Recipes.
+		started = performance.now();
+		const again = await importRecipeFile(householdId, form(csv), NOW);
+		expect(performance.now() - started).toBeLessThan(1000);
+		if (again.kind !== 'duplicates') throw new Error('Expected duplicates');
+		expect(again.duplicates).toHaveLength(1_000);
+	});
+
 	it('reads the template saved as CSV UTF-8, with its byte order mark, é, ½ and ° (MEA-71)', async () => {
 		const csv = `${templateCsv()}Crème brûlée,,,,,½ cup sugar|1 cup crème fraîche,Bake at 325 °F.\r\n`;
 		const result = await importRecipeFile(householdId, form(csv), NOW);
@@ -367,11 +439,16 @@ describe('importRecipeFile', () => {
 		expect(readdirSync(join(dataDir, 'photos')).sort()).toEqual([`${eggs}-thumb.jpg`, `${eggs}.jpg`]);
 	});
 
-	it("rolls back recipes saved earlier when a later save throws", () => {
-		// The import's saves run in createDish's own transactions, nested in the import's.
+	it('rolls back the recipes it saved when the import throws after saving them', () => {
+		// The import's saves run in importDishes' own transaction, nested in the import's.
 		expect(() =>
 			transaction(() => {
-				makeDish(householdId, recipe('Rice'));
+				importDishes(
+					householdId,
+					[{ dishId: null, input: recipe('Rice') }],
+					itemsByName(householdId),
+					NOW
+				);
 				throw new Error('Broken');
 			})
 		).toThrow('Broken');

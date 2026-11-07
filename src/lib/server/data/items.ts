@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
-import { db, transaction } from '../db/index.ts';
+import { foldCase } from '../../text.ts';
+import { db, insertBatches, transaction } from '../db/index.ts';
 import { groceryNeeds, items, stores } from '../db/schema.ts';
 
 export type Item = {
@@ -41,12 +42,36 @@ export function findItemByName(householdId: number, name: string): Item | undefi
 		.get();
 }
 
+/**
+ * The household's items, archived ones included, by name with case folded, as findItemByName
+ * matches names, for looking up many at once (MEA-89).
+ */
+export function itemsByName(householdId: number): Map<string, Item> {
+	const rows = db()
+		.select(itemFields)
+		.from(items)
+		.where(eq(items.householdId, householdId))
+		.all();
+	return new Map(rows.map((item) => [foldCase(item.name), item]));
+}
+
 export function createItem(householdId: number, name: string, now: number): Item {
 	return db()
 		.insert(items)
 		.values({ householdId, name, createdAt: now })
 		.returning(itemFields)
 		.get();
+}
+
+/** Adds many items at once, as createItem adds one (MEA-89). */
+export function createItems(householdId: number, names: string[], now: number): Item[] {
+	return insertBatches(names).flatMap((batch) =>
+		db()
+			.insert(items)
+			.values(batch.map((name) => ({ householdId, name, createdAt: now })))
+			.returning(itemFields)
+			.all()
+	);
 }
 
 export type PickerItem = {

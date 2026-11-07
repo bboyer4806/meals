@@ -7,9 +7,15 @@ import {
 	NORMALIZE_MAX_LENGTH,
 	normalizeName
 } from '../text.ts';
-import { createDish, findDishByName, updateDish, type DishInput } from './data/dishes.ts';
+import {
+	dishesByName,
+	importDishes,
+	type DishInput,
+	type DishName,
+	type ImportedDish
+} from './data/dishes.ts';
 import { getHousehold } from './data/households.ts';
-import { findItemByName } from './data/items.ts';
+import { itemsByName, type Item } from './data/items.ts';
 import { transaction } from './db/index.ts';
 import { nameField } from './forms.ts';
 import { readRows, recipeDetailFields, type RecipeRow } from './recipe-form.ts';
@@ -45,7 +51,7 @@ export function templateCsv(): string {
 	return `\uFEFF${RECIPE_COLUMNS.join(',')}\r\n`;
 }
 
-// Big enough for thousands of recipes, and well under the app's upload limit.
+// Big enough for the most recipes one file holds, and well under the app's upload limit.
 const MAX_FILE_BYTES = 1_000_000;
 
 // A file must be UTF-8, as CSV UTF-8 saves it. Another encoding isn't guessed, since a wrong guess
@@ -71,6 +77,12 @@ const CELL_TOO_LONG = `keep each cell under ${NORMALIZE_MAX_LENGTH} characters.`
 // so many long cells can't add up to seconds. The row where they pass it, and the rows below it,
 // aren't read (design 7; MEA-234).
 const FILE_TOO_LONG = 'the file is too long to import at once. Split it into smaller files.';
+
+// The most recipes one file holds, one per row, not counting blank rows. Reading, checking and
+// saving each takes a little time, during which the app serves no other household, so the row
+// past this, and the rows below it, aren't read (design 7; MEA-89).
+const MAX_ROWS = 1_000;
+const TOO_MANY_ROWS = `the file has more than ${MAX_ROWS} recipes. Split it into smaller files.`;
 
 function isTooLong(cell: string): boolean {
 	return cell.length > NORMALIZE_MAX_LENGTH;
@@ -156,7 +168,8 @@ function readRecipe(cell: (column: Column) => string, defaultServings: number): 
  * any order; only Recipe is needed, and the names of columns that aren't recipe fields are
  * returned as `ignored`. Blank rows are left out. A quote the file never closes is the only
  * problem listed, since its cell holds the rest of the file (design 7). Reading stops at the row
- * where the cells read pass IMPORT_MAX_LENGTH (FILE_TOO_LONG).
+ * where the cells read pass IMPORT_MAX_LENGTH (FILE_TOO_LONG), or the rows pass MAX_ROWS
+ * (TOO_MANY_ROWS).
  */
 function readFile(
 	text: string,
@@ -199,9 +212,16 @@ function readFile(
 
 	const recipes: FileRecipe[] = [];
 	const rowsByName = new Map<string, number>();
+	// Rows that aren't blank, of the most one file holds.
+	let counted = 0;
 	for (const [index, cells] of rows.entries()) {
 		const row = index + 2;
 		if (cells.every((cell) => cell.trim() === '')) continue;
+		counted += 1;
+		if (counted > MAX_ROWS) {
+			problems.push({ row, text: TOO_MANY_ROWS });
+			break;
+		}
 		const cell = (column: Column) => {
 			const at = columns.get(column);
 			return at === undefined ? '' : (cells[at] ?? '');
@@ -237,12 +257,15 @@ function readFile(
 	return { recipes, problems, ignored };
 }
 
-/** The archived items the recipe names, each once, as problems. Importing doesn't restore them. */
-function archivedItemProblems(householdId: number, recipe: FileRecipe): Problem[] {
+/**
+ * The archived items the recipe names, each once, as problems. Importing doesn't restore them.
+ * `items` is the household's items by name (itemsByName).
+ */
+function archivedItemProblems(items: Map<string, Item>, recipe: FileRecipe): Problem[] {
 	const problems: Problem[] = [];
 	const seen = new Set<number>();
 	for (const ingredient of recipe.data.ingredients) {
-		const item = findItemByName(householdId, ingredient.itemName);
+		const item = items.get(foldCase(ingredient.itemName));
 		if (item && item.archivedAt !== null && !seen.has(item.id)) {
 			seen.add(item.id);
 			problems.push({
@@ -268,9 +291,12 @@ function sentChoice(formData: FormData, row: number): DuplicateChoice | null {
 
 const renameField = nameField(80, 'a new name');
 
-/** Problems with the names typed for Rename. Each must be new to Recipes and to the file. */
+/**
+ * Problems with the names typed for Rename. Each must be new to Recipes and to the file.
+ * `dishes` is the household's recipes by name (dishesByName).
+ */
 function renameProblems(
-	householdId: number,
+	dishes: Map<string, DishName>,
 	recipes: FileRecipe[],
 	duplicates: Duplicate[]
 ): Problem[] {
@@ -288,7 +314,7 @@ function renameProblems(
 		const other = rowsByName.get(key);
 		if (other !== undefined) {
 			problems.push({ row: duplicate.row, text: `${name.data} is also on row ${other}.` });
-		} else if (findDishByName(householdId, name.data)) {
+		} else if (dishes.has(key)) {
 			problems.push({ row: duplicate.row, text: `a recipe is already called ${name.data}.` });
 		} else {
 			rowsByName.set(key, duplicate.row);
@@ -301,8 +327,9 @@ function renameProblems(
  * Imports the UTF-8 CSV file in the form's `file` field. Nothing is imported while the file has a
  * problem. Recipes whose names are already in Recipes, archived ones included, are returned
  * as duplicates until the form has a choice for each, sent as `choice-<row>` (skip, replace or
- * rename) and `rename-<row>` (the new name). Everything is checked and saved in one
- * transaction, so the household's recipes can't change in between.
+ * rename) and `rename-<row>` (the new name). The file is read first, and then its names are
+ * checked against the household's recipes and items, and its recipes saved, in one transaction,
+ * so those can't change in between.
  */
 export async function importRecipeFile(
 	householdId: number,
@@ -321,20 +348,22 @@ export async function importRecipeFile(
 		return { kind: 'problems', problems: ['Save the file as CSV UTF-8, then import it again.'] };
 	}
 
+	// The file is read before the transaction, since its lock keeps other writes waiting, such as
+	// the next app container's during a deploy. In the transaction, each name is looked up in the
+	// household's recipes and items, read once, and the recipes are saved all at once (MEA-89).
+	const { recipes, problems, ignored } = readFile(text, getHousehold(householdId).defaultServings);
 	const result = transaction((): ImportResult => {
-		const { recipes, problems, ignored } = readFile(
-			text,
-			getHousehold(householdId).defaultServings
-		);
-		for (const recipe of recipes) problems.push(...archivedItemProblems(householdId, recipe));
+		const items = itemsByName(householdId);
+		for (const recipe of recipes) problems.push(...archivedItemProblems(items, recipe));
 		if (problems.length > 0) return { kind: 'problems', problems: formatProblems(problems) };
 
+		const dishes = dishesByName(householdId);
 		const duplicates: Duplicate[] = [];
 		// The existing recipe for each duplicate's row.
 		const dishIds = new Map<number, number>();
 		let unchosen = false;
 		for (const recipe of recipes) {
-			const dish = findDishByName(householdId, recipe.data.name);
+			const dish = dishes.get(foldCase(recipe.data.name));
 			if (!dish) continue;
 			dishIds.set(recipe.row, dish.id);
 			const choice = sentChoice(formData, recipe.row);
@@ -349,12 +378,13 @@ export async function importRecipeFile(
 			});
 		}
 		if (unchosen) return { kind: 'duplicates', duplicates, problems: [] };
-		const renaming = renameProblems(householdId, recipes, duplicates);
+		const renaming = renameProblems(dishes, recipes, duplicates);
 		if (renaming.length > 0) {
 			return { kind: 'duplicates', duplicates, problems: formatProblems(renaming) };
 		}
 
 		const choices = new Map(duplicates.map((duplicate) => [duplicate.row, duplicate]));
+		const saves: ImportedDish[] = [];
 		let imported = 0;
 		let replaced = 0;
 		let skipped = 0;
@@ -363,23 +393,18 @@ export async function importRecipeFile(
 			const dishId = dishIds.get(recipe.row);
 			if (duplicate?.choice === 'skip') {
 				skipped += 1;
-				continue;
-			}
-			// Everything was checked above, in this transaction, so each save goes through. The
-			// saves' own transactions are savepoints in this one.
-			let saved;
-			if (duplicate?.choice === 'replace' && dishId !== undefined) {
+			} else if (duplicate?.choice === 'replace' && dishId !== undefined) {
 				// The details change, and the name and photo stay as they are in Recipes.
-				const data = { ...recipe.data, name: duplicate.name };
-				saved = updateDish(householdId, dishId, data, 'keep', [], now);
+				saves.push({ dishId, input: { ...recipe.data, name: duplicate.name } });
 				replaced += 1;
 			} else {
 				const name = duplicate ? normalizeName(duplicate.rename) : recipe.data.name;
-				saved = createDish(householdId, { ...recipe.data, name }, null, [], now);
+				saves.push({ dishId: null, input: { ...recipe.data, name } });
 				imported += 1;
 			}
-			if (saved.kind !== 'saved') throw new Error(`Row ${recipe.row} couldn't be saved`);
 		}
+		// Everything was checked above, in this transaction, so the saves go through.
+		importDishes(householdId, saves, items, now);
 		return { kind: 'imported', imported, replaced, skipped, ignored };
 	});
 	// New ingredient items get their standard images (design 6.14).

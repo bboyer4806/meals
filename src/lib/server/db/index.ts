@@ -36,6 +36,19 @@ export function transaction<T>(fn: () => T): T {
 	return db().transaction(fn, { behavior: 'immediate' });
 }
 
+// SQLite takes at most 32,766 values in one statement. The widest table has 18 columns, and
+// 1,000 rows of it come to 18,000.
+const ROWS_PER_INSERT = 1_000;
+
+/** The rows in groups small enough for one INSERT each, for adding many at once (MEA-89). */
+export function insertBatches<T>(rows: T[]): T[][] {
+	const batches: T[][] = [];
+	for (let start = 0; start < rows.length; start += ROWS_PER_INSERT) {
+		batches.push(rows.slice(start, start + ROWS_PER_INSERT));
+	}
+	return batches;
+}
+
 /**
  * Applies new migrations from `folder` in one transaction and checks foreign keys before it
  * commits, so a migration that breaks them rolls back instead of being recorded. A table a

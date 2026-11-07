@@ -966,19 +966,23 @@ unit, such as a size, goes in the prep note too, and an "of" after the unit is l
 1 1/3 (MEA-242). "1 1/2 cups flour, sifted" is 1 1/2, cup, flour and sifted; "1 (14 oz) can of
 tomatoes" is 1, can, tomatoes and 14 oz; "Salt, to taste" has no amount. Fields follow the
 editor's rules and limits, tags are separated by commas, and a blank Servings is the
-household's usual servings. A cell holds up to 10,000 characters, and the header and the cells
-in columns that aren't ignored up to 100,000 in all, not counting a row refused for a cell over
-10,000 (4.5). If anything is wrong, nothing is imported, and the page lists each problem with
-its row number (the header is row 1), such as "Row 7: enter an amount like 1 1/2." Problems
-include a missing Recipe column, a cell over 10,000 characters ("Row 3: keep each cell under
-10000 characters."), cells passing 100,000 characters in all, on the row where they do, after
-which no row is read ("Row 57: the file is too long to import at once. Split it into smaller
+household's usual servings. A file holds up to 1,000 recipes, not counting blank rows, since
+the app serves no other household while it reads, checks and saves them (MEA-89). A cell holds
+up to 10,000 characters, and the header and the cells in columns that aren't ignored up to
+100,000 in all, not counting a row refused for a cell over 10,000 (4.5). If anything is wrong,
+nothing is imported, and the page lists each problem with its row number (the header is row 1),
+such as "Row 7: enter an amount like 1 1/2." Problems include a missing Recipe column, a cell
+over 10,000 characters ("Row 3: keep each cell under 10000 characters."), cells passing 100,000
+characters in all, on the row where they do, after which no row is read ("Row 57: the file is
+too long to import at once. Split it into smaller files."), a 1,001st recipe, after which no
+row is read either ("Row 1002: the file has more than 1000 recipes. Split it into smaller
 files."), a row without a name, a name used twice in the file
 ("Row 5: Pound cake is also on row 2."), an ingredient the editor wouldn't take ("Row 7: '2 cups'
 needs an item.") and an archived item ("Row 9: Saffron is archived. Restore it on Items first."),
 since importing never restores items. A quote that starts a cell and is never closed would put
 the rest of the file in that cell, so it's the only problem listed, on the row where the quote
 opens ("Row 4: a cell starts with a quote that isn't closed.").
+A file over 1 MB imports nothing and says "Choose a file under 1 MB."
 The file must be UTF-8, as CSV UTF-8 saves it. One that isn't, such as one Excel saved as CSV
 (Comma delimited), which is windows-1252, imports nothing and says "Save the file as CSV UTF-8,
 then import it again." rather than garbling its é, ° and ½ (MEA-71). Another encoding isn't
@@ -989,8 +993,10 @@ each with Skip (selected to start), Replace and Rename. Skip leaves the file's r
 Replace swaps the existing recipe's details for the file's, keeping its name, photo, Tried,
 ratings, dinners and archived state. Rename imports the file's recipe under a name typed there, which no
 recipe or other row may have. The chosen file stays in the form and is sent again with the
-choices; nothing is kept between the two. The whole import is checked and saved in one
-transaction. Recipes then says what it did until the next navigation, such as "Imported 9
+choices; nothing is kept between the two. The file is read first. Then, in one transaction, so
+nothing changes in between, its names are checked against the household's recipes and items,
+read once at the start, and its recipes are saved all at once (MEA-89). Recipes then says what
+it did until the next navigation, such as "Imported 9
 recipes, replaced 2 and skipped 3. Ignored columns: Step and Rating.", leaving out the parts that
 are 0 or empty. It names at most three ignored columns and counts the rest, as in "Ignored
 columns: Step, Rating and 12 more." The import page hands this to Recipes as navigation state,

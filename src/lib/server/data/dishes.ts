@@ -3,7 +3,7 @@ import { and, asc, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { addDays } from '../../menu.ts';
 import { splitSteps } from '../../steps.ts';
 import { foldCase, normalizeName } from '../../text.ts';
-import { db, transaction } from '../db/index.ts';
+import { db, insertBatches, transaction } from '../db/index.ts';
 import {
 	dinnerDishes,
 	dinners,
@@ -15,7 +15,7 @@ import {
 	users
 } from '../db/schema.ts';
 import { getHousehold } from './households.ts';
-import { createItem, findItemByName, setItemArchived } from './items.ts';
+import { createItem, createItems, findItemByName, setItemArchived, type Item } from './items.ts';
 
 // Dishes and recipes are one record, and the recipe details are optional (Q2).
 
@@ -143,13 +143,31 @@ function findDish(householdId: number, dishId: number): { id: number; photoKey: 
 	return dish;
 }
 
+/** A dish as found by its name. */
+export type DishName = { id: number; name: string; archivedAt: number | null };
+
+const nameFields = { id: dishes.id, name: dishes.name, archivedAt: dishes.archivedAt };
+
 /** Names are unique per household ignoring case, archived dishes included (design 2.3, 6.10). */
-export function findDishByName(householdId: number, name: string) {
+export function findDishByName(householdId: number, name: string): DishName | undefined {
 	return db()
-		.select({ id: dishes.id, name: dishes.name, archivedAt: dishes.archivedAt })
+		.select(nameFields)
 		.from(dishes)
 		.where(and(eq(dishes.householdId, householdId), sql`fold(${dishes.name}) = fold(${name})`))
 		.get();
+}
+
+/**
+ * The household's dishes, archived ones included, by name with case folded, as findDishByName
+ * matches names, for looking up many at once (MEA-89).
+ */
+export function dishesByName(householdId: number): Map<string, DishName> {
+	const rows = db()
+		.select(nameFields)
+		.from(dishes)
+		.where(eq(dishes.householdId, householdId))
+		.all();
+	return new Map(rows.map((dish) => [foldCase(dish.name), dish]));
 }
 
 /**
@@ -200,6 +218,70 @@ function newlyUsedArchivedItems(
 }
 
 /**
+ * The dish's own fields, listed one by one, so nothing else in the input (a photo key, say) is
+ * ever written, and its photo as `photo` changes it (MEA-87).
+ */
+function dishFields(input: DishInput, photo: PhotoChange) {
+	return {
+		name: input.name,
+		servings: input.servings,
+		prepMinutes: input.prepMinutes,
+		cookMinutes: input.cookMinutes,
+		steps: input.steps,
+		notes: input.notes,
+		source: input.source,
+		calories: input.calories,
+		proteinG: input.proteinG,
+		carbsG: input.carbsG,
+		fatG: input.fatG,
+		...(photo === 'keep' ? {} : { photoKey: photo.photoKey })
+	};
+}
+
+/** Writes an existing dish's new fields and removes its tags and ingredients, for new ones. */
+function rewriteDish(dishId: number, input: DishInput, photo: PhotoChange, now: number): void {
+	db()
+		.update(dishes)
+		.set({ ...dishFields(input, photo), updatedAt: now })
+		.where(eq(dishes.id, dishId))
+		.run();
+	db().delete(dishTags).where(eq(dishTags.dishId, dishId)).run();
+	db().delete(dishIngredients).where(eq(dishIngredients.dishId, dishId)).run();
+}
+
+/**
+ * The dish's tags as rows. The database allows each tag once per dish, ignoring case. The first
+ * spelling wins.
+ */
+function tagRows(householdId: number, dishId: number, tags: string[]) {
+	const rows = new Map<string, { householdId: number; dishId: number; tag: string }>();
+	for (const tag of tags) {
+		const key = foldCase(tag);
+		if (!rows.has(key)) rows.set(key, { householdId, dishId, tag });
+	}
+	return [...rows.values()];
+}
+
+/** The dish's ingredients as rows, in order, each naming its item by the id `itemId` gives. */
+function ingredientRows(
+	householdId: number,
+	dishId: number,
+	ingredients: IngredientInput[],
+	itemId: (itemName: string) => number
+) {
+	return ingredients.map((ingredient, position) => ({
+		householdId,
+		dishId,
+		position,
+		section: ingredient.section,
+		amount: ingredient.amount,
+		unit: ingredient.unit,
+		itemId: itemId(ingredient.itemName),
+		prepNote: ingredient.prepNote
+	}));
+}
+
+/**
  * Writes the dish with its photo and replaces its tags and ingredients, unless it would start
  * using an archived item that isn't in `restoreItemIds`. `dish` is the dish saved over, as it was
  * before, or null for a new one. Callers run it in a transaction, so the details and the photo are
@@ -228,60 +310,24 @@ function save(
 	}
 	for (const itemId of archived.keys()) setItemArchived(householdId, itemId, false, now);
 
-	// Listed one by one, so nothing else in the input (a photo key, say) is ever written. The
-	// photo comes from `photo` instead.
-	const fields = {
-		name: input.name,
-		servings: input.servings,
-		prepMinutes: input.prepMinutes,
-		cookMinutes: input.cookMinutes,
-		steps: input.steps,
-		notes: input.notes,
-		source: input.source,
-		calories: input.calories,
-		proteinG: input.proteinG,
-		carbsG: input.carbsG,
-		fatG: input.fatG,
-		...(photo === 'keep' ? {} : { photoKey: photo.photoKey })
-	};
-
 	let id: number;
 	if (dishId === null) {
 		id = db()
 			.insert(dishes)
-			.values({ ...fields, householdId, createdAt: now, updatedAt: now })
+			.values({ ...dishFields(input, photo), householdId, createdAt: now, updatedAt: now })
 			.returning({ id: dishes.id })
 			.get().id;
 	} else {
 		id = dishId;
-		db()
-			.update(dishes)
-			.set({ ...fields, updatedAt: now })
-			.where(eq(dishes.id, id))
-			.run();
-		db().delete(dishTags).where(eq(dishTags.dishId, id)).run();
-		db().delete(dishIngredients).where(eq(dishIngredients.dishId, id)).run();
+		rewriteDish(id, input, photo, now);
 	}
 
-	// The database allows each tag once per dish, ignoring case. The first spelling wins.
-	const tagRows = new Map<string, { householdId: number; dishId: number; tag: string }>();
-	for (const tag of input.tags) {
-		const key = foldCase(tag);
-		if (!tagRows.has(key)) tagRows.set(key, { householdId, dishId: id, tag });
-	}
-	if (tagRows.size > 0) db().insert(dishTags).values([...tagRows.values()]).run();
-
-	const ingredientRows = input.ingredients.map((ingredient, position) => ({
-		householdId,
-		dishId: id,
-		position,
-		section: ingredient.section,
-		amount: ingredient.amount,
-		unit: ingredient.unit,
-		itemId: ingredientItem(householdId, ingredient.itemName, now),
-		prepNote: ingredient.prepNote
-	}));
-	if (ingredientRows.length > 0) db().insert(dishIngredients).values(ingredientRows).run();
+	const tags = tagRows(householdId, id, input.tags);
+	if (tags.length > 0) db().insert(dishTags).values(tags).run();
+	const ingredients = ingredientRows(householdId, id, input.ingredients, (itemName) =>
+		ingredientItem(householdId, itemName, now)
+	);
+	if (ingredients.length > 0) db().insert(dishIngredients).values(ingredients).run();
 
 	const before = dish === null ? null : dish.photoKey;
 	const replacedPhotoKey = photo === 'keep' || photo.photoKey === before ? null : before;
@@ -318,6 +364,108 @@ export function updateDish(
 	return transaction(() =>
 		save(householdId, findDish(householdId, dishId), input, photo, restoreItemIds, now)
 	);
+}
+
+/**
+ * The id of each item the ingredients name, by name with case folded: the catalog's, from
+ * `items`, or a new one for a new name (Q1), spelled as the first ingredient that names it. The
+ * new ones are added all at once. Throws for an archived item, which importing never restores.
+ */
+function importedItemIds(
+	householdId: number,
+	ingredients: IngredientInput[],
+	items: Map<string, Item>,
+	now: number
+): Map<string, number> {
+	const ids = new Map<string, number>();
+	const newNames = new Map<string, string>();
+	for (const ingredient of ingredients) {
+		const name = normalizeName(ingredient.itemName);
+		const key = foldCase(name);
+		const item = items.get(key);
+		if (item === undefined) {
+			if (!newNames.has(key)) newNames.set(key, name);
+		} else if (item.archivedAt !== null) {
+			throw new Error(`${item.name} is archived`);
+		} else {
+			ids.set(key, item.id);
+		}
+	}
+	for (const item of createItems(householdId, [...newNames.values()], now)) {
+		ids.set(foldCase(item.name), item.id);
+	}
+	return ids;
+}
+
+/**
+ * Adds new dishes all at once, as save() adds one, and gives each one's id by its name, which no
+ * other dish has.
+ */
+function addDishes(householdId: number, inputs: DishInput[], now: number): Map<string, number> {
+	const ids = new Map<string, number>();
+	for (const batch of insertBatches(inputs)) {
+		const added = db()
+			.insert(dishes)
+			.values(
+				batch.map((input) => ({
+					...dishFields(input, { photoKey: null }),
+					householdId,
+					createdAt: now,
+					updatedAt: now
+				}))
+			)
+			.returning({ id: dishes.id, name: dishes.name })
+			.all();
+		for (const { id, name } of added) ids.set(name, id);
+	}
+	return ids;
+}
+
+/** A recipe Import recipes saves: a new one, or new details for an existing one (design 7). */
+export type ImportedDish = { dishId: number | null; input: DishInput };
+
+/**
+ * Saves Import recipes' recipes all at once (design 7, MEA-89): each new one as createDish saves
+ * it with no photo, and each existing one's new details as updateDish saves them, keeping its
+ * photo, with their tags and ingredients. `items` is the household's items by name
+ * (itemsByName). Callers read it in the transaction they run this in, after checking that the new
+ * names are free and that no ingredient names an archived item.
+ */
+export function importDishes(
+	householdId: number,
+	recipes: ImportedDish[],
+	items: Map<string, Item>,
+	now: number
+): void {
+	transaction(() => {
+		const ingredients = recipes.flatMap(({ input }) => input.ingredients);
+		const itemIds = importedItemIds(householdId, ingredients, items, now);
+		const itemId = (itemName: string) => {
+			const id = itemIds.get(foldCase(normalizeName(itemName)));
+			if (id === undefined) throw new Error(`${itemName} has no item`);
+			return id;
+		};
+
+		for (const { dishId, input } of recipes) {
+			if (dishId === null) continue;
+			findDish(householdId, dishId);
+			rewriteDish(dishId, input, 'keep', now);
+		}
+		const newInputs = recipes.filter(({ dishId }) => dishId === null).map(({ input }) => input);
+		const added = addDishes(householdId, newInputs, now);
+		const saved = recipes.map(({ dishId, input }) => {
+			const id = dishId ?? added.get(input.name);
+			if (id === undefined) throw new Error(`${input.name} wasn't added`);
+			return { id, input };
+		});
+
+		const tags = saved.flatMap(({ id, input }) => tagRows(householdId, id, input.tags));
+		for (const batch of insertBatches(tags)) db().insert(dishTags).values(batch).run();
+		const rows = saved.flatMap(({ id, input }) =>
+			ingredientRows(householdId, id, input.ingredients, itemId)
+		);
+		for (const batch of insertBatches(rows)) db().insert(dishIngredients).values(batch).run();
+	});
 }
 
 /** Archiving only hides a dish from lists and pickers; everything using it keeps working (6.10). */
