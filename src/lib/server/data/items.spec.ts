@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { expectHttpError, freshDb, makeHousehold, makeStore } from '../testing.ts';
 import {
 	createItem,
+	createItems,
+	findItemByName,
 	getItem,
+	itemsByName,
 	listCatalog,
 	listPickerItems,
 	setItemArchived,
@@ -107,5 +110,29 @@ describe("an item's image", () => {
 		for (const line of lines) markReceived(householdId, line.id, walmart, NOON);
 		const history = listHistory(householdId, '', 10);
 		expect(Object.fromEntries(history.map((l) => [l.itemName, l.itemPhotoKey]))).toEqual(images);
+	});
+});
+
+// Import recipes looks up and adds many items at once (design 7, MEA-89).
+describe('many items at once', () => {
+	it('adds as many as one statement takes, and more', () => {
+		const names = Array.from({ length: 2_500 }, (_, index) => `Item ${index + 1}`);
+		const added = createItems(householdId, names, NOON);
+		expect(added.map((item) => item.name).sort()).toEqual(names.toSorted());
+		const byName = itemsByName(householdId);
+		expect(byName.size).toBe(2_501);
+		expect(added.map((item) => byName.get(item.name.toLowerCase()))).toEqual(added);
+	});
+
+	it('looks them up by name as findItemByName does, archived ones included', () => {
+		const [jalapenos, salt] = createItems(householdId, ['Jalapeños', 'Salt'], NOON);
+		if (!jalapenos || !salt) throw new Error('Expected two items');
+		setItemArchived(householdId, salt.id, true, NOON);
+		createItem(makeHousehold(TZ).householdId, 'Pepper', 0);
+		const byName = itemsByName(householdId);
+		expect([...byName.keys()].sort()).toEqual(['jalapeños', 'milk', 'salt']);
+		expect(byName.get('jalapeños')).toEqual(jalapenos);
+		expect(byName.get('salt')).toEqual(findItemByName(householdId, 'SALT'));
+		expect(byName.get('salt')?.archivedAt).toBe(NOON);
 	});
 });
