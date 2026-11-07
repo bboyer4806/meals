@@ -1437,6 +1437,75 @@ test('copies a past dinner from the most-made list or by searching a dish name',
 	]);
 });
 
+test('copies the dishes a past dinner showed, or says to pick again, after it changed (MEA-85)', async ({
+	page,
+	db,
+	person
+}) => {
+	const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+	const rice = addRecipe(db, person.householdId, { name: 'Rice' });
+	const pancakes = addRecipe(db, person.householdId, { name: 'Pancakes' });
+	const now = today();
+	addDinner(db, person.householdId, addDays(now, -7), {
+		dishes: [
+			[tacos, 'main'],
+			[rice, 'side']
+		]
+	});
+	// The latest, so the picker shows its roles.
+	const tonight = addDinner(db, person.householdId, now, {
+		type: 'going',
+		dishes: [
+			[rice, 'main'],
+			[tacos, 'side']
+		]
+	});
+	const yesterday = addDinner(db, person.householdId, addDays(now, -1), {
+		dishes: [[pancakes, 'main']]
+	});
+	const date = addDays(now, 1);
+
+	await open(page, `/menu/${date}`);
+	await page.getByRole('button', { name: 'Copy a dinner' }).click();
+	const sheet = page.getByRole('dialog', { name: 'Copy a dinner' });
+	const groups = sheet.getByRole('listitem');
+	await expect(groups.locator('.names')).toHaveText(['Rice, Chicken tacos', 'Pancakes']);
+
+	// Someone goes out tonight instead, after the picker showed tonight's dinner. The copy has the
+	// dishes shown, from the latest dinner that still has just those: the week before.
+	db.prepare("update dinners set type = 'eat_out' where id = ?").run(tonight);
+	db.prepare('delete from dinner_dishes where dinner_id = ?').run(tonight);
+	await sheet.getByRole('button', { name: /^Rice, Chicken tacos/ }).click();
+	await expect(sheet).toHaveCount(0);
+	await expect(dishLinks(page)).toHaveText(['Chicken tacos', 'Rice']);
+	const copied = dinnerRow(db, person.householdId, date);
+	expect(copied).toMatchObject({ type: 'cook' });
+	expect(dinnerDishes(db, copied?.id ?? 0)).toEqual([
+		{ name: 'Chicken tacos', role: 'main' },
+		{ name: 'Rice', role: 'side' }
+	]);
+
+	// Someone adds rice to yesterday's pancakes, the only time they were made, while the picker
+	// asks before replacing dishes. Nothing is copied, and the picker lists the dinners as they
+	// are now, to pick again.
+	await page.getByRole('button', { name: 'Copy a dinner' }).click();
+	await sheet.getByRole('button', { name: /^Pancakes/ }).click();
+	await expect(sheet).toContainText('Replace the 2 dishes on this dinner with Pancakes?');
+	db.prepare(
+		"insert into dinner_dishes (household_id, dinner_id, dish_id, role) values (?, ?, ?, 'side')"
+	).run(person.householdId, yesterday, rice);
+	await sheet.getByRole('button', { name: 'Replace dishes' }).click();
+	await expect(sheet.getByRole('alert')).toHaveText(
+		'That dinner has changed. Pick one to copy again.'
+	);
+	await expect(groups.locator('.names')).toHaveText(['Pancakes, Rice', 'Chicken tacos, Rice']);
+	await expect(dishLinks(page)).toHaveText(['Chicken tacos', 'Rice']);
+	await sheet.getByRole('button', { name: /^Pancakes, Rice/ }).click();
+	await sheet.getByRole('button', { name: 'Replace dishes' }).click();
+	await expect(sheet).toHaveCount(0);
+	await expect(dishLinks(page)).toHaveText(['Pancakes', 'Rice']);
+});
+
 test('moves a dinner to an empty date, and swaps it with a planned one', async ({
 	page,
 	db,
@@ -1641,7 +1710,13 @@ test("can't see or change another household's dinners", async ({ page, db, baseU
 	expect(await post(`/menu/${date}?/restoreDish`, { dishId: String(stew), role: 'side' })).toBe(
 		404
 	);
-	expect(await post(`/menu/${later}?/copy`, { sourceId: String(theirs) })).toBe(404);
+	// No past dinner here has their dish, so there's nothing to copy (6.9).
+	const copied = await page.request.post(`/menu/${later}?/copy`, {
+		form: { dishIds: String(stew) },
+		headers
+	});
+	expect(await copied.json()).toMatchObject({ type: 'failure', status: 400 });
+	expect(dinnerRow(db, person.householdId, later)).toBeUndefined();
 	expect(await post(`/menu/${later}?/move`, { to: addDays(today(), 5) })).toBe(404);
 	// Their dish's name is free in this household, so it's a new dish here, not theirs.
 	expect(await post(`/menu/${later}?/addDish`, { name: 'Secret stew', role: 'main' })).toBe(200);

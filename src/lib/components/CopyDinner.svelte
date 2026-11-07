@@ -9,7 +9,8 @@
 
 	// Copy a dinner (design 6.9, Q3, Q30): past dinners grouped by their dishes, most made first.
 	// Typing keeps the groups with a matching dish, most recent first. Copying sets this dinner's
-	// type and dishes and keeps its note and servings (2.3), so it asks before replacing dishes.
+	// type and dishes and keeps its note and servings (2.3), so it asks before replacing dishes. It
+	// sends the group's dishes, so it copies exactly the ones shown, or says to pick again.
 	let {
 		groups,
 		dinnerId,
@@ -61,6 +62,10 @@
 		return group.dishes.map((dish) => dish.name).join(', ');
 	}
 
+	function dishIds(group: CopyGroup): string {
+		return group.dishes.map((dish) => dish.dishId).join(',');
+	}
+
 	function made(group: CopyGroup): string {
 		const last = group.lastMade === today ? 'today' : formatDateLabel(group.lastMade, { today });
 		return group.timesMade === 1 ? `Made ${last}` : `Made ${group.timesMade} times, last ${last}`;
@@ -72,12 +77,10 @@
 		problem = '';
 		return async ({ result, update }) => {
 			try {
-				if (result.type === 'failure' || (result.type === 'error' && result.status === 404)) {
+				if (result.type === 'failure') {
 					problem =
-						result.type === 'failure'
-							? ((result.data as { error?: string } | undefined)?.error ??
-								'Something went wrong. Please try again.')
-							: 'That dinner is no longer on the menu. Pick another.';
+						(result.data as { error?: string } | undefined)?.error ??
+						'Something went wrong. Please try again.';
 					// Shows this dinner's dishes and the past dinners as they are now.
 					await refreshAll();
 					await confirm(null);
@@ -114,7 +117,7 @@
 			{names(confirming)}?
 		</p>
 		<form method="POST" action="?/copy" use:enhance={send(submit)}>
-			<input type="hidden" name="sourceId" value={confirming.dinnerId} />
+			<input type="hidden" name="dishIds" value={dishIds(confirming)} />
 			{@render shownDinner()}
 			<input type="hidden" name="replaceDishes" value="1" />
 			<div class="row">
@@ -145,8 +148,8 @@
 							<!-- With dishes to replace, it asks first; otherwise it copies right away. -->
 							<button
 								class="group"
-								name="sourceId"
-								value={group.dinnerId}
+								name="dishIds"
+								value={dishIds(group)}
 								onclick={(event) => {
 									if (dishCount === 0) return;
 									event.preventDefault();

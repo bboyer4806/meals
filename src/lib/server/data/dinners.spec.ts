@@ -117,9 +117,12 @@ function removeDish(date: string, dishId: number, now: number): void {
 	removeDinnerDish(householdId, date, current(date) ?? 0, dishId, now);
 }
 
-function copyOnto(date: string, sourceId: number, now: number): void {
-	copyDinner(householdId, date, current(date), sourceId, now);
+/** Copies the group with these dishes, as the picker sends it. */
+function copyOnto(date: string, dishIds: number[], now: number): void {
+	copyDinner(householdId, date, current(date), dishIds, now);
 }
+
+const PICK_AGAIN = 'That dinner has changed. Pick one to copy again.';
 
 /** The dinner's dishes as "Name (role)", in the order the dinner lists them. */
 function dishesOn(date: string, household = householdId): string[] | undefined {
@@ -261,26 +264,15 @@ describe("an Eating out dinner's restaurant (6.9)", () => {
 		expect(restaurantOn(TODAY)).toBeNull();
 	});
 
-	it('goes when Copy a dinner makes it another type, and comes with a copied Eating out dinner', () => {
+	it('goes when Copy a dinner makes it another type', () => {
 		save(TODAY, { type: 'eat_out', restaurantName: 'Thai Garden', note: 'At 7', servings: 4 }, NOW);
-		const past = makeDinner(householdId, '2026-09-30', { dishes: [[tacos, 'main']] });
-		copyOnto(TODAY, past, LATER);
+		makeDinner(householdId, '2026-09-30', { dishes: [[tacos, 'main']] });
+		copyOnto(TODAY, [tacos], LATER);
 		expect(dinnerOn(householdId, TODAY)).toMatchObject({
 			type: 'cook',
 			restaurantName: null,
 			note: 'At 7'
 		});
-
-		// Copy a dinner offers only dinners with dishes, but an Eating out one copies as one.
-		const olive = { type: 'eat_out' as const, restaurantName: 'Olive Garden', note: null };
-		save('2026-10-01', { ...olive, servings: 4 }, NOW);
-		const source = current('2026-10-01') ?? 0;
-		makeDinner(householdId, TOMORROW, { dishes: [[rice, 'main']] });
-		copyOnto(TOMORROW, source, LATER);
-		copyOnto('2026-10-09', source, LATER);
-		for (const date of [TOMORROW, '2026-10-09']) {
-			expect(dinnerOn(householdId, date)).toMatchObject({ ...olive, dishes: [] });
-		}
 	});
 
 	it('moves with its dinner', () => {
@@ -800,8 +792,8 @@ describe('more than one dinner on a date (6.9)', () => {
 		addDinnerDish(householdId, TODAY, kids, { id: tacos }, 'side', LATER);
 		setDinnerDishRole(householdId, TODAY, kids, tacos, 'other', LATER);
 		removeDinnerDish(householdId, TODAY, kids, rice, LATER);
-		const past = makeDinner(householdId, '2026-09-01', { dishes: [[cake, 'dessert']] });
-		copyDinner(householdId, TODAY, adults, past, LATER);
+		makeDinner(householdId, '2026-09-01', { dishes: [[cake, 'dessert']] });
+		copyDinner(householdId, TODAY, adults, [cake], LATER);
 		const [first, second] = getDay(householdId, TODAY);
 		expect(first?.dishes.map((dish) => `${dish.name} (${dish.role})`)).toEqual([
 			'Pound cake (dessert)'
@@ -879,13 +871,13 @@ describe('more than one dinner on a date (6.9)', () => {
 		expect(listCopyGroups(householdId, TODAY)).toEqual([
 			{
 				dinnerId: expect.any(Number),
-				dishes: [{ name: 'Tacos', role: 'main' }],
+				dishes: [{ dishId: tacos, name: 'Tacos', role: 'main' }],
 				timesMade: 2,
 				lastMade: '2026-10-02'
 			},
 			{
 				dinnerId: kids,
-				dishes: [{ name: 'Rice', role: 'main' }],
+				dishes: [{ dishId: rice, name: 'Rice', role: 'main' }],
 				timesMade: 1,
 				lastMade: '2026-10-01'
 			}
@@ -1004,30 +996,30 @@ describe('copy groups (6.9)', () => {
 				dinnerId: lastTacos,
 				// From the most recent dinner, in role order.
 				dishes: [
-					{ name: 'Rice', role: 'main' },
-					{ name: 'Tacos', role: 'side' }
+					{ dishId: rice, name: 'Rice', role: 'main' },
+					{ dishId: tacos, name: 'Tacos', role: 'side' }
 				],
 				timesMade: 3,
 				lastMade: '2026-09-29'
 			},
 			{
 				dinnerId: lastCake,
-				dishes: [{ name: 'Pound cake', role: 'dessert' }],
+				dishes: [{ dishId: cake, name: 'Pound cake', role: 'dessert' }],
 				timesMade: 2,
 				lastMade: '2026-09-30'
 			},
 			{
 				dinnerId: lastSalad,
 				dishes: [
-					{ name: 'Salad', role: 'main' },
-					{ name: 'Pound cake', role: 'dessert' }
+					{ dishId: salad, name: 'Salad', role: 'main' },
+					{ dishId: cake, name: 'Pound cake', role: 'dessert' }
 				],
 				timesMade: 1,
 				lastMade: '2026-10-05'
 			},
 			{
 				dinnerId: expect.any(Number),
-				dishes: [{ name: 'Tacos', role: 'main' }],
+				dishes: [{ dishId: tacos, name: 'Tacos', role: 'main' }],
 				timesMade: 1,
 				lastMade: '2026-10-01'
 			}
@@ -1041,7 +1033,7 @@ describe('copy groups (6.9)', () => {
 		expect(listCopyGroups(householdId, TODAY)).toEqual([
 			{
 				dinnerId: today,
-				dishes: [{ name: 'Tacos', role: 'main' }],
+				dishes: [{ dishId: tacos, name: 'Tacos', role: 'main' }],
 				timesMade: 1,
 				lastMade: TODAY
 			}
@@ -1068,7 +1060,7 @@ describe('copy groups (6.9)', () => {
 		expect(listCopyGroups(householdId, TODAY)).toEqual([
 			{
 				dinnerId: last,
-				dishes: [{ name: 'Tacos', role: 'main' }],
+				dishes: [{ dishId: tacos, name: 'Tacos', role: 'main' }],
 				timesMade: 2,
 				lastMade: '2026-09-08'
 			}
@@ -1085,6 +1077,8 @@ describe('copy groups (6.9)', () => {
 
 describe('copying a dinner', () => {
 	let source: number;
+	/** The source's dishes, as the picker sends them. */
+	let potluck: number[];
 
 	beforeEach(() => {
 		source = makeDinner(householdId, '2026-09-30', {
@@ -1098,10 +1092,11 @@ describe('copying a dinner', () => {
 				[salad, 'side']
 			]
 		});
+		potluck = [cake, tacos, rice, salad];
 	});
 
 	it('plans an unplanned date with the type, dishes and roles, at the usual servings (2.3)', () => {
-		copyOnto(TODAY, source, NOW);
+		copyOnto(TODAY, potluck, NOW);
 		expect(dinnerOn(householdId, TODAY)).toEqual({
 			id: expect.any(Number),
 			date: TODAY,
@@ -1130,7 +1125,7 @@ describe('copying a dinner', () => {
 			{ type: 'cook', note: 'Early', servings: 2, dishes: [[soup, 'main'], [tacos, 'side']] },
 			NOW
 		);
-		copyOnto(TODAY, source, LATER);
+		copyOnto(TODAY, potluck, LATER);
 		expect(dinnerOn(householdId, TODAY)).toMatchObject({
 			id,
 			type: 'going',
@@ -1148,7 +1143,7 @@ describe('copying a dinner', () => {
 
 	it('turns a dinner without dishes into one with them', () => {
 		makeDinner(householdId, TODAY, { type: 'leftovers', note: 'Fridge' });
-		copyOnto(TODAY, source, NOW);
+		copyOnto(TODAY, potluck, NOW);
 		expect(dinnerOn(householdId, TODAY)).toMatchObject({ type: 'going', note: 'Fridge' });
 		expect(dinnerOn(householdId, TODAY)?.dishes).toHaveLength(4);
 	});
@@ -1156,38 +1151,90 @@ describe('copying a dinner', () => {
 	it("doesn't copy archived dishes", () => {
 		setDishArchived(householdId, rice, true, NOW);
 		setDishArchived(householdId, cake, true, NOW);
-		copyOnto(TODAY, source, NOW);
+		copyOnto(TODAY, [tacos, salad], NOW);
 		expect(dishesOn(TODAY)).toEqual(['Tacos (main)', 'Salad (side)']);
 	});
 
-	it('copies the type of a dinner without dishes', () => {
-		const out = makeDinner(householdId, '2026-10-01', { type: 'eat_out', note: 'Thai' });
-		makeDinner(householdId, TODAY, { dishes: [[tacos, 'main']] });
-		copyOnto(TODAY, out, NOW);
-		expect(dinnerOn(householdId, TODAY)).toMatchObject({
-			type: 'eat_out',
-			note: null,
-			dishes: []
+	it('copies the most recent past dinner with exactly those dishes, sent in any order', () => {
+		const otherRoles: [number, DishRole][] = [
+			[cake, 'other'],
+			[tacos, 'side'],
+			[rice, 'main'],
+			[salad, 'dessert']
+		];
+		makeDinner(householdId, '2026-09-01', { type: 'cook', dishes: otherRoles });
+		// Not made yet (assumption 1).
+		makeDinner(householdId, TOMORROW, { type: 'cook', dishes: otherRoles });
+		copyOnto(TODAY, [salad, rice, tacos, cake], NOW);
+		expect(dinnerOn(householdId, TODAY)?.type).toBe('going');
+		expect(dishesOn(TODAY)).toEqual([
+			'Tacos (main)',
+			'Salad (side)',
+			'Pound cake (dessert)',
+			'Rice (other)'
+		]);
+	});
+
+	it('copies the dishes the picker showed after their latest dinner changed (MEA-85)', () => {
+		makeDinner(householdId, '2026-09-01', { dishes: [[tacos, 'main'], [rice, 'side']] });
+		// The picker showed tacos and rice last made today, as a Bringing a dish dinner.
+		const tonight = makeDinner(householdId, TODAY, {
+			type: 'going',
+			dishes: [[rice, 'main'], [tacos, 'side']]
 		});
+
+		// Someone adds salad to tonight's dinner.
+		addDinnerDish(householdId, TODAY, tonight, { id: salad }, 'side', NOW);
+		copyOnto(TOMORROW, [tacos, rice], LATER);
+		expect(dinnerOn(householdId, TOMORROW)?.type).toBe('cook');
+		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)', 'Rice (side)']);
+
+		// Then they go out instead.
+		save(TODAY, { type: 'eat_out', restaurantName: 'Thai Garden', note: null, servings: 4 }, NOW);
+		copyOnto('2026-10-09', [tacos, rice], LATER);
+		expect(dinnerOn(householdId, '2026-10-09')).toMatchObject({
+			type: 'cook',
+			restaurantName: null
+		});
+		expect(dishesOn('2026-10-09')).toEqual(['Tacos (main)', 'Rice (side)']);
+	});
+
+	it('refuses, to pick again, when no past dinner has exactly those dishes (MEA-85)', () => {
+		const target = makeDinner(householdId, TOMORROW, { note: 'Busy', dishes: [[salad, 'main']] });
+		const copy = (dishIds: number[]) => () =>
+			copyDinner(householdId, TOMORROW, target, dishIds, LATER);
+
+		// Today's tacos and rice, the only time they were made, gets another dish.
+		const tonight = makeDinner(householdId, TODAY, { dishes: [[tacos, 'main'], [rice, 'side']] });
+		addDinnerDish(householdId, TODAY, tonight, { id: cake }, 'dessert', NOW);
+		expect(refusal(copy([tacos, rice]))).toBe(PICK_AGAIN);
+		// One of the dishes is archived.
+		setDishArchived(householdId, salad, true, NOW);
+		expect(refusal(copy(potluck))).toBe(PICK_AGAIN);
+		setDishArchived(householdId, salad, false, NOW);
+		// The dinner moves to a date that hasn't come yet.
+		moveDinners(householdId, '2026-09-30', '2026-10-20', source, NOW);
+		expect(refusal(copy(potluck))).toBe(PICK_AGAIN);
+		// Dishes that aren't this household's, or aren't dishes.
+		const theirs = makeDish(otherId, recipe('Lasagna'));
+		makeDinner(otherId, '2026-10-01', { dishes: [[theirs, 'main']] });
+		expect(refusal(copy([theirs]))).toBe(PICK_AGAIN);
+		expect(refusal(copy([9999]))).toBe(PICK_AGAIN);
+		expect(refusal(copy([]))).toBe(PICK_AGAIN);
+
+		expect(dinnerOn(householdId, TOMORROW)).toMatchObject({ id: target, note: 'Busy' });
+		expect(dishesOn(TOMORROW)).toEqual(['Salad (main)']);
 	});
 
 	it('changes nothing when a dinner is copied onto itself', () => {
 		setDishArchived(householdId, rice, true, NOW);
-		copyOnto('2026-09-30', source, LATER);
+		copyOnto('2026-09-30', [cake, tacos, salad], LATER);
 		expect(dinnerOn(householdId, '2026-09-30')?.dishes).toHaveLength(4);
 		expect(row('2026-09-30')?.updatedAt).toBe(0);
 	});
 
-	it("refuses another household's dinner or one that doesn't exist", () => {
-		const theirs = makeDish(otherId, recipe('Lasagna'));
-		const theirDinner = makeDinner(otherId, '2026-10-01', { dishes: [[theirs, 'main']] });
-		expectHttpError(() => copyOnto(TODAY, theirDinner, NOW), 404);
-		expectHttpError(() => copyOnto(TODAY, 9999, NOW), 404);
-		expect(row(TODAY)).toBeUndefined();
-	});
-
 	it('refuses a date that is not one', () => {
-		expectHttpError(() => copyOnto('2026-9-30', source, NOW), 400);
+		expectHttpError(() => copyOnto('2026-9-30', potluck, NOW), 400);
 		expect(db().select().from(dinners).all()).toHaveLength(1);
 	});
 });
