@@ -75,6 +75,7 @@ describe('the week', () => {
 		expect(data.days.map((day) => day.date)).toEqual(THIS_WEEK);
 		expect(data).toMatchObject({
 			today: '2026-10-03',
+			start: '2026-09-27',
 			label: 'Sep 27 to Oct 3',
 			isThisWeek: true,
 			previous: '2026-09-20',
@@ -108,6 +109,59 @@ describe('the week', () => {
 		expect(week('2027-03-10').label).toBe('Mar 7 to Mar 13, 2027');
 		expect(week('2025-06-04').label).toBe('Jun 1 to Jun 7, 2025');
 		expect(week('2026-12-31').label).toBe('Dec 27, 2026 to Jan 2, 2027');
+	});
+
+	it('gives the weeks before and after, to show beside it during a swipe (MEA-249)', () => {
+		const soup = makeDinner(householdId, '2026-09-24', { note: 'Soup night' });
+		const pizza = makeDinner(householdId, '2026-10-06', {
+			type: 'eat_out',
+			restaurantName: 'Pizza'
+		});
+		// Another household's dinners stay out.
+		makeDinner(makeHousehold(TZ).householdId, '2026-10-06', { type: 'leftovers' });
+
+		const data = week();
+		expect(data.previousDays?.map((day) => day.date)).toEqual([
+			'2026-09-20',
+			'2026-09-21',
+			'2026-09-22',
+			'2026-09-23',
+			'2026-09-24',
+			'2026-09-25',
+			'2026-09-26'
+		]);
+		expect(data.previousDays?.[4]?.dinners).toEqual([
+			{ id: soup, label: null, type: 'cook', restaurantName: null, note: 'Soup night', roles: [] }
+		]);
+		expect(data.nextDays?.map((day) => day.date)).toEqual([
+			'2026-10-04',
+			'2026-10-05',
+			'2026-10-06',
+			'2026-10-07',
+			'2026-10-08',
+			'2026-10-09',
+			'2026-10-10'
+		]);
+		expect(data.nextDays?.map((day) => day.dinners)).toEqual([
+			[],
+			[],
+			[{ id: pizza, label: null, type: 'eat_out', restaurantName: 'Pizza', note: null, roles: [] }],
+			[],
+			[],
+			[],
+			[]
+		]);
+		// Neither week's dinners show on this one.
+		expect(data.days.every((day) => day.dinners.length === 0)).toBe(true);
+	});
+
+	it("gives no week either side that can't be shown, at the ends of the calendar", () => {
+		// The week after Dec 19 to 25, 9999 ends in year 10000.
+		expect(week('9999-12-25')).toMatchObject({ start: '9999-12-19', nextDays: null });
+		expect(week('9999-12-25').previousDays?.[0]?.date).toBe('9999-12-12');
+		// The week before Jan 2 to 8, year 0, starts in year -1.
+		expect(week('0000-01-08')).toMatchObject({ start: '0000-01-02', previousDays: null });
+		expect(week('0000-01-08').nextDays?.[0]?.date).toBe('0000-01-09');
 	});
 
 	it('sends a week that is not a date back to this week', () => {
