@@ -1,9 +1,9 @@
 import { redirect } from '@sveltejs/kit';
-import { SESSION_COOKIE, deleteSession, deleteSessionCookie } from '#lib/server/auth/session.ts';
+import { deleteSession, deleteSessionCookie, sessionCookieName } from '#lib/server/auth/session.ts';
 
-export function POST({ cookies }) {
-	const token = cookies.get(SESSION_COOKIE);
+export function POST({ cookies, url }) {
+	const token = cookies.get(sessionCookieName(url));
 	if (token) deleteSession(token);
-	deleteSessionCookie(cookies);
+	deleteSessionCookie(cookies, url);
 	redirect(303, '/login');
 }
