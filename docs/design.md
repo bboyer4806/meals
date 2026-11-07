@@ -263,6 +263,13 @@ lost, so is everything. Moving backups off the server later is a small change.
 - **Sessions** use a random token in an `httpOnly`, `Secure`, `SameSite=Lax` cookie, and
   only a SHA-256 hash of the token is stored. Sessions last 30 days and are extended when
   used. Signing out deletes the session, and each sign-in deletes every expired one.
+- **Cookie names** (MEA-83). Over https the session cookie and Google sign-in's state and code
+  verifier cookies are named `__Host-session`, `__Host-google_oauth_state` and
+  `__Host-google_code_verifier`, and cookies with the plain names are ignored. Browsers refuse a
+  cookie with this prefix that's set with a Domain attribute, so a compromised app elsewhere on
+  dev.boyersoftware.com can't make someone's browser use its session in Meals, where whatever
+  they add would land in its household, or finish its own sign-in there. Over http, as in
+  development on localhost and the browser tests, the cookies keep their plain names.
 - **Forms:** SvelteKit's origin check blocks cross-site form posts. All input is validated
   with Zod.
 - **Long text** (MEA-64). Names are matched and stored in one Unicode form (NFC), and putting
