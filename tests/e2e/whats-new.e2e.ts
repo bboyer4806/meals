@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.13 was released on 2026-11-07, after 1.12.
+// What's new (design 7). 1.14 was released on 2026-11-07, the same day as 1.13.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -28,8 +28,8 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.13', '1.12', '1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
-	const [v113, v112, v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.14', '1.13', '1.12', '1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
+	const [v114, v113, v112, v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
 		page.locator('section').nth(2),
@@ -42,8 +42,15 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 		page.locator('section').nth(9),
 		page.locator('section').nth(10),
 		page.locator('section').nth(11),
-		page.locator('section').nth(12)
+		page.locator('section').nth(12),
+		page.locator('section').nth(13)
 	];
+	await expect(v114.getByText('Released November 7, 2026')).toBeVisible();
+	await expect(v114.getByRole('listitem')).toHaveText([
+		'Import recipes now handles a large file much faster, without freezing Meals for everyone meanwhile. It takes up to 1,000 recipes in one file, and a file with more says which row to split it at.',
+		'On Items, Household and Admin, and for stores on the grocery list, a name that starts with an accented letter, such as Éclairs, now sorts with that letter instead of after Z.',
+		"A recipe's photo and the rest of its changes now save together or not at all. Before, a failed save could keep the other changes with the photo unchanged, and trying again on a new recipe said a recipe was already called that."
+	]);
 	await expect(v113.getByText('Released November 7, 2026')).toBeVisible();
 	await expect(v113.getByRole('listitem')).toHaveText([
 		"Everyone was signed out once with this release, because Meals now keeps your sign-in so other websites can't tamper with it.",
@@ -200,14 +207,14 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	browser,
 	baseURL
 }) => {
-	// Two members of the household who joined before 1.13 and have seen 1.12.
+	// Two members of the household who joined before 1.14 and have seen 1.13, released the same day.
 	const joined = Date.UTC(2026, 9, 1, 17);
 	setCreatedAt(db, person.userId, joined);
-	db.prepare("update users set whats_new_seen = '1.12' where id = ?").run(person.userId);
+	db.prepare("update users set whats_new_seen = '1.13' where id = ?").run(person.userId);
 	const memberId = Number(
 		db
 			.prepare(
-				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.12')"
+				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.13')"
 			)
 			.run(
 				person.householdId,
@@ -223,7 +230,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	await link(page).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
-	expect(seen(db, person.userId)).toBe('1.13');
+	expect(seen(db, person.userId)).toBe('1.14');
 
 	// Opening it cleared only their own dot.
 	const other = await browser.newContext();
@@ -231,7 +238,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	const phone = await other.newPage();
 	await phone.goto('/groceries');
 	await expect(more(phone).locator('.dot')).toBeVisible();
-	expect(seen(db, memberId)).toBe('1.12');
+	expect(seen(db, memberId)).toBe('1.13');
 	await other.close();
 });
 
