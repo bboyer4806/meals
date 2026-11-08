@@ -37,6 +37,7 @@ import {
 	promoteRestaurantRequest
 } from '#lib/server/data/requests.ts';
 import { attempt, id, idList, parseForm, sentName } from '#lib/server/forms.ts';
+import { restoreAndSaveRequest, saveRequest } from '#lib/server/request-form.ts';
 
 // A date's dinners (design 7, Dinner; 6.9). Each form sends only what it changes and the rest
 // stays as saved, so a page left open doesn't put back what someone else changed meanwhile
@@ -361,5 +362,19 @@ export const actions = {
 		);
 		if (typeof promoted !== 'number') return promoted;
 		return { action: 'request', dinnerId: promoted };
+	},
+
+	// Saves Edit's name and note on a request, as on the Menu (6.12). The date's dinners stay as
+	// they are.
+	editRequest: async ({ locals, params, request }) => {
+		const user = requireHousehold(locals);
+		dinnerDate(params);
+		return saveRequest(user.householdId, await request.formData(), Date.now());
+	},
+
+	restoreAndEditRequest: async ({ locals, params, request }) => {
+		const user = requireHousehold(locals);
+		dinnerDate(params);
+		return restoreAndSaveRequest(user.householdId, await request.formData(), Date.now());
 	}
 };

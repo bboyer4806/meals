@@ -4,7 +4,6 @@ import { dateIn } from '#lib/dates.ts';
 import {
 	DISH_ROLES,
 	REQUEST_NAME_MAX,
-	REQUEST_NOTE_MAX,
 	addDays,
 	isDate,
 	weekDates,
@@ -29,6 +28,7 @@ import {
 	restoreAndAddRequest
 } from '#lib/server/data/requests.ts';
 import { attempt, id, nameField, parseForm } from '#lib/server/forms.ts';
+import { requestNote, restoreAndSaveRequest, saveRequest } from '#lib/server/request-form.ts';
 
 // The week view (design 7, Menu): Sunday to Saturday, one row per day with its dinners. ?week=
 // can be any date in the week. The weeks before and after come too, to show beside it while a
@@ -132,11 +132,7 @@ export function load({ locals, url }) {
 // The asker is the signed-in person; the form sends only the name and note (6.12).
 const requestSchema = z.object({
 	name: nameField(REQUEST_NAME_MAX, 'a dish name'),
-	note: z
-		.string()
-		.trim()
-		.max(REQUEST_NOTE_MAX, `Keep the note under ${REQUEST_NOTE_MAX} characters`)
-		.transform((text) => (text === '' ? null : text))
+	note: requestNote
 });
 
 // The archived dish to restore, with the name and note again, since a request keeps its name as
@@ -200,6 +196,17 @@ export const actions = {
 		return attempt('restaurant', () =>
 			addRestaurantRequest(user.householdId, user.id, parsed.data, Date.now())
 		);
+	},
+
+	// Saves Edit's name and note on a request, from anyone in the household (6.12).
+	editRequest: async ({ locals, request }) => {
+		const user = requireHousehold(locals);
+		return saveRequest(user.householdId, await request.formData(), Date.now());
+	},
+
+	restoreAndEditRequest: async ({ locals, request }) => {
+		const user = requireHousehold(locals);
+		return restoreAndSaveRequest(user.householdId, await request.formData(), Date.now());
 	},
 
 	// Moves the request to the completed history, as adding it to a date does (6.12).

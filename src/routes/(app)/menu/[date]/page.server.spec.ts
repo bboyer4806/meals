@@ -1169,6 +1169,80 @@ describe('adding a requested restaurant (6.12)', () => {
 	});
 });
 
+describe('editing a request (6.12, MEA-251)', () => {
+	/** The id of the household's active request with this name, as the form sends it. */
+	function requestId(name: string): string {
+		const request = listRequests(householdId).find((candidate) => candidate.name === name);
+		if (!request) throw new Error(`No request named ${name}`);
+		return String(request.id);
+	}
+
+	it("saves a request's name and note, as on the Menu, changing none of the date's dinners", async () => {
+		makeDinner(householdId, TOMORROW, { note: 'Grandma visits', dishes: [[tacos, 'main']] });
+		addRequest(householdId, userId, { name: 'Tacos', note: 'Extra salsa' }, NOW);
+		addRestaurantRequest(householdId, userId, { name: 'Olive Garden', note: null }, NOW);
+		const before = october();
+		const saved = { action: 'editRequest', archived: null };
+		expect(await post('editRequest', { id: requestId('Tacos'), name: 'Tacos', note: '' })).toEqual(
+			saved
+		);
+		expect(
+			await post('editRequest', { id: requestId('Olive Garden'), name: 'Taco Bar', note: 'Late' })
+		).toEqual(saved);
+		expect(listRequests(householdId)).toMatchObject([
+			{ kind: 'dish', name: 'Tacos', note: null, dishId: tacos },
+			{ kind: 'restaurant', name: 'Taco Bar', note: 'Late' }
+		]);
+		expect(october()).toEqual(before);
+	});
+
+	it('links a new name, and offers to restore an archived dish before restoring it', async () => {
+		addRequest(householdId, userId, { name: 'Tacos', note: null }, NOW);
+		const id = requestId('Tacos');
+		expect(await post('editRequest', { id, name: 'rice', note: 'Brown' })).toEqual({
+			action: 'editRequest',
+			archived: null
+		});
+		expect(listRequests(householdId)).toMatchObject([{ name: 'rice', note: 'Brown', dishId: rice }]);
+
+		setDishArchived(householdId, cake, true, NOW);
+		expect(await post('editRequest', { id, name: 'Pound cake', note: 'Brown' })).toEqual({
+			action: 'editRequest',
+			archived: { dishId: cake, name: 'Pound cake' }
+		});
+		expect(listRequests(householdId)).toMatchObject([{ name: 'rice', dishId: rice }]);
+		expect(
+			await post('restoreAndEditRequest', {
+				id,
+				dishId: String(cake),
+				name: 'Pound cake',
+				note: 'For dessert'
+			})
+		).toBeUndefined();
+		expect(listRequests(householdId)).toMatchObject([
+			{ name: 'Pound cake', note: 'For dessert', dishId: cake }
+		]);
+		expect(getDish(householdId, cake).archivedAt).toBeNull();
+	});
+
+	it("is not found for a request someone removed, or another household's", async () => {
+		addRequest(householdId, userId, { name: 'Tacos', note: null }, NOW);
+		const removed = requestId('Tacos');
+		removeRequest(householdId, Number(removed));
+		addRequest(otherId, otherUserId, { name: 'Curry', note: null }, NOW);
+		const theirs = String(listRequests(otherId)[0]?.id);
+		setDishArchived(householdId, cake, true, NOW);
+		for (const id of [removed, theirs]) {
+			expectNotFound(await post('editRequest', { id, name: 'Stew', note: '' }));
+			expectNotFound(
+				await post('restoreAndEditRequest', { id, dishId: String(cake), name: 'Cake', note: '' })
+			);
+		}
+		expect(listRequests(otherId)).toMatchObject([{ name: 'Curry' }]);
+		expect(getDish(householdId, cake).archivedAt).toBe(NOW);
+	});
+});
+
 describe('every action', () => {
 	const forms: Record<Action, Record<string, string>> = {
 		type: { type: 'cook' },
@@ -1182,7 +1256,9 @@ describe('every action', () => {
 		move: { to: TODAY },
 		clear: {},
 		promoteDishRequest: { requestId: '1' },
-		promoteRestaurantRequest: { requestId: '1' }
+		promoteRestaurantRequest: { requestId: '1' },
+		editRequest: { id: '1', name: 'Rice', note: '' },
+		restoreAndEditRequest: { id: '1', dishId: '1', name: 'Rice', note: '' }
 	};
 
 	it('needs a signed-in member of a household', async () => {
@@ -1252,6 +1328,18 @@ describe('labels and names too long to normalize (MEA-64)', () => {
 				{ requestId: restaurant, firstLabel: 'Adults', label: long },
 				'request',
 				label
+			],
+			[
+				'editRequest',
+				{ id: dish, name: long, note: '' },
+				'editRequest',
+				'Keep the name under 80 characters'
+			],
+			[
+				'restoreAndEditRequest',
+				{ id: dish, dishId: String(cake), name: long, note: '' },
+				'editRequest',
+				'Keep the name under 80 characters'
 			]
 		];
 		const before = october();

@@ -3260,6 +3260,7 @@ test('fits long requests, their buttons and Completed requests on a phone and a 
 	const section = requestsSection(page);
 	for (const size of [null, { width: 1280, height: 800 }]) {
 		if (size) await page.setViewportSize(size);
+		await expect(section.getByRole('button', { name: `Edit ${long}` })).toBeVisible();
 		await expect(section.getByRole('button', { name: `Complete ${long}` })).toBeVisible();
 		await expect(section.getByRole('button', { name: `Remove ${long}` })).toBeVisible();
 		await expect(completedSection(page).getByText(restaurant, { exact: true })).toBeVisible();
@@ -3430,12 +3431,14 @@ test("lists the requests under a day's dinners, and adds one to the dinner that 
 	expect(await tapSize(link)).toBeGreaterThanOrEqual(44);
 	await expect(first.getByText('Extra cheese')).toBeVisible();
 	await expect(first.getByText(/^Asked by Person \d+$/)).toBeVisible();
-	// A restaurant request shows too, with its own Add.
+	// A restaurant request shows too, with its own Edit and Add.
 	const restaurant = section.getByRole('listitem').nth(1);
 	await expect(restaurant.getByText('Olive Garden', { exact: true })).toBeVisible();
 	await expect(restaurant.getByText('For her birthday')).toBeVisible();
 	await expect(restaurant.getByRole('link')).toHaveCount(0);
-	await expect(restaurant.getByRole('button')).toHaveAccessibleName('Add Olive Garden');
+	await expect(restaurant.getByRole('button')).toHaveText(['Edit', 'Add']);
+	await expect(restaurant.getByRole('button', { name: 'Edit Olive Garden' })).toBeVisible();
+	await expect(restaurant.getByRole('button', { name: 'Add Olive Garden' })).toBeVisible();
 	// Under the dinner.
 	const dishesBox = await dishSection(page).boundingBox();
 	const requestsBox = await section.boundingBox();
@@ -3674,9 +3677,11 @@ test("fits a day's requests on a phone, and shows them on a computer", async ({
 	askFor(db, person, long, { dishId, note: 'n'.repeat(200) });
 	await open(page, `/menu/${addDays(today(), 1)}`);
 	await expect(requestsSection(page).getByRole('link', { name: long })).toBeVisible();
+	await expect(requestsSection(page).getByRole('button', { name: `Edit ${long}` })).toBeVisible();
 	expect(await sideways(page)).toBe(0);
 
 	await page.setViewportSize({ width: 1280, height: 800 });
+	await expect(requestsSection(page).getByRole('button', { name: `Edit ${long}` })).toBeVisible();
 	await expect(requestsSection(page).getByRole('button', { name: `Add ${long}` })).toBeVisible();
 	expect(await sideways(page)).toBe(0);
 });
@@ -3872,6 +3877,364 @@ test('fits a long requested restaurant on a phone and a computer, on the day and
 	await day(page, date).click();
 	await expect(restaurant).toHaveValue(long);
 	expect(await sideways(page)).toBe(0);
+});
+
+// Editing a request (design 6.12, MEA-251), on the Menu and on a date's page.
+
+function editSheet(page: Page) {
+	return page.getByRole('dialog', { name: 'Edit request' });
+}
+
+/** What a request has as stored, which Edit changes only the name, note and recipe of. */
+function requestRow(db: Database.Database, requestId: number) {
+	return db
+		.prepare(
+			'select user_id as userId, kind, name, note, dish_id as dishId, created_at as createdAt, completed_at as completedAt from dish_requests where id = ?'
+		)
+		.get(requestId) as {
+		userId: number | null;
+		kind: string;
+		name: string;
+		note: string | null;
+		dishId: number | null;
+		createdAt: number;
+		completedAt: number | null;
+	};
+}
+
+function archivedNow(db: Database.Database, dishId: number) {
+	return db.prepare('select archived_at is not null from dishes where id = ?').pluck().get(dishId);
+}
+
+test('edits a dish request on the Menu, its note alone or its name too, and Cancel changes nothing', async ({
+	page,
+	db,
+	person
+}) => {
+	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna' });
+	const gumbo = addRecipe(db, person.householdId, { name: 'Gumbo' });
+	const request = askFor(db, person, 'Lasagna', { dishId: lasagna, note: 'Extra cheese', at: 1 });
+	askFor(db, person, 'Olive Garden', { at: 2 });
+	const before = requestRow(db, request);
+	const sunday = sundayOf(addDays(today(), 21));
+	await open(page, `/menu?week=${sunday}`);
+	const section = requestsSection(page);
+	const sheet = editSheet(page);
+	const dish = sheet.getByRole('combobox', { name: 'Dish' });
+	const note = sheet.getByLabel('Note (optional)');
+	const save = sheet.getByRole('button', { name: 'Save', exact: true });
+
+	// The sheet shows the request as it is. Cancel changes nothing, and the next Edit starts
+	// again from the request.
+	await expect(section.getByRole('listitem').first().getByRole('button')).toHaveText([
+		'Edit',
+		'Complete',
+		'Remove'
+	]);
+	await section.getByRole('button', { name: 'Edit Lasagna' }).click();
+	await expect(dish).toHaveValue('Lasagna');
+	await expect(note).toHaveValue('Extra cheese');
+	await dish.fill('');
+	await page.keyboard.insertText('a'.repeat(90));
+	await expect(dish).toHaveValue('a'.repeat(80));
+	await expect(sheet.getByText("You've reached the 80-character limit.")).toBeVisible();
+	await note.fill('Extra sauce');
+	await sheet.getByRole('button', { name: 'Cancel' }).click();
+	await expect(sheet).toHaveCount(0);
+	await expect(section.getByText('Extra cheese')).toBeVisible();
+	expect(requestRow(db, request)).toEqual(before);
+	await section.getByRole('button', { name: 'Edit Lasagna' }).click();
+	await expect(dish).toHaveValue('Lasagna');
+	await expect(note).toHaveValue('Extra cheese');
+
+	// The note alone keeps the name, the link, who asked and when.
+	await note.fill('Extra sauce');
+	await save.click();
+	await expect(sheet).toHaveCount(0);
+	await expect(section.getByText('Extra sauce')).toBeVisible();
+	await expect(section.getByRole('link', { name: 'Lasagna' })).toHaveAttribute(
+		'href',
+		`/recipes/${lasagna}`
+	);
+	await expect(section.getByRole('button', { name: 'Edit Lasagna' })).toBeFocused();
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sunday}$`));
+	expect(requestRow(db, request)).toEqual({ ...before, note: 'Extra sauce' });
+
+	// A recipe's name links to it, and the recipe it linked to stays as it is.
+	await section.getByRole('button', { name: 'Edit Lasagna' }).click();
+	await dish.fill('gum');
+	await sheet.getByRole('option', { name: 'Gumbo' }).click();
+	await save.click();
+	await expect(sheet).toHaveCount(0);
+	await expect(section.getByRole('listitem')).toHaveText([/^Gumbo/, /^Eating out/]);
+	await expect(section.getByRole('link', { name: 'Gumbo' })).toHaveAttribute(
+		'href',
+		`/recipes/${gumbo}`
+	);
+	await expect(section.getByText('Extra sauce')).toBeVisible();
+	expect(requestRow(db, request)).toEqual({
+		...before,
+		name: 'Gumbo',
+		note: 'Extra sauce',
+		dishId: gumbo
+	});
+
+	// A new name with a new note adds the name to Recipes and links to it.
+	await section.getByRole('button', { name: 'Edit Gumbo' }).click();
+	await dish.fill('Shrimp boil');
+	await note.fill('With corn');
+	await save.click();
+	await expect(sheet).toHaveCount(0);
+	const boil = db
+		.prepare('select id, servings from dishes where household_id = ? and name = ?')
+		.get(person.householdId, 'Shrimp boil') as { id: number; servings: number };
+	expect(boil.servings).toBe(4);
+	const first = section.getByRole('listitem').first();
+	await expect(first.getByRole('link', { name: 'Shrimp boil' })).toHaveAttribute(
+		'href',
+		`/recipes/${boil.id}`
+	);
+	await expect(first.getByText('With corn')).toBeVisible();
+	await expect(first.getByText(/^Asked by Person \d+$/)).toBeVisible();
+	expect(requestRow(db, request)).toEqual({
+		...before,
+		name: 'Shrimp boil',
+		note: 'With corn',
+		dishId: boil.id
+	});
+	expect(archivedNow(db, lasagna)).toBe(0);
+	expect(dishCount(db, person.householdId)).toBe(3);
+
+	// Menu help tells people about it.
+	await page.getByRole('banner').getByRole('button', { name: 'Help', exact: true }).click();
+	await expect(page.getByRole('dialog', { name: 'Help: Menu' })).toContainText(
+		"Edit changes a request's name or note."
+	);
+});
+
+test('offers to restore an archived recipe a request is renamed to, and Cancel leaves the request as it was', async ({
+	page,
+	db,
+	person
+}) => {
+	const gumbo = addRecipe(db, person.householdId, { name: 'Gumbo' });
+	const chili = addRecipe(db, person.householdId, { name: 'Chili', archived: true });
+	const request = askFor(db, person, 'Gumbo', { dishId: gumbo, note: 'Extra okra' });
+	const before = requestRow(db, request);
+	await open(page, '/menu');
+	const section = requestsSection(page);
+	const sheet = editSheet(page);
+	const dish = sheet.getByRole('combobox', { name: 'Dish' });
+	const save = sheet.getByRole('button', { name: 'Save', exact: true });
+	await section.getByRole('button', { name: 'Edit Gumbo' }).click();
+	await dish.fill('chili');
+	await sheet.getByLabel('Note (optional)').fill('Extra beans');
+	await save.click();
+
+	// Cancel changes nothing and goes back to the sheet, with what was typed.
+	const dialog = page.getByRole('dialog', { name: 'Chili' });
+	await expect(dialog).toContainText('Chili is archived. Restore it and save the request?');
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(dish).toHaveValue('chili');
+	expect(requestRow(db, request)).toEqual(before);
+	expect(archivedNow(db, chili)).toBe(1);
+
+	await save.click();
+	await dialog.getByRole('button', { name: 'Restore it and save' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(sheet).toHaveCount(0);
+	await expect(section.getByRole('link', { name: 'chili' })).toHaveAttribute(
+		'href',
+		`/recipes/${chili}`
+	);
+	await expect(section.getByText('Extra beans')).toBeVisible();
+	await expect(section.getByRole('button', { name: 'Edit chili' })).toBeFocused();
+	expect(requestRow(db, request)).toEqual({
+		...before,
+		name: 'chili',
+		note: 'Extra beans',
+		dishId: chili
+	});
+	expect(archivedNow(db, chili)).toBe(0);
+	// Gumbo stays in Recipes as it was.
+	expect(archivedNow(db, gumbo)).toBe(0);
+	expect(dishCount(db, person.householdId)).toBe(2);
+});
+
+test('edits a restaurant request, stops its fields at their limits, and changes nothing when the save is refused', async ({
+	page,
+	db,
+	person
+}) => {
+	const request = askFor(db, person, 'Olive Garden', { note: 'For her birthday' });
+	const before = requestRow(db, request);
+	await open(page, '/menu');
+	const section = requestsSection(page);
+	const sheet = editSheet(page);
+	const name = sheet.getByRole('textbox', { name: 'Restaurant', exact: true });
+	const note = sheet.getByLabel('Note (optional)');
+	const nameFull = sheet.getByText("You've reached the 80-character limit.");
+	const noteFull = sheet.getByText("You've reached the 200-character limit.");
+	await section.getByRole('button', { name: 'Edit Olive Garden' }).click();
+	await expect(name).toHaveValue('Olive Garden');
+	await expect(note).toHaveValue('For her birthday');
+	await expect(sheet.getByRole('combobox')).toHaveCount(0);
+
+	await name.fill('');
+	await page.keyboard.insertText('a'.repeat(79));
+	await expect(nameFull).toHaveCount(0);
+	await page.keyboard.type('bcd');
+	await expect(name).toHaveValue(`${'a'.repeat(79)}b`);
+	await expect(nameFull).toBeVisible();
+	await note.fill('');
+	await page.keyboard.insertText('n'.repeat(250));
+	await expect(note).toHaveValue('n'.repeat(200));
+	await expect(noteFull).toBeVisible();
+
+	// Past the browser's own check, so the server's message shows.
+	await name.fill('   ');
+	await sheet.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(sheet.getByRole('alert')).toHaveText('Enter a restaurant name');
+	expect(requestRow(db, request)).toEqual(before);
+
+	await name.fill('Taco Bar');
+	await note.fill('Downtown');
+	await sheet.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(sheet).toHaveCount(0);
+	const row = section.getByRole('listitem');
+	await expect(row).toHaveText([/^Eating out/]);
+	await expect(row.getByText('Taco Bar', { exact: true })).toBeVisible();
+	await expect(row.getByText('Downtown')).toBeVisible();
+	await expect(row.getByRole('link')).toHaveCount(0);
+	await expect(row.getByText(/^Asked by Person \d+$/)).toBeVisible();
+	expect(requestRow(db, request)).toEqual({ ...before, name: 'Taco Bar', note: 'Downtown' });
+	expect(dishCount(db, person.householdId)).toBe(0);
+});
+
+test("edits requests on a day's page, keeping what's typed for its dinner, and Add uses what was saved", async ({
+	page,
+	db,
+	person
+}) => {
+	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna' });
+	const gumbo = addRecipe(db, person.householdId, { name: 'Gumbo' });
+	const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { dishes: [[tacos, 'main']] });
+	const dishRequest = askFor(db, person, 'Lasagna', { dishId: lasagna, note: 'Extra cheese', at: 1 });
+	const restaurantRequest = askFor(db, person, 'Olive Garden', { note: 'For her birthday', at: 2 });
+	const restaurantBefore = requestRow(db, restaurantRequest);
+	await open(page, `/menu/${date}`);
+	const dinnerNote = page.getByLabel('Note', { exact: true });
+	await dinnerNote.fill('Grandma visits');
+	const section = requestsSection(page);
+	const sheet = editSheet(page);
+	const save = sheet.getByRole('button', { name: 'Save', exact: true });
+
+	// A recipe's name and a new note for a dish request.
+	await expect(section.getByRole('listitem').first().getByRole('button')).toHaveText([
+		'Edit',
+		'Add'
+	]);
+	await section.getByRole('button', { name: 'Edit Lasagna' }).click();
+	await expect(sheet.getByRole('combobox', { name: 'Dish' })).toHaveValue('Lasagna');
+	await sheet.getByRole('combobox', { name: 'Dish' }).fill('gum');
+	await sheet.getByRole('option', { name: 'Gumbo' }).click();
+	await sheet.getByLabel('Note (optional)').fill('Mild');
+	await save.click();
+	await expect(sheet).toHaveCount(0);
+	await expect(section.getByRole('listitem')).toHaveText([/^Gumbo/, /^Eating out/]);
+	await expect(section.getByRole('link', { name: 'Gumbo' })).toHaveAttribute(
+		'href',
+		`/recipes/${gumbo}`
+	);
+	await expect(section.getByText('Mild')).toBeVisible();
+	await expect(section.getByRole('button', { name: 'Edit Gumbo' })).toBeFocused();
+	// The dinner stays as it is, with what's typed for it.
+	await expect(dinnerNote).toHaveValue('Grandma visits');
+	await expect(dishLinks(page)).toHaveText(['Chicken tacos']);
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect(dinnerRow(db, person.householdId, date)?.note).toBeNull();
+
+	// A restaurant request's name and note, after a Cancel that changes nothing.
+	const restaurant = sheet.getByRole('textbox', { name: 'Restaurant', exact: true });
+	await section.getByRole('button', { name: 'Edit Olive Garden' }).click();
+	await expect(restaurant).toHaveValue('Olive Garden');
+	await restaurant.fill('Taco Bar');
+	await sheet.getByRole('button', { name: 'Cancel' }).click();
+	await expect(sheet).toHaveCount(0);
+	expect(requestRow(db, restaurantRequest)).toEqual(restaurantBefore);
+	await section.getByRole('button', { name: 'Edit Olive Garden' }).click();
+	await expect(restaurant).toHaveValue('Olive Garden');
+	await restaurant.fill('Taco Bar');
+	await sheet.getByLabel('Note (optional)').fill('Late');
+	await save.click();
+	await expect(sheet).toHaveCount(0);
+	const second = section.getByRole('listitem').nth(1);
+	await expect(second.getByText('Taco Bar', { exact: true })).toBeVisible();
+	await expect(second.getByText('Late')).toBeVisible();
+	expect(requestRow(db, restaurantRequest)).toEqual({
+		...restaurantBefore,
+		name: 'Taco Bar',
+		note: 'Late'
+	});
+
+	// Add puts the recipe the request links to now on the dinner, with its note.
+	await section.getByRole('button', { name: 'Add Gumbo' }).click();
+	await expect(section.getByText('Added Gumbo.', { exact: true })).toBeFocused();
+	await expect(dishLinks(page)).toHaveText(['Chicken tacos', 'Gumbo']);
+	await expect(dinnerNote).toHaveValue('Grandma visits\nMild');
+	expect(requestRow(db, dishRequest)).toMatchObject({
+		name: 'Gumbo',
+		note: 'Mild',
+		dishId: gumbo,
+		completedAt: expect.any(Number)
+	});
+
+	// Dinner help tells people about it.
+	await page.getByRole('banner').getByRole('button', { name: 'Help', exact: true }).click();
+	await expect(page.getByRole('dialog', { name: 'Help: Dinner' })).toContainText(
+		"Edit changes a request's name or note."
+	);
+});
+
+test('says when someone completed or removed the request being edited, and shows the requests as they are now', async ({
+	page,
+	db,
+	person
+}) => {
+	const gumbo = addRecipe(db, person.householdId, { name: 'Gumbo' });
+	const removed = askFor(db, person, 'Gumbo', { dishId: gumbo, at: 1 });
+	const completed = askFor(db, person, 'Olive Garden', { at: 2 });
+	askFor(db, person, 'Taco Bar', { at: 3 });
+	const section = requestsSection(page);
+	const sheet = editSheet(page);
+	const gone = 'Someone completed or removed that request, so nothing was saved.';
+
+	// Removed, on the Menu.
+	await open(page, '/menu');
+	await section.getByRole('button', { name: 'Edit Gumbo' }).click();
+	await sheet.getByLabel('Note (optional)').fill('Extra okra');
+	db.prepare('delete from dish_requests where id = ?').run(removed);
+	await sheet.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(sheet.getByRole('alert')).toHaveText(gone);
+	await sheet.getByRole('button', { name: 'Cancel' }).click();
+	await expect(section.getByRole('listitem')).toHaveText([/Olive Garden/, /Taco Bar/]);
+
+	// Completed, on a date's page.
+	await open(page, `/menu/${addDays(today(), 1)}`);
+	await section.getByRole('button', { name: 'Edit Olive Garden' }).click();
+	await sheet.getByRole('textbox', { name: 'Restaurant', exact: true }).fill('Diner');
+	db.prepare("update dish_requests set completed_at = ?, asked_by = 'Sam' where id = ?").run(
+		Date.now(),
+		completed
+	);
+	await sheet.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(sheet.getByRole('alert')).toHaveText(gone);
+	await sheet.getByRole('button', { name: 'Cancel' }).click();
+	await expect(section.getByRole('listitem')).toHaveText([/Taco Bar/]);
+	expect(requestRow(db, completed)).toMatchObject({ name: 'Olive Garden', note: null });
 });
 
 test('plans two dinners on a day, each with its own label, dishes, Save and Clear (6.9)', async ({

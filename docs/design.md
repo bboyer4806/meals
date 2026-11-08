@@ -424,9 +424,10 @@ an `eat_out` dinner and only there; MEA-58, 6.9), `note`, `servings` (at least 1
 **dish_requests** (requests for a dish or a restaurant): `user_id` (who asked; removing them
 from the household removes their active requests and empties it on their completed ones), `kind`
 (`dish` or `restaurant`; requests made before restaurant requests are `dish`), `name` (as typed,
-or the recipe's name when requested from its page), `note`, `dish_id` (on a dish request, and
-only there: the recipe the name matched when it was asked for, the one the request made, or the
-one whose page it was requested from), `created_at`, `completed_at` (when someone completed it, by
+or the recipe's name when requested from its page, until Edit saves another), `note`, `dish_id`
+(on a dish request, and only there: the recipe the name matched when it was asked for or last
+edited, the one the request or the edit made, or the one whose page it was requested from),
+`created_at`, `completed_at` (when someone completed it, by
 hand or by adding it to a date; empty while it's active; MEA-245), `asked_by` (who asked, by name
 as it was when it was completed, so the history still names them after they're removed; empty
 while it's active) (6.12).
@@ -658,8 +659,9 @@ comes back. If two people change the same thing, the last save wins.
 
 ### 6.12 Requests
 
-- Anyone in the household can ask for a dish or a restaurant, see every request, and complete or
-  remove any of them (E2). A request is active until someone completes or removes it (below).
+- Anyone in the household can ask for a dish or a restaurant, see every request, and edit,
+  complete or remove any of them (E2). A request is active until someone completes or removes it
+  (below).
   Active requests are listed oldest first, dish and restaurant requests together, each with the
   dish (or "Eating out" and the restaurant), the note if there is one, and "Asked by" with the
   asker's name. Showing who asked is an exception to section 12, for requests only.
@@ -675,9 +677,9 @@ comes back. If two people change the same thing, the last save wins.
   and shows Request again once its requests are completed or removed. Tapping Request after
   someone else requested the recipe adds nothing, so the page never adds a second request; the
   Menu's sheet still can. An archived recipe has no Request.
-- The link is set when the request is made and never changes: a request keeps it, and its
-  name, after the recipe is renamed or archived. Completing or removing a request leaves its
-  recipe in Recipes.
+- The link is set when the request is made, and changes only when Edit saves another name for it
+  (below): a request keeps it, and its name, after the recipe is renamed or archived. Completing
+  or removing a request leaves its recipe in Recipes.
 - Requests made before every request had a recipe were linked once, when that change was
   deployed: to the dish with the name, ignoring case, if there was one (an archived one stayed
   archived), and otherwise to a new one made as above. Requests with the same name shared one
@@ -689,7 +691,8 @@ comes back. If two people change the same thing, the last save wins.
   to 200. Each field stops taking characters at its limit, pasted text included, and says so
   while it's full. The server refuses anything longer (4.5).
 - A date's page (MEA-57; section 7, Dinner) lists the same requests under its dinners, with the
-  same dish link or "Eating out" and restaurant, note and "Asked by", and no Remove. A dish
+  same dish link or "Eating out" and restaurant, note and "Asked by", Edit (below), and no
+  Complete or Remove. A dish
   request there has **Add**, which puts its recipe on one of the date's dinners: the only one that
   can have dishes (Cooking at home or Bringing a dish), or, when several can, the one picked from
   their labels. When none can, it goes on a new Cooking at home dinner at the usual servings: on
@@ -716,6 +719,25 @@ comes back. If two people change the same thing, the last save wins.
   one dinner, with the new dinner's label). Nothing changes, the request stays active, and the
   page says why, when a label isn't right, someone changed the date's dinners meanwhile, or
   someone completed or removed the request (6.11).
+- **Edit** (MEA-251), on each active request on the Menu and on a date's page, opens a sheet
+  titled "Edit request" with the request's name and note as they are now: Dish, with suggestions
+  as when asking for one, or Restaurant, then Note, with the same limits, and **Save** and
+  **Cancel**. Save saves the name and note together, and the request keeps who asked, when, and
+  its place in the list. A dish request saved with another name links to its recipe as a new
+  request with that name would: the active dish with the name, ignoring case, or a new one added
+  to Recipes. The recipe it linked to before stays as it is. A name that matches an archived dish
+  asks "Chili is archived. Restore it and save the request?" with **Restore it and save**, which
+  restores it and saves the request linked to it, and **Cancel**, which goes back to the sheet
+  and saves nothing (6.10). Saving the name it has, with extra spaces taken out, keeps the link,
+  so changing only the note never changes it; the name in another case is another name. A
+  restaurant request saves its name as typed and its note, and links to nothing. Cancel, or
+  closing the sheet, saves nothing, and the next Edit starts again from the request as it is. When
+  the server refuses a name or note, nothing changes and the sheet says why. Saving a request that
+  someone completed or removed meanwhile changes nothing: the sheet says "Someone completed or
+  removed that request, so nothing was saved." and the page shows the requests as they are now
+  (6.11). What's saved shows wherever the request does, and Add on a date's page uses it. Edit
+  doesn't change a dish request into a restaurant request or back, or who asked, and a completed
+  request has no Edit.
 - **Complete** (MEA-245), beside Remove on the Menu, completes an active request without asking
   first, as adding it to a date does. A completed request leaves the active requests for
   **Completed requests**, under them on the Menu, and stays there as it was: nothing edits,
@@ -1124,8 +1146,9 @@ still opens a day and swiping up and down scrolls. If someone cleared or moved t
 since the week loaded, nothing moves, the week shows the menu as it is now, and it says "Someone
 cleared or moved that day's dinners, so nothing moved." ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
 **Requests** lists the active dish and restaurant requests together (6.12), or "No requests
-yet.", each with Complete and Remove side by side, beside it or under it when they don't fit.
-Both keep the week shown. "Request a dish" opens a sheet with Dish (with suggestions, or a new dish), an
+yet.", each with Edit, Complete and Remove side by side, beside it or under it when they don't
+fit. Each keeps the week shown. Edit opens a sheet to change the request's name and note (6.12),
+and focus goes back to it once they're saved. "Request a dish" opens a sheet with Dish (with suggestions, or a new dish), an
 optional Note and Request. The suggestions show in the sheet under Dish, about four at a time
 with the rest scrolling, so they never cover Note or Request, and a tap or click elsewhere closes
 them once it's done, so it lands where it was aimed (MEA-151). "Request a restaurant", beside it,
@@ -1159,7 +1182,8 @@ with no dinner it's plain text. A date with no dinner says "Not planned yet" and
 at home selected, with its servings and note ready to fill in, unsaved (6.9). Under the dinners,
 **Requests** lists the Menu's active requests: a dish request's Add puts its dish on one of the
 date's dinners, and a restaurant request's Add makes a new Eating out dinner there, and each
-completes its request (6.12). The type,
+completes its request (6.12). Edit, beside Add, changes a request's name and note as on the
+Menu, and leaves the dinners, and anything typed in them, as they are. The type,
 dishes, copying, moving, clearing and adding a request save as soon as they're made, and keep
 anything typed in the servings, restaurant and note for Save. On a date with no dinner, what's
 done while the change that plans it is still on its way, such as picking a dish or tapping Save
