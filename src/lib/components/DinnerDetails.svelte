@@ -1,3 +1,8 @@
+<script module lang="ts">
+	/** The fields typed in a dinner's details form and not saved, as typed (MEA-202). */
+	export type TypedFields = { note?: string; servings?: number; label?: string; restaurant?: string };
+</script>
+
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
@@ -14,7 +19,6 @@
 	import { MAX_SERVINGS } from '../recipe-view.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
 	import { normalizeName } from '../text.ts';
-	import Snapshot from './Snapshot.svelte';
 
 	// A dinner's servings (types with dishes; Q28), restaurant (Eating out) and note (all types;
 	// Q26), saved together, and its label on a date with more than one dinner (6.9).
@@ -114,15 +118,12 @@
 		return JSON.stringify(typed);
 	}
 
-	// When a phone drops the app in the background to free memory, coming back loads the page
-	// again, which would lose what was typed here without a word. The tab keeps what's typed and
-	// not saved, under the dinner the form is for, and gets it back when the page loads again
-	// (design 7, Dinner; MEA-202) or Back or Forward returns to it (MEA-240). Only the fields
+	// The date's page keeps what's typed and not saved for when the page loads again, as when a
+	// phone drops the app in the background (design 7, Dinner; MEA-202, MEA-256). Only the fields
 	// saving would change are kept, so a field saved by then shows what's saved.
-	type TypedFields = { note?: string; servings?: number; label?: string; restaurant?: string };
 
 	/** The fields typed and not saved, as typed. */
-	function typedFields(): TypedFields {
+	export function typedFields(): TypedFields {
 		const fields: TypedFields = {};
 		if (typedNote() !== savedNote) fields.note = note;
 		if (typedServings() !== savedServings) fields.servings = typedServings();
@@ -132,7 +133,7 @@
 	}
 
 	/** Puts back the fields that were typed and not saved. */
-	function restoreTyped(fields: TypedFields): void {
+	export function restoreTyped(fields: TypedFields): void {
 		if (fields.note !== undefined) note = fields.note;
 		if (fields.servings !== undefined) servings = fields.servings;
 		if (fields.label !== undefined) label = fields.label;
@@ -304,12 +305,6 @@
 		};
 	};
 </script>
-
-<!-- Kept under the dinner the form is for, which can change while the form stays, as when the
-page's own change plans the date (MEA-202). -->
-{#key dinner.id}
-	<Snapshot id="dinner-{dinner.id ?? 'new'}" capture={typedFields} restore={restoreTyped} />
-{/key}
 
 <form class="card" method="POST" action="?/details" use:enhance={send(submit)}>
 	{#if dinner.id !== null}<input type="hidden" name="dinnerId" value={dinner.id} />{/if}

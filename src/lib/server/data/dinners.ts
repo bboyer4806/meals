@@ -230,6 +230,22 @@ export function getDay(householdId: number, date: string): Dinner[] {
 }
 
 /**
+ * The date each of these dinners is on now, so what's typed for one someone moved can go with it
+ * (MEA-256). One someone cleared, or another household's, isn't listed.
+ */
+export function findDinners(
+	householdId: number,
+	dinnerIds: number[]
+): { id: number; date: string }[] {
+	return db()
+		.select({ id: dinners.id, date: dinners.date })
+		.from(dinners)
+		.where(and(eq(dinners.householdId, householdId), inArray(dinners.id, dinnerIds)))
+		.orderBy(asc(dinners.id))
+		.all();
+}
+
+/**
  * Updates the dinner the page showed, or plans the date with it (dinnerId null, or the shown
  * one is gone). A type without dishes (Eating out, Leftovers) removes the dinner's dishes; the
  * page asks first (2.3). Any other type than Eating out removes its restaurant. The label counts

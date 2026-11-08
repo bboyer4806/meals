@@ -779,6 +779,27 @@ describe('clearing a dinner', () => {
 	});
 });
 
+describe('finding dinners gone from the date (MEA-256)', () => {
+	it('says where moved dinners are now, and changes nothing', async () => {
+		const moved = makeDinner(householdId, TOMORROW, { note: 'Tacos night' });
+		const cleared = makeDinner(householdId, TODAY);
+		const theirs = makeDinner(otherId, '2026-10-12');
+		moveDinners(householdId, TOMORROW, '2026-10-09', moved, NOW);
+		clearDinner(householdId, TODAY, cleared, NOW);
+		const before = october();
+		expect(await post('find', { dinnerIds: `${cleared},${moved},${theirs}` })).toEqual({
+			action: 'find',
+			found: [{ id: moved, date: '2026-10-09' }]
+		});
+		expect(october()).toEqual(before);
+	});
+
+	it('needs dinners to find', async () => {
+		expectFailure(await post('find'), 'find', expect.any(String));
+		expectFailure(await post('find', { dinnerIds: 'soon' }), 'find', expect.any(String));
+	});
+});
+
 describe('more than one dinner on a date (6.9)', () => {
 	let adults: number;
 	let kids: number;
@@ -1255,6 +1276,7 @@ describe('every action', () => {
 		copy: { dishIds: '1' },
 		move: { to: TODAY },
 		clear: {},
+		find: { dinnerIds: '1' },
 		promoteDishRequest: { requestId: '1' },
 		promoteRestaurantRequest: { requestId: '1' },
 		editRequest: { id: '1', name: 'Rice', note: '' },

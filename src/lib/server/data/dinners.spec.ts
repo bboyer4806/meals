@@ -19,6 +19,7 @@ import {
 	copyDinner,
 	dishSuggestions,
 	addDinner,
+	findDinners,
 	getDay,
 	getDinners,
 	listCopyGroups,
@@ -371,6 +372,20 @@ describe('reading dinners', () => {
 	it('gives null for an unplanned date', () => {
 		makeDinner(otherId, TODAY);
 		expect(dinnerOn(householdId, TODAY)).toBeNull();
+	});
+
+	it("finds where dinners are now, leaving out cleared ones and other households' (MEA-256)", () => {
+		const moved = makeDinner(householdId, TODAY, { note: 'Moved' });
+		const stayed = makeDinner(householdId, TOMORROW, { note: 'Stayed' });
+		const cleared = makeDinner(householdId, '2026-10-12');
+		const theirs = makeDinner(otherId, TODAY);
+		moveDinners(householdId, TODAY, '2026-10-14', moved, NOW);
+		clearDinner(householdId, '2026-10-12', cleared, NOW);
+		expect(findDinners(householdId, [stayed, cleared, theirs, moved])).toEqual([
+			{ id: moved, date: '2026-10-14' },
+			{ id: stayed, date: TOMORROW }
+		]);
+		expect(findDinners(otherId, [moved, theirs])).toEqual([{ id: theirs, date: TODAY }]);
 	});
 });
 
