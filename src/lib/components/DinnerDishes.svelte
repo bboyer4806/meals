@@ -366,7 +366,8 @@
 			<!-- A dish picked from the suggestions is added right away with the role shown, which
 			     sits with Add between the field and the suggestions, so they never cover Add or
 			     move it as they come and go (MEA-56). As they open, the page scrolls if it must
-			     to show them above the tab bar (MEA-238). -->
+			     to show them above the tab bar (MEA-238), or above a phone's keyboard, also as it
+			     opens, closes or changes size, in the room it leaves (MEA-265; design 7, Dinner). -->
 			<ItemInput
 				id="{uid}-name"
 				name="name"

@@ -12,10 +12,10 @@
 	// `required`, since a blank ingredient row is left out rather than refused. The dinner
 	// editor suggests dishes, so its new option says "new dish", and it adds a dish picked from
 	// them right away, with its role and Add under the field (MEA-56). Its suggestions are kept
-	// above the tab bar as they open (MEA-238). The dish request sheet suggests dishes too, with
-	// the name's limit warning under the field, so they show in the sheet rather than over its
-	// Note and Request (6.12, MEA-151). The grocery list's suggestions show each item's image, if
-	// it has one (design 7, Item images).
+	// above the tab bar (MEA-238) and a phone's keyboard (MEA-265). The dish request sheet
+	// suggests dishes too, with the name's limit warning under the field, so they show in the
+	// sheet rather than over its Note and Request (6.12, MEA-151). The grocery list's suggestions
+	// show each item's image, if it has one (design 7, Item images).
 	let {
 		items,
 		value = $bindable(''),
@@ -46,8 +46,8 @@
 		onchoose?: () => void;
 		/**
 		 * With `children`, whether the page scrolls as the suggestions open, just enough to show
-		 * them above the tab bar. Scrolling the page afterwards can still take them under it
-		 * (MEA-238).
+		 * them above the tab bar and a phone's keyboard, which also limits how tall they are.
+		 * Scrolling the page afterwards can still take them under either (MEA-238, MEA-265).
 		 */
 		aboveTabs?: boolean;
 		/**
@@ -112,13 +112,42 @@
 		if (document.activeElement !== input) open = false;
 	}
 
-	// Suggestions in the page that would reach the tab bar as they open have the page scroll just
-	// far enough to show them above it, with the field still clear of the header, by the margins
-	// in .above-tabs. When they fit, the page stays put. This reads the options rather than
-	// showList so it runs again each time they change while they show, since what's typed changes
-	// how many show and how tall they are (MEA-238).
+	// The pixels left between the suggestions and a phone's keyboard, as .above-tabs leaves above
+	// the tab bar.
+	const KEYBOARD_GAP = 8;
+
+	// Suggestions in the page are kept where nothing covers them: under the header and above the
+	// tab bar, by the margins in .above-tabs, and above a phone's keyboard. The keyboard covers the
+	// bottom of the screen, shortening the visual viewport, the part of the page on screen, and
+	// leaves the tab bar under it. The visual viewport's place and the field's are both measured
+	// from the top of the window. The suggestions get the room left there under the field, the
+	// role and Add, down to one suggestion, and the page scrolls just far enough to show all of
+	// them, or the field first when they don't fit; when they fit, it stays put (MEA-238, MEA-265).
+	function keepInView() {
+		const viewport = window.visualViewport!;
+		const margins = getComputedStyle(combo);
+		const top = Math.max(viewport.offsetTop, parseFloat(margins.scrollMarginTop));
+		const bottom = Math.min(
+			viewport.offsetTop + viewport.height - KEYBOARD_GAP,
+			document.documentElement.clientHeight - parseFloat(margins.scrollMarginBottom)
+		);
+		const list = document.getElementById(listId)!;
+		const above = list.getBoundingClientRect().top - combo.getBoundingClientRect().top;
+		combo.style.setProperty('--room', `${bottom - top - above}px`);
+		const shown = combo.getBoundingClientRect();
+		const scroll = Math.min(Math.max(0, shown.bottom - bottom), shown.top - top);
+		if (scroll !== 0) window.scrollBy(0, scroll);
+	}
+
+	// As the suggestions open, each time they change while they show, since what's typed changes
+	// how many show and how tall they are, and as the keyboard opens, closes or changes size. Not
+	// as the page scrolls, so scrolling it by hand is left alone (MEA-238, MEA-265).
 	$effect(() => {
-		if (aboveTabs && open && options.length > 0) combo.scrollIntoView({ block: 'nearest' });
+		if (!aboveTabs || !open || options.length === 0) return;
+		keepInView();
+		const viewport = window.visualViewport!;
+		viewport.addEventListener('resize', keepInView);
+		return () => viewport.removeEventListener('resize', keepInView);
 	});
 
 	async function choose(option: Option) {
@@ -264,6 +293,12 @@
 	.above-tabs {
 		scroll-margin: calc(4rem + env(safe-area-inset-top)) 0
 			calc(var(--tabs-height) + env(safe-area-inset-bottom) + 0.5rem);
+	}
+
+	/* No taller than the room keepInView finds above the tab bar or a phone's keyboard, but
+	   always tall enough for one suggestion (MEA-265). */
+	.above-tabs ul {
+		max-height: clamp(3.5rem, var(--room, 13rem), 13rem);
 	}
 
 	li {

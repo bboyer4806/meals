@@ -132,6 +132,47 @@ function scrolled(page: Page) {
 }
 
 /**
+ * Opens a phone's keyboard `height` pixels tall, or closes it with 0, as Chrome on Android does:
+ * it covers the bottom of the screen, shortening the visual viewport, the part of the page on
+ * screen, and leaves the page and its tab bar where they were, under it (MEA-265).
+ */
+async function keyboard(page: Page, height: number) {
+	await page.evaluate((height) => {
+		const viewport = window.visualViewport!;
+		Reflect.deleteProperty(viewport, 'height');
+		const shortened = viewport.height - height;
+		if (height > 0) {
+			Object.defineProperty(viewport, 'height', { configurable: true, value: shortened });
+		}
+		viewport.dispatchEvent(new Event('resize'));
+	}, height);
+}
+
+/**
+ * The dish field is clear of the header, and its suggestions end just above `limit` on the screen,
+ * with the role and Add between them, in place and uncovered (MEA-238, MEA-265).
+ */
+async function expectDishesShownAbove(page: Page, limit: number) {
+	const shown = await edges(page.getByRole('listbox'));
+	expect(limit - shown.bottom).toBeGreaterThan(0);
+	expect(limit - shown.bottom).toBeLessThan(16);
+	const field = await edges(dishField(page));
+	expect(field.top).toBeGreaterThan((await edges(page.getByRole('banner'))).bottom);
+	for (const control of [newRole(page), addButton(page)]) {
+		const { top, bottom } = await edges(control);
+		expect(top).toBeGreaterThan(field.bottom);
+		expect(bottom).toBeLessThan(shown.top);
+		expect(await uncovered(control)).toBe(true);
+	}
+}
+
+/** How tall the dish suggestions are on the screen. */
+async function suggestionsHeight(page: Page): Promise<number> {
+	const { top, bottom } = await edges(page.getByRole('listbox'));
+	return bottom - top;
+}
+
+/**
  * Plans a dinner three days from today with four dishes, which put its dish field low enough on a
  * phone that, with the keyboard closed and the page at its top, the five suggestions for "Cr" (four
  * dishes and "new dish") would reach the feedback button and the tab bar. Returns its date.
@@ -1209,6 +1250,85 @@ test.describe('the dish suggestions on a computer', () => {
 		await tabs.getByRole('link', { name: 'Recipes' }).click();
 		await expect(page).toHaveURL(/\/recipes$/);
 	});
+});
+
+test('keeps the dish field and its suggestions above a phone keyboard as it opens, changes size and closes (MEA-265)', async ({
+	page,
+	db,
+	person
+}) => {
+	// The size of the phone in the feedback.
+	const screenHeight = 843;
+	await page.setViewportSize({ width: 448, height: screenHeight });
+	const date = addLowDishField(db, person.householdId);
+	const adds = countAdds(page);
+	const list = page.getByRole('listbox');
+	const options = list.getByRole('option');
+	await open(page, `/menu/${date}`);
+	const tabsTop = (await edges(page.getByRole('navigation', { name: 'Main' }))).top;
+	await dishField(page).fill('Cr');
+	await expect(options).toHaveCount(5);
+	await expectDishesShownAbove(page, tabsTop);
+	const usual = await suggestionsHeight(page);
+
+	// The keyboard opens over them, so the page scrolls just far enough to show the field and
+	// them above it, about four at a time as usual.
+	await keyboard(page, 330);
+	await expectDishesShownAbove(page, screenHeight - 330);
+	expect(await suggestionsHeight(page)).toBe(usual);
+
+	// A taller keyboard, as on a shorter phone, leaves room for fewer. They take only that room,
+	// and the rest scroll into it, without moving the page, so the one at their end is tapped
+	// with the keyboard still open and added.
+	const keyboardTop = screenHeight - 543;
+	await keyboard(page, 543);
+	await expectDishesShownAbove(page, keyboardTop);
+	expect(await suggestionsHeight(page)).toBeLessThan(usual);
+	const pageScroll = await scrolled(page);
+	await list.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+	expect(await scrolled(page)).toBe(pageScroll);
+	expect((await edges(options.last())).bottom).toBeLessThan(keyboardTop);
+	await list.getByRole('option', { name: 'Croissants', exact: true }).tap();
+	await expect(dishLinks(page)).toHaveText([
+		'Roast chicken',
+		'Green salad',
+		'Mashed potatoes',
+		'Croissants',
+		'Apple pie'
+	]);
+	await expect(dishField(page)).toHaveValue('');
+	await expect(dishField(page)).toBeFocused();
+	expect(adds()).toBe(1);
+
+	// Typing with the keyboard open shows them above it too.
+	await dishField(page).fill('Cr');
+	await expect(options).toHaveCount(5);
+	await expectDishesShownAbove(page, keyboardTop);
+
+	// Scrolled by hand while they show, the page stays where it's scrolled to.
+	await page.evaluate(() => window.scrollBy(0, -200));
+	const byHand = await scrolled(page);
+	await page.evaluate(
+		() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+	);
+	expect(await scrolled(page)).toBe(byHand);
+
+	// With even less room, at least one shows, under the field, which stays clear of the header.
+	await keyboard(page, 643);
+	const first = await edges(options.first());
+	expect(await suggestionsHeight(page)).toBeGreaterThan(first.bottom - first.top);
+	expect((await edges(dishField(page))).top).toBeGreaterThan(
+		(await edges(page.getByRole('banner'))).bottom
+	);
+
+	// Once the keyboard closes, they have their usual room again, which fits above the tab bar,
+	// so the page stays put.
+	const shut = await scrolled(page);
+	await keyboard(page, 0);
+	expect(await suggestionsHeight(page)).toBe(usual);
+	expect((await edges(list)).bottom).toBeLessThan(tabsTop);
+	expect(await scrolled(page)).toBe(shut);
+	expect(adds()).toBe(1);
 });
 
 test('sends a picked dish once while it is on its way', async ({ page, db, person }) => {
