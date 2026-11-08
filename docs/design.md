@@ -503,7 +503,7 @@ point at grocery lines. An ingredient points at a dish and an item. A dinner has
 | To Order            | Mark ordered (one line, or "Mark all ordered" for a store) | Ordered. A store is required, and it becomes the item's default store.                                  |
 | Ordered             | Check off, or "Mark all received" for a store              | Received.                                                                                              |
 | Ordered             | Didn't come                                                | Back to To Order, keeping its store (Q20).                                                             |
-| To Order or Ordered | Got fewer (enter the amount you got)                       | A Received line for that amount, and the original is To Order with the rest (Q20). A store is required. If the line was To Order, the store becomes the item's default store (6.3). |
+| To Order or Ordered | Got fewer (enter the amount you got)                       | A Received line for that amount, and the original is To Order with the rest (Q20). The amount must be less than the line's ("Enter an amount less than 0.2"), and when the rest rounds to nothing (6.5), the whole line is received instead (MEA-92). A store is required. If the line was To Order, the store becomes the item's default store (6.3). |
 | Received today      | Tap again                                                  | Back to Ordered if it had been ordered, otherwise To Order (addition 2.2.3).                           |
 
 Lines that are To Order or Ordered can be edited (quantity, unit, store, note) or
@@ -537,6 +537,14 @@ unless that store is archived (Q18).
 ### 6.5 Amounts and units
 
 - Amounts can be typed as `2`, `1.5`, `1 1/2`, `1/2` or `½`, and are stored as numbers.
+- The sum a duplicate warning suggests (6.4) and the rest Got fewer leaves (6.2) are rounded to
+  9 decimal places. That drops the noise binary arithmetic leaves, so 1.1 + 2.2 is 3.3 rather
+  than 3.3000000000000003, and keeps a line in step with party quantities in another unit
+  (6.15). Rounded to 3 places, a rest of 5 oz on a line in lb (0.3125 lb) would become 0.313 lb
+  and leave 0.0005 lb behind when the party's part is checked off (MEA-92).
+- The grocery list, party lists, History and a recipe's nutrition show numbers to 2 decimal
+  places, without trailing zeros (1.5, 0.33), and one above zero as at least 0.01, never 0
+  (MEA-92).
 - Known units (Q32b) and how much each holds:
 
   | Volume | Holds   | Weight | Holds |
