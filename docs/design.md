@@ -296,7 +296,7 @@ lost, so is everything. Moving backups off the server later is a small change.
   `referrer-policy: strict-origin-when-cross-origin`, so other sites see this site's address but
   not the page's, and `permissions-policy: camera=(), microphone=(), geolocation=()`, which leaves
   the screen wake lock the cooking view uses (7) allowed. An endpoint's error page, such as the one
-  a cancelled sign-in gets, has no Content Security Policy from SvelteKit, so it gets
+  for a photo that isn't there, has no Content Security Policy from SvelteKit, so it gets
   `content-security-policy: frame-ancestors 'none'` and no other site can show it in a frame. On
   the server, Dokku's nginx adds `strict-transport-security: max-age=15724800; includeSubdomains`
   to every response, its default for an app with a certificate, so a browser that has been here
@@ -465,7 +465,10 @@ point at grocery lines. An ingredient points at a dish and an item. A dinner has
 ### 6.1 Sign-in, households and invites
 
 1. People sign in with Google (scopes `openid`, `email` and `profile`). Google must
-   report the email as verified.
+   report the email as verified. A sign-in that's cancelled, takes more than 10 minutes at
+   Google, fails there or comes with an unverified email goes back to the sign-in page, which
+   says what went wrong (MEA-94). Someone already signed in goes on to the app instead, as after
+   going Back from signing in and choosing the account at Google again.
 2. A known Google account is signed in, and its email and name are refreshed.
 3. An unknown account is matched by email:
    - An invite to a household: the account joins that household (E5).
@@ -917,7 +920,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 
 | Screen           | Path                                 | What it does                                                                                                                         |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Sign in          | `/login`                             | "Sign in with Google".                                                                                                               |
+| Sign in          | `/login`                             | "Sign in with Google", with what went wrong above it after a sign-in that failed (6.1).                                              |
 | Invite-only      | `/not-invited`                       | Shown to an account without an invite, with the email it used.                                                                      |
 | Household setup  | `/setup`                             | First sign-in for a new household: name, usual servings, time zone.                                                                 |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |

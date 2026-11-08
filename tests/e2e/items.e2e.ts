@@ -485,10 +485,25 @@ test.describe('on a computer', () => {
 	});
 });
 
-test('rejects a sign-in callback that did not start here', async ({ page }) => {
-	const response = await page.goto('/login/google/callback?code=abc&state=forged');
-	expect(response?.status()).toBe(400);
-	await expect(page.getByText('Sign-in was cancelled or expired.')).toBeVisible();
+test('sends a sign-in callback that did not start here back to the sign-in page', async ({
+	page
+}) => {
+	await page.goto('/login/google/callback?code=abc&state=forged');
+	await expect(page).toHaveURL(/\/login\?error=cancelled$/);
+	await expect(page.getByRole('alert')).toHaveText(
+		'Sign-in was cancelled or expired. Please try again.'
+	);
+	await expect(page.getByRole('link', { name: 'Sign in with Google' })).toBeVisible();
+});
+
+test('sends someone already signed in on to the app when Google sends them back again', async ({
+	page,
+	person: _
+}) => {
+	// As after going Back from signing in and choosing the account at Google again: the state
+	// cookie went with the first sign-in.
+	await page.goto('/login/google/callback?code=abc&state=used');
+	await expect(page).toHaveURL(/\/groceries$/);
 });
 
 test('shows the invite-only page only the address that was really used', async ({

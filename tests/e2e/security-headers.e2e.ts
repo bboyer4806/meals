@@ -24,13 +24,13 @@ test("sends the security headers, and keeps a page's Content Security Policy", a
 	expect(health.headers()['content-security-policy']).toBeUndefined();
 });
 
-test("keeps other sites from framing an endpoint's error page", async ({ request }) => {
-	// A cancelled sign-in comes back from Google without a code.
-	const response = await request.get('/login/google/callback', {
+test("keeps other sites from framing an endpoint's error page", async ({ page, person: _ }) => {
+	// A photo that isn't there, opened in a tab of its own.
+	const response = await page.request.get(`/photos/${'0'.repeat(32)}.jpg`, {
 		headers: { accept: 'text/html' }
 	});
-	expect(response.status()).toBe(400);
-	expect(await response.text()).toContain('Sign-in was cancelled or expired. Please try again.');
+	expect(response.status()).toBe(404);
+	expect(await response.text()).toContain('Not found');
 	expect(response.headers()).toMatchObject({
 		...HEADERS,
 		'content-type': 'text/html; charset=utf-8',

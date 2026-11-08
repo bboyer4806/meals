@@ -1,4 +1,4 @@
-import { error, redirect } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import { cookieName } from '#lib/server/auth/cookies.ts';
 import { exchangeCode, type GoogleClaims } from '#lib/server/auth/google.ts';
 import { createSession, setSessionCookie } from '#lib/server/auth/session.ts';
@@ -14,8 +14,11 @@ export async function GET({ cookies, url }) {
 	const codeVerifier = cookies.get(verifierCookie);
 	cookies.delete(stateCookie, { path: '/' });
 	cookies.delete(verifierCookie, { path: '/' });
+	// A sign-in that fails goes back to the sign-in page, which says why (6.1). That page sends
+	// someone already signed in on to the app, as after going Back from signing in and choosing
+	// the account at Google again, which comes here without the state cookie.
 	if (!code || !state || !storedState || !codeVerifier || state !== storedState) {
-		error(400, 'Sign-in was cancelled or expired. Please try again.');
+		redirect(303, '/login?error=cancelled');
 	}
 
 	let claims: GoogleClaims;
@@ -23,9 +26,9 @@ export async function GET({ cookies, url }) {
 		claims = await exchangeCode(url.origin, code, codeVerifier, Date.now());
 	} catch (e) {
 		console.error('Google sign-in failed', e);
-		error(400, 'Google sign-in failed. Please try again.');
+		redirect(303, '/login?error=failed');
 	}
-	if (!claims.email_verified) error(403, 'Google has not verified this email address.');
+	if (!claims.email_verified) redirect(303, '/login?error=unverified');
 
 	const now = Date.now();
 	const result = signIn(
