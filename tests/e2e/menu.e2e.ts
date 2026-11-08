@@ -1313,7 +1313,8 @@ test('keeps the dish field and its suggestions above a phone keyboard as it open
 	);
 	expect(await scrolled(page)).toBe(byHand);
 
-	// With even less room, at least one shows, under the field, which stays clear of the header.
+	// With even less room, they stay tall enough for one suggestion, under the field, which stays
+	// clear of the header.
 	await keyboard(page, 643);
 	const first = await edges(options.first());
 	expect(await suggestionsHeight(page)).toBeGreaterThan(first.bottom - first.top);
