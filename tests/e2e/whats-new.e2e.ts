@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.14 was released on 2026-11-07, the same day as 1.13.
+// What's new (design 7). 1.15 was released on 2026-11-08, the day after 1.14 and 1.13.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -28,8 +28,8 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.14', '1.13', '1.12', '1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
-	const [v114, v113, v112, v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.15', '1.14', '1.13', '1.12', '1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
+	const [v115, v114, v113, v112, v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
 		page.locator('section').nth(2),
@@ -43,8 +43,23 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 		page.locator('section').nth(10),
 		page.locator('section').nth(11),
 		page.locator('section').nth(12),
-		page.locator('section').nth(13)
+		page.locator('section').nth(13),
+		page.locator('section').nth(14)
 	];
+	await expect(v115.getByText('Released November 8, 2026')).toBeVisible();
+	await expect(v115.getByRole('listitem')).toHaveText([
+		"On Groceries, tap Party lists, beside Items and Grocery History, to plan what a party needs. Start one with New list, add food, drinks and supplies, then tap Add to Groceries, or Add all to Groceries, to put what's still needed on the grocery list. What's bought on either list shows on both.",
+		'History is now called Grocery History.',
+		"Household, requests and the ratings under a recipe's stars now show each person's first name. People in your household who share a first name show their whole names.",
+		"Each request now has Edit, beside Complete and Remove on the Menu and beside Add on a day's page, to change its dish or restaurant and its note. Who asked and its place in the list stay the same.",
+		"On Edit recipe, paste a recipe's web address in Link and tap Import to update the recipe from the page. Empty fields fill in, and you choose what to keep, what to replace and which new ingredients to add. Tap Apply, check it, then tap Save.",
+		"On a dinner's page, the suggestions in Add a dish now open above the tabs and your phone's keyboard, with the page scrolling just enough to show them. When there's little room above the keyboard, the list gets shorter and scrolls, so you can still tap any dish.",
+		"On a dinner's page, what you typed and didn't save now stays with its dinner when someone else clears or moves it while you're in another app. The page says what happened, and for a moved dinner, Open takes what you typed to its new date.",
+		'Adding more of an item already on the grocery list no longer suggests amounts such as 3.3000000000000003, and Got fewer no longer leaves amounts like that or a line with 0 left.',
+		'Imports now read amounts such as 1 and a half cups, 2 and a third cups and 1 & 1/3 cup as one amount.',
+		"Import from a link now reads the recipe on some sites where it said Couldn't find a recipe on that page.",
+		'In a recipe or an import, an amount such as ½1 is now refused with how to write it, instead of being saved as 1/21.'
+	]);
 	await expect(v114.getByText('Released November 7, 2026')).toBeVisible();
 	await expect(v114.getByRole('listitem')).toHaveText([
 		'Import recipes now handles a large file much faster, without freezing Meals for everyone meanwhile. It takes up to 1,000 recipes in one file, and a file with more says which row to split it at.',
@@ -207,14 +222,14 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	browser,
 	baseURL
 }) => {
-	// Two members of the household who joined before 1.14 and have seen 1.13, released the same day.
+	// Two members of the household who joined before 1.15 and have seen 1.14, released the day before.
 	const joined = Date.UTC(2026, 9, 1, 17);
 	setCreatedAt(db, person.userId, joined);
-	db.prepare("update users set whats_new_seen = '1.13' where id = ?").run(person.userId);
+	db.prepare("update users set whats_new_seen = '1.14' where id = ?").run(person.userId);
 	const memberId = Number(
 		db
 			.prepare(
-				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.13')"
+				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.14')"
 			)
 			.run(
 				person.householdId,
@@ -230,7 +245,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	await link(page).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
-	expect(seen(db, person.userId)).toBe('1.14');
+	expect(seen(db, person.userId)).toBe('1.15');
 
 	// Opening it cleared only their own dot.
 	const other = await browser.newContext();
@@ -238,7 +253,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	const phone = await other.newPage();
 	await phone.goto('/groceries');
 	await expect(more(phone).locator('.dot')).toBeVisible();
-	expect(seen(db, memberId)).toBe('1.13');
+	expect(seen(db, memberId)).toBe('1.14');
 	await other.close();
 });
 
@@ -247,7 +262,7 @@ test('shows no dot to someone who joined after the newest release', async ({
 	db,
 	person
 }) => {
-	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 7, 17));
+	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 8, 17));
 	await page.goto('/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);

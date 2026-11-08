@@ -14,6 +14,23 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.15',
+		released: '2026-11-08',
+		lines: [
+			"On Groceries, tap Party lists, beside Items and Grocery History, to plan what a party needs. Start one with New list, add food, drinks and supplies, then tap Add to Groceries, or Add all to Groceries, to put what's still needed on the grocery list. What's bought on either list shows on both.",
+			'History is now called Grocery History.',
+			"Household, requests and the ratings under a recipe's stars now show each person's first name. People in your household who share a first name show their whole names.",
+			"Each request now has Edit, beside Complete and Remove on the Menu and beside Add on a day's page, to change its dish or restaurant and its note. Who asked and its place in the list stay the same.",
+			"On Edit recipe, paste a recipe's web address in Link and tap Import to update the recipe from the page. Empty fields fill in, and you choose what to keep, what to replace and which new ingredients to add. Tap Apply, check it, then tap Save.",
+			"On a dinner's page, the suggestions in Add a dish now open above the tabs and your phone's keyboard, with the page scrolling just enough to show them. When there's little room above the keyboard, the list gets shorter and scrolls, so you can still tap any dish.",
+			"On a dinner's page, what you typed and didn't save now stays with its dinner when someone else clears or moves it while you're in another app. The page says what happened, and for a moved dinner, Open takes what you typed to its new date.",
+			'Adding more of an item already on the grocery list no longer suggests amounts such as 3.3000000000000003, and Got fewer no longer leaves amounts like that or a line with 0 left.',
+			'Imports now read amounts such as 1 and a half cups, 2 and a third cups and 1 & 1/3 cup as one amount.',
+			"Import from a link now reads the recipe on some sites where it said Couldn't find a recipe on that page.",
+			'In a recipe or an import, an amount such as ½1 is now refused with how to write it, instead of being saved as 1/21.'
+		]
+	},
+	{
 		version: '1.14',
 		released: '2026-11-07',
 		lines: [
