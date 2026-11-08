@@ -226,8 +226,11 @@
 
 <div class="title row">
 	<h1 class="grow">Groceries</h1>
-	<a class="link-tap" href="/groceries/items">Items</a>
-	<a class="link-tap" href="/groceries/history">History</a>
+	<div class="row">
+		<a class="link-tap" href="/groceries/items">Items</a>
+		<a class="link-tap" href="/groceries/history">History</a>
+		<a class="link-tap" href="/groceries/parties">Party lists</a>
+	</div>
 </div>
 
 <form
@@ -579,12 +582,16 @@
 </Sheet>
 
 <style>
+	/* The links go under the heading together when they don't fit beside it. */
 	.title {
 		margin-bottom: 0.5rem;
+		flex-wrap: wrap;
+		column-gap: 1rem;
 	}
 
 	.title h1 {
 		margin: 0;
+		min-width: auto;
 	}
 
 	.title a {

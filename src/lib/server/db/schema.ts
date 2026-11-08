@@ -167,6 +167,91 @@ export const groceryNeeds = sqliteTable(
 	]
 );
 
+// A named shopping list for a party, kept apart from the grocery list (design 6.15).
+export const partyLists = sqliteTable(
+	'party_lists',
+	{
+		// Never reused after a list is deleted, so a page that still shows it can't reach a newer one
+		// (6.11).
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		householdId: integer('household_id')
+			.notNull()
+			.references(() => households.id),
+		name: text('name').notNull(),
+		createdAt: integer('created_at').notNull()
+	},
+	(t) => [
+		unique('party_lists_household_id').on(t.householdId, t.id),
+		uniqueIndex('party_lists_household_name').on(t.householdId, sql`lower(${t.name})`)
+	]
+);
+
+// Something a party needs, from the household's items, with the quantity it needs in its own unit
+// (6.15). Deleting its list deletes it.
+export const partyItems = sqliteTable(
+	'party_items',
+	{
+		// Never reused after it's removed, so a page that still shows it can't change a newer one.
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		householdId: integer('household_id')
+			.notNull()
+			.references(() => households.id),
+		partyListId: integer('party_list_id').notNull(),
+		itemId: integer('item_id').notNull(),
+		quantity: real('quantity').notNull(),
+		unit: text('unit'),
+		// How much was checked off on the party list itself rather than received on Groceries, in its
+		// unit. What Groceries received is in party_allocations.
+		boughtQuantity: real('bought_quantity').notNull().default(0),
+		createdAt: integer('created_at').notNull()
+	},
+	(t) => [
+		unique('party_items_household_id').on(t.householdId, t.id),
+		foreignKey({
+			columns: [t.householdId, t.partyListId],
+			foreignColumns: [partyLists.householdId, partyLists.id]
+		}).onDelete('cascade'),
+		foreignKey({
+			columns: [t.householdId, t.itemId],
+			foreignColumns: [items.householdId, items.id]
+		}),
+		uniqueIndex('party_items_list_item').on(t.partyListId, t.itemId),
+		index('party_items_item').on(t.itemId),
+		check('party_items_quantity', sql`${t.quantity} > 0`),
+		check('party_items_bought', sql`${t.boughtQuantity} >= 0`)
+	]
+);
+
+// The part of a grocery line that's for a party item, in the party item's unit, which converts to
+// the line's (6.15). It's received when its line is. Lines add allocations in the order the
+// quantities were added to Groceries, which is the order of their ids. Removing the party item or
+// deleting the line deletes it.
+export const partyAllocations = sqliteTable(
+	'party_allocations',
+	{
+		id: integer('id').primaryKey(),
+		householdId: integer('household_id')
+			.notNull()
+			.references(() => households.id),
+		partyItemId: integer('party_item_id').notNull(),
+		needId: integer('need_id').notNull(),
+		quantity: real('quantity').notNull()
+	},
+	(t) => [
+		foreignKey({
+			columns: [t.householdId, t.partyItemId],
+			foreignColumns: [partyItems.householdId, partyItems.id]
+		}).onDelete('cascade'),
+		foreignKey({
+			columns: [t.householdId, t.needId],
+			foreignColumns: [groceryNeeds.householdId, groceryNeeds.id]
+		}).onDelete('cascade'),
+		index('party_allocations_party_item').on(t.partyItemId),
+		index('party_allocations_need').on(t.needId),
+		check('party_allocations_quantity', sql`${t.quantity} > 0`)
+	]
+);
+
 // Dishes and recipes are one record; the recipe details are optional (Q2).
 export const dishes = sqliteTable(
 	'dishes',

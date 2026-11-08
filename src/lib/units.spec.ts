@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	bestUnit,
+	conversionFactor,
 	KNOWN_UNITS,
 	knownUnit,
 	normalizeUnit,
@@ -131,6 +132,31 @@ describe('toBase', () => {
 		expect(toBase(2, unit('tbsp'))).toBe(6);
 		expect(toBase(1 / 2, unit('gallon'))).toBe(384);
 		expect(toBase(1.5, unit('lb'))).toBe(24);
+	});
+});
+
+describe('conversionFactor', () => {
+	it('is 1 between the same unit as typed, ignoring case and spelling', () => {
+		expect(conversionFactor('bags', 'Bags')).toBe(1);
+		expect(conversionFactor('lbs', 'pound')).toBe(1);
+		expect(conversionFactor(' Fl. Oz. ', 'fl oz')).toBe(1);
+		expect(conversionFactor(null, null)).toBe(1);
+	});
+
+	it('converts between known units of one kind (design 6.5)', () => {
+		expect(conversionFactor('cups', 'quart')).toBe(1 / 4);
+		expect(conversionFactor('gal', 'cup')).toBe(16);
+		expect(conversionFactor('T', 't')).toBe(3);
+		expect(conversionFactor('lb', 'oz')).toBe(16);
+	});
+
+	it("is undefined for units that don't convert", () => {
+		expect(conversionFactor('cup', 'lb')).toBeUndefined();
+		expect(conversionFactor('bags', 'box')).toBeUndefined();
+		expect(conversionFactor('cup', 'bottle')).toBeUndefined();
+		// No unit is a count, which only matches another count.
+		expect(conversionFactor(null, 'bags')).toBeUndefined();
+		expect(conversionFactor('oz', null)).toBeUndefined();
 	});
 });
 

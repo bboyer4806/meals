@@ -13,7 +13,8 @@ A phone-first website where households manage three connected things:
 
 - **Groceries:** a shared list of things to buy (groceries and household goods), each
   with a quantity, a store and a status (To Order, Ordered, Received). Every item
-  remembers the store it was last bought from.
+  remembers the store it was last bought from. Party lists keep what a party needs apart
+  and put it on the grocery list, which keeps them up to date (6.15).
 - **Recipes:** ingredients, steps, notes, a photo and nutrition. Recipes scale to any
   number of servings, with unit conversion.
 - **Menu:** one dinner per day: cooking at home, eating out, bringing a dish, or
@@ -334,7 +335,7 @@ src/lib/server/
   db/index.ts             connection, settings, migrations at startup
   auth/                   Google sign-in, sessions, invites
   data/                   one module per area: households, stores, items, needs,
-                          dishes, dinners, requests. Every function takes
+                          party-lists, dishes, dinners, requests. Every function takes
                           householdId first, except whats-new (a person's seen
                           release), which takes the person's id.
   standard-items.ts       the items every household's catalog starts with (6.13)
@@ -394,6 +395,18 @@ for a standard image, which happens once; empty until then; 6.14), `archived_at`
 Order), `status` (`to_order`, `ordered` or `received`; Q14), `note`, `created_at`,
 `ordered_at`, `received_at`.
 
+**party_lists:** `name` (unique per household, ignoring case), `created_at` (6.15).
+
+**party_items** (the things on a party list): `party_list_id` (deleting the list deletes
+them), `item_id` (unique per list), `quantity` (more than 0, what the party needs), `unit`
+(optional free text, as on a grocery line), `bought_quantity` (how much was checked off on the
+list itself rather than received on Groceries, in its unit), `created_at` (6.15).
+
+**party_allocations** (the part of a grocery line that's for a party item): `party_item_id`,
+`need_id` (the line), `quantity` (more than 0, in the party item's unit, which converts to the
+line's). It's received when its line is. Its id gives the order it was added to Groceries.
+Removing the party item or deleting the line deletes it (6.15).
+
 **dishes** (dishes and recipes are one table; Q2): `name` (unique per household,
 ignoring case), `servings` (at least 1), `prep_minutes`, `cook_minutes`, `steps` (text,
 one step per line), `notes`, `source` (a URL or a book), `photo_key`, `calories`,
@@ -439,11 +452,12 @@ while it's active) (6.12).
 `need`), `need_id` (the grocery line that a Need created; deleting that line also clears
 the mark).
 
-How they connect: a household has users, invites, stores, items, grocery lines, dishes,
-dinners, requests and at most one checklist. A request points at the member who asked (a
+How they connect: a household has users, invites, stores, items, grocery lines, party lists,
+dishes, dinners, requests and at most one checklist. A request points at the member who asked (a
 completed one only until they're removed) and, for a dish, its recipe. A rating points at a
 dish and, until they're removed, the member who rated it. A grocery line points at an item and
-a store. An ingredient points at a dish and an item. A dinner has dishes through
+a store. A party list has party items, which point at items, and a party item's allocations
+point at grocery lines. An ingredient points at a dish and an item. A dinner has dishes through
 `dinner_dishes`. A mark points at a checklist, an item and sometimes a grocery line.
 
 ## 6. Rules
@@ -494,7 +508,8 @@ a store. An ingredient points at a dish and an item. A dinner has dishes through
 
 Lines that are To Order or Ordered can be edited (quantity, unit, store, note) or
 deleted. Received lines leave the list, apart from "received today", and are kept as
-history (Q21).
+history (Q21). A line can hold quantities for party lists, which these changes keep up to
+date: Got fewer gives them what arrived first (6.15).
 
 "Mark all ordered" and "Mark all received" ask first ("Mark 7 Walmart items as ordered?"),
 then change only the lines that question counted, and only those still To Order (or Ordered) at
@@ -805,7 +820,7 @@ Each standard item (6.13) has a photo, so people can tell common groceries apart
   only to its household, backed up, and changed or removed on Items like any other (4.4, 4.5). An
   archived item counts, and stays archived (6.10). An item with an image keeps it.
 - Items are checked right after a save that makes them: setting up a household (6.1, 6.13), the
-  add bar (6.4), and saving or importing recipes (7). The save comes first and stays done. When the
+  add bar (6.4), adding to a party list (6.15), and saving or importing recipes (7). The save comes first and stays done. When the
   app starts, every item not yet checked is checked: every item when the photos came, one made by
   the old version during a deploy (4.2), and one whose check failed.
 - Checking stops at a failure, such as a full disk: the items checked so far keep their copies,
@@ -817,6 +832,73 @@ Each standard item (6.13) has a photo, so people can tell common groceries apart
   removed, a replaced one stays, and renaming an item keeps its image, or its lack of one, even
   when the new name is a standard item's. A new item with a standard name gets the photo, such as
   after the standard item was renamed. A change to the photos reaches only items checked after it.
+
+### 6.15 Party lists
+
+A household keeps what a party needs on a list of its own, apart from the grocery list, and puts
+it on the grocery list to shop for it (MEA-247). The two stay in step: what's bought on either
+shows on both.
+
+- A household has any number of party lists. A name is needed, up to 60 characters, and is unique
+  within the household ignoring case, as item and store names are (2.3): "You already have a party
+  list called Birthday." **Party lists**, on the Grocery list, lists them by name, each with how
+  many of its things are bought ("3 of 8 bought"). New list starts one and opens it. A list's
+  Edit renames it, or deletes it after asking.
+- A list's things are the household's items (Q1): food, drinks, decorations and supplies alike,
+  with no categories (Q23). Each has a quantity and an optional unit, with the add bar's limits
+  (6.4, 6.5). The item field suggests the household's items, and a new name joins them and gets
+  its standard image (6.14). The unit starts as the one last used for that item. An item is on a
+  list once: adding it again says "Chips is already on this list.", and an archived one says
+  "Candles is archived. Restore it on Items first." A thing's quantity can be changed and the thing
+  removed, but its unit stays as it was added; another unit means removing it and adding it again.
+  Things are listed by name.
+- **Add to Groceries** on a thing puts what it still needs on the grocery list: its quantity, less
+  what's bought and what's on the grocery list for it already, so adding it again adds nothing.
+  **Add all to Groceries** asks first ("Add 3 items to Groceries?"), adds what each thing it
+  counted still needs, as Mark all changes only what its question counted (6.2), and then says how
+  many it added. Things stay on their lists.
+- What's added joins the oldest To Order line for its item in a unit that's the same, ignoring case
+  and spelling ("lbs" is "lb"), or converts to it within volume or within weight (6.5): 2 cups for
+  a party on a line of 2 quarts makes it 2.5 quarts. The line keeps its unit, and the thing keeps
+  its own quantity and unit. Without such a line, it goes on a new To Order line in its own unit at
+  the item's usual store (Q18). It never joins an Ordered line, whose order was placed (2.3). A
+  unit that doesn't convert stays on a line of its own: no unit (a count) joins only a count, and a
+  custom unit only the same one ("bag" and "bags" are two).
+- The part of a line that's for a party is kept with the line, in the order it was added to
+  Groceries; the rest of the line is the household's own. A thing is bought once all it needs is
+  bought, and then shows "Bought", struck through. Until then it shows what's bought and what's on
+  Groceries: "Bought 1 of 3 bags · On Groceries".
+- **On Groceries**, checking off a line or Mark all received buys the party parts of it. Got fewer
+  (6.2) gives what arrived to the line's party parts first, in the order they were added to
+  Groceries, then to the household's own, and splits a part only partly covered. So when 4 bags
+  arrive of a line's 6 (1 of the household's own, 2 added for a picnic, then 3 for a birthday),
+  the picnic gets its 2 and the birthday 2 of its 3. Undoing a received line (2.2.3) puts back the
+  party parts it received and nothing else.
+- **On its list**, a thing's circle checks it off. What's on Groceries for it is received there,
+  and only that: its line turns Received when it's all the thing's, and otherwise a Received line
+  is split off for its part, leaving the rest of the line as it was, status and store included. A
+  line without a store asks "Where did you get it?" first, as the grocery list does, and that
+  store becomes the item's usual store when the line was To Order (6.3). Whatever else it needs
+  counts as bought on the list alone.
+- Tapping a bought thing's circle unchecks it. What Groceries received for it goes back as it was,
+  Ordered if it had been ordered and otherwise To Order: its line when the line was all the
+  thing's, and otherwise a line split off for its part, leaving the rest of the line received.
+  What was bought on the list alone no longer counts. A thing bought on an earlier day can be
+  unchecked too, and History then shows its received line without the thing's part.
+- Changing a thing's quantity changes what's on Groceries for it by as much, but never to more
+  than it still needs. A rise goes on a To Order line as Add to Groceries does, and a fall takes
+  the newest parts off first, deleting a line left with nothing. A thing with nothing on Groceries
+  changes only on its list. What's bought stays bought, so a quantity below it makes the thing
+  bought.
+- Removing a thing, or deleting its list, takes what's on Groceries for it off its lines,
+  deleting a line left with nothing, and leaves the rest of each line, other parties' parts and
+  everything received, which stays in History. A received line undone after that comes back whole,
+  as the household's own.
+- On the grocery list, a line with party parts works like any other, and the parts keep within
+  it. Making it smaller takes from the household's own part first, then from the newest party
+  parts. A unit that a party part's unit doesn't convert to takes that part off the line, and
+  deleting the line takes them all off. Their things then show what's no longer on Groceries, with
+  Add to Groceries.
 
 ## 7. Screens
 
@@ -833,6 +915,8 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | History          | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
 | Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. |
+| Party lists      | `/groceries/parties`                 | "‹ Groceries", then New list and the household's party lists, each with how many of its things are bought (6.15). |
+| Party list       | `/groceries/parties/[id]`            | "‹ Party lists", the name with Edit, an add form, Add all to Groceries, and the things with their circles, amounts, what's bought and on Groceries, and Add to Groceries (6.15). Tapping a thing opens a sheet with its quantity, Save and Remove. |
 | Recipes          | `/recipes`                           | Search by name, filter by tags, sort by name or rating, or group by when each was last on the Menu (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, Import and New recipe. |
 | Import recipes   | `/recipes/import`                    | See below.                                                                                                                           |
 | Recipe           | `/recipes/[id]`                      | See below.                                                                                                                           |
@@ -879,8 +963,8 @@ the header to the left of More, which printing hides with the rest of the header
 sheet titled "Help: " and the screen's name, such as "Help: Grocery list", that says what the
 screen is for and how to do its main tasks, in plain words and no more than about 6 short points.
 Recipe, Edit recipe and New recipe (which share the editor's points, each adding one about Import
-from a link), Import recipes, Cooking view, Dinner, History and Items each have their own help. The
-sheet closes with ✕, Escape or a tap on the backdrop.
+from a link), Import recipes, Cooking view, Dinner, History, Items, Party lists and Party list each
+have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
 Opening it changes nothing on the page behind, so anything typed there and not saved stays. The
 help is fixed text in `src/lib/help.ts`, keyed by each screen's route, and the type check fails
 if a screen has none. It opens only when asked: there's no Help page or link in More, and the
@@ -898,8 +982,9 @@ Escape records `tour_seen`, so it never shows again on any device. Reloading or 
 Grocery list before then records nothing, and the tour starts again from the first step the
 next time. There's no way to replay it, and no other screen has a tour.
 
-**Grocery list.** An add bar at the top: item (with suggestions), quantity, unit, store
-(filled from the default; tap to change) and Add. Below it, one group per store plus "No
+**Grocery list.** Beside the title, Items, History and Party lists open those screens; they go
+under it together on a screen too narrow for them (MEA-247). An add bar at the top: item (with
+suggestions), quantity, unit, store (filled from the default; tap to change) and Add. Below it, one group per store plus "No
 store". Groups can be collapsed, and the device remembers which ones are. Each group
 lists its To Order lines, then Ordered, then Received today (struck through). Store
 groups have "Mark all ordered" and "Mark all received"; "No store" has neither. After either,
@@ -1393,5 +1478,7 @@ ingredients.
 - Deleting a household.
 - Different servings for different dishes in the same dinner.
 - Metric units in the known list.
+- Planning a party beyond its shopping: tasks, invitations, guests, dates, budgets, costs, and
+  party lists made from recipes or the menu (MEA-247).
 - Decided against: store integrations (Q15), offline use (Q10), live updates (Q11),
   categories (Q23), prices (Q25), inventory (Q6) and saved meals (Q3).

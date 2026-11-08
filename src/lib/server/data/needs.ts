@@ -1,15 +1,128 @@
 import { error } from '@sveltejs/kit';
-import { and, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import { dateIn } from '../../dates.ts';
 import { normalizeName } from '../../text.ts';
+import { conversionFactor } from '../../units.ts';
 import { db, transaction } from '../db/index.ts';
-import { groceryNeeds, items, stores, type NeedStatus } from '../db/schema.ts';
+import {
+	groceryNeeds,
+	items,
+	partyAllocations,
+	partyItems,
+	stores,
+	type NeedStatus
+} from '../db/schema.ts';
 import { createItem, findItemByName, setDefaultStore, type Item } from './items.ts';
 import { getStore, requireActiveStore } from './stores.ts';
 
-// The rules in this file are design sections 6.2 to 6.4.
+// The rules in this file are design sections 6.2 to 6.4, and how grocery lines keep the party
+// list quantities that are part of them (6.15).
 
 const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * How close two quantities must be to count as the same. Converting between units leaves floating
+ * point noise, such as a teaspoon on a line in quarts (6.15).
+ */
+export const TOLERANCE = 1e-9;
+
+/**
+ * What a party item's quantity is multiplied by to give its share of a line. A party allocation's
+ * unit always converts to its line's (6.15).
+ */
+export function shareFactor(partyUnit: string | null, lineUnit: string | null): number {
+	const factor = conversionFactor(partyUnit, lineUnit);
+	if (factor === undefined) {
+		throw new Error(`A party quantity in ${partyUnit} can't be part of a line in ${lineUnit}`);
+	}
+	return factor;
+}
+
+type LineAllocation = {
+	id: number;
+	partyItemId: number;
+	quantity: number;
+	partyUnit: string | null;
+};
+
+/** The party allocations on a line, in the order they were added to Groceries (6.15). */
+function allocationsOn(needId: number): LineAllocation[] {
+	return db()
+		.select({
+			id: partyAllocations.id,
+			partyItemId: partyAllocations.partyItemId,
+			quantity: partyAllocations.quantity,
+			partyUnit: partyItems.unit
+		})
+		.from(partyAllocations)
+		.innerJoin(partyItems, eq(partyItems.id, partyAllocations.partyItemId))
+		.where(eq(partyAllocations.needId, needId))
+		.orderBy(asc(partyAllocations.id))
+		.all();
+}
+
+/**
+ * Keeps a line's party allocations within it once its quantity or unit is changed (6.15). One in a
+ * unit the line's no longer converts to comes off it, and when they come to more than the line,
+ * the oldest keep theirs and the newest give way.
+ */
+function fitAllocations(needId: number, quantity: number, unit: string | null): void {
+	let room = quantity;
+	for (const allocation of allocationsOn(needId)) {
+		const factor = conversionFactor(allocation.partyUnit, unit);
+		if (factor === undefined || room <= TOLERANCE) {
+			db().delete(partyAllocations).where(eq(partyAllocations.id, allocation.id)).run();
+		} else if (allocation.quantity * factor <= room + TOLERANCE) {
+			room -= allocation.quantity * factor;
+		} else {
+			db()
+				.update(partyAllocations)
+				.set({ quantity: room / factor })
+				.where(eq(partyAllocations.id, allocation.id))
+				.run();
+			room = 0;
+		}
+	}
+}
+
+/**
+ * Moves the party allocations a Got fewer received onto its Received line (6.15). Party lists get
+ * what arrived before the rest of the list, in the order their quantities were added to Groceries,
+ * and an allocation that's only partly covered is split.
+ */
+function receiveAllocations(
+	householdId: number,
+	line: GroceryLine,
+	receivedId: number,
+	received: number
+): void {
+	let left = received;
+	for (const allocation of allocationsOn(line.id)) {
+		if (left <= TOLERANCE) return;
+		const factor = shareFactor(allocation.partyUnit, line.unit);
+		const share = allocation.quantity * factor;
+		if (share <= left + TOLERANCE) {
+			db()
+				.update(partyAllocations)
+				.set({ needId: receivedId })
+				.where(eq(partyAllocations.id, allocation.id))
+				.run();
+			left -= share;
+		} else {
+			const part = left / factor;
+			db()
+				.insert(partyAllocations)
+				.values({ householdId, partyItemId: allocation.partyItemId, needId: receivedId, quantity: part })
+				.run();
+			db()
+				.update(partyAllocations)
+				.set({ quantity: allocation.quantity - part })
+				.where(eq(partyAllocations.id, allocation.id))
+				.run();
+			left = 0;
+		}
+	}
+}
 
 export type GroceryLine = {
 	id: number;
@@ -49,7 +162,7 @@ function selectLines() {
 		.leftJoin(stores, eq(stores.id, groceryNeeds.storeId));
 }
 
-function getLine(householdId: number, needId: number): GroceryLine {
+export function getLine(householdId: number, needId: number): GroceryLine {
 	const line = selectLines()
 		.where(and(eq(groceryNeeds.id, needId), eq(groceryNeeds.householdId, householdId)))
 		.get();
@@ -122,7 +235,7 @@ function sameUnit(a: string | null, b: string | null): boolean {
 	return (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
 }
 
-function storeForNewLine(householdId: number, item: Item, store: StoreChoice): number | null {
+export function storeForNewLine(householdId: number, item: Item, store: StoreChoice): number | null {
 	if (store === 'none') return null;
 	if (store === 'usual') {
 		if (item.defaultStoreId === null) return null;
@@ -163,6 +276,7 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 					.set({ quantity: input.quantity, unit: input.unit })
 					.where(eq(groceryNeeds.id, toOrder.id))
 					.run();
+				fitAllocations(toOrder.id, input.quantity, input.unit);
 				return { kind: 'updated' };
 			}
 			return {
@@ -210,7 +324,7 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
  * own. A line with neither can't change status; the page asks for a store first. Only a newly
  * picked store must be active.
  */
-function storeForStatusChange(
+export function storeForStatusChange(
 	householdId: number,
 	line: GroceryLine,
 	storeId: number | undefined
@@ -334,7 +448,7 @@ export function markDidntCome(householdId: number, needId: number): void {
 
 /**
  * Some of a line arrived or was bought: a Received line is split off for that amount, and the
- * original stays To Order with the rest (Q20).
+ * original stays To Order with the rest (Q20). Party lists get what arrived first (6.15).
  */
 export function markGotFewer(
 	householdId: number,
@@ -350,7 +464,7 @@ export function markGotFewer(
 			error(400, `Enter an amount less than ${line.quantity}`);
 		}
 		const store = storeForStatusChange(householdId, line, storeId);
-		db()
+		const received = db()
 			.insert(groceryNeeds)
 			.values({
 				householdId,
@@ -364,7 +478,9 @@ export function markGotFewer(
 				orderedAt: line.orderedAt,
 				receivedAt: now
 			})
-			.run();
+			.returning({ id: groceryNeeds.id })
+			.get();
+		receiveAllocations(householdId, line, received.id, receivedQuantity);
 		db()
 			.update(groceryNeeds)
 			.set({
@@ -405,15 +521,18 @@ export type LineChanges = {
 };
 
 export function updateLine(householdId: number, needId: number, changes: LineChanges): void {
-	const line = getLine(householdId, needId);
-	if (line.status === 'received') error(400, 'Received lines can no longer be edited');
-	if (changes.storeId === null && line.status === 'ordered') {
-		error(400, 'An ordered line needs a store');
-	}
-	if (changes.storeId !== null && changes.storeId !== line.storeId) {
-		requireActiveStore(householdId, changes.storeId);
-	}
-	db().update(groceryNeeds).set(changes).where(eq(groceryNeeds.id, needId)).run();
+	transaction(() => {
+		const line = getLine(householdId, needId);
+		if (line.status === 'received') error(400, 'Received lines can no longer be edited');
+		if (changes.storeId === null && line.status === 'ordered') {
+			error(400, 'An ordered line needs a store');
+		}
+		if (changes.storeId !== null && changes.storeId !== line.storeId) {
+			requireActiveStore(householdId, changes.storeId);
+		}
+		db().update(groceryNeeds).set(changes).where(eq(groceryNeeds.id, needId)).run();
+		fitAllocations(needId, changes.quantity, changes.unit);
+	});
 }
 
 /** Saves the edit sheet's changes, then applies a status change to the line, as one change. */
@@ -429,6 +548,7 @@ export function withLineChanges(
 	});
 }
 
+/** Deleting a line deletes its party allocations, so their party items need adding again (6.15). */
 export function deleteLine(householdId: number, needId: number): void {
 	const line = getLine(householdId, needId);
 	if (line.status === 'received') error(400, 'Received lines are kept as history');
