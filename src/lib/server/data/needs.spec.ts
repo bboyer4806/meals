@@ -153,15 +153,31 @@ describe('adding', () => {
 			quantity: 2,
 			unit: 'gal',
 			storeName: 'Walmart',
-			suggestedQuantity: 3
+			suggestedQuantity: 3,
+			suggestedUnit: 'gal'
 		});
 		expect(add(householdId, { itemName: 'Milk', quantity: 1, unit: 'jug' })).toMatchObject({
-			suggestedQuantity: 1
+			suggestedQuantity: 1,
+			suggestedUnit: 'jug'
 		});
 		expect(add(householdId, { itemName: 'Milk', quantity: 3, unit: 'gal', resolution: 'update' })).toEqual({
 			kind: 'updated'
 		});
 		expect(onlyLine(householdId)).toMatchObject({ quantity: 3, unit: 'gal', storeId: walmart });
+	});
+
+	it("suggests the sum in the line's unit when the units are the same however spelled (MEA-93)", () => {
+		add(householdId, { itemName: 'Butter', quantity: 2, unit: 'lb' });
+		expect(add(householdId, { itemName: 'Butter', quantity: 1, unit: 'lbs' })).toMatchObject({
+			unit: 'lb',
+			suggestedQuantity: 3,
+			suggestedUnit: 'lb'
+		});
+		add(householdId, { itemName: 'Beans', quantity: 1, unit: 'Can' });
+		expect(add(householdId, { itemName: 'Beans', quantity: 2, unit: 'can' })).toMatchObject({
+			suggestedQuantity: 3,
+			suggestedUnit: 'Can'
+		});
 	});
 
 	it('suggests a sum without floating point noise (MEA-92)', () => {
