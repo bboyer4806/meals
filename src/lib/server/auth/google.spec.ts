@@ -12,6 +12,7 @@ beforeAll(() => {
 
 afterEach(() => {
 	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 });
 
 function idToken(claims: Record<string, unknown>) {
@@ -79,5 +80,21 @@ describe('exchangeCode', () => {
 	it('fails when Google refuses the code', async () => {
 		stubToken(goodClaims, 400);
 		await expect(exchangeCode(ORIGIN, 'c', 'v', NOW)).rejects.toThrow(/400/);
+	});
+
+	it("fails when Google doesn't answer within 10 seconds", async () => {
+		// AbortSignal.timeout runs on Node's own timers, so the time is up straight away here.
+		const timeout = vi
+			.spyOn(AbortSignal, 'timeout')
+			.mockReturnValue(AbortSignal.abort(new DOMException('Timed out', 'TimeoutError')));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (_url: string, init: RequestInit) => {
+				init.signal?.throwIfAborted();
+				return new Promise<Response>(() => {});
+			})
+		);
+		await expect(exchangeCode(ORIGIN, 'c', 'v', NOW)).rejects.toThrow('Timed out');
+		expect(timeout).toHaveBeenCalledWith(10_000);
 	});
 });

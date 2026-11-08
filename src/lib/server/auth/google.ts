@@ -6,6 +6,10 @@ import { config } from '../config.ts';
 
 const AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+// If Google's token endpoint stalls, the exchange gives up after this long, so the callback shows
+// its sign-in error rather than hanging until nginx answers with its own error page (MEA-95).
+// Fetching a link to import has the same limit (design 4.5).
+const TIMEOUT_MS = 10_000;
 
 /** The redirect URI must be registered in Google Cloud Console for this origin. */
 function redirectUri(origin: string): string {
@@ -69,7 +73,8 @@ export async function exchangeCode(
 			redirect_uri: redirectUri(origin),
 			client_id: GOOGLE_CLIENT_ID,
 			client_secret: GOOGLE_CLIENT_SECRET
-		})
+		}),
+		signal: AbortSignal.timeout(TIMEOUT_MS)
 	});
 	if (!response.ok) {
 		throw new Error(`Google token request failed: ${response.status} ${await response.text()}`);
