@@ -74,6 +74,8 @@ jobs:
         with:
           context: .
           push: true
+          # /healthz answers with it, so the deploy can check it's the version answering.
+          build-args: COMMIT=${{ github.sha }}
           # Tagged by commit so a rollback is naming an older tag, not a rebuild.
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.sha }}
@@ -133,6 +135,12 @@ jobs:
             dokku letsencrypt:enable "$APP"
           fi
 
-          # The site must answer over HTTPS. A missing port map or a broken
-          # proxy can leave a deploy that otherwise looks fine.
-          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "https://$DOMAIN/healthz"
+          # The site must answer over HTTPS, with the commit this run deployed
+          # (/healthz answers with the one its image was built from). A missing
+          # port map or a broken proxy can leave a deploy that otherwise looks
+          # fine, and so can one that left the old version running.
+          answer=$(curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "https://$DOMAIN/healthz")
+          if [ "$answer" != "$GITHUB_SHA" ]; then
+            echo "::error::https://$DOMAIN/healthz answered with commit $answer, not $GITHUB_SHA."
+            exit 1
+          fi

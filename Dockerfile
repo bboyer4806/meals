@@ -8,6 +8,9 @@ COPY package.json package-lock.json .npmrc ./
 # build step.
 RUN npm ci --ignore-scripts
 COPY . .
+# The commit being built, which /healthz answers with (deploy.yml passes it, vite.config.ts reads
+# it).
+ARG COMMIT
 RUN npm run build && npm prune --omit=dev
 
 # Run: production dependencies, the built app, migrations, the standard items' images (design

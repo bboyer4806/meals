@@ -11,6 +11,9 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter(),
+			// The commit the image is built from (Dockerfile), which /healthz answers with (4.2).
+			// Other builds, such as a local one, get SvelteKit's default: the time they were built.
+			version: { name: process.env.COMMIT },
 			csp: {
 				mode: 'auto',
 				directives: {

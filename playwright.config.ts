@@ -3,6 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 const port = 4173;
 // The stand-in Jira's port, also in tests/e2e/fixtures.ts.
 const jiraPort = 4174;
+// The commit the build says it's from, also in tests/e2e/healthz.e2e.ts.
+const commit = 'e2e-commit';
 
 // Runs the production build with a throwaway database in .e2e-data. Tests sign in by writing a
 // session straight into that database (tests/e2e/fixtures.ts), so the app needs no test login.
@@ -33,6 +35,7 @@ export default defineConfig({
 			reuseExistingServer: false,
 			timeout: 180_000,
 			env: {
+				COMMIT: commit,
 				GOOGLE_CLIENT_ID: 'e2e-client-id',
 				GOOGLE_CLIENT_SECRET: 'e2e-client-secret',
 				ADMIN_EMAIL: 'admin@example.com',

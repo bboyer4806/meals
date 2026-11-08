@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import {
+	accessSync,
+	constants,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	rmSync,
+	writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -13,7 +22,7 @@ import { handle, init } from './hooks.server.ts';
 // Real files unless a test says otherwise.
 vi.mock('node:fs', async (importOriginal) => {
 	const fs = await importOriginal<typeof import('node:fs')>();
-	return { ...fs, existsSync: vi.fn(fs.existsSync) };
+	return { ...fs, accessSync: vi.fn(fs.accessSync), existsSync: vi.fn(fs.existsSync) };
 });
 
 let dataDir: string;
@@ -67,6 +76,33 @@ it("doesn't start without the standard images, as when they weren't packaged wit
 		expect(readdirSync(dataDir)).toEqual([]);
 	} finally {
 		vi.mocked(existsSync).mockImplementation(exists);
+	}
+});
+
+it("doesn't start when it can't write its data, as when a restore left it owned by root", async () => {
+	// The database and the photos folder from an earlier start.
+	const database = join(dataDir, 'meals.db');
+	const photos = join(dataDir, 'photos');
+	writeFileSync(database, '');
+	mkdirSync(photos);
+	useEnv();
+	// Root can write anything, and tests may run as root, so this stands in for the refusal the
+	// app's node user gets.
+	const access = vi.mocked(accessSync).getMockImplementation()!;
+
+	try {
+		for (const path of [dataDir, database, photos]) {
+			vi.mocked(accessSync).mockImplementation((tried, mode) => {
+				if (tried === path && mode === constants.W_OK) throw new Error('EACCES');
+				access(tried, mode);
+			});
+			// 4.3.
+			await expect(init()).rejects.toThrow(`${path} is not writable`);
+			// Before it opens the database.
+			expect(readdirSync(dataDir).sort()).toEqual(['meals.db', 'photos']);
+		}
+	} finally {
+		vi.mocked(accessSync).mockImplementation(access);
 	}
 });
 

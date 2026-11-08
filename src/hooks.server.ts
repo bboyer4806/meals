@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { accessSync, constants, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
 import { checkBodySize } from '#lib/server/body-size.ts';
@@ -18,8 +18,10 @@ export const init: ServerInit = async () => {
 	// Never create it: a missing directory in production means the storage mount is missing,
 	// and writing anyway would put the database where the next deploy deletes it.
 	if (!existsSync(DATA_DIR)) throw new Error(`DATA_DIR ${DATA_DIR} does not exist`);
+	const database = join(DATA_DIR, 'meals.db');
+	checkWritable([DATA_DIR, database, join(DATA_DIR, 'photos')]);
 	checkLibrary();
-	openDb(join(DATA_DIR, 'meals.db'));
+	openDb(database);
 	const now = Date.now();
 	// Households set up before the standard items get them, once each (design 6.13).
 	addStandardItemsToAllHouseholds(now);
@@ -27,6 +29,23 @@ export const init: ServerInit = async () => {
 	// any a save couldn't finish or the version a deploy replaces made (design 6.14).
 	await assignAllStandardImages(now);
 };
+
+/**
+ * Refuses to start if the app can't write one of these that exists, as when a restore left it
+ * owned by root (4.3). SQLite still opens and reads a database it can't write, so otherwise the
+ * first save would be what failed. The app makes the database and the photos folder in DATA_DIR
+ * when they're missing.
+ */
+function checkWritable(paths: string[]): void {
+	for (const path of paths) {
+		if (!existsSync(path)) continue;
+		try {
+			accessSync(path, constants.W_OK);
+		} catch (cause) {
+			throw new Error(`${path} is not writable`, { cause });
+		}
+	}
+}
 
 export const handle: Handle = async ({ event, resolve }) => {
 	// First, so a body too large to read is refused before anything reads it (4.5).

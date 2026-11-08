@@ -187,7 +187,9 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
    - in Phase 2, raise nginx's upload limit to 5 MB for photos (nginx's default is 1 MB)
 3. **`app.json` in the image** defines a health check on `/healthz`, which Dokku waits
    for before switching traffic to a new version, and the nightly backup job
-   (section 4.4).
+   (section 4.4). `/healthz` answers with the commit the image was built from, given to
+   the build as an argument, and the deploy fails unless the site then answers with the
+   commit it deployed (MEA-98).
 4. **Dockerfile:** a build stage (install and build) and a runtime stage (production
    dependencies, build output, migrations, the standard items' photos (6.14) and the backup
    script). It installs with
@@ -209,8 +211,10 @@ development, configuration, and restoring a backup.
 | `JIRA_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` | The Jira site that feedback goes to, and the Atlassian account and API token that create its tickets (7, Feedback) | Once on the server |
 
 The app reads these when it starts, not when it's built, so building the image needs no
-secrets. It refuses to start if any is missing or if `DATA_DIR` doesn't exist (a missing
-storage mount). For local development the same variables go in an untracked `.env` file, with
+secrets. It refuses to start if any is missing, if `DATA_DIR` doesn't exist (a missing
+storage mount), or if it can't write `DATA_DIR`, the database or the photos folder (such as
+files a restore left owned by root), so a version that couldn't save anything never goes live
+(MEA-98). For local development the same variables go in an untracked `.env` file, with
 `DATA_DIR=./data`.
 
 No `ORIGIN` setting is needed: in SvelteKit 3, adapter-node builds the app's origin from the

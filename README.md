@@ -91,7 +91,8 @@ The repo needs these Actions secrets (Settings > Secrets and variables > Actions
 | `DOKKU_HOST`    | `15.204.120.53`                                            |
 
 Dokku checks `/healthz` before it switches traffic to a new version. `app.json` sets that check
-and the nightly backup.
+and the nightly backup. `/healthz` answers with the commit the image was built from, and the
+deploy fails unless the site answers with the commit it deployed.
 
 ### Logging in to the server
 
@@ -136,9 +137,9 @@ feedback screenshots get through. The app's own limit is `BODY_SIZE_LIMIT` in th
 app that's already deployed, also run `dokku proxy:build-config meals` so nginx uses the new limit.
 
 If a deploy fails, its log shows the app's error. "Invalid environment variables" means a setting
-is missing, "DATA_DIR /data does not exist" means the mount is missing, and "unable to open
-database file" means the storage folder isn't owned by uid 1000. Fix it on the server, then
-deploy again.
+is missing, "DATA_DIR /data does not exist" means the mount is missing, and "/data is not
+writable" means the storage folder isn't owned by uid 1000 (likewise `/data/meals.db` and
+`/data/photos`, the database and photos folder in it). Fix it on the server, then deploy again.
 
 To change a setting later, run `dokku config:set meals NAME='value'` on the server. Dokku restarts
 the app with it. A setting the app newly requires, such as the `JIRA_*` settings, must be set this
@@ -176,6 +177,8 @@ chown 1000:1000 meals.db
 chown -R 1000:1000 photos
 dokku ps:start meals
 ```
+
+If a `chown` is missed, the app doesn't start, and its error says which file "is not writable".
 
 Photos added since that backup stay in `photos/`, and nothing uses them. Backups made before
 recipes had photos have no `photos` folder, so skip the two photos lines for those.
