@@ -10,14 +10,14 @@ import {
 	type DishDestination,
 	type NewDinnerLabels
 } from './dinners.ts';
-import { findDishByName, insertDish } from './dishes.ts';
+import { findDishByName, insertDish, setDishArchived } from './dishes.ts';
 
-// Requests (design 6.12): anyone in the household asks for a dish or a restaurant, and anyone
-// completes the request, by hand or by adding it to a date: a requested dish goes on a dinner, and
-// a requested restaurant becomes an Eating out dinner. A completed request stays in the completed
-// history as it was, and nothing changes it. Removing an active request deletes it instead. Each
-// shows who asked. A dish request links to its recipe; a restaurant request is only the name
-// typed, since restaurants aren't kept anywhere.
+// Requests (design 6.12): anyone in the household asks for a dish or a restaurant, edits the name
+// and note of any active request, and completes the request, by hand or by adding it to a date: a
+// requested dish goes on a dinner, and a requested restaurant becomes an Eating out dinner. A
+// completed request stays in the completed history as it was, and nothing changes it. Removing an
+// active request deletes it instead. Each shows who asked. A dish request links to its recipe; a
+// restaurant request is only the name typed, since restaurants aren't kept anywhere.
 
 /** What every request shows: its name, the note if there is one, and who asked. */
 type Shown = { id: number; name: string; note: string | null; askedBy: string };
@@ -31,6 +31,10 @@ export type DishRequest =
 export type CompletedRequest = DishRequest & { completedAt: number };
 
 export type AddRequestResult = { kind: 'added' } | { kind: 'archived'; dishId: number; name: string };
+
+export type EditRequestResult =
+	| { kind: 'saved' }
+	| { kind: 'archived'; dishId: number; name: string };
 
 /** A request as it's shown, linked to its recipe when it's a dish request. */
 function shown({
@@ -250,10 +254,10 @@ function isActive(householdId: number, requestId: number) {
 }
 
 /**
- * The household's active request of this kind, as it is now. Not found when someone completed or
- * removed it meanwhile, or for the other kind.
+ * The household's active request, as it is now. Not found when someone completed or removed it
+ * meanwhile.
  */
-function findRequest(householdId: number, requestId: number, kind: DishRequest['kind']) {
+function findActiveRequest(householdId: number, requestId: number) {
 	const request = db()
 		.select({
 			kind: dishRequests.kind,
@@ -264,8 +268,84 @@ function findRequest(householdId: number, requestId: number, kind: DishRequest['
 		.from(dishRequests)
 		.where(isActive(householdId, requestId))
 		.get();
-	if (!request || request.kind !== kind) error(404, 'Not found');
+	if (!request) error(404, 'Not found');
 	return request;
+}
+
+/** The household's active request of this kind, as it is now. Not found for the other kind too. */
+function findRequest(householdId: number, requestId: number, kind: DishRequest['kind']) {
+	const request = findActiveRequest(householdId, requestId);
+	if (request.kind !== kind) error(404, 'Not found');
+	return request;
+}
+
+/**
+ * Saves an active request's name and note, and a dish request's recipe. Who asked, when, and its
+ * place in the list stay as they are (6.12).
+ */
+function saveEdit(
+	householdId: number,
+	requestId: number,
+	changes: { name: string; note: string | null; dishId?: number }
+): void {
+	db().update(dishRequests).set(changes).where(isActive(householdId, requestId)).run();
+}
+
+/**
+ * Saves the name and note of an active request, a dish's or a restaurant's, from anyone in the
+ * household (6.12). A dish request saved with another name links to its recipe as a new request
+ * with that name would: an active dish with the name, ignoring case, or a new one with the
+ * household's usual servings. The dish it linked to before stays as it is. An archived dish with
+ * the name changes nothing and returns 'archived', so the page can offer to restore it (6.10). The
+ * name it has keeps the link, so a change to the note alone never changes it. A restaurant request
+ * is only its name as typed and its note, linked to nothing. Refuses a blank name and anything too
+ * long, changing nothing. Not found when someone completed or removed it meanwhile.
+ */
+export function editRequest(
+	householdId: number,
+	requestId: number,
+	fields: { name: string; note: string | null },
+	now: number
+): EditRequestResult {
+	return transaction(() => {
+		const request = findActiveRequest(householdId, requestId);
+		if (request.kind === 'restaurant') {
+			saveEdit(householdId, requestId, checkFields(fields, 'a restaurant name'));
+			return { kind: 'saved' };
+		}
+		const checked = checkFields(fields, 'a dish name');
+		if (checked.name === request.name) {
+			saveEdit(householdId, requestId, checked);
+			return { kind: 'saved' };
+		}
+		const found = findDishByName(householdId, checked.name);
+		if (found && found.archivedAt !== null) {
+			return { kind: 'archived', dishId: found.id, name: found.name };
+		}
+		const dishId = found?.id ?? insertDish(householdId, checked.name, now);
+		saveEdit(householdId, requestId, { ...checked, dishId });
+		return { kind: 'saved' };
+	});
+}
+
+/**
+ * Restores an archived dish and saves an active dish request's new name and note, linked to it, in
+ * one transaction (6.10, 6.12). Not found when someone completed or removed the request meanwhile,
+ * for a restaurant request, and for another household's dish.
+ */
+export function restoreAndEditRequest(
+	householdId: number,
+	requestId: number,
+	dishId: number,
+	fields: { name: string; note: string | null },
+	now: number
+): void {
+	transaction(() => {
+		findRequest(householdId, requestId, 'dish');
+		const checked = checkFields(fields, 'a dish name');
+		setDishArchived(householdId, dishId, false, now);
+		saveEdit(householdId, requestId, { ...checked, dishId });
+	});
 }
 
 /**

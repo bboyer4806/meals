@@ -25,6 +25,7 @@ import {
 	addRequest,
 	addRestaurantRequest,
 	completeRequest,
+	editRequest,
 	hasRequest,
 	listCompletedRequests,
 	listRequests,
@@ -32,7 +33,8 @@ import {
 	promoteRestaurantRequest,
 	removeRequest,
 	requestDish,
-	restoreAndAddRequest
+	restoreAndAddRequest,
+	restoreAndEditRequest
 } from './requests.ts';
 
 const NOW = Date.UTC(2026, 9, 7, 17, 0);
@@ -246,6 +248,243 @@ describe('restoreAndAddRequest', () => {
 			)
 		).toBe('Enter a dish name');
 		expect(dishNamed('Lasagna')!.archivedAt).toBe(NOW);
+	});
+});
+
+// Edit (6.12, MEA-251).
+
+/** The request's row as it's stored. */
+function requestRow(requestId: number) {
+	return db().select().from(dishRequests).where(eq(dishRequests.id, requestId)).get();
+}
+
+/** The id of the household's active request with this name. */
+function requestNamed(name: string): number {
+	const request = listRequests(householdId).find((candidate) => candidate.name === name);
+	if (!request) throw new Error(`No request named ${name}`);
+	return request.id;
+}
+
+function edit(requestId: number, name: string, note: string | null = null, now = NOW + 1) {
+	return editRequest(householdId, requestId, { name, note }, now);
+}
+
+describe('editRequest', () => {
+	it("saves a dish request's note alone, keeping its name, its link, who asked and when", () => {
+		const sam = addMember('Sam');
+		ask('lasagna', 'Extra cheese', NOW, sam);
+		const id = requestNamed('lasagna');
+		const before = requestRow(id);
+		expect(edit(id, 'lasagna', 'Extra sauce')).toEqual({ kind: 'saved' });
+		expect(requestRow(id)).toEqual({ ...before, note: 'Extra sauce' });
+		expect(edit(id, 'lasagna', null)).toEqual({ kind: 'saved' });
+		expect(requestRow(id)).toEqual({ ...before, note: null });
+		expect(listRequests(householdId)).toEqual([
+			{ id, kind: 'dish', name: 'lasagna', note: null, dishId: lasagna, askedBy: 'Sam' }
+		]);
+		expect(dishCount()).toBe(1);
+	});
+
+	it('keeps the link for the name it has, though its recipe was renamed and a dish has the name now', () => {
+		ask('Lasagna');
+		const id = requestNamed('Lasagna');
+		updateDish(householdId, lasagna, recipe('Veggie lasagna'), 'keep', [], NOW);
+		const another = makeDish(householdId, recipe('Lasagna'));
+		// Extra spaces are taken out, as when it was asked for, so it's the name it has.
+		edit(id, '  Lasagna ', 'More cheese');
+		expect(requestRow(id)).toMatchObject({ name: 'Lasagna', note: 'More cheese', dishId: lasagna });
+		// Another name, even in another case, links as a new request's name would.
+		edit(id, 'LASAGNA', 'More cheese');
+		expect(requestRow(id)).toMatchObject({ name: 'LASAGNA', dishId: another });
+	});
+
+	it('links a new name to an active dish with it, ignoring case, and leaves the old dish as it is', () => {
+		const pie = makeDish(householdId, recipe('Pot pie'));
+		ask('Lasagna', 'Extra cheese');
+		const id = requestNamed('Lasagna');
+		const lasagnaBefore = dishNamed('Lasagna');
+		expect(edit(id, '  pot   PIE ', 'Extra crust')).toEqual({ kind: 'saved' });
+		expect(requestRow(id)).toMatchObject({
+			name: 'pot PIE',
+			note: 'Extra crust',
+			dishId: pie,
+			userId,
+			createdAt: NOW
+		});
+		expect(dishNamed('Lasagna')).toEqual(lasagnaBefore);
+		expect(dishCount()).toBe(2);
+		// Its recipe's page shows Request again, and the new one's shows Requested (6.12).
+		expect(hasRequest(householdId, lasagna)).toBe(false);
+		expect(hasRequest(householdId, pie)).toBe(true);
+	});
+
+	it('adds another name to Recipes at the usual servings, and links to it', () => {
+		ask('Lasagna');
+		const id = requestNamed('Lasagna');
+		edit(id, 'Shrimp boil', null, NOW + 5);
+		const boil = dishNamed('Shrimp boil');
+		expect(boil).toMatchObject({ householdId, servings: 4, archivedAt: null, createdAt: NOW + 5 });
+		expect(requestRow(id)).toMatchObject({ name: 'Shrimp boil', dishId: boil!.id, createdAt: NOW });
+		expect(dishNamed('Lasagna')).toMatchObject({ id: lasagna, archivedAt: null });
+		expect(dishCount()).toBe(2);
+	});
+
+	it("makes its own dish for a name only another household's dish has", () => {
+		const curry = makeDish(otherId, recipe('Curry'));
+		ask('Lasagna');
+		const id = requestNamed('Lasagna');
+		edit(id, 'Curry');
+		expect(requestRow(id)?.dishId).not.toBe(curry);
+		expect(dishNamed('Curry')).toBeDefined();
+		expect(dishCount()).toBe(3);
+	});
+
+	it("offers to restore an archived dish's name and changes nothing", () => {
+		const chili = makeDish(householdId, recipe('Chili'));
+		setDishArchived(householdId, chili, true, NOW);
+		ask('Lasagna', 'Extra cheese');
+		const id = requestNamed('Lasagna');
+		const before = everything();
+		expect(edit(id, 'chili', 'Extra beans')).toEqual({
+			kind: 'archived',
+			dishId: chili,
+			name: 'Chili'
+		});
+		expect(everything()).toEqual(before);
+	});
+
+	it("saves a restaurant request's name as typed and its note, linking and making nothing", () => {
+		askRestaurant('Olive Garden', 'For her birthday', NOW, addMember('Kim'));
+		const id = requestNamed('Olive Garden');
+		const before = requestRow(id);
+		expect(edit(id, '  Taco   Bar ')).toEqual({ kind: 'saved' });
+		expect(requestRow(id)).toEqual({ ...before, name: 'Taco Bar', note: null });
+		// A dish's name, even an archived one's, is only a restaurant's name here.
+		setDishArchived(householdId, lasagna, true, NOW);
+		expect(edit(id, 'LASAGNA', 'Downtown')).toEqual({ kind: 'saved' });
+		expect(listRequests(householdId)).toEqual([
+			{ id, kind: 'restaurant', name: 'LASAGNA', note: 'Downtown', askedBy: 'Kim' }
+		]);
+		expect(dishCount()).toBe(1);
+		expect(hasRequest(householdId, lasagna)).toBe(false);
+	});
+
+	it('keeps each request in its place, oldest first', () => {
+		ask('Soup', null, NOW);
+		askRestaurant('Olive Garden', null, NOW + 1);
+		ask('Pie', null, NOW + 2);
+		edit(requestNamed('Olive Garden'), 'Taco Bar');
+		edit(requestNamed('Soup'), 'Stew', null, NOW + 10);
+		expect(listRequests(householdId).map((request) => request.name)).toEqual([
+			'Stew',
+			'Taco Bar',
+			'Pie'
+		]);
+	});
+
+	it('refuses a blank name and anything too long, changing nothing', () => {
+		ask('Soup', 'Hot');
+		askRestaurant('Olive Garden', 'Soon');
+		const soup = requestNamed('Soup');
+		const olive = requestNamed('Olive Garden');
+		const before = everything();
+		expect(refusal(() => edit(soup, '   '))).toBe('Enter a dish name');
+		expect(refusal(() => edit(soup, 'a'.repeat(81)))).toBe('Keep a dish name under 80 characters');
+		expect(refusal(() => edit(soup, 'Soup', 'a'.repeat(201)))).toBe(
+			'Keep the note under 200 characters'
+		);
+		expect(refusal(() => edit(olive, '   '))).toBe('Enter a restaurant name');
+		expect(refusal(() => edit(olive, 'a'.repeat(81)))).toBe(
+			'Keep a restaurant name under 80 characters'
+		);
+		expect(refusal(() => edit(olive, 'Olive Garden', 'a'.repeat(201)))).toBe(
+			'Keep the note under 200 characters'
+		);
+		expect(everything()).toEqual(before);
+
+		edit(soup, 'a'.repeat(80), 'n'.repeat(200));
+		edit(olive, 'b'.repeat(80), 'n'.repeat(200));
+		expect(listRequests(householdId).map((request) => request.name)).toEqual([
+			'a'.repeat(80),
+			'b'.repeat(80)
+		]);
+	});
+
+	it("is not found for a completed or removed request, or another household's, changing nothing", () => {
+		ask('Soup');
+		ask('Pie');
+		const soup = requestNamed('Soup');
+		const pie = requestNamed('Pie');
+		completeRequest(householdId, soup, NOW);
+		removeRequest(householdId, pie);
+		addRestaurantRequest(otherId, otherUserId, { name: 'Diner', note: null }, NOW);
+		const theirs = listRequests(otherId)[0]!.id;
+		const before = everything();
+		for (const id of [soup, pie, theirs]) expectHttpError(() => edit(id, 'Stew', 'Hot'), 404);
+		expect(everything()).toEqual(before);
+		expect(listCompletedRequests(householdId)).toEqual([
+			expect.objectContaining({ name: 'Soup', note: null })
+		]);
+		expect(listRequests(otherId)).toEqual([expect.objectContaining({ name: 'Diner' })]);
+	});
+});
+
+describe('restoreAndEditRequest', () => {
+	let chili: number;
+
+	beforeEach(() => {
+		chili = makeDish(householdId, recipe('Chili'));
+		setDishArchived(householdId, chili, true, NOW);
+	});
+
+	function restore(requestId: number, dishId: number, name: string, note: string | null = null) {
+		restoreAndEditRequest(householdId, requestId, dishId, { name, note }, NOW + 1);
+	}
+
+	it('restores the dish and saves the request linked to it, with the name as typed', () => {
+		ask('Lasagna', 'Extra cheese', NOW, addMember('Sam'));
+		const id = requestNamed('Lasagna');
+		const before = requestRow(id);
+		restore(id, chili, ' CHILI ', 'Extra beans');
+		expect(dishNamed('Chili')!.archivedAt).toBeNull();
+		expect(requestRow(id)).toEqual({ ...before, name: 'CHILI', note: 'Extra beans', dishId: chili });
+		expect(dishNamed('Lasagna')).toMatchObject({ id: lasagna, archivedAt: null });
+		expect(listRequests(householdId)).toEqual([
+			expect.objectContaining({ name: 'CHILI', dishId: chili, askedBy: 'Sam' })
+		]);
+	});
+
+	it("refuses another household's dish with a 404 and changes nothing", () => {
+		const curry = makeDish(otherId, recipe('Curry'));
+		setDishArchived(otherId, curry, true, NOW);
+		ask('Lasagna');
+		const before = everything();
+		expectHttpError(() => restore(requestNamed('Lasagna'), curry, 'Curry'), 404);
+		expect(everything()).toEqual(before);
+	});
+
+	it("is not found for a completed, removed or restaurant request, or another household's, and restores nothing", () => {
+		ask('Soup');
+		ask('Pie');
+		askRestaurant('Olive Garden');
+		const soup = requestNamed('Soup');
+		const pie = requestNamed('Pie');
+		completeRequest(householdId, soup, NOW);
+		removeRequest(householdId, pie);
+		addRequest(otherId, otherUserId, { name: 'Curry', note: null }, NOW);
+		const theirs = listRequests(otherId)[0]!.id;
+		const before = everything();
+		for (const id of [soup, pie, requestNamed('Olive Garden'), theirs]) {
+			expectHttpError(() => restore(id, chili, 'Chili'), 404);
+		}
+		expect(everything()).toEqual(before);
+	});
+
+	it('refuses a blank name and restores nothing', () => {
+		ask('Lasagna');
+		const before = everything();
+		expect(refusal(() => restore(requestNamed('Lasagna'), chili, ' '))).toBe('Enter a dish name');
+		expect(everything()).toEqual(before);
 	});
 });
 

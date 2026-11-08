@@ -349,7 +349,13 @@
 		</div>
 	{/if}
 
-	<DayRequests requests={data.requests} {dinners} {send} onadded={requestAdded} />
+	<DayRequests
+		requests={data.requests}
+		{dinners}
+		dishes={data.dishes}
+		{send}
+		onadded={requestAdded}
+	/>
 
 	{#if dinners[0]}
 		<MoveDinner

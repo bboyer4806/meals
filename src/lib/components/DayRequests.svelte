@@ -5,6 +5,7 @@
 	import { DINNER_LABEL_MAX, DINNER_TYPE_LABELS, MAX_DINNERS, hasDishes } from '../menu.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
 	import type { DishRequest } from '../server/data/requests.ts';
+	import EditRequest from './EditRequest.svelte';
 	import Sheet from './Sheet.svelte';
 
 	// The Menu's requests on a date's page (design 6.12; 7, Dinner), under its dinners, each with
@@ -13,9 +14,12 @@
 	// When none can, it goes on a new Cooking at home dinner. A requested restaurant always becomes
 	// a new Eating out dinner. A new dinner on a date that has dinners needs labels, as Add a dinner
 	// asks for (6.9). The request is then completed, which moves it to the Menu's completed history.
+	// Edit changes a request's name and note, as on the Menu, and changes none of the dinners, so
+	// it isn't one of the page's own changes (send).
 	let {
 		requests,
 		dinners,
+		dishes,
 		send,
 		onadded
 	}: {
@@ -23,6 +27,8 @@
 		requests: DishRequest[];
 		/** The date's dinners as they are now, in the order they were added. */
 		dinners: Dinner[];
+		/** The household's active dishes, for the suggestions in Edit's dish name. */
+		dishes: { id: number; name: string; timesAdded: number }[];
 		/** Sends one of the page's own changes, so the reload after it keeps what's typed. */
 		send: (submit: SubmitFunction) => SubmitFunction;
 		/** After a request went on the dinner, with the request's note, if it has one. */
@@ -73,6 +79,7 @@
 	let status = $state('');
 	let statusElement = $state<HTMLElement>();
 	let busy = $state(false);
+	let editor = $state<ReturnType<typeof EditRequest>>();
 
 	// What the sheet asks about, as the page showed the date when it opened, so a reload meanwhile
 	// doesn't change the question.
@@ -113,7 +120,12 @@
 		return null;
 	}
 
-	function submitFor(request: DishRequest): SubmitFunction {
+	/**
+	 * Sends a request's Add. A form keeps the function it was set up with, and Edit can change the
+	 * request's name and note since, so `current` gives the request as the page shows it when Add
+	 * is sent.
+	 */
+	function submitFor(current: () => DishRequest): SubmitFunction {
 		return ({ cancel }) => {
 			if (busy) return cancel();
 			busy = true;
@@ -121,6 +133,7 @@
 			sheetProblem = '';
 			status = '';
 			const fromSheet = open;
+			const request = current();
 			return async ({ result, update }) => {
 				try {
 					const message = failureIn(result);
@@ -154,8 +167,11 @@
 	}
 
 	// Sent from the sheet, for the request it asked about.
-	const submitAsked: SubmitFunction = (input) =>
-		asked ? submitFor(asked.request)(input) : input.cancel();
+	const submitAsked: SubmitFunction = (input) => {
+		if (!asked) return input.cancel();
+		const { request } = asked;
+		return submitFor(() => request)(input);
+	};
 </script>
 
 <!-- Any form sent, as the person goes on, takes the last message away. -->
@@ -184,20 +200,32 @@
 						{#if request.note}<span class="request-note">{request.note}</span>{/if}
 						<span class="muted">Asked by {request.askedBy}</span>
 					</div>
-					<form method="POST" action={actionFor(request)} use:enhance={send(submitFor(request))}>
-						<input type="hidden" name="requestId" value={request.id} />
-						{#if request.kind === 'dish' && only}
-							<input type="hidden" name="dinnerId" value={only.id} />
-						{/if}
+					<div class="request-actions">
 						<button
-							aria-label="Add {request.name}"
-							onclick={(event) => {
-								if (!asks(request)) return;
-								event.preventDefault();
-								ask(request);
-							}}>Add</button
+							type="button"
+							class="quiet"
+							aria-label="Edit {request.name}"
+							onclick={(event) => editor?.edit(request, event.currentTarget)}>Edit</button
 						>
-					</form>
+						<form
+							method="POST"
+							action={actionFor(request)}
+							use:enhance={send(submitFor(() => request))}
+						>
+							<input type="hidden" name="requestId" value={request.id} />
+							{#if request.kind === 'dish' && only}
+								<input type="hidden" name="dinnerId" value={only.id} />
+							{/if}
+							<button
+								aria-label="Add {request.name}"
+								onclick={(event) => {
+									if (!asks(request)) return;
+									event.preventDefault();
+									ask(request);
+								}}>Add</button
+							>
+						</form>
+					</div>
 				</li>
 			{/each}
 		</ul>
@@ -251,6 +279,8 @@
 	{/if}
 </Sheet>
 
+<EditRequest {dishes} bind:this={editor} />
+
 <style>
 	/* Set apart from the dinners above it. A long name without spaces still wraps. */
 	.requests {
@@ -268,17 +298,26 @@
 		color: var(--received);
 	}
 
+	/* Edit and Add beside the request, or under it, on the right, when they don't fit, as on the
+	   Menu. */
 	.request {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.5rem;
+		column-gap: 0.5rem;
 	}
 
 	.what {
-		flex: 1;
+		flex: 1 1 10rem;
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
+	}
+
+	.request-actions {
+		display: flex;
+		gap: 0.25rem;
+		margin-left: auto;
 	}
 
 	.dish,

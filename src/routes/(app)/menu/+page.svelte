@@ -3,6 +3,7 @@
 	import { prefersReducedMotion } from 'svelte/motion';
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import { afterNavigate, goto, onNavigate, refreshAll } from '$app/navigation';
+	import EditRequest from '#lib/components/EditRequest.svelte';
 	import ItemInput from '#lib/components/ItemInput.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
@@ -54,6 +55,8 @@
 	let requesting = $state(false);
 	let requestsError = $state('');
 	let requestButton = $state<HTMLButtonElement>();
+	// Edit on a request opens its sheet, shared with a date's page (6.12).
+	let editor = $state<ReturnType<typeof EditRequest>>();
 
 	function failureMessage(data: unknown): string {
 		const error = (data as { error?: string } | undefined)?.error;
@@ -550,6 +553,12 @@
 				<li class="request">
 					<div class="what">{@render requestDetails(request)}</div>
 					<div class="request-actions">
+						<button
+							type="button"
+							class="quiet"
+							aria-label="Edit {request.name}"
+							onclick={(event) => editor?.edit(request, event.currentTarget)}>Edit</button
+						>
 						<form method="POST" action="?/completeRequest" use:enhance={submitRequestChange}>
 							<input type="hidden" name="id" value={request.id} />
 							<button class="quiet" aria-label="Complete {request.name}">Complete</button>
@@ -656,6 +665,8 @@
 		<button class="primary">Request</button>
 	</form>
 </Sheet>
+
+<EditRequest dishes={data.dishes} bind:this={editor} />
 
 <Sheet bind:open={restoreOpen} title={archived?.name ?? ''}>
 	{#if archived}
@@ -873,7 +884,8 @@
 		margin-bottom: 0.75rem;
 	}
 
-	/* Complete and Remove beside the request, or under it, on the right, when they don't fit. */
+	/* Edit, Complete and Remove beside the request, or under it, on the right, when they don't
+	   fit. */
 	.request {
 		display: flex;
 		flex-wrap: wrap;
