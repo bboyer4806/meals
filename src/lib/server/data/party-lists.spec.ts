@@ -312,6 +312,22 @@ describe('buying on Groceries', () => {
 		markGotFewer(householdId, lineOf('Milk', 'to_order').id, 2, undefined, NOON);
 		expect(thing(birthday, 'Milk')).toMatchObject({ bought: 0.5, onGroceries: 0.5 });
 	});
+
+	it('keeps the rest of a Got fewer in step with a party quantity in another unit (MEA-92)', () => {
+		const birthday = newList('Birthday');
+		const picnic = newList('Picnic');
+		addToList(birthday, addThing(birthday, 'Cheese', 1, 'lb'));
+		const cheese = addThing(picnic, 'Cheese', 5, 'oz');
+		addToList(picnic, cheese);
+		expect(linesOf('Cheese')).toEqual([['to_order', 1.3125, 'lb']]);
+		markGotFewer(householdId, lineOf('Cheese', 'to_order').id, 1, walmart, NOON);
+		// The picnic's 5 oz is all that's left, so checking it off receives the whole line.
+		markBought(householdId, picnic, cheese.id, undefined, NOON);
+		expect(linesOf('Cheese')).toEqual([
+			['received', 0.3125, 'lb'],
+			['received', 1, 'lb']
+		]);
+	});
 });
 
 describe('checking off on a party list', () => {

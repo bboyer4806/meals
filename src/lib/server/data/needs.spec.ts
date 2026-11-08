@@ -1,3 +1,4 @@
+import { isHttpError } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../db/index.ts';
@@ -53,6 +54,17 @@ function lineFor(householdId: number, itemName: string) {
 
 function defaultStoreOf(itemId: number) {
 	return db().select().from(items).where(eq(items.id, itemId)).get()?.defaultStoreId;
+}
+
+/** The message a refusal shows the person. */
+function refusal(run: () => unknown): string {
+	try {
+		run();
+	} catch (e) {
+		if (isHttpError(e, 400)) return e.body.message;
+		throw e;
+	}
+	return expect.fail('expected a refusal, but nothing was thrown');
 }
 
 let householdId: number;
@@ -150,6 +162,13 @@ describe('adding', () => {
 			kind: 'updated'
 		});
 		expect(onlyLine(householdId)).toMatchObject({ quantity: 3, unit: 'gal', storeId: walmart });
+	});
+
+	it('suggests a sum without floating point noise (MEA-92)', () => {
+		add(householdId, { itemName: 'Turkey', quantity: 1.1, unit: 'lb' });
+		expect(add(householdId, { itemName: 'Turkey', quantity: 2.2, unit: 'lb' })).toMatchObject({
+			suggestedQuantity: 3.3
+		});
 	});
 
 	it('offers a new line when the item is only Ordered', () => {
@@ -344,6 +363,44 @@ describe('status changes', () => {
 			storeId: walmart,
 			orderedAt: null
 		});
+	});
+
+	it('leaves the rest of a Got fewer without floating point noise (MEA-92)', () => {
+		add(householdId, { itemName: 'Beef', quantity: 1.1, unit: 'lb', store: walmart });
+		const id = onlyLine(householdId).id;
+		markGotFewer(householdId, id, 1, undefined, NOON);
+		expect(lines(householdId).find((l) => l.status === 'to_order')).toMatchObject({
+			id,
+			quantity: 0.1
+		});
+		expect(refusal(() => markGotFewer(householdId, id, 0.1, undefined, NOON))).toBe(
+			'Enter an amount less than 0.1'
+		);
+	});
+
+	it('shows the amount in a Got fewer refusal as the list does (MEA-92)', () => {
+		add(householdId, { itemName: 'Beef', quantity: 1, unit: 'lb', store: walmart });
+		const id = onlyLine(householdId).id;
+		// Floating point noise, as Got fewer left it before MEA-92.
+		db().update(groceryNeeds).set({ quantity: 0.3 - 0.1 }).where(eq(groceryNeeds.id, id)).run();
+		expect(refusal(() => markGotFewer(householdId, id, 0.2, undefined, NOON))).toBe(
+			'Enter an amount less than 0.2'
+		);
+	});
+
+	it('receives the whole line when the rest of a Got fewer rounds to nothing (MEA-92)', () => {
+		add(householdId, { itemName: 'Beef', quantity: 1, unit: 'lb', store: walmart });
+		const line = onlyLine(householdId);
+		// What Got fewer left of 1.1 lb after 1 lb arrived, before MEA-92.
+		db().update(groceryNeeds).set({ quantity: 1.1 - 1 }).where(eq(groceryNeeds.id, line.id)).run();
+		markGotFewer(householdId, line.id, 0.1, undefined, NOON);
+		expect(onlyLine(householdId)).toMatchObject({
+			id: line.id,
+			status: 'received',
+			storeId: walmart,
+			receivedAt: NOON
+		});
+		expect(defaultStoreOf(line.itemId)).toBe(walmart);
 	});
 
 	it('undoes a line received today, but not one from yesterday', () => {

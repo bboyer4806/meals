@@ -40,6 +40,12 @@ describe('formatQuantity', () => {
 		expect(formatQuantity(1.5)).toBe('1.5');
 		expect(formatQuantity(1 / 3)).toBe('0.33');
 	});
+
+	it('shows an amount above zero as at least 0.01 (MEA-92)', () => {
+		expect(formatQuantity(0.004)).toBe('0.01');
+		expect(formatQuantity(1e-17)).toBe('0.01');
+		expect(formatQuantity(0)).toBe('0');
+	});
 });
 
 describe('joinAnd', () => {

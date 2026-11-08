@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import { dateIn } from '../../dates.ts';
-import { normalizeName } from '../../text.ts';
+import { formatQuantity, normalizeName } from '../../text.ts';
 import { conversionFactor } from '../../units.ts';
 import { db, transaction } from '../db/index.ts';
 import {
@@ -25,6 +25,15 @@ const DAY = 24 * 60 * 60 * 1000;
  * point noise, such as a teaspoon on a line in quarts (6.15).
  */
 export const TOLERANCE = 1e-9;
+
+/**
+ * A quantity worked out from others, rounded to 9 decimal places to drop the floating point noise
+ * adding and subtracting leaves: 1.1 + 2.2 is 3.3, not 3.3000000000000003 (6.5, MEA-92). That
+ * moves it by at most half of TOLERANCE, so a line stays in step with its party quantities (6.15).
+ */
+function roundQuantity(quantity: number): number {
+	return Math.round(quantity * 1e9) / 1e9;
+}
 
 /**
  * What a party item's quantity is multiplied by to give its share of a line. A party allocation's
@@ -287,7 +296,7 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 				unit: toOrder.unit,
 				storeName: toOrder.storeName,
 				suggestedQuantity: sameUnit(toOrder.unit, input.unit)
-					? toOrder.quantity + input.quantity
+					? roundQuantity(toOrder.quantity + input.quantity)
 					: input.quantity
 			};
 		}
@@ -448,7 +457,8 @@ export function markDidntCome(householdId: number, needId: number): void {
 
 /**
  * Some of a line arrived or was bought: a Received line is split off for that amount, and the
- * original stays To Order with the rest (Q20). Party lists get what arrived first (6.15).
+ * original stays To Order with the rest (Q20). Party lists get what arrived first (6.15). A rest
+ * that rounds to nothing means all of it arrived, so the whole line is received (6.2, MEA-92).
  */
 export function markGotFewer(
 	householdId: number,
@@ -461,7 +471,12 @@ export function markGotFewer(
 		const line = getLine(householdId, needId);
 		if (line.status === 'received') error(400, 'This line was already received');
 		if (!(receivedQuantity > 0 && receivedQuantity < line.quantity)) {
-			error(400, `Enter an amount less than ${line.quantity}`);
+			error(400, `Enter an amount less than ${formatQuantity(line.quantity)}`);
+		}
+		const rest = roundQuantity(line.quantity - receivedQuantity);
+		if (rest === 0) {
+			markReceived(householdId, needId, storeId, now);
+			return;
 		}
 		const store = storeForStatusChange(householdId, line, storeId);
 		const received = db()
@@ -484,7 +499,7 @@ export function markGotFewer(
 		db()
 			.update(groceryNeeds)
 			.set({
-				quantity: line.quantity - receivedQuantity,
+				quantity: rest,
 				storeId: store,
 				status: 'to_order',
 				orderedAt: null

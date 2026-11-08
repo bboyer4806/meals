@@ -38,6 +38,8 @@ export function foldCase(text: string): string {
 
 /** Shows a quantity without trailing zeros: 2, 1.5, 0.33. */
 export function formatQuantity(quantity: number): string {
+	// The smallest amount shown, so an amount above zero never reads as 0 (6.5, MEA-92).
+	if (quantity > 0 && quantity < 0.01) return '0.01';
 	return String(Math.round(quantity * 100) / 100);
 }
 
