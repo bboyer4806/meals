@@ -296,7 +296,7 @@ lost, so is everything. Moving backups off the server later is a small change.
   `referrer-policy: strict-origin-when-cross-origin`, so other sites see this site's address but
   not the page's, and `permissions-policy: camera=(), microphone=(), geolocation=()`, which leaves
   the screen wake lock the cooking view uses (7) allowed. An endpoint's error page, such as the one
-  a cancelled sign-in gets, has no Content Security Policy from SvelteKit, so it gets
+  a missing photo gets, has no Content Security Policy from SvelteKit, so it gets
   `content-security-policy: frame-ancestors 'none'` and no other site can show it in a frame. On
   the server, Dokku's nginx adds `strict-transport-security: max-age=15724800; includeSubdomains`
   to every response, its default for an app with a certificate, so a browser that has been here
@@ -466,6 +466,16 @@ point at grocery lines. An ingredient points at a dish and an item. A dinner has
 
 1. People sign in with Google (scopes `openid`, `email` and `profile`). Google must
    report the email as verified.
+
+   A sign-in that doesn't finish goes back to the sign-in page, which says why above "Sign in
+   with Google", rather than to an error page with nothing to tap (MEA-94). After Cancel or an
+   error at Google, more than 10 minutes there, or Back to Google's account chooser after
+   signing in, it says "Sign-in was cancelled or expired. Please try again." When Meals can't
+   get the account from Google, it says "Google sign-in failed. Please try again.", and for an
+   email Google hasn't verified, "Google has not verified this email address." The page's
+   address carries only which of these it is, as `?error=cancelled`, `failed` or `unverified`,
+   so the page never shows text from its address. Someone already signed in, as after Back to
+   Google, goes on to Meals instead.
 2. A known Google account is signed in, and its email and name are refreshed.
 3. An unknown account is matched by email:
    - An invite to a household: the account joins that household (E5).
@@ -917,7 +927,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 
 | Screen           | Path                                 | What it does                                                                                                                         |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Sign in          | `/login`                             | "Sign in with Google".                                                                                                               |
+| Sign in          | `/login`                             | "Sign in with Google", and above it, after a sign-in that didn't finish, why (6.1).                                                  |
 | Invite-only      | `/not-invited`                       | Shown to an account without an invite, with the email it used.                                                                      |
 | Household setup  | `/setup`                             | First sign-in for a new household: name, usual servings, time zone.                                                                 |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |

@@ -486,8 +486,9 @@ test.describe('on a computer', () => {
 });
 
 test('rejects a sign-in callback that did not start here', async ({ page }) => {
-	const response = await page.goto('/login/google/callback?code=abc&state=forged');
-	expect(response?.status()).toBe(400);
+	await page.goto('/login/google/callback?code=abc&state=forged');
+	// Back on the sign-in page, which says so (6.1).
+	await expect(page).toHaveURL(/\/login\?error=cancelled$/);
 	await expect(page.getByText('Sign-in was cancelled or expired.')).toBeVisible();
 });
 

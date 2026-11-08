@@ -58,8 +58,8 @@ function setSecurityHeaders(headers: Headers): void {
 	headers.set('referrer-policy', 'strict-origin-when-cross-origin');
 	// Leaves screen-wake-lock allowed, so the cooking view can keep the screen on (7).
 	headers.set('permissions-policy', 'camera=(), microphone=(), geolocation=()');
-	// Pages get SvelteKit's policy (vite.config.ts). An endpoint's error page, such as a cancelled
-	// sign-in's, has none, so this one keeps other sites from framing it.
+	// Pages get SvelteKit's policy (vite.config.ts). An endpoint's error page, such as a missing
+	// photo's, has none, so this one keeps other sites from framing it.
 	if (
 		headers.get('content-type')?.startsWith('text/html') &&
 		!headers.has('content-security-policy')
