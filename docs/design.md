@@ -1300,9 +1300,14 @@ with Add; picking "Add ... as a new dish" only fills it in. The suggestions show
 under the role and Add, about four at a time with the rest scrolling, so they never cover or
 move Add. When they'd reach the tab bar as they open, or as what's typed changes them, the page
 scrolls just far enough to show them above it, with the field still clear of the header; when
-they fit, it stays put (MEA-238). Scrolled under the header or the tab bar afterwards, they pass
-beneath it, so a tap there does what it says (MEA-143). Once a dish is added, the field is empty
-and ready for the next. Each dish links to its
+they fit, it stays put (MEA-238). A phone's keyboard counts the same way: as it opens, closes or
+changes size, and as the suggestions open or change while it's open, the page scrolls just far
+enough to show the field and the suggestions above it. When there isn't room above the tab bar or
+the keyboard for about four, they take the room there is, at least one, and the rest scroll into
+it, so any of them can be tapped with the keyboard open. Scrolling the page by hand is left as the
+person leaves it; only those changes move it (MEA-265). Scrolled under the header or the tab bar
+afterwards, they pass beneath it, so a tap there does what it says (MEA-143). Once a dish is
+added, the field is empty and ready for the next. Each dish links to its
 recipe at this dinner's servings. Eating out has a Restaurant field, with "Where to go" as its
 hint, in place of servings and dishes (MEA-58; 6.9). Actions: Copy a dinner and Clear. A date
 with more than one dinner shows them all on its one page, in the order they were added, each with its own label
