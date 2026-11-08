@@ -1,8 +1,8 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { migrate } from './index.ts';
 
 /** A copy of ./drizzle with one more migration appended. */
@@ -85,6 +85,76 @@ describe('migrate', () => {
 		);
 		migrate(sqlite, rebuilt);
 		expect(invite('c@example.com')).toBe(removed + 1);
+	});
+});
+
+// The copy made before migrating, so a release can be rolled back past its migrations (design
+// 4.4, MEA-97).
+describe('copy before migrating', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	/** A database file in a new data folder, with every migration applied and one household. */
+	function databaseWithData(): { dataDir: string; sqlite: Database.Database } {
+		const dataDir = mkdtempSync(join(tmpdir(), 'meals-data-'));
+		const sqlite = new Database(join(dataDir, 'meals.db'));
+		migrate(sqlite, 'drizzle');
+		sqlite
+			.prepare(
+				"insert into households (name, default_servings, time_zone, created_at) values ('Kept', 2, 'UTC', 0)"
+			)
+			.run();
+		return { dataDir, sqlite };
+	}
+
+	const names = (sqlite: Database.Database) =>
+		sqlite.prepare('select name from households').pluck().all();
+
+	it('copies the database as it was into backups, then applies the new migration', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-11-08T17:56:09.123Z'));
+		const { dataDir, sqlite } = databaseWithData();
+
+		migrate(sqlite, foldersWith("update households set name = 'Changed';"));
+
+		expect(names(sqlite)).toEqual(['Changed']);
+		const backups = join(dataDir, 'backups');
+		expect(readdirSync(backups)).toEqual(['pre-migrate-2026-11-08T17-56-09Z']);
+		const copy = new Database(join(backups, 'pre-migrate-2026-11-08T17-56-09Z', 'meals.db'), {
+			readonly: true
+		});
+		expect(names(copy)).toEqual(['Kept']);
+		expect(applied(copy)).toBe(MIGRATIONS);
+		copy.close();
+	});
+
+	it('copies nothing for a new database, or when no migration is new', () => {
+		const { dataDir, sqlite } = databaseWithData();
+		migrate(sqlite, 'drizzle');
+		expect(existsSync(join(dataDir, 'backups'))).toBe(false);
+	});
+
+	it('copies nothing for a database in memory', () => {
+		const sqlite = new Database(':memory:');
+		migrate(sqlite, 'drizzle');
+		migrate(sqlite, foldersWith('select 1;'));
+		expect(applied(sqlite)).toBe(MIGRATIONS + 1);
+		// Beside ':memory:' is the working folder.
+		expect(existsSync('backups')).toBe(false);
+	});
+
+	it('applies nothing when the copy fails', () => {
+		const { dataDir, sqlite } = databaseWithData();
+		// A file where the backups folder goes.
+		writeFileSync(join(dataDir, 'backups'), '');
+
+		expect(() => migrate(sqlite, foldersWith("update households set name = 'Changed';"))).toThrow(
+			/partial-pre-migrate-/
+		);
+
+		expect(names(sqlite)).toEqual(['Kept']);
+		expect(applied(sqlite)).toBe(MIGRATIONS);
 	});
 });
 

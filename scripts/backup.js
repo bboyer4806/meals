@@ -20,6 +20,7 @@ const target = join(backups, date);
 // is complete, so a failed run never replaces or hides a good backup.
 const partial = join(backups, `partial-${date}`);
 mkdirSync(backups, { recursive: true });
+// What a failed run left, or a failed copy before migrating (src/lib/server/db/index.ts).
 for (const name of readdirSync(backups)) {
 	if (name.startsWith('partial-')) rmSync(join(backups, name), { recursive: true, force: true });
 }
