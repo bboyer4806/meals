@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { formatMemberName } from '../../member-names.ts';
 import { REQUEST_NAME_MAX, REQUEST_NOTE_MAX } from '../../menu.ts';
 import { normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
@@ -11,6 +12,7 @@ import {
 	type NewDinnerLabels
 } from './dinners.ts';
 import { findDishByName, insertDish, setDishArchived } from './dishes.ts';
+import { listMembers } from './households.ts';
 
 // Requests (design 6.12): anyone in the household asks for a dish or a restaurant, edits the name
 // and note of any active request, and completes the request, by hand or by adding it to a date: a
@@ -19,7 +21,10 @@ import { findDishByName, insertDish, setDishArchived } from './dishes.ts';
 // active request deletes it instead. Each shows who asked. A dish request links to its recipe; a
 // restaurant request is only the name typed, since restaurants aren't kept anywhere.
 
-/** What every request shows: its name, the note if there is one, and who asked. */
+/**
+ * What every request shows: its name, the note if there is one, and who asked, named as the
+ * household sees them (6.1).
+ */
 type Shown = { id: number; name: string; note: string | null; askedBy: string };
 
 /** Only a dish request links to a recipe, its dishId. */
@@ -50,6 +55,7 @@ function shown({
 
 /** The household's active requests, dish and restaurant requests together, oldest first. */
 export function listRequests(householdId: number): DishRequest[] {
+	const members = listMembers(householdId);
 	return db()
 		.select({
 			id: dishRequests.id,
@@ -57,6 +63,7 @@ export function listRequests(householdId: number): DishRequest[] {
 			name: dishRequests.name,
 			note: dishRequests.note,
 			dishId: dishRequests.dishId,
+			userId: users.id,
 			askedBy: users.name
 		})
 		.from(dishRequests)
@@ -64,14 +71,18 @@ export function listRequests(householdId: number): DishRequest[] {
 		.where(and(eq(dishRequests.householdId, householdId), isNull(dishRequests.completedAt)))
 		.orderBy(asc(dishRequests.createdAt), asc(dishRequests.id))
 		.all()
-		.map(shown);
+		.map(({ userId, askedBy, ...row }) =>
+			shown({ ...row, askedBy: formatMemberName(askedBy, userId, members) })
+		);
 }
 
 /**
  * The household's completed requests, newest first, each as it was asked for, with who asked by
- * the name they had when it was completed (6.12).
+ * the name they had when it was completed (6.12), shortened as the household sees it now, even
+ * after they're removed (6.1).
  */
 export function listCompletedRequests(householdId: number): CompletedRequest[] {
+	const members = listMembers(householdId);
 	const rows = db()
 		.select({
 			id: dishRequests.id,
@@ -79,6 +90,7 @@ export function listCompletedRequests(householdId: number): CompletedRequest[] {
 			name: dishRequests.name,
 			note: dishRequests.note,
 			dishId: dishRequests.dishId,
+			userId: dishRequests.userId,
 			askedBy: dishRequests.askedBy,
 			completedAt: dishRequests.completedAt
 		})
@@ -86,12 +98,15 @@ export function listCompletedRequests(householdId: number): CompletedRequest[] {
 		.where(and(eq(dishRequests.householdId, householdId), isNotNull(dishRequests.completedAt)))
 		.orderBy(desc(dishRequests.completedAt), desc(dishRequests.id))
 		.all();
-	return rows.map(({ askedBy, completedAt, ...row }) => {
+	return rows.map(({ userId, askedBy, completedAt, ...row }) => {
 		// The database names who asked on every completed request (dish_requests_asked_by).
 		if (askedBy === null || completedAt === null) {
 			throw new Error(`Completed request ${row.id} doesn't say who asked`);
 		}
-		return { ...shown({ ...row, askedBy }), completedAt };
+		return {
+			...shown({ ...row, askedBy: formatMemberName(askedBy, userId, members) }),
+			completedAt
+		};
 	});
 }
 

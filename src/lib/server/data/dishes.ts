@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { formatMemberName } from '../../member-names.ts';
 import { addDays } from '../../menu.ts';
 import { splitSteps } from '../../steps.ts';
 import { foldCase, normalizeName } from '../../text.ts';
@@ -14,7 +15,7 @@ import {
 	items,
 	users
 } from '../db/schema.ts';
-import { getHousehold } from './households.ts';
+import { getHousehold, listMembers } from './households.ts';
 import { createItem, createItems, findItemByName, setItemArchived, type Item } from './items.ts';
 
 // Dishes and recipes are one record, and the recipe details are optional (Q2).
@@ -75,7 +76,10 @@ export type DishIngredient = {
 /** The household's stars for a dish: the plain average, unrounded, and how many rated it. */
 export type DishRating = { average: number; count: number };
 
-/** One person's stars for a dish, and who gave them: a member's name, or "Former member". */
+/**
+ * One person's stars for a dish, and who gave them: a member's name as the household sees it
+ * (6.1), or "Former member".
+ */
 export type PersonRating = { name: string; stars: number };
 
 export type DishDetail = {
@@ -535,19 +539,24 @@ export function getOwnRating(householdId: number, dishId: number, userId: number
 
 /**
  * Everyone's stars for the dish, the signed-in person's included: members by name ignoring case,
- * then each removed member's as "Former member", in the order they rated. Removing a member
- * empties who rated (section 5, "dish_ratings"), so nothing says who they were. Showing who rated
- * is an exception to section 12, for the recipe page only (section 7, "Recipe").
+ * each named as the household sees them (6.1), then each removed member's as "Former member", in
+ * the order they rated. Removing a member empties who rated (section 5, "dish_ratings"), so
+ * nothing says who they were. Showing who rated is an exception to section 12, for the recipe
+ * page only (section 7, "Recipe").
  */
 export function listDishRatings(householdId: number, dishId: number): PersonRating[] {
+	const members = listMembers(householdId);
 	return db()
-		.select({ name: users.name, stars: dishRatings.stars })
+		.select({ userId: users.id, name: users.name, stars: dishRatings.stars })
 		.from(dishRatings)
 		.leftJoin(users, eq(users.id, dishRatings.userId))
 		.where(and(eq(dishRatings.householdId, householdId), eq(dishRatings.dishId, dishId)))
 		.orderBy(isNull(dishRatings.userId), asc(sql`lower(${users.name})`), asc(dishRatings.id))
 		.all()
-		.map(({ name, stars }) => ({ name: name ?? 'Former member', stars }));
+		.map(({ userId, name, stars }) => ({
+			name: name === null ? 'Former member' : formatMemberName(name, userId, members),
+			stars
+		}));
 }
 
 /**

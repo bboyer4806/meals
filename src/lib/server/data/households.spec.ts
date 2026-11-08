@@ -109,6 +109,27 @@ describe('households', () => {
 		expect(listMembers(householdId).map((m) => m.name)).toEqual(['dana', 'Émile', 'Pat', 'Zoe']);
 	});
 
+	it('names members by first name, or whole name while another has it, ignoring case (6.1)', () => {
+		const { householdId, userId } = makeHousehold();
+		db().update(users).set({ name: 'Alex Smith' }).where(eq(users.id, userId)).run();
+		const add = (name: string, i: number) =>
+			db()
+				.insert(users)
+				.values({ householdId, googleSub: `n${i}`, email: `n${i}@example.com`, name, createdAt: 0 })
+				.returning()
+				.get();
+		add('Robin Lee', 1);
+		expect(listMembers(householdId).map((m) => m.displayName)).toEqual(['Alex', 'Robin']);
+		const jones = add('alex Jones', 2);
+		expect(listMembers(householdId)).toEqual([
+			{ id: jones.id, name: 'alex Jones', email: 'n2@example.com', displayName: 'alex Jones' },
+			expect.objectContaining({ id: userId, name: 'Alex Smith', displayName: 'Alex Smith' }),
+			expect.objectContaining({ name: 'Robin Lee', displayName: 'Robin' })
+		]);
+		removeMember(householdId, userId, jones.id);
+		expect(listMembers(householdId).map((m) => m.displayName)).toEqual(['Alex', 'Robin']);
+	});
+
 	it("sorts the admin's list of households by name, so Évora sorts with the E's (MEA-88)", () => {
 		for (const name of ['Zhou', 'Évora', 'adams', 'Fischer']) {
 			updateHousehold(makeHousehold().householdId, { ...settings, name });

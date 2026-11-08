@@ -1140,7 +1140,8 @@ test('lists who rated a recipe, with a removed member as Former member', async (
 }) => {
 	const dishId = addRecipe(db, person.householdId, { name: 'Omelet' });
 	const unratedId = addRecipe(db, person.householdId, { name: 'Pancakes' });
-	const you = db.prepare('select name from users where id = ?').pluck().get(person.userId) as string;
+	// You're Person 1 or the like, named by your first name (6.1).
+	const you = 'Person';
 	const addMember = db.prepare(
 		'insert into users (household_id, google_sub, email, name, created_at) values (?, ?, ?, ?, 0)'
 	);
@@ -2615,7 +2616,8 @@ test("can't see or change another household's recipe or its photo", async ({
 	db.prepare(
 		'insert into dish_ratings (household_id, dish_id, user_id, stars) values (?, ?, ?, 4)'
 	).run(other.householdId, dishId, other.userId);
-	const rater = db.prepare('select name from users where id = ?').pluck().get(other.userId) as string;
+	// Person 2 or the like, named by their first name in their own household (6.1).
+	const rater = 'Person';
 
 	for (const path of [`/recipes/${dishId}`, `/recipes/${dishId}/edit`, `/recipes/${dishId}/cook`]) {
 		const response = await page.goto(path);

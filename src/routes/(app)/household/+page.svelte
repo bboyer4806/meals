@@ -70,7 +70,7 @@
 		{#each data.members as member (member.id)}
 			<li class="row">
 				<div class="grow">
-					<strong>{member.name}</strong>
+					<strong>{member.displayName}</strong>
 					<div class="muted">{member.email}</div>
 				</div>
 				{#if member.id === data.user.id}
@@ -80,7 +80,7 @@
 						<input type="hidden" name="id" value={member.id} />
 						<ConfirmButton
 							label="Remove"
-							message={`Remove ${member.name}? They won't be able to sign in until someone invites them again.`}
+							message={`Remove ${member.displayName}? They won't be able to sign in until someone invites them again.`}
 							confirmLabel="Remove"
 							danger
 						/>

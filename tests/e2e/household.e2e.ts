@@ -132,6 +132,45 @@ test('keeps the Household page for a member or invite that is already gone (6.1)
 	await expect(page.getByText('Waiting for them to sign in:')).toHaveCount(0);
 });
 
+test('names members by first name, or whole name while another has it (6.1)', async ({
+	page,
+	db,
+	person
+}) => {
+	const tag = `${test.info().workerIndex}-${Date.now()}`;
+	const addMember = db.prepare(
+		'insert into users (household_id, google_sub, email, name, created_at) values (?, ?, ?, ?, 0)'
+	);
+	addMember.run(person.householdId, `robin-${tag}`, `robin-${tag}@example.com`, 'Robin Lee');
+	await open(page, '/household');
+	await expect(page.getByText('Person', { exact: true })).toBeVisible();
+	await expect(page.getByText('Robin', { exact: true })).toBeVisible();
+	await expect(page.getByText('Robin Lee')).toHaveCount(0);
+
+	// Someone else in the household is a Person, ignoring case.
+	addMember.run(person.householdId, `park-${tag}`, `park-${tag}@example.com`, 'person Park');
+	await open(page, '/household');
+	await expect(page.getByText(/^Person \d+$/)).toBeVisible();
+	await expect(page.getByText('Robin', { exact: true })).toBeVisible();
+	const park = page.getByRole('listitem').filter({ hasText: 'person Park' });
+	await park.getByRole('button', { name: 'Remove' }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog).toContainText(
+		"Remove person Park? They won't be able to sign in until someone invites them again."
+	);
+	await dialog.getByRole('button', { name: 'Remove' }).click();
+
+	// Once they're gone, first names are enough again.
+	await expect(page.getByText('Person', { exact: true })).toBeVisible();
+	await expect(page.getByText('person Park')).toHaveCount(0);
+	// Names are kept whole.
+	const names = db.prepare('select name from users where household_id = ? order by id').pluck();
+	expect(names.all(person.householdId)).toEqual([
+		expect.stringMatching(/^Person \d+$/),
+		'Robin Lee'
+	]);
+});
+
 test('keeps the admin page from everyone but the admin', async ({ page, person: _ }) => {
 	const response = await page.goto('/admin');
 	expect(response?.status()).toBe(404);

@@ -1078,8 +1078,9 @@ describe('ratings', () => {
 		expect(getOwnRating(householdId, id, userId)).toBe(4);
 		expect(getOwnRating(householdId, id, sam)).toBe(3);
 		expect(getDish(householdId, id).rating).toEqual({ average: 3.5, count: 2 });
+		// The household's own member, "Person 1" and so on, by their first name (6.1).
 		expect(listDishRatings(householdId, id)).toEqual([
-			{ name: nameOf(userId), stars: 4 },
+			{ name: 'Person', stars: 4 },
 			{ name: 'sam', stars: 3 }
 		]);
 	});
@@ -1090,7 +1091,7 @@ describe('ratings', () => {
 		rateDish(householdId, id, userId, 4);
 		expect(getOwnRating(householdId, id, userId)).toBe(4);
 		expect(getDish(householdId, id).rating).toEqual({ average: 4, count: 1 });
-		expect(listDishRatings(householdId, id)).toEqual([{ name: nameOf(userId), stars: 4 }]);
+		expect(listDishRatings(householdId, id)).toEqual([{ name: 'Person', stars: 4 }]);
 	});
 
 	it("clears your rating, and nobody else's, when no stars come", () => {
@@ -1121,8 +1122,25 @@ describe('ratings', () => {
 		rateDish(householdId, id, addMember('kim'), 2);
 		expect(listDishRatings(householdId, id)).toEqual([
 			{ name: 'kim', stars: 2 },
-			{ name: nameOf(userId), stars: 4 },
+			{ name: 'Person', stars: 4 },
 			{ name: 'sam', stars: 5 }
+		]);
+	});
+
+	it('names members who share a first name, ignoring case, by their whole names (6.1)', () => {
+		const id = makeDish(householdId, recipe('Omelet'));
+		const lee = addMember('person Lee');
+		rateDish(householdId, id, userId, 4);
+		rateDish(householdId, id, lee, 5);
+		expect(listDishRatings(householdId, id)).toEqual([
+			{ name: nameOf(userId), stars: 4 },
+			{ name: 'person Lee', stars: 5 }
+		]);
+		// Once Lee is removed, you're the only Person again.
+		removeMember(householdId, userId, lee);
+		expect(listDishRatings(householdId, id)).toEqual([
+			{ name: 'Person', stars: 4 },
+			{ name: 'Former member', stars: 5 }
 		]);
 	});
 
@@ -1140,7 +1158,7 @@ describe('ratings', () => {
 
 		const ratings = listDishRatings(householdId, id);
 		expect(ratings).toEqual([
-			{ name: nameOf(userId), stars: 3 },
+			{ name: 'Person', stars: 3 },
 			{ name: 'zoe', stars: 4 },
 			// Each on its own, in the order they rated.
 			{ name: 'Former member', stars: 5 },
@@ -1170,7 +1188,7 @@ describe('ratings', () => {
 			rating: { average: 2, count: 1 }
 		});
 		expect(list({ archived: true })[0]?.rating).toEqual({ average: 2, count: 1 });
-		expect(listDishRatings(householdId, id)).toEqual([{ name: nameOf(userId), stars: 2 }]);
+		expect(listDishRatings(householdId, id)).toEqual([{ name: 'Person', stars: 2 }]);
 	});
 
 	it('sorts by exact average, then unrated, ties by name (section 7, "Recipes")', () => {
@@ -1272,10 +1290,9 @@ describe('households', () => {
 		expect(getDish(householdId, id).rating).toEqual({ average: 2, count: 1 });
 		expect(getDish(other.householdId, theirs).rating).toEqual({ average: 5, count: 1 });
 		expect(getOwnRating(other.householdId, id, userId)).toBeNull();
-		expect(listDishRatings(householdId, id)).toEqual([{ name: nameOf(userId), stars: 2 }]);
-		expect(listDishRatings(other.householdId, theirs)).toEqual([
-			{ name: nameOf(other.userId), stars: 5 }
-		]);
+		// Each is the only Person in their household (6.1).
+		expect(listDishRatings(householdId, id)).toEqual([{ name: 'Person', stars: 2 }]);
+		expect(listDishRatings(other.householdId, theirs)).toEqual([{ name: 'Person', stars: 5 }]);
 		// Each household's dish id gets nothing from the other household.
 		expect(listDishRatings(other.householdId, id)).toEqual([]);
 		expect(listDishRatings(householdId, theirs)).toEqual([]);
