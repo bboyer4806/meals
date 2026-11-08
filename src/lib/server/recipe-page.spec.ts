@@ -292,11 +292,36 @@ describe('jsonLdBlocks', () => {
 		expect(jsonLdBlocks(html)).toEqual([{ '@type': 'WebSite' }, [{ '@type': 'Recipe' }]]);
 	});
 
+	it('reads control characters, such as line breaks and tabs, left raw in strings (MEA-90)', () => {
+		// As a theme writes it by pasting text into a template. The quote and backslash written as
+		// escapes stay in their strings, and the line breaks and tabs between the names and values
+		// are JSON's own spacing.
+		const html = [
+			'<script type="application/ld+json">{',
+			'\t"@type": "Recipe",',
+			'\t"name": "Grandma\\"s\tpie\u0000",',
+			'\t"keywords": "pie\\\\",',
+			'\t"recipeInstructions": "Slice.\nBake.\r\nCool."',
+			'}</script>'
+		].join('\n');
+		expect(jsonLdBlocks(html)).toEqual([
+			{
+				'@type': 'Recipe',
+				name: 'Grandma"s\tpie\u0000',
+				keywords: 'pie\\',
+				recipeInstructions: 'Slice.\nBake.\r\nCool.'
+			}
+		]);
+	});
+
 	it('reads a page written to be slow to search as fast as any other', () => {
 		const started = performance.now();
 		// 1 MB each of tags that never close, and of elements that never end.
 		expect(jsonLdBlocks('<script '.repeat(125_000))).toEqual([]);
 		expect(jsonLdBlocks('<script type=application/ld+json>'.repeat(30_000))).toEqual([]);
+		// A string of 1 MB of raw line breaks, each escaped (MEA-90).
+		const lines = '\n'.repeat(1_000_000);
+		expect(jsonLdBlocks(`<script type=application/ld+json>"${lines}"</script>`)).toEqual([lines]);
 		expect(performance.now() - started).toBeLessThan(1000);
 	});
 });

@@ -116,7 +116,13 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Request adds this dish to Requests on the Menu, and then says Requested. ‹ Recipes goes back to the list.'
 		]
 	},
-	'/(app)/recipes/[id]/edit': { title: 'Edit recipe', points: EDIT_RECIPE },
+	'/(app)/recipes/[id]/edit': {
+		title: 'Edit recipe',
+		points: [
+			'Found the recipe online? Paste its web address in Link and tap Import. Empty fields fill in from the page. Choose what else to replace, tap Apply, then check it and tap Save.',
+			...EDIT_RECIPE
+		]
+	},
 	'/(app)/recipes/[id]/cook': {
 		title: 'Cooking view',
 		points: [
@@ -134,7 +140,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'On a computer, drag a day onto another day to swap their dinners.',
 			'Previous and Next change the week, or swipe the days left or right. This week comes back to today.',
 			'Requests lists dishes and restaurants people in your household would like. Request a dish or Request a restaurant to add one.',
-			'When a request is done, tap Complete, or add it to a day, and it moves to Completed requests. Remove deletes it.'
+			"Edit changes a request's name or note. When it's done, tap Complete, or add it to a day, and it moves to Completed requests. Remove deletes it."
 		]
 	},
 	'/(app)/menu/[date]': {
@@ -145,7 +151,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Set the servings (or the restaurant when eating out) and a note, then tap Save. Everything else saves as soon as you do it.',
 			"Copy a dinner reuses the dishes of a dinner you've had before.",
 			'Tap the date at the top to move this dinner to another day. If that day has a dinner, the two swap.',
-			'Requests are at the bottom. Add puts a requested dish or restaurant on this day, with its note, and moves the request to Completed requests on the Menu.',
+			"Requests are at the bottom. Add puts a requested dish or restaurant on this day, with its note, and moves the request to Completed requests on the Menu. Edit changes a request's name or note.",
 			'Clear removes the dinner. ‹ Week of goes back to the week.'
 		]
 	},

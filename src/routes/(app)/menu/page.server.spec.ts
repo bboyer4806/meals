@@ -9,6 +9,8 @@ import {
 	listCompletedRequests,
 	listRequests
 } from '#lib/server/data/requests.ts';
+import { db } from '#lib/server/db/index.ts';
+import { users } from '#lib/server/db/schema.ts';
 import { freshDb, makeDinner, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
 import { actions, load } from './+page.server.ts';
 
@@ -475,6 +477,178 @@ describe('restaurant requests (6.12)', () => {
 			await post('requestRestaurant', { name: 'a'.repeat(80), note: 'a'.repeat(200) })
 		).toBeUndefined();
 		expect(listRequests(householdId)).toHaveLength(1);
+	});
+});
+
+describe('request edits (6.12, MEA-251)', () => {
+	/** Another member of the household. */
+	function addMember(name: string): number {
+		return db()
+			.insert(users)
+			.values({
+				householdId,
+				googleSub: `sub-${name}`,
+				email: `${name}@example.com`,
+				name,
+				createdAt: 0
+			})
+			.returning({ id: users.id })
+			.get().id;
+	}
+
+	/** The id of the household's active request with this name, as the form sends it. */
+	function requestId(name: string): string {
+		const request = listRequests(householdId).find((candidate) => candidate.name === name);
+		if (!request) throw new Error(`No request named ${name}`);
+		return String(request.id);
+	}
+
+	/** An archived dish of the household. */
+	function archivedDish(name: string): number {
+		const dishId = makeDish(householdId, recipe(name));
+		setDishArchived(householdId, dishId, true, NOW);
+		return dishId;
+	}
+
+	it("save the name and note on anyone's request, keeping who asked", async () => {
+		const sam = addMember('Sam');
+		addRequest(householdId, sam, { name: 'Soup', note: 'With crackers' }, NOW);
+		addRestaurantRequest(householdId, sam, { name: 'Olive Garden', note: null }, NOW);
+		const saved = { action: 'editRequest', archived: null };
+		expect(
+			await post('editRequest', {
+				id: requestId('Soup'),
+				name: ' Pot  pie ',
+				note: ' Extra crust ',
+				userId: String(userId)
+			})
+		).toEqual(saved);
+		expect(
+			await post('editRequest', { id: requestId('Olive Garden'), name: 'Taco Bar', note: 'Downtown' })
+		).toEqual(saved);
+		expect(listRequests(householdId)).toEqual([
+			{
+				id: expect.any(Number),
+				kind: 'dish',
+				name: 'Pot pie',
+				note: 'Extra crust',
+				dishId: expect.any(Number),
+				askedBy: 'Sam'
+			},
+			{
+				id: expect.any(Number),
+				kind: 'restaurant',
+				name: 'Taco Bar',
+				note: 'Downtown',
+				askedBy: 'Sam'
+			}
+		]);
+		// The new name added Pot pie to Recipes, and Soup stays there.
+		expect(week().dishes.map((dish) => dish.name)).toEqual(['Pot pie', 'Soup']);
+	});
+
+	it('leave out an empty note', async () => {
+		addRequest(householdId, userId, { name: 'Soup', note: 'With crackers' }, NOW);
+		await post('editRequest', { id: requestId('Soup'), name: 'Soup', note: '  ' });
+		expect(listRequests(householdId)[0]?.note).toBeNull();
+	});
+
+	it('need a name, and refuse an 81-character name or a 201-character note, saying which name', async () => {
+		addRequest(householdId, userId, { name: 'Soup', note: null }, NOW);
+		addRestaurantRequest(householdId, userId, { name: 'Olive Garden', note: null }, NOW);
+		const soup = requestId('Soup');
+		const olive = requestId('Olive Garden');
+		const tries: [Record<string, string>, string][] = [
+			[{ id: soup, name: '  ', note: '' }, 'Enter a dish name'],
+			[{ id: olive, name: '  ', note: '' }, 'Enter a restaurant name'],
+			[{ id: soup, name: 'a'.repeat(81), note: '' }, 'Keep a dish name under 80 characters'],
+			[{ id: olive, name: 'a'.repeat(81), note: '' }, 'Keep a restaurant name under 80 characters'],
+			[{ id: soup, name: 'Stew', note: 'a'.repeat(201) }, 'Keep the note under 200 characters'],
+			[{ id: olive, name: 'Diner', note: 'a'.repeat(201) }, 'Keep the note under 200 characters']
+		];
+		for (const [fields, error] of tries) {
+			expectFailure(await post('editRequest', fields), 'editRequest', error);
+		}
+		expect(listRequests(householdId).map(({ name, note }) => [name, note])).toEqual([
+			['Soup', null],
+			['Olive Garden', null]
+		]);
+		expect(week().dishes.map((dish) => dish.name)).toEqual(['Soup']);
+		for (const id of [soup, olive]) {
+			expect(
+				await post('editRequest', { id, name: 'a'.repeat(80), note: 'a'.repeat(200) })
+			).toEqual({ action: 'editRequest', archived: null });
+		}
+	});
+
+	it('offer to restore an archived dish, and restore it with the name and note as typed', async () => {
+		const chili = archivedDish('Chili');
+		addRequest(householdId, userId, { name: 'Soup', note: null }, NOW);
+		const soup = requestId('Soup');
+		expect(await post('editRequest', { id: soup, name: 'CHILI', note: 'Spicy' })).toEqual({
+			action: 'editRequest',
+			archived: { dishId: chili, name: 'Chili' }
+		});
+		expect(listRequests(householdId)).toMatchObject([{ name: 'Soup', note: null }]);
+		expect(week().dishes.map((dish) => dish.name)).toEqual(['Soup']);
+
+		expect(
+			await post('restoreAndEditRequest', {
+				id: soup,
+				dishId: String(chili),
+				name: 'CHILI',
+				note: ' Spicy '
+			})
+		).toBeUndefined();
+		expect(listRequests(householdId)).toMatchObject([
+			{ name: 'CHILI', note: 'Spicy', dishId: chili }
+		]);
+		expect(week().dishes.map((dish) => dish.name)).toEqual(['Chili', 'Soup']);
+	});
+
+	it("are not found for another household's request, or one someone completed or removed", async () => {
+		const other = makeHousehold(TZ);
+		addRequest(other.householdId, other.userId, { name: 'Curry', note: null }, NOW);
+		addRequest(householdId, userId, { name: 'Soup', note: null }, NOW);
+		addRequest(householdId, userId, { name: 'Pie', note: null }, NOW);
+		const theirs = String(listRequests(other.householdId)[0]!.id);
+		const soup = requestId('Soup');
+		const pie = requestId('Pie');
+		await post('completeRequest', { id: soup });
+		await post('removeRequest', { id: pie });
+		const chili = String(archivedDish('Chili'));
+		for (const id of [theirs, soup, pie]) {
+			expect(await post('editRequest', { id, name: 'Stew', note: '' })).toMatchObject({
+				status: 404
+			});
+			expect(
+				await post('restoreAndEditRequest', { id, dishId: chili, name: 'Chili', note: '' })
+			).toMatchObject({ status: 404 });
+		}
+		expect(listRequests(other.householdId)).toMatchObject([{ name: 'Curry', note: null }]);
+		expect(week().completed).toMatchObject([{ name: 'Soup', note: null }]);
+		expect(week().requests).toEqual([]);
+		expect(week().dishes.map((dish) => dish.name)).toEqual(['Pie', 'Soup']);
+	});
+
+	it('need a signed-in member of a household', async () => {
+		addRequest(householdId, userId, { name: 'Soup', note: null }, NOW);
+		const fields = { id: requestId('Soup'), name: 'Stew', note: '', dishId: '1' };
+		for (const action of ['editRequest', 'restoreAndEditRequest'] as const) {
+			for (const [as, location] of [
+				['setup', '/setup'],
+				['nobody', '/login']
+			] as const) {
+				const body = new FormData();
+				for (const [name, value] of Object.entries(fields)) body.set(name, value);
+				const request = new Request(`http://localhost/menu?/${action}`, { method: 'POST', body });
+				const event = { locals: locals(as), request } as unknown as Parameters<
+					(typeof actions)[typeof action]
+				>[0];
+				await expect(actions[action](event)).rejects.toMatchObject({ status: 303, location });
+			}
+		}
+		expect(listRequests(householdId)).toMatchObject([{ name: 'Soup' }]);
 	});
 });
 

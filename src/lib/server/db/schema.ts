@@ -529,12 +529,13 @@ export const dishRequests = sqliteTable(
 		userId: integer('user_id'),
 		// Requests made before restaurant requests are dish requests.
 		kind: text('kind', { enum: REQUEST_KINDS }).notNull().default('dish'),
-		// As typed, or the dish's name when requested from its recipe's page. Kept when the linked
-		// dish is renamed or archived.
+		// As typed, or the dish's name when requested from its recipe's page, until someone edits
+		// it. Kept when the linked dish is renamed or archived.
 		name: text('name').notNull(),
 		note: text('note'),
-		// Only on a dish request: the recipe the name matched when it was asked for, the one the
-		// request made, or the one whose page it was requested from. Nothing changes it later.
+		// Only on a dish request: the recipe the name matched when it was asked for or last edited,
+		// the one the request or the edit made, or the one whose page it was requested from. Only
+		// an edit that changes the name changes it (MEA-251).
 		dishId: integer('dish_id'),
 		createdAt: integer('created_at').notNull(),
 		// When someone completed it, by hand or by adding it to a date; empty while it's active.

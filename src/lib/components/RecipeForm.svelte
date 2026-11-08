@@ -17,7 +17,8 @@
 	// bound to state here, copied once from the page's data and never re-read from it, so what's
 	// typed survives a failed save and the data reloading when someone comes back to the tab
 	// (Q11). (A field with value={...} instead could be set back to that value whenever the page
-	// updates around it.) Only Import from a link changes them from outside, through fill.
+	// updates around it.) Only Import from a link changes them from outside, through fill, and
+	// reads them, through current.
 	let {
 		values,
 		photoKey,
@@ -141,7 +142,7 @@
 
 	// The last failed save's problems (MEA-207). One that isn't about one field shows above the
 	// form. Each field's shows beside it, and an ingredient row's stay with the row as it moves.
-	// They all stay until the next save, or until an import replaces the recipe.
+	// They all stay until the next save, or until an import fills in the editor.
 	let problem = $state<RecipeFailure | null>(null);
 	let problemElement = $state<HTMLElement>();
 	let formElement: HTMLFormElement;
@@ -186,8 +187,22 @@
 	}
 
 	/**
+	 * The editor's fields and rows as they are now, unsaved changes included, as text: what Import
+	 * from a link on Edit recipe compares the page's recipe with (design 7; MEA-264). The rows are
+	 * in order, with headings and blank rows, as fill takes them back.
+	 */
+	export function current(): RecipeFormValues {
+		const text = Object.fromEntries(
+			Object.entries(fields).map(([field, value]) => [field, String(value ?? '')])
+		) as Record<keyof typeof initial, string>;
+		const typedRows: RecipeRow[] = rows.map(({ key: _, problems: __, ...row }) => row);
+		return { ...text, tags: tagText, rows: typedRows };
+	}
+
+	/**
 	 * Fills in a recipe from Import from a link (design 7): every field but the tags and notes, and
-	 * the ingredients. The photo, tags and notes stay as they are. The editor's start stays as it
+	 * the ingredient rows, as New recipe's import fills them in or as Edit recipe's review leaves
+	 * them (MEA-264). The photo, tags and notes stay as they are. The editor's start stays as it
 	 * was, so leaving afterward asks first.
 	 */
 	export function fill(next: RecipeFormValues): void {

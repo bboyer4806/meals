@@ -437,9 +437,10 @@ an `eat_out` dinner and only there; MEA-58, 6.9), `note`, `servings` (at least 1
 **dish_requests** (requests for a dish or a restaurant): `user_id` (who asked; removing them
 from the household removes their active requests and empties it on their completed ones), `kind`
 (`dish` or `restaurant`; requests made before restaurant requests are `dish`), `name` (as typed,
-or the recipe's name when requested from its page), `note`, `dish_id` (on a dish request, and
-only there: the recipe the name matched when it was asked for, the one the request made, or the
-one whose page it was requested from), `created_at`, `completed_at` (when someone completed it, by
+or the recipe's name when requested from its page, until Edit saves another), `note`, `dish_id`
+(on a dish request, and only there: the recipe the name matched when it was asked for or last
+edited, the one the request or the edit made, or the one whose page it was requested from),
+`created_at`, `completed_at` (when someone completed it, by
 hand or by adding it to a date; empty while it's active; MEA-245), `asked_by` (who asked, by name
 as it was when it was completed, so the history still names them after they're removed; empty
 while it's active) (6.12).
@@ -673,8 +674,9 @@ comes back. If two people change the same thing, the last save wins.
 
 ### 6.12 Requests
 
-- Anyone in the household can ask for a dish or a restaurant, see every request, and complete or
-  remove any of them (E2). A request is active until someone completes or removes it (below).
+- Anyone in the household can ask for a dish or a restaurant, see every request, and edit,
+  complete or remove any of them (E2). A request is active until someone completes or removes it
+  (below).
   Active requests are listed oldest first, dish and restaurant requests together, each with the
   dish (or "Eating out" and the restaurant), the note if there is one, and "Asked by" with the
   asker's name. Showing who asked is an exception to section 12, for requests only.
@@ -690,9 +692,9 @@ comes back. If two people change the same thing, the last save wins.
   and shows Request again once its requests are completed or removed. Tapping Request after
   someone else requested the recipe adds nothing, so the page never adds a second request; the
   Menu's sheet still can. An archived recipe has no Request.
-- The link is set when the request is made and never changes: a request keeps it, and its
-  name, after the recipe is renamed or archived. Completing or removing a request leaves its
-  recipe in Recipes.
+- The link is set when the request is made, and changes only when Edit saves another name for it
+  (below): a request keeps it, and its name, after the recipe is renamed or archived. Completing
+  or removing a request leaves its recipe in Recipes.
 - Requests made before every request had a recipe were linked once, when that change was
   deployed: to the dish with the name, ignoring case, if there was one (an archived one stayed
   archived), and otherwise to a new one made as above. Requests with the same name shared one
@@ -704,7 +706,8 @@ comes back. If two people change the same thing, the last save wins.
   to 200. Each field stops taking characters at its limit, pasted text included, and says so
   while it's full. The server refuses anything longer (4.5).
 - A date's page (MEA-57; section 7, Dinner) lists the same requests under its dinners, with the
-  same dish link or "Eating out" and restaurant, note and "Asked by", and no Remove. A dish
+  same dish link or "Eating out" and restaurant, note and "Asked by", Edit (below), and no
+  Complete or Remove. A dish
   request there has **Add**, which puts its recipe on one of the date's dinners: the only one that
   can have dishes (Cooking at home or Bringing a dish), or, when several can, the one picked from
   their labels. When none can, it goes on a new Cooking at home dinner at the usual servings: on
@@ -731,6 +734,25 @@ comes back. If two people change the same thing, the last save wins.
   one dinner, with the new dinner's label). Nothing changes, the request stays active, and the
   page says why, when a label isn't right, someone changed the date's dinners meanwhile, or
   someone completed or removed the request (6.11).
+- **Edit** (MEA-251), on each active request on the Menu and on a date's page, opens a sheet
+  titled "Edit request" with the request's name and note as they are now: Dish, with suggestions
+  as when asking for one, or Restaurant, then Note, with the same limits, and **Save** and
+  **Cancel**. Save saves the name and note together, and the request keeps who asked, when, and
+  its place in the list. A dish request saved with another name links to its recipe as a new
+  request with that name would: the active dish with the name, ignoring case, or a new one added
+  to Recipes. The recipe it linked to before stays as it is. A name that matches an archived dish
+  asks "Chili is archived. Restore it and save the request?" with **Restore it and save**, which
+  restores it and saves the request linked to it, and **Cancel**, which goes back to the sheet
+  and saves nothing (6.10). Saving the name it has, with extra spaces taken out, keeps the link,
+  so changing only the note never changes it; the name in another case is another name. A
+  restaurant request saves its name as typed and its note, and links to nothing. Cancel, or
+  closing the sheet, saves nothing, and the next Edit starts again from the request as it is. When
+  the server refuses a name or note, nothing changes and the sheet says why. Saving a request that
+  someone completed or removed meanwhile changes nothing: the sheet says "Someone completed or
+  removed that request, so nothing was saved." and the page shows the requests as they are now
+  (6.11). What's saved shows wherever the request does, and Add on a date's page uses it. Edit
+  doesn't change a dish request into a restaurant request or back, or who asked, and a completed
+  request has no Edit.
 - **Complete** (MEA-245), beside Remove on the Menu, completes an active request without asking
   first, as adding it to a date does. A completed request leaves the active requests for
   **Completed requests**, under them on the Menu, and stays there as it was: nothing edits,
@@ -931,10 +953,9 @@ and screenshots aren't stored in the app.
 the header to the left of More, which printing hides with the rest of the header. It opens a
 sheet titled "Help: " and the screen's name, such as "Help: Grocery list", that says what the
 screen is for and how to do its main tasks, in plain words and no more than about 6 short points.
-Recipe, Edit recipe (and New recipe, which shares its form and adds a point about Import from a
-link), Import recipes, Cooking view, Dinner, History, Items, Party lists and Party list each have
-their own help. The
-sheet closes with ✕, Escape or a tap on the backdrop.
+Recipe, Edit recipe and New recipe (which share the editor's points, each adding one about Import
+from a link), Import recipes, Cooking view, Dinner, History, Items, Party lists and Party list each
+have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
 Opening it changes nothing on the page behind, so anything typed there and not saved stays. The
 help is fixed text in `src/lib/help.ts`, keyed by each screen's route, and the type check fails
 if a screen has none. It opens only when asked: there's no Help page or link in More, and the
@@ -1048,10 +1069,11 @@ or a common one, such as clove, can, pinch, slice or stick, also when it's writt
 amount, as in 500g or 1/2cup, while any other word starts the item; then the item up to the
 first comma, and the rest as the prep note. Text in parentheses right after the amount or the
 unit, such as a size, goes in the prep note too, and an "of" after the unit is left out
-(MEA-74). A whole number and a fraction joined by "and", as in 1 and 1/3, are one amount,
-1 1/3 (MEA-242). "1 1/2 cups flour, sifted" is 1 1/2, cup, flour and sifted; "1 (14 oz) can of
-tomatoes" is 1, can, tomatoes and 14 oz; "Salt, to taste" has no amount. Fields follow the
-editor's rules and limits, tags are separated by commas, and a blank Servings is the
+(MEA-74). A whole number and a fraction joined by "and" or "&", as in 1 and 1/3 or 1 & 1/3, are
+one amount, 1 1/3 (MEA-242). The fraction can also be a half, a third or a quarter in words, so
+1 and a half is 1 1/2 (MEA-257). "1 1/2 cups flour, sifted" is 1 1/2, cup, flour and sifted;
+"1 (14 oz) can of tomatoes" is 1, can, tomatoes and 14 oz; "Salt, to taste" has no amount. Fields
+follow the editor's rules and limits, tags are separated by commas, and a blank Servings is the
 household's usual servings. A file holds up to 1,000 recipes, not counting blank rows, since
 the app serves no other household while it reads, checks and saves them (MEA-89). A cell holds
 up to 10,000 characters, and the header and the cells in columns that aren't ignored up to
@@ -1136,10 +1158,11 @@ move with it and go when it's removed. A problem that isn't about one field show
 instead, and takes the focus: a name another recipe has, with Restore it when that recipe is
 archived (6.10); archived items the recipe would start using, with Restore and save; more than
 100 ingredients; a photo the server turns down; or a lost connection. What a failed save shows
-stays until the next Save, or until Import from a link replaces the recipe.
+stays until the next Save, or until Import from a link fills in the editor.
 
-**Import from a link.** New recipe has a Link field and Import above the editor (MEA-47, Q37),
-so a recipe found online can be brought in on any device, a phone included. Most recipe sites
+**Import from a link.** New recipe and Edit recipe have a Link field and Import above the editor
+(MEA-47, Q37; MEA-264), so a recipe found online can be brought in on any device, a phone
+included. Most recipe sites
 put a schema.org Recipe in their pages as JSON-LD for search engines; Import has the server
 fetch the page (4.5) and fills in the editor from it: the name, servings, prep and cook minutes,
 ingredients, steps one per line, calories, protein, carbs and fat, with Source set to the link.
@@ -1163,9 +1186,12 @@ count too, so a page of millions of either stops there. Lists, @graphs and secti
 up to 32 deep and no further. The page is read in
 the charset its Content-Type names, else the one a meta element in its first 1,024 bytes names,
 else UTF-8, so a page in windows-1252 or ISO-8859-1 keeps its é, ° and ½ (MEA-75). Import asks
-for the page uncompressed, and unzips one its server gzips anyway. Fields the page leaves
-out get what a new recipe starts with, such as the household's usual servings. The photo, tags
-and notes are never imported: Import fills in the editor around them, so a photo taken and tags
+for the page uncompressed, and unzips one its server gzips anyway. JSON-LD that leaves line
+breaks, tabs or other control characters raw in its text, as a page that pastes text into a
+template can, is read as if they were escaped, a line break as `\n` and a tab as `\t`, so steps
+written as lines of text still split at each line break (MEA-90). On New recipe, fields the page
+leaves out get what a new recipe starts with, such as the household's usual servings. The photo,
+tags and notes are never imported: Import fills in the editor around them, so a photo taken and tags
 or notes typed before it stay (MEA-205). When anything else has been typed or changed since New
 recipe opened, an earlier import included, Import asks first: "Replace what you typed with the
 page's recipe? The photo, tags and notes stay." Cancel leaves the editor as it was. Once it's
@@ -1181,6 +1207,35 @@ field and the editor stays as it was. The link must start with http:// or https:
 Source, be up to 500 characters. Pages whose sites block servers or need a sign-in can't be
 opened, nor can a page compressed other than with gzip or in a charset the server doesn't know,
 and recipe data written as Microdata or RDFa rather than JSON-LD isn't read.
+
+On Edit recipe, the Link field says "Paste a recipe's web address to update the recipe below. You
+choose what it replaces." Import reads the page as above, but rather than fill in the editor, it
+compares the page's recipe with the editor as it is, unsaved changes included, and a sheet,
+"Import from the page", shows what would change before anything does (MEA-264). Each field the
+page has, from the name to fat, and Source, the link, fills in on its own where the editor's is
+empty, listed under "To fill in". A field the page leaves out, or that can't be read, stays as the
+editor has it, even empty, so an import never erases anything. Where the editor has something
+else, the sheet shows both, "Keep:" the editor's, chosen to start with, and "Replace with:" the
+page's. Numbers are compared by value, so 1.25 and 1.250 are the same, and other fields as text
+without the spaces at their ends. The steps are one field, kept or replaced whole. Ingredients
+are matched by item, ignoring case. One the editor has with the same amount, unit and prep note,
+as saving reads them (½ and 1/2, cups and cup), is already there and isn't shown. Of the rest, one
+whose item is on just one of the editor's remaining ingredients, and on no other of the page's, is
+matched to it: the sheet shows both under the item, and "Replace with:" changes its amount, unit
+and prep note in place, keeping the editor's item. One whose item the editor doesn't have is added
+only when its "Add" box is ticked. When the editor or the page has the item more than once, each of
+the page's is matched by hand: Skip, chosen to start with, a Replace for each of the editor's with
+that item, by its number, such as "Replace ingredient 2: 1 cup Sugar", or "Add as a new
+ingredient"; an ingredient another of the page's already replaces can't be picked again. The
+editor's other ingredients stay, and so do their order and section headings: replaced ones change
+in place, and added ones go at the end in the page's order, in place of any blank rows there and
+after a blank heading when the last ingredients are under one, so they aren't in that section.
+The photo, tags and notes stay as they are. Apply, which can be tapped once something would
+change, puts it in the editor and saves nothing; the page then says what it says on New recipe,
+and Save saves over the recipe as any edit does. Cancel, ✕, Escape or a tap on the backdrop
+leaves the editor as it was, as does a failed import. A page with nothing the editor doesn't have
+says "Nothing to change. The recipe already matches the page." without the sheet. Leaving the
+editor before Save asks first, as it does after any change.
 
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, the restaurant (Eating
 out; MEA-58) or dishes by role, and the whole note, with its line breaks (MEA-59). A day with
@@ -1206,8 +1261,9 @@ still opens a day and swiping up and down scrolls. If someone cleared or moved t
 since the week loaded, nothing moves, the week shows the menu as it is now, and it says "Someone
 cleared or moved that day's dinners, so nothing moved." ("Check pantry" is hidden for now; 6.8.) Under the week, on every week,
 **Requests** lists the active dish and restaurant requests together (6.12), or "No requests
-yet.", each with Complete and Remove side by side, beside it or under it when they don't fit.
-Both keep the week shown. "Request a dish" opens a sheet with Dish (with suggestions, or a new dish), an
+yet.", each with Edit, Complete and Remove side by side, beside it or under it when they don't
+fit. Each keeps the week shown. Edit opens a sheet to change the request's name and note (6.12),
+and focus goes back to it once they're saved. "Request a dish" opens a sheet with Dish (with suggestions, or a new dish), an
 optional Note and Request. The suggestions show in the sheet under Dish, about four at a time
 with the rest scrolling, so they never cover Note or Request, and a tap or click elsewhere closes
 them once it's done, so it lands where it was aimed (MEA-151). "Request a restaurant", beside it,
@@ -1225,7 +1281,11 @@ an existing dish from the suggestions, with a tap, a click or the keyboard, adds
 with the role shown under the field, so a different role is picked first. A new name is added
 with Add; picking "Add ... as a new dish" only fills it in. The suggestions show in the page
 under the role and Add, about four at a time with the rest scrolling, so they never cover or
-move Add. Once a dish is added, the field is empty and ready for the next. Each dish links to its
+move Add. When they'd reach the tab bar as they open, or as what's typed changes them, the page
+scrolls just far enough to show them above it, with the field still clear of the header; when
+they fit, it stays put (MEA-238). Scrolled under the header or the tab bar afterwards, they pass
+beneath it, so a tap there does what it says (MEA-143). Once a dish is added, the field is empty
+and ready for the next. Each dish links to its
 recipe at this dinner's servings. Eating out has a Restaurant field, with "Where to go" as its
 hint, in place of servings and dishes (MEA-58; 6.9). Actions: Copy a dinner and Clear. A date
 with more than one dinner shows them all on its one page, in the order they were added, each with its own label
@@ -1237,7 +1297,8 @@ with no dinner it's plain text. A date with no dinner says "Not planned yet" and
 at home selected, with its servings and note ready to fill in, unsaved (6.9). Under the dinners,
 **Requests** lists the Menu's active requests: a dish request's Add puts its dish on one of the
 date's dinners, and a restaurant request's Add makes a new Eating out dinner there, and each
-completes its request (6.12). The type,
+completes its request (6.12). Edit, beside Add, changes a request's name and note as on the
+Menu, and leaves the dinners, and anything typed in them, as they are. The type,
 dishes, copying, moving, clearing and adding a request save as soon as they're made, and keep
 anything typed in the servings, restaurant and note for Save. On a date with no dinner, what's
 done while the change that plans it is still on its way, such as picking a dish or tapping Save

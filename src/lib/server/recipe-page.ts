@@ -39,8 +39,41 @@ export async function fetchPage(link: URL): Promise<string> {
 // A script tag whose type is JSON-LD. Some pages leave the quotes off.
 const JSON_LD_TYPE = /\stype\s*=\s*["']?application\/ld\+json\b/i;
 
+// JSON's escape for each control character, U+0000 to U+001F, by its code: \n for a line break,
+// \t for a tab, and \u0000 and the like for the rest.
+const CONTROL_ESCAPES = Array.from({ length: 0x20 }, (_, code) =>
+	JSON.stringify(String.fromCharCode(code)).slice(1, -1)
+);
+
 /**
- * The JSON-LD blocks in a page's HTML, parsed, in order. A block that isn't JSON is left out.
+ * JSON text with the control characters in its strings escaped, as JSON needs them to be. A page
+ * that pastes text into a template to write its JSON-LD can leave line breaks and tabs in it raw,
+ * which JSON.parse refuses (MEA-90). Escaped, rather than made spaces, the line breaks in steps
+ * written as text still split them (recipe-schema.ts). Valid JSON comes back as it was.
+ */
+function escapeControlCharacters(json: string): string {
+	let escaped = '';
+	let copied = 0;
+	let inString = false;
+	for (let at = 0; at < json.length; at += 1) {
+		const char = json.charAt(at);
+		if (char === '\\') {
+			// An escape, such as \" or \\, stays as it is.
+			at += 1;
+		} else if (char === '"') {
+			inString = !inString;
+		} else if (inString && char < ' ') {
+			// The control characters are the ones before the space.
+			escaped += json.slice(copied, at) + CONTROL_ESCAPES[char.charCodeAt(0)];
+			copied = at + 1;
+		}
+	}
+	return escaped + json.slice(copied);
+}
+
+/**
+ * The JSON-LD blocks in a page's HTML, parsed, in order, even where their strings have line breaks
+ * or tabs left raw (escapeControlCharacters). A block that isn't JSON is left out.
  * The page is read once from start to end, one script element after another: a pattern for a
  * whole element can take minutes on a page written to make it backtrack.
  */
@@ -59,7 +92,7 @@ export function jsonLdBlocks(html: string): unknown[] {
 		if (end === undefined) break;
 		if (JSON_LD_TYPE.test(html.slice(start, contentStart))) {
 			try {
-				blocks.push(JSON.parse(html.slice(contentStart, end)));
+				blocks.push(JSON.parse(escapeControlCharacters(html.slice(contentStart, end))));
 			} catch {
 				// Not JSON, so nothing to read.
 			}

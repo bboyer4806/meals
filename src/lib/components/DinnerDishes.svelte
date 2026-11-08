@@ -357,7 +357,8 @@
 		<div bind:this={nameField}>
 			<!-- A dish picked from the suggestions is added right away with the role shown, which
 			     sits with Add between the field and the suggestions, so they never cover Add or
-			     move it as they come and go (MEA-56). -->
+			     move it as they come and go (MEA-56). As they open, the page scrolls if it must
+			     to show them above the tab bar (MEA-238). -->
 			<ItemInput
 				id="{uid}-name"
 				name="name"
@@ -366,6 +367,7 @@
 				bind:value={name}
 				noun="dish"
 				onchoose={() => addForm.requestSubmit()}
+				aboveTabs
 			>
 				<div class="row">
 					<label class="visually-hidden" for="{uid}-new-role">Role</label>

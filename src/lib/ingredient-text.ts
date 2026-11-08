@@ -31,14 +31,22 @@ const COMMON_UNITS = new Set(
 );
 
 // One amount as parseAmount reads it: "1 1/2", "1-1/2", "1/2", "1½", "½", "1.5" or ".5". Also
-// a whole number and a fraction joined by "and", as in "1 and 1/2" or "1 and ½" (MEA-242).
+// a whole number and a fraction joined by "and" or "&", as in "1 and 1/2" or "1 & ½" (MEA-242),
+// where the fraction can be a half, a third or a quarter in words, as in "1 and a half" (MEA-257).
 const FRACTIONS = '¼½¾⅓⅔⅛⅜⅝⅞';
+// A half, a third and a quarter in words, and each one as parseAmount reads it (MEA-257).
+const WORD_FRACTIONS = { half: '1/2', third: '1/3', quarter: '1/4' } as const;
+const WORDS = Object.keys(WORD_FRACTIONS).join('|');
+// The "and" or "&" between a whole number and a fraction (MEA-242, MEA-257).
+const AND = '\\s+(?:and|&)\\s+';
 const SINGLE =
-	`(?:\\d+(?:\\s+and\\s+|\\s*)[${FRACTIONS}]|[${FRACTIONS}]|` +
-	`\\d+(?:\\s+and\\s+|\\s+|\\s*-\\s*)\\d+\\s*[/⁄]\\s*\\d+|` +
+	`(?:\\d+(?:${AND}|\\s*)[${FRACTIONS}]|[${FRACTIONS}]|\\d+${AND}a\\s+(?:${WORDS})|` +
+	`\\d+(?:${AND}|\\s+|\\s*-\\s*)\\d+\\s*[/⁄]\\s*\\d+|` +
 	`\\d+\\s*[/⁄]\\s*\\d+|\\d+(?:\\.\\d*)?|\\.\\d+)`;
-// The "and" in "1 and 1/2", which parseAmount doesn't read (MEA-242).
-const AND = /\s+and\s+/i;
+// The "and" or "&" in "1 and 1/2", and a fraction in words, as in "1 and a half", which
+// parseAmount doesn't read (MEA-242, MEA-257).
+const AND_PATTERN = new RegExp(AND, 'i');
+const WORD_PATTERN = new RegExp(`a\\s+(${WORDS})`, 'i');
 // The amount, then the rest after a space or a comma, or nothing.
 const END = '(?=[\\s,]|$)';
 const AMOUNT = new RegExp(`^(${SINGLE})${END}`, 'i');
@@ -77,9 +85,17 @@ function spaceOutUnit(text: string): string {
 	return leadingUnit(rest.split(' ')) ? `${amount} ${rest}` : text;
 }
 
-/** The amount as the editor reads it (design 6.5), so "1 and 1/2" is "1 1/2" (MEA-242). */
-function withoutAnd(amount: string): string {
-	return amount.replace(AND, ' ');
+/**
+ * The amount as the editor reads it (design 6.5), so "1 and 1/2" is "1 1/2" (MEA-242) and
+ * "1 & a half" is too (MEA-257).
+ */
+function editorAmount(amount: string): string {
+	return amount
+		.replace(AND_PATTERN, ' ')
+		.replace(
+			WORD_PATTERN,
+			(_words, word: string) => WORD_FRACTIONS[word.toLowerCase() as keyof typeof WORD_FRACTIONS]
+		);
 }
 
 /** The text inside the parentheses the text starts with, or '', and the text after them. */
@@ -93,15 +109,17 @@ function leadingParentheses(text: string): [inside: string, rest: string] {
 /**
  * An ingredient's parts (design 7, Import recipes). It starts with an amount, or a range whose
  * first amount is the amount and which goes in the prep note as "2 to 3" (design 2.3). An "and"
- * between a whole number and a fraction is left out of an amount. A known unit or a common one
- * (clove, can, pinch, slice, stick and others) after an amount is the unit, also when it's
- * written onto the amount, as in "500g"; any other word starts the item. Text in parentheses
- * right after the amount or the unit, such as a size, goes in the prep note, and an "of" after
- * the unit is left out. The item runs to the first comma, and the rest is the prep note.
+ * or "&" between a whole number and a fraction is left out of an amount, and a half, a third or
+ * a quarter in words is written as a fraction. A known unit or a common one (clove, can, pinch,
+ * slice, stick and others) after an amount is the unit, also when it's written onto the amount,
+ * as in "500g"; any other word starts the item. Text in parentheses right after the amount or
+ * the unit, such as a size, goes in the prep note, and an "of" after the unit is left out. The
+ * item runs to the first comma, and the rest is the prep note.
  *
  * "1 1/2 cups flour, sifted" is 1 1/2, cups, flour and sifted. "1 and 1/3 cup flour" is 1 1/3,
- * cup and flour. "1 (14 oz) can of tomatoes" is 1, can, tomatoes and 14 oz. "3 eggs" has no
- * unit, and "Salt, to taste" has no amount or unit.
+ * cup and flour, and "1 & a half cups milk" is 1 1/2, cups and milk. "1 (14 oz) can of
+ * tomatoes" is 1, can, tomatoes and 14 oz. "3 eggs" has no unit, and "Salt, to taste" has no
+ * amount or unit.
  */
 export function splitIngredient(text: string): IngredientParts {
 	let rest = spaceOutUnit(normalizeName(text));
@@ -112,12 +130,12 @@ export function splitIngredient(text: string): IngredientParts {
 	const ranged = RANGE.exec(rest);
 	if (ranged && (!single || ranged[0].length > single[0].length)) {
 		const [whole, first = '', last = ''] = ranged;
-		amount = withoutAnd(first);
-		range = `${amount} to ${withoutAnd(last)}`;
+		amount = editorAmount(first);
+		range = `${amount} to ${editorAmount(last)}`;
 		rest = rest.slice(whole.length);
 	} else if (single) {
 		const [whole, first = ''] = single;
-		amount = withoutAnd(first);
+		amount = editorAmount(first);
 		rest = rest.slice(whole.length);
 	}
 	rest = rest.trim();

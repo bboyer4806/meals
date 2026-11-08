@@ -147,6 +147,65 @@ describe('splitIngredient', () => {
 		});
 	});
 
+	it.each([
+		['1 and a half cups milk', '1 1/2', 'cups', 'milk'],
+		['2 and a third cups flour', '2 1/3', 'cups', 'flour'],
+		['1 & a quarter cups sugar', '1 1/4', 'cups', 'sugar'],
+		['1 & 1/3 cup flour', '1 1/3', 'cup', 'flour'],
+		['1 and ½ cups milk', '1 ½', 'cups', 'milk']
+	])('reads "%s" as one amount (MEA-257)', (text, amount, unit, item) => {
+		expect(splitIngredient(text)).toEqual({ amount, unit, item, prepNote: '' });
+	});
+
+	it('reads "&" and fractions in words wherever "and" and fractions are read (MEA-257)', () => {
+		expect(splitIngredient('1 and a half cups milk, warmed')).toEqual({
+			amount: '1 1/2',
+			unit: 'cups',
+			item: 'milk',
+			prepNote: 'warmed'
+		});
+		expect(splitIngredient('1 & 1/3 cup flour, sifted')).toMatchObject({
+			amount: '1 1/3',
+			prepNote: 'sifted'
+		});
+		expect(splitIngredient('1 And A Half Cups milk')).toMatchObject({
+			amount: '1 1/2',
+			unit: 'Cups'
+		});
+		expect(splitIngredient('1 & ½ cups milk')).toMatchObject({ amount: '1 ½', unit: 'cups' });
+		expect(splitIngredient('1 & 1/2cups flour')).toMatchObject({ amount: '1 1/2', unit: 'cups' });
+		expect(splitIngredient('1 to 1 and a half cups milk')).toMatchObject({
+			amount: '1',
+			prepNote: '1 to 1 1/2'
+		});
+		expect(splitIngredient('1 and a half to 2 cups milk')).toMatchObject({
+			amount: '1 1/2',
+			prepNote: '1 1/2 to 2'
+		});
+		// Only an "&" between a whole number and a fraction.
+		expect(splitIngredient('2 cups mac & cheese')).toMatchObject({
+			amount: '2',
+			unit: 'cups',
+			item: 'mac & cheese'
+		});
+		expect(splitIngredient('Salt & pepper, to taste')).toEqual({
+			amount: '',
+			unit: '',
+			item: 'Salt & pepper',
+			prepNote: 'to taste'
+		});
+	});
+
+	it('reads a decimal amount', () => {
+		expect(splitIngredient('1.5 cups milk')).toEqual({
+			amount: '1.5',
+			unit: 'cups',
+			item: 'milk',
+			prepNote: ''
+		});
+		expect(splitIngredient('.5 tsp salt')).toMatchObject({ amount: '.5', unit: 'tsp' });
+	});
+
 	it('leaves the item empty after an amount and unit alone', () => {
 		expect(splitIngredient('2 cups')).toEqual({ amount: '2', unit: 'cups', item: '', prepNote: '' });
 	});
