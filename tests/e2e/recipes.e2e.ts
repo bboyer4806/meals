@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import type { Dialog, Locator, Page } from '@playwright/test';
 import type Database from 'better-sqlite3';
+import type { LinkValues } from '#lib/recipe-schema.ts';
+import type { RecipeRow } from '#lib/server/recipe-form.ts';
 import {
 	addDays,
 	addDinner,
@@ -8,6 +10,7 @@ import {
 	addPerson,
 	addPhotoFiles,
 	addRecipe,
+	answerAction,
 	dayLabel,
 	expect,
 	makeJpeg,
@@ -96,6 +99,50 @@ function recipeIdIn(page: Page): number {
 	const id = /\/recipes\/(\d+)/.exec(page.url())?.[1];
 	if (!id) throw new Error(`Not a recipe page: ${page.url()}`);
 	return Number(id);
+}
+
+// Import from a link on Edit recipe (design 7; MEA-264). The server can't fetch a page these
+// tests can reach (design 4.5, and import-link.e2e.ts), so they answer Import themselves.
+const LINK = 'https://recipes.example/pancakes';
+const FILLED = 'Filled in from the page. Check it, then tap Save.';
+const LEAVE = 'Leave without saving? What you typed will be lost.';
+
+/** Answers Import on the recipe's editor as the server does for a page with these fields. */
+async function answerEditImport(page: Page, dishId: number, fields: Partial<LinkValues>) {
+	const values: LinkValues = {
+		name: null,
+		servings: null,
+		prepMinutes: null,
+		cookMinutes: null,
+		steps: null,
+		source: LINK,
+		calories: null,
+		proteinG: null,
+		carbsG: null,
+		fatG: null,
+		rows: null,
+		...fields
+	};
+	await answerAction(page, `/recipes/${dishId}/edit`, 'import', {
+		action: 'import',
+		values,
+		leftOut: []
+	});
+}
+
+function importedIngredient(amount: string, unit: string, item: string, prepNote = ''): RecipeRow {
+	return { kind: 'ingredient', amount, unit, item, prepNote };
+}
+
+/** Imports LINK into the editor. */
+async function importLink(page: Page) {
+	await page.getByLabel('Link', { exact: true }).fill(LINK);
+	await page.getByRole('button', { name: 'Import', exact: true }).click();
+}
+
+/** The sheet that shows what an import would change. */
+function importReview(page: Page) {
+	return page.getByRole('dialog', { name: 'Import from the page' });
 }
 
 test('creates a recipe with every field on a phone, with a photo', async ({ page, db, person }) => {
@@ -667,6 +714,282 @@ test('shows what was saved after tapping Cancel and staying', async ({ page, db,
 	await page.getByRole('button', { name: 'Save' }).click();
 	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}\\?servings=4$`));
 	await expect(page.getByRole('heading', { name: 'Cheese omelet', level: 1 })).toBeVisible();
+});
+
+test('imports a link into the editor, filling in empty fields and replacing only what is chosen', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, {
+		name: 'Pancakes',
+		prepMinutes: 10,
+		steps: 'Mix.\nFry.',
+		notes: 'Family favorite',
+		tags: ['Breakfast'],
+		ingredients: [{ item: 'Flour', amount: 2, unit: 'cup' }]
+	});
+	// The page has no prep time.
+	await answerEditImport(page, dishId, {
+		name: 'Buttermilk pancakes',
+		servings: '6',
+		cookMinutes: '15',
+		steps: 'Whisk.\nFry.',
+		calories: '300'
+	});
+	await open(page, `/recipes/${dishId}/edit`);
+	await expect(page.getByLabel('Link', { exact: true })).toHaveAccessibleDescription(
+		"Paste a recipe's web address to update the recipe below. You choose what it replaces."
+	);
+	// Typed and not saved, so the import compares the page with it.
+	await page.getByLabel('Name', { exact: true }).fill('Fluffy pancakes');
+	await importLink(page);
+
+	const review = importReview(page);
+	await expect(review.getByRole('definition')).toHaveText(['15', LINK, '300']);
+	await expect(review.getByRole('term')).toHaveText(['Cook (min)', 'Source', 'Calories']);
+	// The rest is kept unless it's chosen.
+	await expect(review.getByRole('group')).toHaveCount(3);
+	const name = review.getByRole('group', { name: 'Name' });
+	await expect(name.getByRole('radio', { name: 'Keep: Fluffy pancakes' })).toBeChecked();
+	await expect(
+		name.getByRole('radio', { name: 'Replace with: Buttermilk pancakes' })
+	).not.toBeChecked();
+	const servings = review.getByRole('group', { name: 'Servings' });
+	await expect(servings.getByRole('radio', { name: 'Keep: 4' })).toBeChecked();
+	await servings.getByRole('radio', { name: 'Replace with: 6' }).check();
+	// The steps are one choice.
+	const steps = review.getByRole('group', { name: 'Steps' });
+	await expect(steps.getByRole('radio')).toHaveCount(2);
+	await steps.getByRole('radio', { name: 'Replace with: Whisk. Fry.' }).check();
+	await review.getByRole('button', { name: 'Apply' }).click();
+	await expect(review).toBeHidden();
+
+	await expect(page.getByText(FILLED)).toBeVisible();
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Fluffy pancakes');
+	await expect(page.getByLabel('Servings')).toHaveValue('6');
+	await expect(page.getByLabel('Prep (min)')).toHaveValue('10');
+	await expect(page.getByLabel('Cook (min)')).toHaveValue('15');
+	await expect(page.getByLabel('Steps')).toHaveValue('Whisk.\nFry.');
+	await expect(page.getByLabel('Source')).toHaveValue(LINK);
+	await expect(page.getByLabel('Calories')).toHaveValue('300');
+	await expect(page.getByLabel('Protein (g)')).toHaveValue('');
+	await expect(page.getByLabel('Tags', { exact: true })).toHaveValue('Breakfast');
+	await expect(page.getByLabel('Notes', { exact: true })).toHaveValue('Family favorite');
+	await expect(ingredientRow(page, 1).getByRole('combobox', { name: 'Item' })).toHaveValue('Flour');
+	// Nothing is saved until Save, which saves over the recipe rather than adding one.
+	const saved = db.prepare(
+		`select id, name, servings, prep_minutes as prep, cook_minutes as cook, calories
+		from dishes where household_id = ?`
+	);
+	expect(saved.all(person.householdId)).toEqual([
+		{ id: dishId, name: 'Pancakes', servings: 4, prep: 10, cook: null, calories: null }
+	]);
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('heading', { name: 'Fluffy pancakes', level: 1 })).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}$`));
+	expect(saved.all(person.householdId)).toEqual([
+		{ id: dishId, name: 'Fluffy pancakes', servings: 6, prep: 10, cook: 15, calories: 300 }
+	]);
+	await expect(page.getByText('Family favorite')).toBeVisible();
+});
+
+test("matches a page's ingredients by item, keeping the recipe's order and sections", async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, {
+		name: 'Shortcake',
+		ingredients: [
+			{ item: 'Flour', amount: 2, unit: 'cup' },
+			{ item: 'Sugar', amount: 1, unit: 'cup', section: 'Batter' },
+			{ item: 'Egg', amount: 2, section: 'Batter' },
+			{ item: 'Sugar', amount: 2, unit: 'tbsp', section: 'Topping' },
+			{ item: 'Butter', amount: 1, unit: 'tbsp', section: 'Topping' }
+		]
+	});
+	await answerEditImport(page, dishId, {
+		rows: [
+			importedIngredient('2', 'cups', 'flour'),
+			importedIngredient('3/4', 'cup', 'sugar'),
+			importedIngredient('1', 'tbsp', 'sugar'),
+			importedIngredient('3', '', 'egg'),
+			importedIngredient('1', 'tbsp', 'butter', 'softened'),
+			importedIngredient('1', 'cup', 'milk'),
+			importedIngredient('1', 'tsp', 'vanilla')
+		]
+	});
+	await open(page, `/recipes/${dishId}/edit`);
+	await importLink(page);
+	const review = importReview(page);
+
+	// The flour is already there.
+	await expect(review.getByText(/flour/i)).toHaveCount(0);
+	// The recipe has sugar twice, so each of the page's is matched by hand, starting at Skip, and
+	// each of the recipe's can be replaced by one of them.
+	const sugar = review.getByRole('group', { name: '3/4 cup sugar' });
+	const moreSugar = review.getByRole('group', { name: '1 tbsp sugar' });
+	// Skip, a Replace for each of the recipe's, and Add.
+	await expect(sugar.getByRole('radio')).toHaveCount(4);
+	await expect(sugar.getByRole('radio', { name: 'Skip' })).toBeChecked();
+	await expect(moreSugar.getByRole('radio', { name: 'Skip' })).toBeChecked();
+	await sugar.getByRole('radio', { name: 'Replace ingredient 2: 1 cup Sugar' }).check();
+	await expect(
+		moreSugar.getByRole('radio', { name: 'Replace ingredient 2: 1 cup Sugar' })
+	).toBeDisabled();
+	await expect(
+		moreSugar.getByRole('radio', { name: 'Replace ingredient 4: 2 tbsp Sugar' })
+	).toBeEnabled();
+	await expect(moreSugar.getByRole('radio', { name: 'Add as a new ingredient' })).toBeEnabled();
+	// The egg and butter are matched by item, and replaced only when chosen.
+	const egg = review.getByRole('group', { name: 'Egg' });
+	await expect(egg.getByRole('radio', { name: 'Keep: 2 Egg' })).toBeChecked();
+	await egg.getByRole('radio', { name: 'Replace with: 3 Egg' }).check();
+	const butter = review.getByRole('group', { name: 'Butter' });
+	await expect(butter.getByRole('radio', { name: 'Keep: 1 tbsp Butter' })).toBeChecked();
+	await expect(
+		butter.getByRole('radio', { name: 'Replace with: 1 tbsp Butter, softened' })
+	).not.toBeChecked();
+	// New ones are added only when ticked.
+	const milk = review.getByRole('checkbox', { name: 'Add 1 cup milk' });
+	await expect(milk).not.toBeChecked();
+	await expect(review.getByRole('checkbox', { name: 'Add 1 tsp vanilla' })).not.toBeChecked();
+	await milk.check();
+	await review.getByRole('button', { name: 'Apply' }).click();
+	await expect(review).toBeHidden();
+
+	// Replaced in place, with the recipe's items, and the milk added at the end, after a blank
+	// heading that keeps it out of the Topping section.
+	const row = (number: number) => {
+		const fields = ingredientRow(page, number);
+		return [
+			fields.getByLabel('Amount', { exact: true }),
+			fields.getByLabel('Unit', { exact: true }),
+			fields.getByRole('combobox', { name: 'Item', exact: true }),
+			fields.getByLabel('Prep note', { exact: true })
+		];
+	};
+	const expectRow = async (number: number, values: string[]) => {
+		for (const [at, field] of row(number).entries()) await expect(field).toHaveValue(values[at]!);
+	};
+	await expectRow(1, ['2', 'cup', 'Flour', '']);
+	await expect(sectionRow(page, 1).getByLabel('Heading')).toHaveValue('Batter');
+	await expectRow(2, ['3/4', 'cup', 'Sugar', '']);
+	await expectRow(3, ['3', '', 'Egg', '']);
+	await expect(sectionRow(page, 2).getByLabel('Heading')).toHaveValue('Topping');
+	await expectRow(4, ['2', 'tbsp', 'Sugar', '']);
+	await expectRow(5, ['1', 'tbsp', 'Butter', '']);
+	await expect(sectionRow(page, 3).getByLabel('Heading')).toHaveValue('');
+	await expectRow(6, ['1', 'cup', 'milk', '']);
+	await expect(ingredientRow(page, 7)).toHaveCount(0);
+
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('heading', { name: 'Shortcake', level: 1 })).toBeVisible();
+	await expect(ingredients(page)).toHaveText([
+		'2 cups Flour',
+		'3/4 cup Sugar',
+		'3 Egg',
+		'2 tbsp Sugar',
+		'1 tbsp Butter',
+		'1 cup milk'
+	]);
+	const sections = db.prepare(
+		'select section from dish_ingredients where dish_id = ? order by position'
+	);
+	expect(sections.pluck().all(dishId)).toEqual([
+		null,
+		'Batter',
+		'Batter',
+		'Topping',
+		'Topping',
+		null
+	]);
+});
+
+test('leaves the editor as it was when an import fails or its review is cancelled', async ({
+	page,
+	baseURL,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Pancakes', steps: 'Mix.\nFry.' });
+	const name = page.getByLabel('Name', { exact: true });
+	const cook = page.getByLabel('Cook (min)');
+	await open(page, `/recipes/${dishId}/edit`);
+	await name.fill('Fluffy pancakes');
+
+	// The server refuses its own address, as a page that can't be opened.
+	await page.getByLabel('Link', { exact: true }).fill(`${baseURL}/recipes`);
+	await page.getByRole('button', { name: 'Import', exact: true }).click();
+	await expect(page.getByRole('alert')).toHaveText(
+		"Couldn't open that page. Check the link and try again."
+	);
+	await expect(name).toHaveValue('Fluffy pancakes');
+	await expect(page.getByLabel('Source')).toHaveValue('');
+
+	await answerEditImport(page, dishId, { name: 'Buttermilk pancakes', cookMinutes: '15' });
+	await importLink(page);
+	const review = importReview(page);
+	const reviewName = review.getByRole('group', { name: 'Name' });
+	await reviewName.getByRole('radio', { name: /^Replace/ }).check();
+	await review.getByRole('button', { name: 'Cancel' }).click();
+	await expect(review).toBeHidden();
+	await expect(name).toHaveValue('Fluffy pancakes');
+	await expect(cook).toHaveValue('');
+	await expect(page.getByLabel('Source')).toHaveValue('');
+	await expect(page.getByText(FILLED)).toHaveCount(0);
+
+	// Importing again starts afresh, and Escape closes it the same way.
+	await page.getByRole('button', { name: 'Import', exact: true }).click();
+	await expect(reviewName.getByRole('radio', { name: 'Keep: Fluffy pancakes' })).toBeChecked();
+	await page.keyboard.press('Escape');
+	await expect(review).toBeHidden();
+	await expect(cook).toHaveValue('');
+
+	// Applied and not saved, Cancel asks first, and the recipe stays as it was saved.
+	await page.getByRole('button', { name: 'Import', exact: true }).click();
+	await review.getByRole('button', { name: 'Apply' }).click();
+	await expect(cook).toHaveValue('15');
+	page.once('dialog', (dialog) => {
+		expect(dialog.message()).toBe(LEAVE);
+		void dialog.accept();
+	});
+	await page.getByRole('link', { name: 'Cancel' }).click();
+	await expect(page.getByRole('heading', { name: 'Pancakes', level: 1 })).toBeVisible();
+	expect(db.prepare('select cook_minutes, source from dishes where id = ?').get(dishId)).toEqual({
+		cook_minutes: null,
+		source: null
+	});
+});
+
+test('says when a page has nothing the recipe lacks, and applies only once something is chosen', async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, { name: 'Pancakes', prepMinutes: 10 });
+	db.prepare('update dishes set source = ? where id = ?').run(LINK, dishId);
+	await answerEditImport(page, dishId, { name: 'Pancakes', servings: '4', prepMinutes: '10' });
+	await open(page, `/recipes/${dishId}/edit`);
+	await importLink(page);
+	await expect(
+		page.getByText('Nothing to change. The recipe already matches the page.')
+	).toBeVisible();
+	await expect(importReview(page)).toBeHidden();
+
+	// A later answer takes the place of the first.
+	await answerEditImport(page, dishId, { name: 'Buttermilk pancakes' });
+	await page.getByRole('button', { name: 'Import', exact: true }).click();
+	const review = importReview(page);
+	const apply = review.getByRole('button', { name: 'Apply' });
+	await expect(apply).toBeDisabled();
+	await review.getByRole('radio', { name: 'Replace with: Buttermilk pancakes' }).check();
+	await expect(apply).toBeEnabled();
+	await apply.click();
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Buttermilk pancakes');
+	await expect(page.getByText(FILLED)).toBeVisible();
+	await expect(page.getByText('Nothing to change', { exact: false })).toHaveCount(0);
 });
 
 test('marks a recipe tried from its page, shown as a badge on its card', async ({

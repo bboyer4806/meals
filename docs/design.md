@@ -847,8 +847,8 @@ and screenshots aren't stored in the app.
 the header to the left of More, which printing hides with the rest of the header. It opens a
 sheet titled "Help: " and the screen's name, such as "Help: Grocery list", that says what the
 screen is for and how to do its main tasks, in plain words and no more than about 6 short points.
-Recipe, Edit recipe (and New recipe, which shares its form and adds a point about Import from a
-link), Import recipes, Cooking view, Dinner, History and Items each have their own help. The
+Recipe, Edit recipe and New recipe (which share the editor's points, each adding one about Import
+from a link), Import recipes, Cooking view, Dinner, History and Items each have their own help. The
 sheet closes with ✕, Escape or a tap on the backdrop.
 Opening it changes nothing on the page behind, so anything typed there and not saved stays. The
 help is fixed text in `src/lib/help.ts`, keyed by each screen's route, and the type check fails
@@ -1051,10 +1051,11 @@ move with it and go when it's removed. A problem that isn't about one field show
 instead, and takes the focus: a name another recipe has, with Restore it when that recipe is
 archived (6.10); archived items the recipe would start using, with Restore and save; more than
 100 ingredients; a photo the server turns down; or a lost connection. What a failed save shows
-stays until the next Save, or until Import from a link replaces the recipe.
+stays until the next Save, or until Import from a link fills in the editor.
 
-**Import from a link.** New recipe has a Link field and Import above the editor (MEA-47, Q37),
-so a recipe found online can be brought in on any device, a phone included. Most recipe sites
+**Import from a link.** New recipe and Edit recipe have a Link field and Import above the editor
+(MEA-47, Q37; MEA-264), so a recipe found online can be brought in on any device, a phone
+included. Most recipe sites
 put a schema.org Recipe in their pages as JSON-LD for search engines; Import has the server
 fetch the page (4.5) and fills in the editor from it: the name, servings, prep and cook minutes,
 ingredients, steps one per line, calories, protein, carbs and fat, with Source set to the link.
@@ -1081,9 +1082,9 @@ else UTF-8, so a page in windows-1252 or ISO-8859-1 keeps its é, ° and ½ (MEA
 for the page uncompressed, and unzips one its server gzips anyway. JSON-LD that leaves line
 breaks, tabs or other control characters raw in its text, as a page that pastes text into a
 template can, is read as if they were escaped, a line break as `\n` and a tab as `\t`, so steps
-written as lines of text still split at each line break (MEA-90). Fields the page leaves
-out get what a new recipe starts with, such as the household's usual servings. The photo, tags
-and notes are never imported: Import fills in the editor around them, so a photo taken and tags
+written as lines of text still split at each line break (MEA-90). On New recipe, fields the page
+leaves out get what a new recipe starts with, such as the household's usual servings. The photo,
+tags and notes are never imported: Import fills in the editor around them, so a photo taken and tags
 or notes typed before it stay (MEA-205). When anything else has been typed or changed since New
 recipe opened, an earlier import included, Import asks first: "Replace what you typed with the
 page's recipe? The photo, tags and notes stay." Cancel leaves the editor as it was. Once it's
@@ -1099,6 +1100,35 @@ field and the editor stays as it was. The link must start with http:// or https:
 Source, be up to 500 characters. Pages whose sites block servers or need a sign-in can't be
 opened, nor can a page compressed other than with gzip or in a charset the server doesn't know,
 and recipe data written as Microdata or RDFa rather than JSON-LD isn't read.
+
+On Edit recipe, the Link field says "Paste a recipe's web address to update the recipe below. You
+choose what it replaces." Import reads the page as above, but rather than fill in the editor, it
+compares the page's recipe with the editor as it is, unsaved changes included, and a sheet,
+"Import from the page", shows what would change before anything does (MEA-264). Each field the
+page has, from the name to fat, and Source, the link, fills in on its own where the editor's is
+empty, listed under "To fill in". A field the page leaves out, or that can't be read, stays as the
+editor has it, even empty, so an import never erases anything. Where the editor has something
+else, the sheet shows both, "Keep:" the editor's, chosen to start with, and "Replace with:" the
+page's. Numbers are compared by value, so 1.25 and 1.250 are the same, and other fields as text
+without the spaces at their ends. The steps are one field, kept or replaced whole. Ingredients
+are matched by item, ignoring case. One the editor has with the same amount, unit and prep note,
+as saving reads them (½ and 1/2, cups and cup), is already there and isn't shown. Of the rest, one
+whose item is on just one of the editor's remaining ingredients, and on no other of the page's, is
+matched to it: the sheet shows both under the item, and "Replace with:" changes its amount, unit
+and prep note in place, keeping the editor's item. One whose item the editor doesn't have is added
+only when its "Add" box is ticked. When the editor or the page has the item more than once, each of
+the page's is matched by hand: Skip, chosen to start with, a Replace for each of the editor's with
+that item, by its number, such as "Replace ingredient 2: 1 cup Sugar", or "Add as a new
+ingredient"; an ingredient another of the page's already replaces can't be picked again. The
+editor's other ingredients stay, and so do their order and section headings: replaced ones change
+in place, and added ones go at the end in the page's order, in place of any blank rows there and
+after a blank heading when the last ingredients are under one, so they aren't in that section.
+The photo, tags and notes stay as they are. Apply, which can be tapped once something would
+change, puts it in the editor and saves nothing; the page then says what it says on New recipe,
+and Save saves over the recipe as any edit does. Cancel, ✕, Escape or a tap on the backdrop
+leaves the editor as it was, as does a failed import. A page with nothing the editor doesn't have
+says "Nothing to change. The recipe already matches the page." without the sheet. Leaving the
+editor before Save asks first, as it does after any change.
 
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, the restaurant (Eating
 out; MEA-58) or dishes by role, and the whole note, with its line breaks (MEA-59). A day with
