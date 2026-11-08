@@ -1,10 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+	filledIn,
 	findRecipe,
 	schemaRecipeValues,
 	type ImportedRecipe,
-	type JsonLdNode
+	type JsonLdNode,
+	type PageRecipe,
+	type PageValues
 } from './recipe-schema.ts';
 import { newRecipeValues, type RecipeFormValues } from './server/recipe-form.ts';
 import { NORMALIZE_MAX_LENGTH } from './text.ts';
@@ -18,11 +21,30 @@ function page(name: string): unknown {
 // A new recipe's fields at the household's usual 4 servings, with the link as its source.
 const START: RecipeFormValues = { ...newRecipeValues(4), source: 'https://example.com/recipe' };
 
+// A Recipe with none of the editor's fields.
+const NOTHING: PageValues = {
+	name: null,
+	servings: null,
+	prepMinutes: null,
+	cookMinutes: null,
+	steps: null,
+	calories: null,
+	proteinG: null,
+	carbsG: null,
+	fatG: null,
+	rows: null
+};
+
+/** A Recipe read, and filled into a new recipe as New recipe fills it in. */
+function intoNew({ values, leftOut }: PageRecipe): ImportedRecipe {
+	return { values: filledIn(START, values), leftOut };
+}
+
 /** The page's Recipe, read into a new recipe. */
 function importedPage(name: string): ImportedRecipe {
 	const recipe = findRecipe(page(name));
 	if (!recipe) throw new Error(`No Recipe in ${name}`);
-	return schemaRecipeValues(recipe, START);
+	return intoNew(schemaRecipeValues(recipe));
 }
 
 /** The page's Recipe, filled into a new recipe. */
@@ -32,7 +54,7 @@ function imported(name: string): RecipeFormValues {
 
 /** A Recipe with these fields, read into a new recipe. */
 function readRecipe(fields: JsonLdNode): ImportedRecipe {
-	return schemaRecipeValues({ '@type': 'Recipe', ...fields }, START);
+	return intoNew(schemaRecipeValues({ '@type': 'Recipe', ...fields }));
 }
 
 /** A Recipe with these fields, filled into a new recipe. */
@@ -428,5 +450,44 @@ describe('schemaRecipeValues', () => {
 		expect(fromRecipe({})).toEqual(START);
 		const empty = { name: ' ', recipeIngredient: [], recipeInstructions: [], nutrition: 'None' };
 		expect(fromRecipe(empty)).toEqual(START);
+	});
+
+	it('gives null for each field the Recipe leaves out, rather than a default (MEA-264)', () => {
+		const toast = { '@type': 'Recipe', name: 'Toast', recipeIngredient: ['1 slice bread'] };
+		expect(schemaRecipeValues(toast)).toEqual({
+			values: {
+				...NOTHING,
+				name: 'Toast',
+				rows: [{ kind: 'ingredient', amount: '1', unit: 'slice', item: 'bread', prepNote: '' }]
+			},
+			leftOut: []
+		});
+		// Fields it has that can't be read are left out too.
+		const unreadable = {
+			'@type': 'Recipe',
+			name: ' ',
+			recipeYield: 'A crowd',
+			prepTime: '20 minutes',
+			cookTime: 20,
+			recipeIngredient: [' ', '<br>'],
+			recipeInstructions: ['', ','],
+			nutrition: { calories: 'unknown', proteinContent: '12,5 g', carbohydrateContent: null }
+		};
+		expect(schemaRecipeValues(unreadable)).toEqual({ values: NOTHING, leftOut: [] });
+	});
+});
+
+describe('filledIn', () => {
+	it("fills in a new recipe's fields from the page's, keeping the rest as they start", () => {
+		const start = { ...START, tags: 'Breakfast', notes: 'Day-old bread toasts best.' };
+		const eggs = { kind: 'ingredient' as const, amount: '2', unit: '', item: 'eggs', prepNote: '' };
+		const rows = [eggs];
+		expect(filledIn(start, { ...NOTHING, name: 'Eggs', cookMinutes: '5', rows })).toEqual({
+			...start,
+			name: 'Eggs',
+			cookMinutes: '5',
+			rows
+		});
+		expect(filledIn(start, NOTHING)).toEqual(start);
 	});
 });

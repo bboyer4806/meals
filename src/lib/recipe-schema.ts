@@ -12,7 +12,33 @@ export type JsonLdNode = { [key: string]: unknown };
 /** A field the page has more of than the editor takes, so the rest was left out (MEA-84). */
 export type LeftOut = 'ingredients' | 'steps';
 
+/** The editor's fields a page's Recipe fills in (design 7, Import from a link). */
+export type PageField =
+	| 'name'
+	| 'servings'
+	| 'prepMinutes'
+	| 'cookMinutes'
+	| 'steps'
+	| 'calories'
+	| 'proteinG'
+	| 'carbsG'
+	| 'fatG'
+	| 'rows';
+
+/**
+ * A Recipe read into the editor's fields: each as the page writes it, or null where the page has
+ * none or it can't be read, so a field the page leaves out never replaces what the editor has
+ * (MEA-264).
+ */
+export type PageValues = { [F in PageField]: RecipeFormValues[F] | null };
+
 /** A Recipe read into the editor's fields, and the fields it has more of than the editor takes. */
+export type PageRecipe = { values: PageValues; leftOut: LeftOut[] };
+
+/** What Import from a link gives Edit recipe: the page's fields, and the link as its Source. */
+export type LinkValues = PageValues & { source: string };
+
+/** What Import from a link gives New recipe: every field, filled in as filledIn fills them. */
 export type ImportedRecipe = { values: RecipeFormValues; leftOut: LeftOut[] };
 
 // The editor's limits (server/recipe-form.ts): a recipe takes up to 100 ingredients and 10,000
@@ -235,15 +261,15 @@ function nutrient(value: unknown): string | null {
 }
 
 /**
- * The editor's fields filled in from a Recipe: its name, servings, prep and cook minutes,
- * ingredients, steps one per line, and calories, protein, carbs and fat. A field the Recipe leaves
- * out, or that can't be read, keeps its value in `start`, as do tags, notes and source. Values are
- * as the page writes them, and the editor checks them when the recipe is saved. The text is read
- * in the editor's order, the name, the ingredients and then the steps, so a page with more than
- * one import reads loses its last steps first (plainReader). Ingredients and steps are read up to
- * the most the editor takes, and leftOut names those the page has more of.
+ * The editor's fields read from a Recipe: its name, servings, prep and cook minutes, ingredients,
+ * steps one per line, and calories, protein, carbs and fat. A field the Recipe leaves out, or
+ * that can't be read, is null (PageValues). Values are as the page writes them, and the editor
+ * checks them when the recipe is saved. The text is read in the editor's order, the name, the
+ * ingredients and then the steps, so a page with more than one import reads loses its last steps
+ * first (plainReader). Ingredients and steps are read up to the most the editor takes, and
+ * leftOut names those the page has more of.
  */
-export function schemaRecipeValues(recipe: JsonLdNode, start: RecipeFormValues): ImportedRecipe {
+export function schemaRecipeValues(recipe: JsonLdNode): PageRecipe {
 	const nutrition = isNode(recipe.nutrition) ? recipe.nutrition : {};
 	const plain = plainReader();
 	const name = recipeName(recipe.name, plain);
@@ -254,18 +280,37 @@ export function schemaRecipeValues(recipe: JsonLdNode, start: RecipeFormValues):
 	if (stepText.leftOut) leftOut.push('steps');
 	return {
 		values: {
-			...start,
-			name: name ?? start.name,
-			servings: servings(recipe.recipeYield) ?? start.servings,
-			prepMinutes: minutes(recipe.prepTime) ?? start.prepMinutes,
-			cookMinutes: minutes(recipe.cookTime) ?? start.cookMinutes,
-			steps: stepText.value ?? start.steps,
-			calories: nutrient(nutrition.calories) ?? start.calories,
-			proteinG: nutrient(nutrition.proteinContent) ?? start.proteinG,
-			carbsG: nutrient(nutrition.carbohydrateContent) ?? start.carbsG,
-			fatG: nutrient(nutrition.fatContent) ?? start.fatG,
-			rows: rows.value ?? start.rows
+			name,
+			servings: servings(recipe.recipeYield),
+			prepMinutes: minutes(recipe.prepTime),
+			cookMinutes: minutes(recipe.cookTime),
+			steps: stepText.value,
+			calories: nutrient(nutrition.calories),
+			proteinG: nutrient(nutrition.proteinContent),
+			carbsG: nutrient(nutrition.carbohydrateContent),
+			fatG: nutrient(nutrition.fatContent),
+			rows: rows.value
 		},
 		leftOut
+	};
+}
+
+/**
+ * A new recipe's fields filled in from a page's (New recipe): each field the page has, and the
+ * rest as they are in `start`, which tags, notes and source always are.
+ */
+export function filledIn(start: RecipeFormValues, values: PageValues): RecipeFormValues {
+	return {
+		...start,
+		name: values.name ?? start.name,
+		servings: values.servings ?? start.servings,
+		prepMinutes: values.prepMinutes ?? start.prepMinutes,
+		cookMinutes: values.cookMinutes ?? start.cookMinutes,
+		steps: values.steps ?? start.steps,
+		calories: values.calories ?? start.calories,
+		proteinG: values.proteinG ?? start.proteinG,
+		carbsG: values.carbsG ?? start.carbsG,
+		fatG: values.fatG ?? start.fatG,
+		rows: values.rows ?? start.rows
 	};
 }

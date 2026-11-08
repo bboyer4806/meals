@@ -96,7 +96,13 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Request adds this dish to Requests on the Menu, and then says Requested. ‹ Recipes goes back to the list.'
 		]
 	},
-	'/(app)/recipes/[id]/edit': { title: 'Edit recipe', points: EDIT_RECIPE },
+	'/(app)/recipes/[id]/edit': {
+		title: 'Edit recipe',
+		points: [
+			'Found the recipe online? Paste its web address in Link and tap Import. Empty fields fill in from the page. Choose what else to replace, tap Apply, then check it and tap Save.',
+			...EDIT_RECIPE
+		]
+	},
 	'/(app)/recipes/[id]/cook': {
 		title: 'Cooking view',
 		points: [

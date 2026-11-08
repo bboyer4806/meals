@@ -1,7 +1,7 @@
 import type { Dialog, Page } from '@playwright/test';
 import type { LeftOut } from '#lib/recipe-schema.ts';
 import type { RecipeFormValues } from '#lib/server/recipe-form.ts';
-import { addRecipe, expect, makeJpeg, open, test } from './fixtures.ts';
+import { addRecipe, answerAction, expect, makeJpeg, open, test } from './fixtures.ts';
 
 // Import from a link (design 7) on New recipe. The server fetches the page, and refuses
 // addresses on its own computer (design 4.5), which are the only ones these tests have. So
@@ -44,26 +44,10 @@ const toast: RecipeFormValues = {
 
 /**
  * Answers Import as the server does for a page with this recipe, and more of the fields in
- * `leftOut` than the editor takes. SvelteKit sends an action's data as devalue writes it: a list
- * of every value, where objects and lists hold the places of what's in them.
+ * `leftOut` than the editor takes.
  */
 async function answerImport(page: Page, values: RecipeFormValues, leftOut: LeftOut[] = []) {
-	const flat: unknown[] = [];
-	const place = (value: unknown): number => {
-		const index = flat.push(null) - 1;
-		flat[index] = Array.isArray(value)
-			? value.map(place)
-			: typeof value === 'object' && value !== null
-				? Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, place(inner)]))
-				: value;
-		return index;
-	};
-	place({ action: 'import', values, leftOut });
-	await page.route(
-		(url) => url.pathname === '/recipes/new' && url.search === '?/import',
-		(route) =>
-			route.fulfill({ json: { type: 'success', status: 200, data: JSON.stringify(flat) } })
-	);
+	await answerAction(page, '/recipes/new', 'import', { action: 'import', values, leftOut });
 }
 
 /** Collects the questions the page asks, answering each with Cancel. */

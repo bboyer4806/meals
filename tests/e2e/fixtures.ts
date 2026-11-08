@@ -49,6 +49,32 @@ export async function open(page: Page, path: string) {
 }
 
 /**
+ * Answers the form action `action` of the page at `path` as SvelteKit does when it gives `data`,
+ * without the server, such as Import from a link for a page these tests can't reach. SvelteKit
+ * sends an action's data as devalue writes it: a list of every value, where objects and lists
+ * hold the places of what's in them. A later answer for the same action takes the place of this
+ * one.
+ */
+export async function answerAction(page: Page, path: string, action: string, data: object) {
+	const flat: unknown[] = [];
+	const place = (value: unknown): number => {
+		const index = flat.push(null) - 1;
+		flat[index] = Array.isArray(value)
+			? value.map(place)
+			: typeof value === 'object' && value !== null
+				? Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, place(inner)]))
+				: value;
+		return index;
+	};
+	place(data);
+	await page.route(
+		(url) => url.pathname === path && url.search === `?/${action}`,
+		(route) =>
+			route.fulfill({ json: { type: 'success', status: 200, data: JSON.stringify(flat) } })
+	);
+}
+
+/**
  * A household with one member, not signed in. Usual servings 4. The member has finished the
  * first-time tour unless `tourSeen` is false.
  */
