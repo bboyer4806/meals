@@ -8,12 +8,12 @@
 </script>
 
 <svelte:head>
-	<title>History · Meals</title>
+	<title>Grocery History · Meals</title>
 </svelte:head>
 
 <a class="link-tap back" href="/groceries">‹ Groceries</a>
 
-<h1>History</h1>
+<h1>Grocery History</h1>
 
 <form method="GET" class="row search" data-sveltekit-replacestate data-sveltekit-reset="false">
 	<SearchBox label="Search history" value={data.search} />

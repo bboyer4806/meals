@@ -228,7 +228,7 @@
 	<h1 class="grow">Groceries</h1>
 	<div class="row">
 		<a class="link-tap" href="/groceries/items">Items</a>
-		<a class="link-tap" href="/groceries/history">History</a>
+		<a class="link-tap" href="/groceries/history">Grocery History</a>
 		<a class="link-tap" href="/groceries/parties">Party lists</a>
 	</div>
 </div>

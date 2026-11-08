@@ -23,7 +23,7 @@ test('each screen opens its own help', async ({ page, db, context, baseURL, pers
 	const partyListId = addPartyList(db, person.householdId, 'Birthday');
 	const screens: [path: string, title: string][] = [
 		['/groceries', 'Grocery list'],
-		['/groceries/history', 'History'],
+		['/groceries/history', 'Grocery History'],
 		['/groceries/items', 'Items'],
 		['/groceries/parties', 'Party lists'],
 		[`/groceries/parties/${partyListId}`, 'Party list'],

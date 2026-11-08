@@ -36,7 +36,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 		]
 	},
 	'/(app)/groceries/history': {
-		title: 'History',
+		title: 'Grocery History',
 		points: [
 			'Everything your household checked off as received, by date, newest first.',
 			'Search for an item to see when you last bought it.',

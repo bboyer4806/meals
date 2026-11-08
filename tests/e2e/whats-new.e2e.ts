@@ -21,7 +21,7 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await more(page).click();
 	await expect(page.getByRole('navigation', { name: 'More' }).getByRole('link')).toHaveText([
 		'Items',
-		'History',
+		'Grocery History',
 		'Household',
 		"What's new"
 	]);
