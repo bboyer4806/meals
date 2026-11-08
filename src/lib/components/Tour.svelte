@@ -11,7 +11,7 @@
 		{ target: 'groceries', title: 'Groceries', text: "Your household's shopping list, by store." },
 		{ target: 'menu', title: 'Menu', text: "Plan the week's dinners and see dish requests." },
 		{ target: 'recipes', title: 'Recipes', text: "Your household's recipes, to cook or plan with." },
-		{ target: 'more', title: 'More', text: "Items, History, Household, What's new and Sign out." },
+		{ target: 'more', title: 'More', text: "Items, Grocery History, Household, What's new and Sign out." },
 		{ target: 'help', title: 'Help', text: "Explains the screen you're on and how to use it." },
 		{ target: 'feedback', title: 'Send feedback', text: "Tell us what works, what doesn't, or an idea." }
 	];

@@ -542,7 +542,7 @@ unless that store is archived (Q18).
   than 3.3000000000000003, and keeps a line in step with party quantities in another unit
   (6.15). Rounded to 3 places, a rest of 5 oz on a line in lb (0.3125 lb) would become 0.313 lb
   and leave 0.0005 lb behind when the party's part is checked off (MEA-92).
-- The grocery list, party lists, History and a recipe's nutrition show numbers to 2 decimal
+- The grocery list, party lists, Grocery History and a recipe's nutrition show numbers to 2 decimal
   places, without trailing zeros (1.5, 0.33), and one above zero as at least 0.01, never 0
   (MEA-92).
 - Known units (Q32b) and how much each holds:
@@ -892,7 +892,7 @@ shows on both.
   Ordered if it had been ordered and otherwise To Order: its line when the line was all the
   thing's, and otherwise a line split off for its part, leaving the rest of the line received.
   What was bought on the list alone no longer counts. A thing bought on an earlier day can be
-  unchecked too, and History then shows its received line without the thing's part.
+  unchecked too, and Grocery History then shows its received line without the thing's part.
 - Changing a thing's quantity changes what's on Groceries for it by as much, but never to more
   than it still needs. A rise goes on a To Order line as Add to Groceries does, and a fall takes
   the newest parts off first, deleting a line left with nothing. A thing with nothing on Groceries
@@ -900,8 +900,8 @@ shows on both.
   bought.
 - Removing a thing, or deleting its list, takes what's on Groceries for it off its lines,
   deleting a line left with nothing, and leaves the rest of each line, other parties' parts and
-  everything received, which stays in History. A received line undone after that comes back whole,
-  as the household's own.
+  everything received, which stays in Grocery History. A received line undone after that comes back
+  whole, as the household's own.
 - On the grocery list, a line with party parts works like any other, and the parts keep within
   it. Making it smaller takes from the household's own part first, then from the newest party
   parts. A unit that a party part's unit doesn't convert to takes that part off the line, and
@@ -911,7 +911,7 @@ shows on both.
 ## 7. Screens
 
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
-header menu, More, holds Items, History, Household, What's new, Admin (admin only) and Sign
+header menu, More, holds Items, Grocery History, Household, What's new, Admin (admin only) and Sign
 out. It closes when one of its links is followed, with Escape or with a tap outside it, and
 that tap still goes to the page. Help sits in the header to the left of More.
 
@@ -921,7 +921,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Invite-only      | `/not-invited`                       | Shown to an account without an invite, with the email it used.                                                                      |
 | Household setup  | `/setup`                             | First sign-in for a new household: name, usual servings, time zone.                                                                 |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
-| History          | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
+| Grocery History  | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
 | Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. |
 | Party lists      | `/groceries/parties`                 | "‹ Groceries", then New list and the household's party lists, each with how many of its things are bought (6.15). |
 | Party list       | `/groceries/parties/[id]`            | "‹ Party lists", the name with Edit, an add form, Add all to Groceries, and the things with their circles, amounts, what's bought and on Groceries, and Add to Groceries (6.15). Tapping a thing opens a sheet with its quantity, Save and Remove. |
@@ -971,8 +971,8 @@ the header to the left of More, which printing hides with the rest of the header
 sheet titled "Help: " and the screen's name, such as "Help: Grocery list", that says what the
 screen is for and how to do its main tasks, in plain words and no more than about 6 short points.
 Recipe, Edit recipe and New recipe (which share the editor's points, each adding one about Import
-from a link), Import recipes, Cooking view, Dinner, History, Items, Party lists and Party list each
-have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
+from a link), Import recipes, Cooking view, Dinner, Grocery History, Items, Party lists and Party
+list each have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
 Opening it changes nothing on the page behind, so anything typed there and not saved stays. The
 help is fixed text in `src/lib/help.ts`, keyed by each screen's route, and the type check fails
 if a screen has none. It opens only when asked: there's no Help page or link in More, and the
@@ -990,8 +990,8 @@ Escape records `tour_seen`, so it never shows again on any device. Reloading or 
 Grocery list before then records nothing, and the tour starts again from the first step the
 next time. There's no way to replay it, and no other screen has a tour.
 
-**Grocery list.** Beside the title, Items, History and Party lists open those screens; they go
-under it together on a screen too narrow for them (MEA-247). An add bar at the top: item (with
+**Grocery list.** Beside the title, Items, Grocery History and Party lists open those screens; they
+go under it together on a screen too narrow for them (MEA-247). An add bar at the top: item (with
 suggestions), quantity, unit, store (filled from the default; tap to change) and Add. Below it, one group per store plus "No
 store". Groups can be collapsed, and the device remembers which ones are. Each group
 lists its To Order lines, then Ordered, then Received today (struck through). Store
@@ -1017,13 +1017,13 @@ from that link. Use the image's own link, not the page it's on." and changes not
 image the phone can't read ("This image couldn't be read. Try a JPEG or PNG."). A save that fails,
 such as for a name another item has, changes nothing, the image included, and keeps what was
 picked and typed for another try. The image shows beside the item's name on Items (48 px), the
-grocery list (40 px), the add bar's suggestions (32 px) and History (40 px). An item without one
-shows as it always has, with no placeholder. Renaming, archiving and restoring an item keep its
+grocery list (40 px), the add bar's suggestions (32 px) and Grocery History (40 px). An item without
+one shows as it always has, with no placeholder. Renaming, archiving and restoring an item keep its
 image (6.10).
 
-**Search.** Recipes, History and Items search as people type (MEA-36): the list updates 300 ms
-after typing stops, and Enter, or a phone keyboard's search key, searches right away. There's no
-Search button. The box keeps focus while the list updates, so a phone's keyboard stays open, and
+**Search.** Recipes, Grocery History and Items search as people type (MEA-36): the list updates
+300 ms after typing stops, and Enter, or a phone keyboard's search key, searches right away. There's
+no Search button. The box keeps focus while the list updates, so a phone's keyboard stays open, and
 what's typed meanwhile stays in the box, spaces included. So does what's typed while another page
 of the list loads, such as a tag's list tapped just before: that page's search doesn't replace it,
 and the search then runs with that page's tags (MEA-246). Clearing the box shows the list with no

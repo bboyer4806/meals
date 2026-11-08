@@ -141,7 +141,7 @@
 	let listError = $state('');
 	const deleteQuestion = $derived(
 		`Delete ${data.list.name}? What's on Groceries for it comes off, ` +
-			'and what was bought stays in History.'
+			'and what was bought stays in Grocery History.'
 	);
 
 	function editList() {
