@@ -20,6 +20,7 @@ import {
 	clearDinner,
 	copyDinner,
 	dishSuggestions,
+	findDinners,
 	getDay,
 	listCopyGroups,
 	MAX_DISH_NAME,
@@ -147,6 +148,9 @@ const moveSchema = z.object({
 });
 
 const clearSchema = z.object({ dinnerId: shownDinner });
+
+// Dinners the page showed and holds something typed for, gone from the date since (MEA-256).
+const findSchema = z.object({ dinnerIds: idList });
 
 // A dish request and where it goes: the dinner the page picked, or without one a new Cooking at
 // home dinner, with the labels the page asked for when the date has dinners (6.12, 6.9).
@@ -329,6 +333,17 @@ export const actions = {
 		if ('failure' in parsed) return parsed.failure;
 		const { dinnerId } = parsed.data;
 		return attempt('clear', () => clearDinner(user.householdId, date, dinnerId, Date.now()));
+	},
+
+	// Where dinners gone from the date are now, so what's typed for one someone moved goes to its
+	// new date, and what's typed for one someone cleared stays to plan it again. It changes nothing
+	// (MEA-256).
+	find: async ({ locals, params, request }) => {
+		const user = requireHousehold(locals);
+		dinnerDate(params);
+		const parsed = parseForm(findSchema, await request.formData(), 'find');
+		if ('failure' in parsed) return parsed.failure;
+		return { action: 'find', found: findDinners(user.householdId, parsed.data.dinnerIds) };
 	},
 
 	// Puts a requested dish on one of the date's dinners and completes the request. The page uses the

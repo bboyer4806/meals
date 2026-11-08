@@ -1,16 +1,35 @@
+<script module lang="ts">
+	import type { Dinner } from '../server/data/dinners.ts';
+	import type { TypedFields } from './DinnerDetails.svelte';
+
+	/**
+	 * What a dinner's forms are for: a saved dinner, the unsaved Cooking at home a date with no
+	 * dinner shows (no id), or a dinner someone cleared while something typed for it isn't saved
+	 * (6.11, MEA-256).
+	 */
+	export type Editing = Pick<Dinner, 'label' | 'type' | 'restaurantName' | 'note' | 'servings'> & {
+		id: number | null;
+	};
+
+	/**
+	 * What's typed in a dinner's forms and not saved: the details, as typed, and a name in the dish
+	 * field not added (MEA-202, MEA-240).
+	 */
+	export type Typing = { fields: TypedFields; dishName: string | null };
+</script>
+
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
-	import { DINNER_TYPES, DINNER_TYPE_LABELS, hasDishes, type DinnerType } from '../menu.ts';
+	import { DINNER_TYPES, DINNER_TYPE_LABELS, NO_DISHES, hasDishes, type DinnerType } from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
-	import type { CopyGroup, Dinner } from '../server/data/dinners.ts';
+	import type { CopyGroup } from '../server/data/dinners.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import CopyDinner from './CopyDinner.svelte';
 	import DinnerDetails from './DinnerDetails.svelte';
-	import DinnerDishes from './DinnerDishes.svelte';
+	import DinnerDishes, { notAdded } from './DinnerDishes.svelte';
 	import Sheet from './Sheet.svelte';
-	import Snapshot from './Snapshot.svelte';
 
 	// One dinner on a date's page (design 7, Dinner; 6.9): its type, dishes, servings or
 	// restaurant, and note, Copy a dinner and Clear. Each of a date's dinners has its own, and a
@@ -29,14 +48,8 @@
 	}: {
 		/** The dinner as it is now, or null on a date with no dinner. */
 		dinner: Dinner | null;
-		/**
-		 * What the details form is for: the dinner, the unsaved Cooking at home a date with no
-		 * dinner shows, or a dinner someone cleared or moved while something typed here isn't
-		 * saved (6.11).
-		 */
-		editing: Pick<Dinner, 'label' | 'type' | 'restaurantName' | 'note' | 'servings'> & {
-			id: number | null;
-		};
+		/** What the details form is for. */
+		editing: Editing;
 		/** Whether the date has more than one dinner, so each has a label (6.9). */
 		labeled: boolean;
 		suggestions: { id: number; name: string; timesAdded: number }[];
@@ -90,14 +103,36 @@
 		return details?.matches(other) ?? false;
 	}
 
-	/** The note as typed, as it would be stored. */
-	export function typedNote(): string {
-		return details?.typedNote() ?? '';
-	}
-
 	/** What the page says when the dish field goes with a name still in it, or null. */
 	export function nameLost(): string | null {
 		return dishEditor?.nameLost() ?? null;
+	}
+
+	/**
+	 * What's typed here and not saved, or null when there's nothing, which the date's page keeps
+	 * for when it loads again (design 7, Dinner; MEA-202, MEA-240, MEA-256).
+	 */
+	export function typing(): Typing | null {
+		const fields = details?.typedFields() ?? {};
+		const dishName = dishEditor?.keptName() ?? null;
+		return Object.keys(fields).length === 0 && dishName === null ? null : { fields, dishName };
+	}
+
+	/**
+	 * Puts back what was typed and not saved. A dish name comes back while the dinner's type has
+	 * dishes; otherwise this returns what the page says about it, so it can be copied, or null.
+	 */
+	export function restore({ fields, dishName }: Typing): string | null {
+		details?.restoreTyped(fields);
+		if (dishName === null) return null;
+		if (!dishEditor) return notAdded(dishName, NO_DISHES);
+		dishEditor.putBackName(dishName);
+		return null;
+	}
+
+	/** Empties the dish field, when the name in it goes with the dinner it was typed for. */
+	export function dropName(): void {
+		dishEditor?.dropName();
 	}
 
 	/**
@@ -188,17 +223,6 @@
 		};
 	};
 </script>
-
-<!-- A name typed in the dish field and not added comes back with the details form's typing, kept
-under the same dinner, which can change while the editor stays, as when the page's own change
-plans the date (MEA-202, MEA-240). -->
-{#key editing.id}
-	<Snapshot
-		id="dinner-{editing.id ?? 'new'}-dish"
-		capture={() => dishEditor?.keptName() ?? null}
-		restore={(name) => dishEditor?.putBackName(name)}
-	/>
-{/key}
 
 <!-- Which dinner this is, so a change meant for it isn't made to another one. -->
 {#snippet shownDinner()}

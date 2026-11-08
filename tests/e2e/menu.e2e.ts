@@ -90,6 +90,15 @@ function countAdds(page: Page): () => number {
 	return () => count;
 }
 
+/** Counts the requests that find out where dinners gone from a day went (MEA-256). */
+function countFinds(page: Page): () => number {
+	let count = 0;
+	page.on('request', (request) => {
+		if (new URL(request.url()).search === '?/find') count += 1;
+	});
+	return () => count;
+}
+
 /** Whether nothing covers the middle of the element, so a tap there reaches it. */
 function uncovered(locator: Locator) {
 	return locator.evaluate((element) => {
@@ -251,6 +260,22 @@ async function saveToWeek(page: Page, date: string) {
 
 const LEAVE = 'Leave without saving? What you typed may be lost.';
 const CHANGED = 'Someone changed this dinner since you opened it.';
+/** What a day says when someone cleared a dinner while something typed for it isn't saved. */
+const CLEARED = 'Someone cleared this dinner. Save to plan it again with what you typed.';
+
+/**
+ * What a day says when someone moved a dinner to `date` while something typed for it isn't saved,
+ * with Open to take it there (MEA-256).
+ */
+function movedTo(date: string, dinners = 1): string {
+	const them = dinners > 1;
+	return `Someone moved ${them ? 'these dinners' : 'this dinner'} to ${dayLabel(date)}. What you typed goes with ${them ? 'them' : 'it'}. Open ${dayLabel(date)}`;
+}
+
+/** Open on a day's notice, which goes to the date a dinner was moved to with what was typed. */
+function openMoved(page: Page, date: string) {
+	return page.getByRole('alert').getByRole('button', { name: `Open ${dayLabel(date)}` });
+}
 
 /** What leaving asks with a dish name typed and not added, which Save doesn't add (MEA-127). */
 function leaveDish(name: string): string {
@@ -2052,13 +2077,12 @@ test("refuses to switch, copy onto or save a dinner the page didn't show", async
 	expect(dinnerDishes(db, roastId)).toEqual([{ name: 'Roast', role: 'main' }]);
 
 	// Saving a note, after someone moved the birthday dinner on again. The form then shows that
-	// dinner's own note, so it isn't replaced unseen, and the note typed is in the notice to copy.
+	// dinner's own note, so it isn't replaced unseen, and the notice says where the salad went,
+	// with the note typed for it (MEA-256).
 	swap(db, roastId, saladId);
 	await note.fill('Bring candles');
 	await page.getByRole('button', { name: 'Save' }).click();
-	await expect(page.getByRole('alert')).toHaveText(
-		'Someone put another dinner on this date, so your note wasn\'t saved: "Bring candles"'
-	);
+	await expect(page.getByRole('alert')).toHaveText(movedTo(later));
 	await expect(dishLinks(page)).toHaveText(['Roast']);
 	await expect(note).toHaveValue("Grandma's birthday");
 	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
@@ -2091,9 +2115,7 @@ test('keeps what was typed when coming back to the app finds the dinner cleared 
 	db.prepare('delete from dinners where id = ?').run(dinnerId);
 	await comeBack(page);
 	await expect(page.getByText('Not planned yet.')).toBeVisible();
-	await expect(page.getByRole('alert')).toHaveText(
-		'Someone cleared or moved this dinner. Save to plan it again with what you typed.'
-	);
+	await expect(page.getByRole('alert')).toHaveText(CLEARED);
 	await expect(note).toHaveValue("Grandma's house, bring dessert");
 	await expect(page.getByLabel('Servings', { exact: true })).toHaveValue('5');
 	// It stays on the day to say so (MEA-15 decides where it goes).
@@ -2124,7 +2146,7 @@ test('keeps what was typed when coming back to the app finds the dinner cleared 
 	);
 });
 
-test('shows a dinner swapped onto the date, with what was typed in the notice', async ({
+test('shows a dinner swapped onto the date, and takes what was typed to where the other went (MEA-256)', async ({
 	page,
 	db,
 	person
@@ -2137,26 +2159,35 @@ test('shows a dinner swapped onto the date, with what was typed in the notice', 
 		servings: 6
 	});
 	const note = page.getByLabel('Note', { exact: true });
+	const servings = page.getByLabel('Servings', { exact: true });
 
 	await open(page, `/menu/${date}`);
 	await note.fill('Salad needs dressing');
 	// Someone else moves the birthday dinner onto this date while the app is in the background.
-	const setDate = db.prepare('update dinners set date = ? where id = ?');
-	setDate.run('moving', birthday);
-	setDate.run(next, salad);
-	setDate.run(date, birthday);
+	swap(db, birthday, salad);
 	await comeBack(page);
 
-	await expect(page.getByRole('alert')).toHaveText(
-		'Someone put another dinner on this date, so your note wasn\'t saved: "Salad needs dressing"'
-	);
+	// The form shows the birthday dinner, so its note isn't replaced unseen.
+	await expect(page.getByRole('alert')).toHaveText(movedTo(next));
 	await expect(note).toHaveValue("Grandma's birthday");
-	await expect(page.getByLabel('Servings', { exact: true })).toHaveValue('6');
+	await expect(servings).toHaveValue('6');
+
+	// Open takes what was typed to the salad, on its new date, unsaved.
+	await openMoved(page, next).click();
+	await expect(page).toHaveURL(new RegExp(`/menu/${next}$`));
+	await expect(note).toHaveValue('Salad needs dressing');
+	await expect(servings).toHaveValue('2');
+	await expect(page.getByRole('alert')).toHaveCount(0);
 	expect(dinnerRow(db, person.householdId, date)).toMatchObject({
 		id: birthday,
 		note: "Grandma's birthday"
 	});
 	expect(dinnerRow(db, person.householdId, next)).toMatchObject({ id: salad, note: 'Salad night' });
+	await saveToWeek(page, next);
+	expect(dinnerRow(db, person.householdId, next)).toMatchObject({
+		id: salad,
+		note: 'Salad needs dressing'
+	});
 });
 
 test('drops the "save to plan it again" notice once another dinner is planned, or nothing is left to save', async ({
@@ -2166,7 +2197,6 @@ test('drops the "save to plan it again" notice once another dinner is planned, o
 }) => {
 	const date = addDays(today(), 1);
 	const note = page.getByLabel('Note', { exact: true });
-	const held = 'Someone cleared or moved this dinner. Save to plan it again with what you typed.';
 
 	// Cleared, then planned again by someone else before the held note is saved.
 	let thai = addDinner(db, person.householdId, date, { type: 'eat_out', note: 'Thai place' });
@@ -2174,7 +2204,7 @@ test('drops the "save to plan it again" notice once another dinner is planned, o
 	await note.fill('Thai place, table at 7');
 	db.prepare('delete from dinners where id = ?').run(thai);
 	await comeBack(page);
-	await expect(page.getByRole('alert')).toHaveText(held);
+	await expect(page.getByRole('alert')).toHaveText(CLEARED);
 	addDinner(db, person.householdId, date, { type: 'leftovers', note: 'Chili from Sunday' });
 	await comeBack(page);
 	await expect(page.getByRole('alert')).toHaveText(
@@ -2195,7 +2225,7 @@ test('drops the "save to plan it again" notice once another dinner is planned, o
 	await note.fill('Thai place, table at 7');
 	db.prepare('delete from dinners where id = ?').run(thai);
 	await comeBack(page);
-	await expect(page.getByRole('alert')).toHaveText(held);
+	await expect(page.getByRole('alert')).toHaveText(CLEARED);
 	await note.fill('Thai place');
 	await comeBack(page);
 	await expect(page.getByRole('alert')).toHaveCount(0);
@@ -2776,6 +2806,266 @@ test.describe('keeping what was typed when the page loads again or is returned t
 		expect(questions).toEqual([asked, asked]);
 		expect(dinnerRow(db, person.householdId, date)).toMatchObject({ note: 'Taco night' });
 		expect(dinnerDishes(db, dinnerId)).toEqual([]);
+	});
+
+	// Someone else changed the dinner while the app was dropped (MEA-256).
+
+	test('keeps what was typed for a dinner someone cleared, for Save to plan it again (MEA-256)', async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		const dinnerId = addDinner(db, person.householdId, date, {
+			type: 'going',
+			note: 'Potluck',
+			servings: 5
+		});
+		const note = page.getByLabel('Note', { exact: true });
+		const servings = page.getByLabel('Servings', { exact: true });
+
+		await open(page, `/menu/${date}`);
+		await note.fill('Potluck, bring the big bowl');
+		await servings.fill('6');
+		await dishField(page).fill('Corn salad');
+		db.prepare('delete from dinners where id = ?').run(dinnerId);
+		await dropAndComeBack(page);
+
+		await expect(page.getByText('Not planned yet.')).toBeVisible();
+		await expect(page.getByRole('alert')).toHaveText(CLEARED);
+		await expect(typeButton(page, 'Bringing a dish')).toHaveAttribute('aria-pressed', 'true');
+		await expect(note).toHaveValue('Potluck, bring the big bowl');
+		await expect(servings).toHaveValue('6');
+		await expect(dishField(page)).toHaveValue('Corn salad');
+		expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
+
+		// Coming back again plans nothing, and still keeps it.
+		await dropAndComeBack(page);
+		await expect(page.getByRole('alert')).toHaveText(CLEARED);
+		await expect(note).toHaveValue('Potluck, bring the big bowl');
+		await expect(dishField(page)).toHaveValue('Corn salad');
+		expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
+
+		// Save plans it again with what was typed, and stays to say so.
+		await page.getByRole('button', { name: 'Save' }).click();
+		await expect(page.getByRole('status')).toHaveText(
+			'Someone had cleared or moved this dinner, so it was planned again with what you saved.'
+		);
+		await expect(page.getByRole('alert')).toHaveCount(0);
+		expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+			type: 'going',
+			note: 'Potluck, bring the big bowl',
+			servings: 6
+		});
+	});
+
+	test('takes what was typed for a dinner someone moved to its new date with Open, saving nothing until Save (MEA-256)', async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		const later = addDays(today(), 3);
+		const dinnerId = addDinner(db, person.householdId, date, { note: 'Taco night', servings: 4 });
+		const note = page.getByLabel('Note', { exact: true });
+		const servings = page.getByLabel('Servings', { exact: true });
+		const finds = countFinds(page);
+
+		await open(page, `/menu/${date}`);
+		await note.fill('Taco night at 6');
+		await servings.fill('5');
+		await dishField(page).fill('Guacamole');
+		db.prepare('update dinners set date = ? where id = ?').run(later, dinnerId);
+		await dropAndComeBack(page);
+
+		// The day it was on has nothing typed in its form, which would plan it again.
+		await expect(page.getByRole('alert')).toHaveText(movedTo(later));
+		await expect(page.getByText('Not planned yet.')).toBeVisible();
+		await expect(note).toHaveValue('');
+		await expect(dishField(page)).toHaveValue('');
+		expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
+
+		// Coming back again still says where it went.
+		await dropAndComeBack(page);
+		await expect(page.getByRole('alert')).toHaveText(movedTo(later));
+
+		await openMoved(page, later).click();
+		await expect(page).toHaveURL(new RegExp(`/menu/${later}$`));
+		await expect(note).toHaveValue('Taco night at 6');
+		await expect(servings).toHaveValue('5');
+		await expect(dishField(page)).toHaveValue('Guacamole');
+		await expect(page.getByRole('alert')).toHaveCount(0);
+		expect(dinnerRow(db, person.householdId, later)).toMatchObject({
+			id: dinnerId,
+			note: 'Taco night',
+			servings: 4
+		});
+		expect(dinnerDishes(db, dinnerId)).toEqual([]);
+
+		// It's that dinner's typing now: kept when the app is dropped again, and added and saved.
+		await dropAndComeBack(page);
+		await expect(note).toHaveValue('Taco night at 6');
+		await expect(dishField(page)).toHaveValue('Guacamole');
+		await addButton(page).click();
+		await expect(dishLinks(page)).toHaveText(['Guacamole']);
+		await saveToWeek(page, later);
+		expect(dinnerRow(db, person.householdId, later)).toMatchObject({
+			id: dinnerId,
+			note: 'Taco night at 6',
+			servings: 5
+		});
+		expect(dinnerRow(db, person.householdId, date)).toBeUndefined();
+
+		// Back to each day after the save brings nothing older back over what's saved.
+		const found = finds();
+		await page.goBack();
+		await expect(page).toHaveURL(new RegExp(`/menu/${later}$`));
+		await expect(note).toHaveValue('Taco night at 6');
+		await expect(dishField(page)).toHaveValue('');
+		await page.goBack();
+		await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+		await expect(page.getByText('Not planned yet.')).toBeVisible();
+		await comeBack(page);
+		await expect(page.getByRole('alert')).toHaveCount(0);
+		expect(finds()).toBe(found);
+	});
+
+	test('names a dish typed for a dinner someone switched to Eating out, to copy (MEA-256)', async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		const dinnerId = addDinner(db, person.householdId, date, { note: 'Grill night' });
+		const note = page.getByLabel('Note', { exact: true });
+
+		await open(page, `/menu/${date}`);
+		await note.fill('Grill night at 7');
+		await dishField(page).fill('Grilled corn with lime butter');
+		db.prepare("update dinners set type = 'eat_out' where id = ?").run(dinnerId);
+		await dropAndComeBack(page);
+
+		await expect(typeButton(page, 'Eating out')).toHaveAttribute('aria-pressed', 'true');
+		await expect(dishSection(page)).toHaveCount(0);
+		await expect(page.getByRole('alert')).toHaveText(
+			"Grilled corn with lime butter wasn't added. Switch to Cooking at home or Bringing a dish to add dishes."
+		);
+		await expect(note).toHaveValue('Grill night at 7');
+		expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+			type: 'eat_out',
+			note: 'Grill night'
+		});
+		expect(dinnerDishes(db, dinnerId)).toEqual([]);
+	});
+
+	test("keeps each dinner's typing with it, never another dinner's, when someone clears or moves them (MEA-256)", async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		const later = addDays(today(), 3);
+		const kidsId = addDinner(db, person.householdId, date, { note: 'Early' });
+		const adultsId = addDinner(db, person.householdId, date, { note: 'Late' });
+		labelDinner(db, kidsId, 'Kids');
+		labelDinner(db, adultsId, 'Adults');
+		const birthdayId = addDinner(db, person.householdId, later, { note: "Grandma's birthday" });
+		const kids = page.getByRole('region', { name: 'Kids' });
+		const adults = page.getByRole('region', { name: 'Adults' });
+		const kidsNote = kids.getByLabel('Note', { exact: true });
+		const adultsNote = adults.getByLabel('Note', { exact: true });
+		const note = page.getByLabel('Note', { exact: true });
+		page.on('dialog', (dialog) => void dialog.accept());
+
+		// Both are moved, swapping with the birthday dinner, before Back goes to the week (so
+		// hovering the day there loads it as it is now). Forward finds the birthday dinner on the
+		// day, as it's saved, and Open takes each dinner's typing to it.
+		await open(page, `/menu?week=${sundayOf(date)}`);
+		await day(page, date).click();
+		await kidsNote.fill('Early, mac and cheese');
+		await adultsNote.fill('Late, steak');
+		const setDate = db.prepare('update dinners set date = ? where id = ?');
+		setDate.run(later, kidsId);
+		setDate.run(later, adultsId);
+		setDate.run(date, birthdayId);
+		await page.goBack();
+		await expect(day(page, date)).toBeVisible();
+		await page.goForward();
+		await expect(page.getByRole('alert')).toHaveText(movedTo(later, 2));
+		await expect(note).toHaveValue("Grandma's birthday");
+		await openMoved(page, later).click();
+		await expect(page).toHaveURL(new RegExp(`/menu/${later}$`));
+		await expect(kidsNote).toHaveValue('Early, mac and cheese');
+		await expect(adultsNote).toHaveValue('Late, steak');
+		expect(dinnerRows(db, person.householdId, later).map((row) => row.note)).toEqual([
+			'Early',
+			'Late'
+		]);
+
+		// Someone clears the kids' dinner while the app is dropped. Its note is in the notice,
+		// and the adults' stays with theirs, the date's only dinner now.
+		db.prepare('delete from dinners where id = ?').run(kidsId);
+		db.prepare('update dinners set label = null where id = ?').run(adultsId);
+		await dropAndComeBack(page);
+		await expect(page.getByRole('alert')).toHaveText(
+			'Someone cleared this dinner, so your note wasn\'t saved: "Early, mac and cheese"'
+		);
+		await expect(note).toHaveValue('Late, steak');
+		expect(dinnerRows(db, person.householdId, later)).toEqual([
+			{ id: adultsId, label: null, type: 'cook', restaurant: null, note: 'Late' }
+		]);
+		expect(dinnerRow(db, person.householdId, date)).toMatchObject({
+			id: birthdayId,
+			note: "Grandma's birthday"
+		});
+	});
+
+	test("says nothing of the page's own Clear or Move, also when the app was dropped meanwhile (MEA-256)", async ({
+		page,
+		db,
+		person
+	}) => {
+		const date = addDays(today(), 1);
+		const later = addDays(today(), 3);
+		addDinner(db, person.householdId, date, { note: 'Taco night' });
+		const note = page.getByLabel('Note', { exact: true });
+		const finds = countFinds(page);
+		page.on('dialog', (dialog) => void dialog.accept());
+
+		// Clear, on its way when the phone drops the app.
+		await open(page, `/menu/${date}`);
+		await note.fill('Taco night with the neighbors');
+		const clearAnswered = await holdAnswers(page, (url) => url.search === '?/clear');
+		await page.getByRole('button', { name: 'Clear' }).click();
+		await page.getByRole('dialog', { name: 'Clear' }).getByRole('button', { name: 'Clear' }).click();
+		await expect.poll(() => dinnerRow(db, person.householdId, date)).toBeUndefined();
+		await dropAndComeBack(page);
+		// The reload dropped the request, so its held answer goes nowhere.
+		await page.unrouteAll({ behavior: 'ignoreErrors' });
+		clearAnswered();
+		await expect(page.getByText('Not planned yet.')).toBeVisible();
+		await expect(note).toHaveValue('');
+		await comeBack(page);
+		await expect(page.getByRole('alert')).toHaveCount(0);
+
+		// Move, then Back to the day it left: it's the person's own move, and they agreed to
+		// leave what was typed.
+		addDinner(db, person.householdId, date, { note: 'Pizza night' });
+		await open(page, `/menu/${date}`);
+		await note.fill('Pizza night at 7');
+		await dateButton(page).click();
+		const sheet = page.getByRole('dialog', { name: 'Move to another date' });
+		await sheet.getByLabel('New date').fill(later);
+		await sheet.getByRole('button', { name: `Move to ${dayLabel(later)}` }).click();
+		await expect(page).toHaveURL(new RegExp(`/menu/${later}$`));
+		await page.goBack();
+		await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+		await expect(page.getByText('Not planned yet.')).toBeVisible();
+		await expect(note).toHaveValue('');
+		await comeBack(page);
+		await expect(page.getByRole('alert')).toHaveCount(0);
+		expect(finds()).toBe(0);
+		expect(dinnerRow(db, person.householdId, later)).toMatchObject({ note: 'Pizza night' });
 	});
 });
 

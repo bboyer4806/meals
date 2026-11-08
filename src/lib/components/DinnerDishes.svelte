@@ -1,3 +1,14 @@
+<script module lang="ts">
+	import { normalizeName } from '../text.ts';
+
+	/** "Garlic bread wasn't added. Switch to ...", shown on the page once the field is gone. */
+	export function notAdded(dishName: string, message: string): string {
+		const named = normalizeName(dishName);
+		const reason = /[.!?]$/.test(message) ? message : `${message}.`;
+		return named === '' ? reason : `${named} wasn't added. ${reason}`;
+	}
+</script>
+
 <script lang="ts">
 	import { onDestroy, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -5,7 +16,6 @@
 	import { refreshAll } from '$app/navigation';
 	import { DISH_ROLES, DISH_ROLE_LABELS, NO_DISHES, defaultRole, type DishRole } from '../menu.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
-	import { normalizeName } from '../text.ts';
 	import ItemInput from './ItemInput.svelte';
 	import Sheet from './Sheet.svelte';
 
@@ -186,13 +196,6 @@
 		nameInput()?.focus();
 	}
 
-	/** "Garlic bread wasn't added. Switch to ...", shown on the page once the field is gone. */
-	function notAdded(dishName: string, message: string): string {
-		const named = normalizeName(dishName);
-		const reason = /[.!?]$/.test(message) ? message : `${message}.`;
-		return named === '' ? reason : `${named} wasn't added. ${reason}`;
-	}
-
 	/**
 	 * What the page says when someone else switched the dinner to a type without dishes and these
 	 * dishes go off the page with a name still in the field; null when the field is empty.
@@ -225,8 +228,13 @@
 	}
 
 	/** Puts back a name that was typed and not added. */
-	export function putBackName(kept: string | null): void {
-		if (kept !== null) name = kept;
+	export function putBackName(kept: string): void {
+		name = kept;
+	}
+
+	/** Empties the field, when the name in it goes with the dinner it was typed for (MEA-256). */
+	export function dropName(): void {
+		name = '';
 	}
 
 	function archivedIn(data: unknown): Archived | null {

@@ -1338,6 +1338,26 @@ while the dinner's type has dishes; the role beside it shows its usual default. 
 bring all of it back the same way, also after the person agreed to leave, which is why the
 question says "may" (MEA-240).
 
+When the date's data reloads (6.11), on coming back to the app, when the page loads again or when
+Back or Forward returns to it, and someone else has changed a dinner while something typed for
+it isn't saved, what was typed stays with that dinner and never goes to another dinner on the
+date (MEA-256). The page asks the server where a dinner gone from the date is now. If someone
+cleared it and the date has no dinner left, its form stays, with what was typed, and the page
+says "Someone cleared this dinner. Save to plan it again with what you typed." Coming back or
+opening the date again plans nothing; Save does. With other dinners on the date, the page shows
+what was typed to copy instead: "Someone cleared this dinner, so your note wasn't saved:
+"Bring the cake"". A dish name typed alone for a cleared dinner stays in the date's empty form
+for Add (MEA-127). If someone moved it, the page says where, "Someone moved this dinner to Tue,
+Nov 10. What you typed goes with it.", and **Open Tue, Nov 10** opens that date with what was
+typed back in that dinner's form, unsaved; a dinner the move brought onto the date shows as it's
+saved. If someone switched it to Eating out or Leftovers, a name typed in its dish field
+shows in the page's notice, to copy: "Grilled corn wasn't added. Switch to Cooking at home or
+Bringing a dish to add dishes." Nothing is saved, planned, switched or added until the person
+does it. When the page can't find out where the dinner went, it says "Someone cleared or moved
+this dinner" in place of "Someone cleared this dinner". The page's own Clear or Move is never
+called someone else's, also when it was still on its way as the phone dropped the app, or Back
+returns to the date it moved from: what it took off the page goes without a word.
+
 **What's new.** What each release changed, newest first, in words for the people using the
 app; every household sees the same page. Each release's heading is its version, such as "1.2"
 for the "Meals 1.2" sprint, then "Released" with its date and one line per change people will
