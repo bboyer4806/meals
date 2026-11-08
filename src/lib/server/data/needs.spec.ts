@@ -153,15 +153,48 @@ describe('adding', () => {
 			quantity: 2,
 			unit: 'gal',
 			storeName: 'Walmart',
-			suggestedQuantity: 3
+			suggestedQuantity: 3,
+			suggestedUnit: 'gal'
 		});
 		expect(add(householdId, { itemName: 'Milk', quantity: 1, unit: 'jug' })).toMatchObject({
-			suggestedQuantity: 1
+			suggestedQuantity: 1,
+			suggestedUnit: 'jug'
 		});
 		expect(add(householdId, { itemName: 'Milk', quantity: 3, unit: 'gal', resolution: 'update' })).toEqual({
 			kind: 'updated'
 		});
 		expect(onlyLine(householdId)).toMatchObject({ quantity: 3, unit: 'gal', storeId: walmart });
+	});
+
+	it('suggests the sum in the line’s unit however the unit was spelled (MEA-93)', () => {
+		add(householdId, { itemName: 'Butter', quantity: 2, unit: 'lb' });
+		expect(add(householdId, { itemName: 'butter', quantity: 1, unit: 'lbs' })).toMatchObject({
+			quantity: 2,
+			unit: 'lb',
+			suggestedQuantity: 3,
+			suggestedUnit: 'lb'
+		});
+		add(householdId, { itemName: 'Chips', quantity: 2, unit: 'Bags' });
+		expect(add(householdId, { itemName: 'Chips', quantity: 1, unit: 'bags' })).toMatchObject({
+			suggestedQuantity: 3,
+			suggestedUnit: 'Bags'
+		});
+		// Case still tells t, a teaspoon, from T, a tablespoon.
+		add(householdId, { itemName: 'Yeast', quantity: 1, unit: 't' });
+		expect(add(householdId, { itemName: 'Yeast', quantity: 1, unit: 'T' })).toMatchObject({
+			suggestedQuantity: 1,
+			suggestedUnit: 'T'
+		});
+		// A count only matches another count.
+		add(householdId, { itemName: 'Eggs', quantity: 12 });
+		expect(add(householdId, { itemName: 'Eggs', quantity: 6 })).toMatchObject({
+			suggestedQuantity: 18,
+			suggestedUnit: null
+		});
+		expect(add(householdId, { itemName: 'Eggs', quantity: 1, unit: 'dozen' })).toMatchObject({
+			suggestedQuantity: 1,
+			suggestedUnit: 'dozen'
+		});
 	});
 
 	it('suggests a sum without floating point noise (MEA-92)', () => {

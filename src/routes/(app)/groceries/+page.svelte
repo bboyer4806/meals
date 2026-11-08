@@ -428,7 +428,7 @@
 						name="unit"
 						maxlength="20"
 						placeholder="Unit"
-						value={prompt.asked.unit ?? ''}
+						value={prompt.suggestedUnit ?? ''}
 					/>
 				</div>
 				<div class="row actions">

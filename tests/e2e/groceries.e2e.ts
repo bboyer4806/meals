@@ -136,18 +136,20 @@ test('marks only the lines the question counted, and says how many changed', asy
 
 test('offers to update a line already on the list', async ({ page, person: _ }) => {
 	await page.goto('/groceries');
-	await addAndWait(page, { name: 'Coffee', quantity: '1', unit: 'bag' });
-	await addItem(page, { name: 'coffee', quantity: '2', unit: 'bag' });
+	await addAndWait(page, { name: 'Butter', quantity: '2', unit: 'lb' });
+	// lbs is the line's lb, so the sum is offered in the line's spelling (MEA-93).
+	await addItem(page, { name: 'butter', quantity: '1', unit: 'lbs' });
 
 	const dialog = page.getByRole('dialog');
-	await expect(dialog).toContainText('Already on the list: 1 bag');
+	await expect(dialog).toContainText('Already on the list: 2 lb');
 	await expect(dialog.getByLabel('Quantity')).toHaveValue('3');
+	await expect(dialog.getByLabel('Unit')).toHaveValue('lb');
 	await dialog.getByRole('button', { name: 'Update' }).click();
 	await expect(dialog).toHaveCount(0);
 
 	const noStore = group(page, 'No store');
-	await expect(noStore.getByRole('button', { name: /Coffee\s*3 bag/ })).toBeVisible();
-	await expect(noStore.getByRole('button', { name: /Coffee/ })).toHaveCount(2); // check + line
+	await expect(noStore.getByRole('button', { name: /Butter\s*3 lb/ })).toBeVisible();
+	await expect(noStore.getByRole('button', { name: /Butter/ })).toHaveCount(2); // check + line
 });
 
 test('keeps the next item typed while the previous one is still saving', async ({

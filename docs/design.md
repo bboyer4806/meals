@@ -530,9 +530,11 @@ unless that store is archived (Q18).
   name with no match offers "Add new item".
 - Quantity starts at 1. The unit is pre-filled with the one used last time for that item.
 - If the item already has a To Order line, a warning shows it ("Milk is already on the
-  list: 2 gal at Walmart") and offers to update that line's quantity, pre-filled with the
-  sum when the units match. If the item only has an Ordered line, the warning offers to
-  add a new To Order line instead (Q22).
+  list: 2 gal at Walmart") and offers to update that line's quantity and unit. When the units
+  match, mapping spellings as 6.5 does and ignoring a custom unit's case, they're pre-filled with
+  the sum in the line's unit, so adding 1 lbs to 2 lb offers 3 lb; otherwise with what was added
+  (MEA-93). If the item only has an Ordered line, the warning offers to add a new To Order line
+  instead (Q22).
 
 ### 6.5 Amounts and units
 

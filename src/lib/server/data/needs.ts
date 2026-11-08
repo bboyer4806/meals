@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import { dateIn } from '../../dates.ts';
-import { formatQuantity, normalizeName } from '../../text.ts';
-import { conversionFactor } from '../../units.ts';
+import { foldCase, formatQuantity, normalizeName } from '../../text.ts';
+import { conversionFactor, normalizeUnit } from '../../units.ts';
 import { db, transaction } from '../db/index.ts';
 import {
 	groceryNeeds,
@@ -238,10 +238,19 @@ export type AddResult =
 			unit: string | null;
 			storeName: string | null;
 			suggestedQuantity: number;
+			suggestedUnit: string | null;
 	  };
 
+/**
+ * Whether two units as typed are the same, ignoring spelling ("lbs" is "lb") and a custom unit's
+ * case ("Bags" is "bags"), while t is still a teaspoon and T a tablespoon (6.4, 6.5, MEA-93). No
+ * unit, a count, only matches no unit.
+ */
 function sameUnit(a: string | null, b: string | null): boolean {
-	return (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
+	const unitA = a === null ? null : normalizeUnit(a);
+	const unitB = b === null ? null : normalizeUnit(b);
+	if (unitA === null || unitB === null) return unitA === unitB;
+	return foldCase(unitA) === foldCase(unitB);
 }
 
 export function storeForNewLine(householdId: number, item: Item, store: StoreChoice): number | null {
@@ -288,6 +297,8 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 				fitAllocations(toOrder.id, input.quantity, input.unit);
 				return { kind: 'updated' };
 			}
+			// When the units match, the sum keeps the line's own spelling of its unit (6.4, MEA-93).
+			const matches = sameUnit(toOrder.unit, input.unit);
 			return {
 				kind: 'duplicate',
 				status: 'to_order',
@@ -295,9 +306,10 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 				quantity: toOrder.quantity,
 				unit: toOrder.unit,
 				storeName: toOrder.storeName,
-				suggestedQuantity: sameUnit(toOrder.unit, input.unit)
+				suggestedQuantity: matches
 					? roundQuantity(toOrder.quantity + input.quantity)
-					: input.quantity
+					: input.quantity,
+				suggestedUnit: matches ? toOrder.unit : input.unit
 			};
 		}
 		if (ordered && input.resolution !== 'add') {
@@ -308,7 +320,8 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 				quantity: ordered.quantity,
 				unit: ordered.unit,
 				storeName: ordered.storeName,
-				suggestedQuantity: input.quantity
+				suggestedQuantity: input.quantity,
+				suggestedUnit: input.unit
 			};
 		}
 
