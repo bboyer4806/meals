@@ -132,7 +132,8 @@ describe('addRequest', () => {
 				name: 'Shrimp boil',
 				note: 'With corn',
 				dishId: dish!.id,
-				askedBy: 'Person 1'
+				// The household's member, Person 1, by their first name (6.1).
+				askedBy: 'Person'
 			}
 		]);
 		expect(dishCount()).toBe(2);
@@ -590,6 +591,18 @@ describe('listRequests', () => {
 			['restaurant', 'Taco Bar']
 		]);
 	});
+
+	it('names who asked by first name, or whole name while another member has it, ignoring case (6.1)', () => {
+		const alex = addMember('Alex Smith');
+		ask('Soup', null, NOW, alex);
+		askRestaurant('Diner', null, NOW + 1);
+		const askers = () => listRequests(householdId).map((request) => request.askedBy);
+		expect(askers()).toEqual(['Alex', 'Person']);
+		const jones = addMember('alex Jones');
+		expect(askers()).toEqual(['Alex Smith', 'Person']);
+		removeMember(householdId, userId, jones);
+		expect(askers()).toEqual(['Alex', 'Person']);
+	});
 });
 
 describe('removeRequest', () => {
@@ -719,6 +732,27 @@ describe('listCompletedRequests', () => {
 		]);
 		expect(listRequests(householdId).map((request) => request.name)).toEqual(['Chili']);
 		expect(listCompletedRequests(otherId).map((request) => request.name)).toEqual(['Curry']);
+	});
+
+	it("names who asked by first name, and a removed member's whole name while a member has it (6.1)", () => {
+		const sam = addMember('Sam Lee');
+		ask('Soup', null, NOW, sam);
+		ask('Pie', null, NOW + 1);
+		const [soup, pie] = listRequests(householdId);
+		completeRequest(householdId, soup!.id, NOW + 2);
+		completeRequest(householdId, pie!.id, NOW + 3);
+		const askers = () => listCompletedRequests(householdId).map((request) => request.askedBy);
+		expect(askers()).toEqual(['Person', 'Sam']);
+		removeMember(householdId, userId, sam);
+		expect(askers()).toEqual(['Person', 'Sam']);
+		addMember('sam Park');
+		expect(askers()).toEqual(['Person', 'Sam Lee']);
+		// Who asked is still kept whole (6.12).
+		const kept = db().select({ askedBy: dishRequests.askedBy }).from(dishRequests).all();
+		expect(kept.map((row) => row.askedBy)).toEqual([
+			'Sam Lee',
+			expect.stringMatching(/^Person \d+$/)
+		]);
 	});
 
 	it('keeps the name as asked for, and who asked as they were named, whatever changes after', () => {
@@ -1172,7 +1206,7 @@ it('removing a member keeps their completed requests in the history, still namin
 	removeMember(householdId, userId, memberId);
 	expect(listRequests(householdId).map((request) => request.name)).toEqual(['Pie']);
 	expect(listCompletedRequests(householdId)).toEqual([
-		expect.objectContaining({ name: 'Taco Bar', askedBy: expect.stringMatching(/^Person \d+$/) }),
+		expect.objectContaining({ name: 'Taco Bar', askedBy: 'Person' }),
 		expect.objectContaining({ name: 'Diner', note: 'Late lunch', askedBy: 'Sam' }),
 		expect.objectContaining({ name: 'Stew', askedBy: 'Sam' })
 	]);

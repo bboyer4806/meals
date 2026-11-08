@@ -2848,7 +2848,7 @@ test('requests a dish from Recipes, linked, with who asked and the note', async 
 	// A full-size tap target, so a tap meant for it doesn't land on the note (MEA-170).
 	expect(await tapSize(link)).toBeGreaterThanOrEqual(44);
 	await expect(section.getByText('For Sunday, please')).toBeVisible();
-	await expect(section.getByText(/^Asked by Person \d+$/)).toBeVisible();
+	await expect(section.getByText(/^Asked by Person$/)).toBeVisible();
 	await expect(section.getByText('No requests yet.')).toHaveCount(0);
 	expect(dishCount(db, person.householdId)).toBe(1);
 });
@@ -3172,7 +3172,7 @@ test('completes a request for everyone, into Completed requests, folded away unt
 		`/recipes/${gumbo}`
 	);
 	await expect(done.nth(1).getByText('Extra okra')).toBeVisible();
-	await expect(done.nth(1).getByText(/^Asked by Person \d+$/)).toBeVisible();
+	await expect(done.nth(1).getByText(/^Asked by Person$/)).toBeVisible();
 	await expect(done.nth(1).getByText(`Completed ${dayLabel(today())}`)).toBeVisible();
 	await expect(done.nth(2).getByText('Asked by Sam')).toBeVisible();
 	await expect(done.nth(2).getByText('Completed Sat, Jun 7, 2025')).toBeVisible();
@@ -3240,6 +3240,62 @@ test("keeps a removed member's completed requests, naming them, and removes thei
 	).toEqual([{ name: 'Gumbo', userId: null, askedBy: 'Sam' }]);
 });
 
+test('names who asked by first name, or whole name while another member has it (6.1)', async ({
+	page,
+	db,
+	person
+}) => {
+	const tag = `${test.info().workerIndex}-${Date.now()}`;
+	const addMember = db.prepare(
+		'insert into users (household_id, google_sub, email, name, created_at) values (?, ?, ?, ?, 0)'
+	);
+	function member(key: string, name: string): number {
+		const sub = `${key}-${tag}`;
+		return Number(
+			addMember.run(person.householdId, sub, `${sub}@example.com`, name).lastInsertRowid
+		);
+	}
+	askFor(db, person, 'Olive Garden', { at: 1 });
+	askFor(db, { ...person, userId: member('robin', 'Robin Lee') }, 'Taco Bar', { at: 2 });
+	// Completed, and asked for by someone removed since.
+	db.prepare(
+		"insert into dish_requests (household_id, kind, name, created_at, completed_at, asked_by) values (?, 'restaurant', 'Diner', 0, ?, 'Sam Lee')"
+	).run(person.householdId, Date.now());
+	const askers = requestsSection(page).getByText(/^Asked by/);
+	const completedAsker = completedSection(page).getByText(/^Asked by/);
+	const date = addDays(today(), 1);
+
+	await open(page, '/menu');
+	await expect(askers).toHaveText(['Asked by Person', 'Asked by Robin']);
+	await openCompleted(page);
+	await expect(completedAsker).toHaveText('Asked by Sam');
+	await open(page, `/menu/${date}`);
+	await expect(askers).toHaveText(['Asked by Person', 'Asked by Robin']);
+
+	// Someone else in the household is a Person, ignoring case, and someone else a Sam.
+	const others = [member('park', 'person Park'), member('sam', 'Sam Wu')];
+	await open(page, `/menu/${date}`);
+	await expect(askers).toHaveText([/^Asked by Person \d+$/, 'Asked by Robin']);
+	await open(page, '/menu');
+	await expect(askers).toHaveText([/^Asked by Person \d+$/, 'Asked by Robin']);
+	await openCompleted(page);
+	await expect(completedAsker).toHaveText('Asked by Sam Lee');
+
+	// Once they're gone, first names are enough again.
+	db.prepare('delete from users where id in (?, ?)').run(...others);
+	await open(page, '/menu');
+	await expect(askers).toHaveText(['Asked by Person', 'Asked by Robin']);
+	await openCompleted(page);
+	await expect(completedAsker).toHaveText('Asked by Sam');
+	// Who asked is still kept whole (6.12).
+	expect(
+		db
+			.prepare('select asked_by from dish_requests where household_id = ? and asked_by is not null')
+			.pluck()
+			.all(person.householdId)
+	).toEqual(['Sam Lee']);
+});
+
 test('fits long requests, their buttons and Completed requests on a phone and a computer', async ({
 	page,
 	db,
@@ -3290,7 +3346,7 @@ test('requests a restaurant by name, listed after an older dish request, and rem
 	await expect(restaurant.getByText('Olive Garden', { exact: true })).toBeVisible();
 	await expect(restaurant.getByRole('link')).toHaveCount(0);
 	await expect(restaurant.getByText('For her birthday')).toBeVisible();
-	await expect(restaurant.getByText(/^Asked by Person \d+$/)).toBeVisible();
+	await expect(restaurant.getByText(/^Asked by Person$/)).toBeVisible();
 	await expect(section.getByRole('button', { name: 'Request a restaurant' })).toBeFocused();
 	// It looks up and makes no dish.
 	expect(dishCount(db, person.householdId)).toBe(1);
@@ -3430,7 +3486,7 @@ test("lists the requests under a day's dinners, and adds one to the dinner that 
 	// A full-size tap target, as on the week (MEA-170).
 	expect(await tapSize(link)).toBeGreaterThanOrEqual(44);
 	await expect(first.getByText('Extra cheese')).toBeVisible();
-	await expect(first.getByText(/^Asked by Person \d+$/)).toBeVisible();
+	await expect(first.getByText(/^Asked by Person$/)).toBeVisible();
 	// A restaurant request shows too, with its own Edit and Add.
 	const restaurant = section.getByRole('listitem').nth(1);
 	await expect(restaurant.getByText('Olive Garden', { exact: true })).toBeVisible();
@@ -3995,7 +4051,7 @@ test('edits a dish request on the Menu, its note alone or its name too, and Canc
 		`/recipes/${boil.id}`
 	);
 	await expect(first.getByText('With corn')).toBeVisible();
-	await expect(first.getByText(/^Asked by Person \d+$/)).toBeVisible();
+	await expect(first.getByText(/^Asked by Person$/)).toBeVisible();
 	expect(requestRow(db, request)).toEqual({
 		...before,
 		name: 'Shrimp boil',
@@ -4107,7 +4163,7 @@ test('edits a restaurant request, stops its fields at their limits, and changes 
 	await expect(row.getByText('Taco Bar', { exact: true })).toBeVisible();
 	await expect(row.getByText('Downtown')).toBeVisible();
 	await expect(row.getByRole('link')).toHaveCount(0);
-	await expect(row.getByText(/^Asked by Person \d+$/)).toBeVisible();
+	await expect(row.getByText(/^Asked by Person$/)).toBeVisible();
 	expect(requestRow(db, request)).toEqual({ ...before, name: 'Taco Bar', note: 'Downtown' });
 	expect(dishCount(db, person.householdId)).toBe(0);
 });

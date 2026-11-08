@@ -300,7 +300,7 @@ describe('requests (6.12)', () => {
 			await post('request', { name: 'Pot pie', note: ' Extra crust ', userId: '999' })
 		).toEqual({ action: 'request', archived: null });
 		expect(listRequests(householdId)).toMatchObject([
-			{ name: 'Pot pie', note: 'Extra crust', askedBy: listMembers(householdId)[0]?.name }
+			{ name: 'Pot pie', note: 'Extra crust', askedBy: listMembers(householdId)[0]?.displayName }
 		]);
 	});
 
@@ -424,7 +424,7 @@ describe('restaurant requests (6.12)', () => {
 				kind: 'restaurant',
 				name: 'Olive Garden',
 				note: null,
-				askedBy: listMembers(householdId)[0]?.name
+				askedBy: listMembers(householdId)[0]?.displayName
 			}
 		]);
 	});
@@ -443,7 +443,7 @@ describe('restaurant requests (6.12)', () => {
 				kind: 'restaurant',
 				name: 'Olive Garden',
 				note: 'For her birthday',
-				askedBy: listMembers(householdId)[0]?.name
+				askedBy: listMembers(householdId)[0]?.displayName
 			}
 		]);
 	});

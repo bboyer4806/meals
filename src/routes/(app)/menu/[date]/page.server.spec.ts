@@ -202,7 +202,7 @@ describe('loading a date', () => {
 				kind: 'restaurant',
 				name: 'Olive Garden',
 				note: null,
-				askedBy: expect.stringMatching(/^Person \d+$/)
+				askedBy: 'Person'
 			},
 			{
 				id: expect.any(Number),
@@ -210,7 +210,7 @@ describe('loading a date', () => {
 				name: 'Tacos',
 				note: 'Fish ones',
 				dishId: tacos,
-				askedBy: expect.stringMatching(/^Person \d+$/)
+				askedBy: 'Person'
 			}
 		]);
 	});

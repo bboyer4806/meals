@@ -471,6 +471,15 @@ a store. An ingredient points at a dish and an item. A dinner has dishes through
 6. An invite or member that's already gone counts as done (MEA-69). Cancel on an invite that
    was used or cancelled after the page opened, on the Household or Admin page, and Remove on
    a member someone else removed meanwhile, show the page as it is now (6.11).
+7. Members are named by their first name, the first word of the name Google gives (MEA-255):
+   "Alex Smith" is "Alex". While another of the household's current members has the same first
+   name, ignoring case ("Alex" and "alex"), each of them shows their whole name instead, so
+   names go back to first names once one of them is removed. This is how the Household page,
+   who asked for a request (6.12) and who rated a recipe (section 7, "Recipe") name members. A
+   completed request names who asked as they were named when it was completed, shortened the
+   same way; someone removed since shows their whole name while a current member has the same
+   first name. Names are kept whole, and a removed member's ratings still show as "Former
+   member".
 
 ### 6.2 Grocery line statuses
 
@@ -664,7 +673,7 @@ comes back. If two people change the same thing, the last save wins.
   (below).
   Active requests are listed oldest first, dish and restaurant requests together, each with the
   dish (or "Eating out" and the restaurant), the note if there is one, and "Asked by" with the
-  asker's name. Showing who asked is an exception to section 12, for requests only.
+  asker's name (6.1). Showing who asked is an exception to section 12, for requests only.
 - The dish field suggests the household's active dishes and offers a new one, like adding a
   dish to a dinner (6.9). Every dish request links to a recipe. A name that matches an active
   dish, ignoring case, links to it. Any other name adds a dish to Recipes with that name and the
@@ -743,8 +752,8 @@ comes back. If two people change the same thing, the last save wins.
   **Completed requests**, under them on the Menu, and stays there as it was: nothing edits,
   restores, completes again or removes it. It keeps its name as asked for, whether it's a dish
   (with its recipe's link) or a restaurant, its note, and who asked, named as they were when it
-  was completed, with the date it was completed in the household's time zone. Completed requests
-  are listed newest first.
+  was completed (6.1), with the date it was completed in the household's time zone. Completed
+  requests are listed newest first.
 - **Remove** deletes an active request for good, without asking first, and it doesn't go in
   Completed requests. Completing or removing a request that someone completed or removed
   meanwhile changes nothing, and the page shows the requests as they are now (6.11).
@@ -1038,7 +1047,7 @@ before the page shows the first tap, as with a double tap or on a slow connectio
 rating instead of clearing it (MEA-86). Beside the stars is the household's average, rounded
 to the nearest half star, with the number of ratings, such as "★ 4.5 (2)". A removed member's
 ratings stay in it.
-Under the stars, each rating is listed with the name of the person who gave it and their stars,
+Under the stars, each rating is listed with the name of the person who gave it (6.1) and their stars,
 such as "Sam ★★★★☆", yours included (MEA-32): members by name ignoring case, then a removed
 member's ratings, each as "Former member" with its stars and nothing that says who they were.
 Tapping a star updates the list right away, and a recipe nobody has rated has no list. Showing

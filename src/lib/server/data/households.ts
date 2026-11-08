@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { formatMemberName } from '../../member-names.ts';
 import { db, transaction } from '../db/index.ts';
 import { dishRatings, dishRequests, households, invites, users } from '../db/schema.ts';
 import { STANDARD_ITEMS } from '../standard-items.ts';
@@ -74,14 +75,21 @@ export function updateHousehold(householdId: number, settings: HouseholdSettings
 	db().update(households).set(settings).where(eq(households.id, householdId)).run();
 }
 
-/** Sorted by name in code rather than in SQL, so "Émile" sorts with the E's (MEA-88). */
+/**
+ * Sorted by name in code rather than in SQL, so "Émile" sorts with the E's (MEA-88). Each has
+ * their name as it's kept, and displayName, their name as the household sees it (6.1).
+ */
 export function listMembers(householdId: number) {
-	return db()
+	const members = db()
 		.select({ id: users.id, name: users.name, email: users.email })
 		.from(users)
 		.where(eq(users.householdId, householdId))
 		.all()
 		.sort((a, b) => a.name.localeCompare(b.name));
+	return members.map((member) => ({
+		...member,
+		displayName: formatMemberName(member.name, member.id, members)
+	}));
 }
 
 /**
