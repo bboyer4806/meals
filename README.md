@@ -151,6 +151,11 @@ Every night at 03:00 server time, Dokku runs `node scripts/backup.js`. It copies
 images into `backups/<date>/photos/`, and keeps the newest 14 backups. A failed run leaves the
 existing backups alone.
 
+Before the app applies a new migration, it copies the database to
+`backups/pre-migrate-<time>/meals.db`, `<time>` being when it started, in UTC, so a release can be
+[rolled back](#rolling-back). The nightly job doesn't count or remove these copies, so they stay
+until you remove them.
+
 A hard link is the same file under a second name, so a photo that hasn't changed takes no extra
 space, however many backups have it. The app never changes a photo file (a new photo gets a new
 name), so a replaced or deleted photo stays in the older backups.
@@ -179,6 +184,45 @@ dokku ps:start meals
 
 Photos added since that backup stay in `photos/`, and nothing uses them. Backups made before
 recipes had photos have no `photos` folder, so skip the two photos lines for those.
+
+## Rolling back
+
+Each image is tagged with its full commit hash, so going back to an older version means deploying
+its image again. First check whether a migration landed since that version: in a clone of this
+repo, list the changes to `drizzle/` from its commit to the one running now.
+
+```sh
+git log --oneline <older commit>..<running commit> -- drizzle
+```
+
+If that lists nothing, deploy the older image on the server, and nothing is lost:
+
+```sh
+dokku git:from-image meals ghcr.io/bboyer4806/meals:<older commit>
+```
+
+If it lists a migration, the database has changed in ways the older version doesn't expect.
+Restore the first `pre-migrate` copy made after the older version deployed (see
+[Backups](#backups)), then deploy the older image:
+
+```sh
+dokku ps:stop meals
+cd /var/lib/dokku/data/storage/meals
+# Remove the old write-ahead files first, or SQLite would apply them to the restored copy.
+rm -f meals.db-wal meals.db-shm
+cp backups/pre-migrate-2026-11-08T17-56-09Z/meals.db meals.db
+chown 1000:1000 meals.db
+# Starts the older version on the restored copy. Don't start the app before this: the newer
+# version would apply its migrations again.
+dokku git:from-image meals ghcr.io/bboyer4806/meals:<older commit>
+```
+
+Every change made since that copy is lost. Photos stay as they are: one added since is unused, and
+one replaced or removed since doesn't come back, so its recipe or item shows no photo.
+
+Either way, `main` still has the newer commits, and the next push to `main` deploys them, so
+revert or fix the change there first. Migrations still in `main` apply again to the restored copy
+when it deploys.
 
 ## Changing the database
 

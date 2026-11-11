@@ -219,11 +219,12 @@ No `ORIGIN` setting is needed: in SvelteKit 3, adapter-node builds the app's ori
 ### 4.4 Storage and backups
 
 ```
-/data/meals.db                        database (WAL mode, foreign keys on)
-/data/photos/<key>.jpg                recipe photo or item image, longest side 1600 px
-/data/photos/<key>-thumb.jpg          its thumbnail, longest side 400 px
-/data/backups/<YYYY-MM-DD>/meals.db   nightly copy of the database
-/data/backups/<YYYY-MM-DD>/photos/    nightly snapshot of the photos
+/data/meals.db                              database (WAL mode, foreign keys on)
+/data/photos/<key>.jpg                      recipe photo or item image, longest side 1600 px
+/data/photos/<key>-thumb.jpg                its thumbnail, longest side 400 px
+/data/backups/<YYYY-MM-DD>/meals.db         nightly copy of the database
+/data/backups/<YYYY-MM-DD>/photos/          nightly snapshot of the photos
+/data/backups/pre-migrate-<time>/meals.db   copy of the database before a deploy's migrations
 ```
 
 During a deploy, Dokku runs the old and new containers on the same database for a short time.
@@ -246,6 +247,20 @@ only complete snapshots, so it stops advancing when backups fail.
 
 To restore, you stop the app, copy a snapshot's database and photos back into place,
 and start it. The README will have the exact commands.
+
+Before applying new migrations to a database that already has data, the app copies the database
+to `backups/pre-migrate-<time>/`, `<time>` being when it started, in UTC (MEA-97). It uses
+`VACUUM INTO`, which, like the online backup, makes a consistent copy while the old version is
+still running. The copy is built in a temporary folder and moved into place when it's complete. A
+failed copy stops the app from starting, as a failed migration does, so no migration runs without
+one. The copy holds only the database, since migrations don't change photos. The nightly job
+doesn't count or remove these copies, so they stay until removed by hand.
+
+To roll back, you deploy the older version's image. Past a migration, you first stop the app and
+restore the first pre-migrate copy made after the older version deployed. That loses the changes
+made since that copy, instead of every change since the last nightly backup. The older version
+alone would run on a database it wasn't written for, and what it saved there would stay in its
+old form, since a migration runs only once. The README has the exact commands ("Rolling back").
 
 **Risk you accepted:** the backups are on the same disk as the data. If the server is
 lost, so is everything. Moving backups off the server later is a small change.

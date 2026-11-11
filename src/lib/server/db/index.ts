@@ -1,3 +1,5 @@
+import { mkdirSync, renameSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
@@ -54,7 +56,8 @@ export function insertBatches<T>(rows: T[]): T[][] {
  * commits, so a migration that breaks them rolls back instead of being recorded. A table a
  * migration rebuilds still never gives a deleted row's id again. Keeps the same bookkeeping table
  * as Drizzle's own migrator. Registers fold() first, so migrations and the app's queries match
- * names the same way.
+ * names the same way. A database file that already has data is copied before any migration
+ * changes it (4.4).
  */
 export function migrate(sqlite: Database.Database, folder: string): void {
 	// SQLite's lower() only folds A-Z, so name matching and search use this instead. It is used
@@ -73,6 +76,8 @@ export function migrate(sqlite: Database.Database, folder: string): void {
 	const pending = readMigrationFiles({ migrationsFolder: folder }).filter(
 		(migration) => last === undefined || Number(last) < migration.folderMillis
 	);
+	// A new database has nothing to keep yet, and one in memory is gone when it closes.
+	if (pending.length > 0 && last !== undefined && !sqlite.memory) copyBeforeMigrating(sqlite);
 
 	// Rebuilding a table needs foreign keys off, and SQLite ignores that pragma inside a
 	// transaction, so it's set around it.
@@ -92,6 +97,24 @@ export function migrate(sqlite: Database.Database, folder: string): void {
 		}
 	})();
 	sqlite.pragma('foreign_keys = ON');
+}
+
+/**
+ * Copies the database into backups/pre-migrate-<time>/ beside it, so a release can be rolled back
+ * past its migrations without going back to the last nightly backup (4.4, README "Rolling back").
+ * VACUUM INTO makes a consistent copy while the old version, still running during a deploy, goes
+ * on writing. The copy is made in a partial- folder and moved into place once complete, so a
+ * pre-migrate folder always holds a whole copy. A failed copy throws, so nothing is migrated
+ * without one, and the next nightly backup removes the partial- folder it leaves.
+ */
+function copyBeforeMigrating(sqlite: Database.Database): void {
+	const backups = join(dirname(sqlite.name), 'backups');
+	// UTC, with - for :, which Windows doesn't allow in a name: 2026-11-08T17-56-00Z.
+	const time = `${new Date().toISOString().slice(0, 19).replaceAll(':', '-')}Z`;
+	const partial = join(backups, `partial-pre-migrate-${time}`);
+	mkdirSync(partial, { recursive: true });
+	sqlite.prepare('VACUUM INTO ?').run(join(partial, basename(sqlite.name)));
+	renameSync(partial, join(backups, `pre-migrate-${time}`));
 }
 
 type HighestId = { name: string; seq: number };

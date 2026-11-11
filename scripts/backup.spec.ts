@@ -49,6 +49,26 @@ describe('backup script', () => {
 		expect(existsSync(join(dataDir, 'backups', '2020-01-01'))).toBe(false);
 	});
 
+	it('keeps the copies made before migrating apart from the nightly backups', () => {
+		const dataDir = mkdtempSync(join(tmpdir(), 'meals-backup-'));
+		openDb(join(dataDir, 'meals.db'));
+		// As src/lib/server/db/index.ts makes one (design 4.4).
+		const copy = join(dataDir, 'backups', 'pre-migrate-2020-01-01T17-56-09Z');
+		mkdirSync(copy, { recursive: true });
+		writeFileSync(join(copy, 'meals.db'), '');
+		// So Admin doesn't show it as a nightly backup.
+		expect(latestBackupDate(dataDir)).toBeNull();
+		for (let day = 1; day <= 20; day++) {
+			mkdirSync(join(dataDir, 'backups', `2020-01-${String(day).padStart(2, '0')}`));
+		}
+
+		runBackup(dataDir);
+
+		// The newest 14 nightly backups, and the copy, which they don't count or remove.
+		expect(readdirSync(join(dataDir, 'backups'))).toHaveLength(15);
+		expect(existsSync(join(copy, 'meals.db'))).toBe(true);
+	});
+
 	it('keeps the existing backup when a run fails', () => {
 		const dataDir = mkdtempSync(join(tmpdir(), 'meals-backup-'));
 		openDb(join(dataDir, 'meals.db'));

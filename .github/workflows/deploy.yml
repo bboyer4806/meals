@@ -74,7 +74,8 @@ jobs:
         with:
           context: .
           push: true
-          # Tagged by commit so a rollback is naming an older tag, not a rebuild.
+          # Tagged by commit so a rollback is naming an older tag, not a rebuild. Past a migration,
+          # a rollback first restores the copy made before it (README, "Rolling back").
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.sha }}
             ghcr.io/${{ github.repository }}:latest
