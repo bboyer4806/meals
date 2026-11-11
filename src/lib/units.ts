@@ -97,16 +97,29 @@ export function toBase(amount: number, unit: KnownUnit): number {
 }
 
 /**
+ * Whether two units, as typed or stored, are the same unit: ignoring case and spelling, so "lbs"
+ * is "lb" and "Can" is "can", though "bag" and "bags" are two custom units (6.15). No unit is a
+ * count, which is only the same as another count. A duplicate grocery line suggests the sum of
+ * quantities in the same unit (6.4, MEA-93).
+ */
+export function sameUnit(a: string | null, b: string | null): boolean {
+	const unitA = a === null ? null : normalizeUnit(a);
+	const unitB = b === null ? null : normalizeUnit(b);
+	if (unitA === null || unitB === null) return unitA === unitB;
+	return foldCase(unitA) === foldCase(unitB);
+}
+
+/**
  * What an amount in one unit is multiplied by to give the same amount in another, for units as
- * typed or stored, where no unit is a count: 1 between the same unit, ignoring case and spelling
- * ("lbs" is "lb"), the ratio of their sizes between known units of one kind (6.5), and undefined
- * between any others, which don't convert. Party lists combine grocery quantities with it (6.15).
+ * typed or stored, where no unit is a count: 1 between the same unit (sameUnit), the ratio of
+ * their sizes between known units of one kind (6.5), and undefined between any others, which
+ * don't convert. Party lists combine grocery quantities with it (6.15).
  */
 export function conversionFactor(from: string | null, to: string | null): number | undefined {
+	if (sameUnit(from, to)) return 1;
 	const fromUnit = from === null ? null : normalizeUnit(from);
 	const toUnit = to === null ? null : normalizeUnit(to);
-	if (fromUnit === null || toUnit === null) return fromUnit === toUnit ? 1 : undefined;
-	if (foldCase(fromUnit) === foldCase(toUnit)) return 1;
+	if (fromUnit === null || toUnit === null) return undefined;
 	const fromKnown = knownUnit(fromUnit);
 	const toKnown = knownUnit(toUnit);
 	if (!fromKnown || !toKnown || fromKnown.kind !== toKnown.kind) return undefined;
