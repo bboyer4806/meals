@@ -370,6 +370,7 @@ src/lib/server/
                           an image link points at
   jira.ts                 create a feedback ticket in Jira and attach its screenshot
   email.ts                send an email, as HTML with a plain-text version, through Resend
+  grocery-email.ts        the grocery list email's subject, HTML and text (6.16)
   fetch-link.ts           fetch a link from a public website (4.5)
   recipe-page.ts          fetch a recipe's web page and read its JSON-LD
 src/routes/               pages and form actions; database access only through data/
@@ -946,6 +947,28 @@ shows on both.
   parts. A unit that a party part's unit doesn't convert to takes that part off the line, and
   deleting the line takes them all off. Their things then show what's no longer on Groceries, with
   Add to Groceries.
+
+### 6.16 Grocery list email
+
+Meals can put a household's grocery list in an email (MEA-48). Nothing sends it yet: a later change
+decides who gets it and when, and sends it through Resend like every other email (4.3).
+
+- The subject is "Meals Grocery List: " and the household's name, such as "Meals Grocery List: The
+  Smiths".
+- It lists the household's To Order lines and nothing else: no Ordered or Received lines, and never
+  another household's.
+- The lines are grouped as on the grocery list (section 7): "No store" first, then each store by
+  name, each with its lines by item name.
+- Each line shows the item's name with the quantity and unit as the list shows them (6.5), such as
+  "Milk: 2 gal", then the line's note when it has one, such as "Note: Get the big one". The item's
+  own notes (brand, size) aren't included.
+- With nothing To Order, it says "There are no items to order."
+- It has an HTML version and a plain-text version with the same text (4.3). The HTML escapes names,
+  units and notes, so they show as typed and can't change the email.
+
+`groceryListEmail` in `src/lib/server/grocery-email.ts` returns a household's subject, HTML and
+text. Whatever sends it adds the recipient: `sendEmail({ to, ...groceryListEmail(householdId) })`.
+It only reads the list, and sends nothing itself.
 
 ## 7. Screens
 
