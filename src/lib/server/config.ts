@@ -13,7 +13,9 @@ const schema = z.object({
 	// Atlassian account and API token that create its tickets.
 	JIRA_URL: z.url(),
 	JIRA_EMAIL: z.email(),
-	JIRA_API_TOKEN: z.string().min(1)
+	JIRA_API_TOKEN: z.string().min(1),
+	// The Resend API key that sends email from the domain verified in Resend (email.ts).
+	RESEND_API_KEY: z.string().min(1)
 });
 
 export type Config = z.output<typeof schema>;

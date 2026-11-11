@@ -207,11 +207,18 @@ development, configuration, and restoring a backup.
 | `ADMIN_EMAIL`                            | Your Google email. This account can invite new households.                                  | Once on the server |
 | `DATA_DIR`                               | `/data`                                                                                     | Once on the server |
 | `JIRA_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` | The Jira site that feedback goes to, and the Atlassian account and API token that create its tickets (7, Feedback) | Once on the server |
+| `RESEND_API_KEY`                         | The Resend API key that sends email from `meals.dev.boyersoftware.com` (7, Admin)           | Once on the server |
 
 The app reads these when it starts, not when it's built, so building the image needs no
 secrets. It refuses to start if any is missing or if `DATA_DIR` doesn't exist (a missing
 storage mount). For local development the same variables go in an untracked `.env` file, with
 `DATA_DIR=./data`.
+
+Meals sends email through Resend's API (MEA-260). Every email comes from
+`Meals <noreply@meals.dev.boyersoftware.com>`, as HTML with a plain-text version for mail apps
+that don't show HTML. Resend sends only from a domain verified in its account, so
+`meals.dev.boyersoftware.com` is verified there, and `RESEND_API_KEY` set on the server, before
+the first version that needs the key deploys (README, "Email through Resend").
 
 No `ORIGIN` setting is needed: in SvelteKit 3, adapter-node builds the app's origin from the
 `Host` header Dokku passes through, with `https`.
@@ -358,6 +365,7 @@ src/lib/server/
   photos.ts               save, delete and serve photos and item images, and get the image
                           an image link points at
   jira.ts                 create a feedback ticket in Jira and attach its screenshot
+  email.ts                send an email, as HTML with a plain-text version, through Resend
   fetch-link.ts           fetch a link from a public website (4.5)
   recipe-page.ts          fetch a recipe's web page and read its JSON-LD
 src/routes/               pages and form actions; database access only through data/
@@ -962,7 +970,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
 | Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
 | What's new       | `/whats-new`                         | See below.                                                                                                                           |
-| Admin            | `/admin`                             | Invite households, list households, last backup date.                                                                                |
+| Admin            | `/admin`                             | Invite households, list households, last backup date, send a test email. See below.                                                  |
 
 **Feedback.** Every screen after household setup, from Grocery list to Admin, has a round "Send
 feedback" button with a speech-bubble icon at the bottom right, just above the tab bar. Pages
@@ -1402,6 +1410,18 @@ as "new", shows on More and on What's new. What they've seen is the release in t
 day: someone who saw 1.3 still gets a dot for 1.4 (MEA-25). Opening the page records the newest
 release's version, which clears the dot on every device. The link doesn't preload on hover, as
 that would run the page's load and clear the dot without anyone opening it.
+
+**Admin.** Only the `ADMIN_EMAIL` account can open it (4.5). Its sections are Backups, Email,
+Invite a household and Households. Email checks that Meals can send email (MEA-260): Send test
+email sends "Meals test email" to the signed-in admin's own Google email, the one in their
+session, and there's no field for another address. While it sends, the button reads "Sending…"
+and can't be tapped again. The app's server sends it through Resend with `RESEND_API_KEY` (4.3),
+so the key never reaches the browser. When Resend accepts it, the section says so with the address,
+such as "Test email sent to admin@example.com. Check your inbox." Accepted isn't delivered, since
+Resend can still bounce it or a spam filter hold it, so the inbox is the real check. If Resend
+refuses it or doesn't answer within 10 seconds, the section says "Couldn't send test email. Please
+try again." and the app's log has Resend's answer or the error, never the key. Either way the page
+stays on Admin, with the message in the Email section.
 
 ## 8. Look and feel
 
