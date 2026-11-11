@@ -1,10 +1,26 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import { formatDateLabel } from '#lib/dates.ts';
 
 	let { data, form } = $props();
 
+	let sendingTestEmail = $state(false);
+
 	const created = (ms: number) => new Date(ms).toLocaleDateString();
+
+	function messageFor(action: string) {
+		return form?.action === action ? form : null;
+	}
+
+	// Resend can take a few seconds to answer, and a second tap would send a second email.
+	const sendTestEmail: SubmitFunction = ({ cancel }) => {
+		if (sendingTestEmail) return cancel();
+		sendingTestEmail = true;
+		return async ({ update }) => {
+			await update();
+			sendingTestEmail = false;
+		};
+	};
 </script>
 
 <svelte:head>
@@ -23,6 +39,18 @@
 </section>
 
 <section class="card">
+	<h2>Email</h2>
+	<p class="muted">Send yourself a test email to check that Meals can send email.</p>
+	<form method="POST" action="?/testEmail" use:enhance={sendTestEmail}>
+		<button class="primary" disabled={sendingTestEmail}>
+			{sendingTestEmail ? 'Sending…' : 'Send test email'}
+		</button>
+	</form>
+	{#if messageFor('testEmail')?.error}<p class="error" role="alert">{form?.error}</p>{/if}
+	{#if messageFor('testEmail')?.message}<p role="status">{form?.message}</p>{/if}
+</section>
+
+<section class="card">
 	<h2>Invite a household</h2>
 	<p class="muted">They'll set up their own household the first time they sign in.</p>
 	<form method="POST" action="?/invite" use:enhance class="row">
@@ -38,8 +66,8 @@
 		/>
 		<button class="primary">Invite</button>
 	</form>
-	{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
-	{#if form?.message}<p role="status">{form.message}</p>{/if}
+	{#if messageFor('invite')?.error}<p class="error" role="alert">{form?.error}</p>{/if}
+	{#if messageFor('invite')?.message}<p role="status">{form?.message}</p>{/if}
 	{#if data.invites.length > 0}
 		<p class="muted">Waiting for them to sign in:</p>
 		<ul class="list">

@@ -1,4 +1,4 @@
-import { adminId, expect, open, signInAs, test } from './fixtures.ts';
+import { adminId, answerAction, expect, open, signInAs, test } from './fixtures.ts';
 
 test('sends signed-out people to the sign-in page', async ({ page }) => {
 	await page.goto('/groceries');
@@ -208,6 +208,31 @@ test('keeps the Admin page for an invite that is already gone (6.1)', async ({
 	const invite = page.getByRole('listitem').filter({ hasText: email });
 	await invite.getByRole('button', { name: 'Cancel' }).click();
 	await expect(page.getByText(email, { exact: true })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Admin', level: 1 })).toBeVisible();
+});
+
+test('says where the admin test email went, and stays on Admin', async ({
+	page,
+	db,
+	context,
+	baseURL
+}) => {
+	await signInAs(db, context, baseURL, adminId(db));
+	await open(page, '/admin');
+	const section = page.locator('section').filter({
+		has: page.getByRole('heading', { name: 'Email', level: 2 })
+	});
+	// It goes to the admin's own Google email, so there's no field for another.
+	await expect(section.getByRole('textbox')).toHaveCount(0);
+
+	// Answered here, so nothing goes to Resend (the server's side is in page.server.spec.ts).
+	const sent = 'Test email sent to admin@example.com. Check your inbox.';
+	await answerAction(page, '/admin', 'testEmail', { action: 'testEmail', message: sent });
+	await section.getByRole('button', { name: 'Send test email' }).click();
+	await expect(section.getByRole('status')).toHaveText(sent);
+	// Only in the Email section.
+	await expect(page.getByRole('status')).toHaveCount(1);
+	await expect(page).toHaveURL(/\/admin$/);
 	await expect(page.getByRole('heading', { name: 'Admin', level: 1 })).toBeVisible();
 });
 

@@ -7,8 +7,16 @@ describe('loadConfig', () => {
 		expect(loadConfig({ ...TEST_ENV, DATA_DIR: '/data' })).toMatchObject({
 			JIRA_URL: 'https://jira.example.com',
 			JIRA_EMAIL: 'feedback@example.com',
-			JIRA_API_TOKEN: 'jira-token'
+			JIRA_API_TOKEN: 'jira-token',
+			RESEND_API_KEY: 'resend-key'
 		});
+	});
+
+	it('names a missing Resend API key', () => {
+		for (const value of [undefined, '']) {
+			const env = { ...TEST_ENV, DATA_DIR: '/data', RESEND_API_KEY: value };
+			expect(() => loadConfig(env)).toThrow(/^Invalid environment variables:\nRESEND_API_KEY:/);
+		}
 	});
 
 	it('names a missing Jira setting', () => {

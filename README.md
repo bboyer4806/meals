@@ -47,6 +47,7 @@ needs none of them.
 | `JIRA_URL`             | The Jira site feedback goes to, `https://webpyro.atlassian.net`       |
 | `JIRA_EMAIL`           | The Atlassian account that creates feedback tickets                   |
 | `JIRA_API_TOKEN`       | That account's API token (see [Feedback in Jira](#feedback-in-jira))  |
+| `RESEND_API_KEY`       | Resend API key (see [Email through Resend](#email-through-resend))    |
 
 ## Feedback in Jira
 
@@ -62,6 +63,28 @@ needs permission to create issues and attachments in MEA. To create its API toke
 A token stops working when it expires; feedback then says "Couldn't send your feedback" and the
 app's log shows Jira's 401. Create a new one and set it the same way. For local development you
 can use your own account and token.
+
+## Email through Resend
+
+Meals sends email through [Resend](https://resend.com), always from
+`Meals <noreply@boyersoftware.com>`. Resend sends only from a domain it has verified, so before the
+first version that needs `RESEND_API_KEY` deploys:
+
+1. In Resend, open [Domains](https://resend.com/domains), choose "Add domain" and enter
+   `boyersoftware.com`.
+2. Add the DKIM and SPF records Resend lists for it to boyersoftware.com's DNS, exactly as shown,
+   then wait until Resend shows the domain as Verified. That usually takes minutes, but can take up
+   to 72 hours.
+3. Open [API keys](https://resend.com/api-keys), choose "Create API key", name it "Meals", give it
+   "Sending access" restricted to `boyersoftware.com`, and copy the key, which Resend shows only
+   once.
+4. Set it as `RESEND_API_KEY` on the server (see [One-time server setup](#one-time-server-setup)).
+
+To check it, sign in as `ADMIN_EMAIL`, open Admin and choose "Send test email", which emails that
+account. "Test email sent" means Resend accepted it, not that it arrived, so check the inbox. If it
+says "Couldn't send test email", the app's log shows Resend's answer, such as a 403 for a domain
+that isn't verified or a 401 for a key that isn't valid. For local development you can use a key
+of your own.
 
 ## Google sign-in
 
@@ -123,7 +146,8 @@ dokku storage:ensure-directory --chown heroku meals
 dokku storage:mount meals /var/lib/dokku/data/storage/meals:/data
 dokku config:set --no-restart meals DATA_DIR=/data \
   GOOGLE_CLIENT_ID='<client ID>' GOOGLE_CLIENT_SECRET='<client secret>' ADMIN_EMAIL='<your Google email>' \
-  JIRA_URL='https://webpyro.atlassian.net' JIRA_EMAIL='<Atlassian email>' JIRA_API_TOKEN='<API token>'
+  JIRA_URL='https://webpyro.atlassian.net' JIRA_EMAIL='<Atlassian email>' JIRA_API_TOKEN='<API token>' \
+  RESEND_API_KEY='<Resend API key>'
 dokku nginx:set meals client-max-body-size 5m
 dokku ports:set meals http:80:3000 https:443:3000
 ```
@@ -142,8 +166,8 @@ writable" means the storage folder isn't owned by uid 1000 (likewise `/data/meal
 `/data/photos`, the database and photos folder in it). Fix it on the server, then deploy again.
 
 To change a setting later, run `dokku config:set meals NAME='value'` on the server. Dokku restarts
-the app with it. A setting the app newly requires, such as the `JIRA_*` settings, must be set this
-way before the version that needs it deploys, or that version won't start.
+the app with it. A setting the app newly requires, such as `RESEND_API_KEY`, must be set this way
+before the version that needs it deploys, or that version won't start.
 
 ## Backups
 

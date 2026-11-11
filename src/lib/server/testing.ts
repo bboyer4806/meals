@@ -17,7 +17,8 @@ export const TEST_ENV = {
 	ADMIN_EMAIL: 'admin@example.com',
 	JIRA_URL: 'https://jira.example.com',
 	JIRA_EMAIL: 'feedback@example.com',
-	JIRA_API_TOKEN: 'jira-token'
+	JIRA_API_TOKEN: 'jira-token',
+	RESEND_API_KEY: 'resend-key'
 };
 
 export function freshDb(): void {

@@ -42,7 +42,9 @@ export default defineConfig({
 				DATA_DIR: '.e2e-data',
 				JIRA_URL: `http://localhost:${jiraPort}`,
 				JIRA_EMAIL: 'feedback@example.com',
-				JIRA_API_TOKEN: 'e2e-jira-token'
+				JIRA_API_TOKEN: 'e2e-jira-token',
+				// Never sent: the browser tests answer Admin's test email themselves.
+				RESEND_API_KEY: 'e2e-resend-key'
 			}
 		}
 	]
