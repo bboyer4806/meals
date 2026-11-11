@@ -60,6 +60,13 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
 - Request bodies over 64 KB are refused before they're read (design 4.5). A form that sends a
   photo or a file uses `multipart/form-data`, and its route goes in `FILE_ROUTES` in
   `src/lib/server/body-size.ts`.
+- Forms sent from other sites are refused by `src/lib/server/origin.ts` in `hooks.server.ts`, not
+  by SvelteKit, whose check is off so OAuth's token endpoint can take forms from other servers
+  (design 4.5). Only a route that must take forms from other servers goes in its
+  `SERVER_FORM_ROUTES`.
+- AI assistants change data only through the operations in `src/lib/server/ai/operations.ts`
+  (design 6.17): each checks its input with its form's rules and makes the change with the data
+  layer's own function. A new kind of change they may propose goes there, and in design 6.17.
 - Each standard item in `src/lib/server/standard-items.ts` has a photo in `standard-images/`,
   `<name>.jpg` and `<name>-thumb.jpg`, and a row in its `credits.csv` (design 6.14). The tests,
   and the app when it starts, check that every one is there.

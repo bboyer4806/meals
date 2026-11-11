@@ -21,3 +21,14 @@ export function requireAdmin(locals: App.Locals): HouseholdUser {
 	if (!user.isAdmin) error(404, 'Not found');
 	return user;
 }
+
+/**
+ * requireAdmin for a page the admin opens from an AI assistant (design 6.17): someone not signed
+ * in signs in with Google and comes back to `url`, query and all.
+ */
+export function requireAdminAfterSignIn(locals: App.Locals, url: URL): HouseholdUser {
+	if (!locals.user) {
+		redirect(303, `/login/google?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`);
+	}
+	return requireAdmin(locals);
+}

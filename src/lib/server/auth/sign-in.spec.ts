@@ -4,7 +4,7 @@ import { db } from '../db/index.ts';
 import { invites, users } from '../db/schema.ts';
 import { freshDb, makeHousehold } from '../testing.ts';
 import { createInvite } from '../data/households.ts';
-import { signIn } from './sign-in.ts';
+import { returnPath, signIn } from './sign-in.ts';
 
 const ADMIN = 'admin@example.com';
 const profile = (email: string, sub = `sub-${email}`) => ({ sub, email, name: 'Pat' });
@@ -54,5 +54,24 @@ describe('signIn', () => {
 		expect(again).toEqual(first);
 		if (again.kind !== 'signed-in') return;
 		expect(userFor(again.userId)).toMatchObject({ email: 'new@example.com', name: 'Pat B' });
+	});
+});
+
+describe('returnPath', () => {
+	const SITE = 'https://meals.example.com';
+
+	it('keeps a page on this site, with its query (6.17)', () => {
+		expect(returnPath('/oauth/authorize?client_id=a&state=b', SITE)).toBe(
+			'/oauth/authorize?client_id=a&state=b'
+		);
+		expect(returnPath('/ai/proposals/3', SITE)).toBe('/ai/proposals/3');
+	});
+
+	it('never sends a sign-in to another site', () => {
+		for (const elsewhere of ['https://evil.example/', '//evil.example/', '/\\evil.example', 'x']) {
+			expect(returnPath(elsewhere, SITE), elsewhere).toBeNull();
+		}
+		expect(returnPath(null, SITE)).toBeNull();
+		expect(returnPath(undefined, SITE)).toBeNull();
 	});
 });

@@ -86,6 +86,28 @@ says "Couldn't send test email", the app's log shows Resend's answer, such as a 
 that isn't verified or a 401 for a key that isn't valid. For local development you can use a key
 of your own.
 
+## AI assistants (ChatGPT and Claude)
+
+The `ADMIN_EMAIL` account can connect ChatGPT and Claude to Meals, so they can read every
+household's information and propose changes, which happen only when you approve them in Meals
+(design 6.17). They connect to Meals's MCP server at `https://meals.dev.boyersoftware.com/mcp`,
+which Admin also shows, and sign in with OAuth. Nothing needs setting up on the server, and no
+other assistant can connect.
+
+To connect one, add it as a custom connector with that address and OAuth sign-in:
+
+- **Claude:** in Claude's settings, under Connectors, add a custom connector. Leave its OAuth client
+  ID and secret empty, as Claude registers itself.
+- **ChatGPT:** custom connectors need ChatGPT's developer mode, in its settings under Apps and
+  Connectors. Then create a connector, with OAuth for its authentication.
+
+The assistant then opens Meals's "Connect … to Meals?" page. Sign in with the `ADMIN_EMAIL` Google
+account if asked, and choose Allow. Its proposed changes come with a link to a page that lists every
+change, with Approve and Reject; Admin lists them too.
+
+Admin's AI assistants section lists the connections. Revoke stops one at once and deletes its
+proposals. To connect it again, remove the connector in the assistant and add it again.
+
 ## Google sign-in
 
 One-time setup in [Google Cloud Console](https://console.cloud.google.com):

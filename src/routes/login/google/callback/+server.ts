@@ -2,7 +2,13 @@ import { redirect } from '@sveltejs/kit';
 import { cookieName } from '#lib/server/auth/cookies.ts';
 import { exchangeCode, type GoogleClaims } from '#lib/server/auth/google.ts';
 import { createSession, setSessionCookie } from '#lib/server/auth/session.ts';
-import { NOT_INVITED_COOKIE, signIn, type SignInError } from '#lib/server/auth/sign-in.ts';
+import {
+	NOT_INVITED_COOKIE,
+	RETURN_COOKIE,
+	returnPath,
+	signIn,
+	type SignInError
+} from '#lib/server/auth/sign-in.ts';
 import { config } from '#lib/server/config.ts';
 
 /**
@@ -19,10 +25,14 @@ export async function GET({ cookies, url }) {
 	const state = url.searchParams.get('state');
 	const stateCookie = cookieName(url, 'google_oauth_state');
 	const verifierCookie = cookieName(url, 'google_code_verifier');
+	const returnCookie = cookieName(url, RETURN_COOKIE);
 	const storedState = cookies.get(stateCookie);
 	const codeVerifier = cookies.get(verifierCookie);
+	// The page the sign-in started from asked to come back to, such as an AI assistant's (6.17).
+	const next = returnPath(cookies.get(returnCookie), url.origin);
 	cookies.delete(stateCookie, { path: '/' });
 	cookies.delete(verifierCookie, { path: '/' });
+	cookies.delete(returnCookie, { path: '/' });
 	// Cancel or an error at Google, which sends no code; more than 10 minutes there, so the cookies
 	// expired; or Back to Google's account chooser after signing in, which comes again without the
 	// cookies the first sign-in used up. The sign-in page sends someone signed in on to Meals.
@@ -54,5 +64,5 @@ export async function GET({ cookies, url }) {
 	}
 	const session = createSession(result.userId, now);
 	setSessionCookie(cookies, url, session.token, session.expiresAt);
-	redirect(303, '/');
+	redirect(303, next ?? '/');
 }

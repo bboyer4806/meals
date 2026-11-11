@@ -91,6 +91,17 @@ it("sends someone back to the sign-in page when Meals can't get their account fr
 	}
 });
 
+it('goes back to the page the sign-in started from, on this site only (6.17)', async () => {
+	vi.mocked(exchangeCode).mockResolvedValue({ ...STRANGER, sub: 'sub-admin', email: 'admin@example.com' });
+	const page = '/oauth/authorize?client_id=abc&state=xyz';
+	expect((await callback(`${CALLBACK}?code=code&state=state`, { ...STARTED, login_return: page })).to).toBe(
+		page
+	);
+	const elsewhere = { ...STARTED, login_return: 'https://evil.example/' };
+	expect((await callback(`${CALLBACK}?code=code&state=state`, elsewhere)).to).toBe('/');
+	expect((await callback(`${CALLBACK}?code=code&state=state`, STARTED)).to).toBe('/');
+});
+
 it("sends an account whose email Google hasn't verified back to the sign-in page (MEA-94)", async () => {
 	vi.mocked(exchangeCode).mockResolvedValueOnce({ ...STRANGER, email_verified: false });
 	const { to, set } = await callback(`${CALLBACK}?code=code&state=state`, STARTED);

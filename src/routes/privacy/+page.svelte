@@ -4,7 +4,7 @@
 
 <main class="page">
 	<h1>Privacy</h1>
-	<p class="muted">Last updated October 20, 2026</p>
+	<p class="muted">Last updated November 11, 2026</p>
 
 	<p>
 		Meals is a private, invite-only website where a household keeps a shared grocery list,
@@ -31,9 +31,18 @@
 	<h2>Who can see it</h2>
 	<p>
 		Your household's information is visible to the members of your household. The site admin can
-		see household names and members' email addresses, but not your lists, recipes or menu. Meals
-		has no ads and no tracking, and your information is never sold or shared, except for feedback
-		you choose to send.
+		see household names and members' email addresses.
+	</p>
+	<p>
+		The site admin can also connect the AI assistants ChatGPT, by OpenAI, and Claude, by Anthropic,
+		to Meals. An assistant the admin connects can read every household's information, including
+		your lists, recipes, menu and requests, and members' names and email addresses, to answer the
+		admin's questions, and what it reads is sent to OpenAI or Anthropic. It can propose changes,
+		which happen only if the admin approves them. It never sees anything that signs you in.
+	</p>
+	<p>
+		Meals has no ads and no tracking, and your information is never sold. It's shared only with the
+		admin's AI assistants as described above, and in feedback you choose to send.
 	</p>
 
 	<h2>Feedback</h2>
