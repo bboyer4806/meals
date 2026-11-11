@@ -7,6 +7,14 @@ export type GoogleProfile = { sub: string; email: string; name: string };
 /** Carries the address an uninvited account used from the sign-in callback to /not-invited. */
 export const NOT_INVITED_COOKIE = 'not_invited_email';
 
+/**
+ * Why a sign-in didn't finish (design 6.1). The callback sends someone back to the sign-in page
+ * with one in the address, as `/login?error=cancelled`, and the page says what happened.
+ */
+export const SIGN_IN_ERRORS = ['cancelled', 'failed', 'unverified'] as const;
+
+export type SignInError = (typeof SIGN_IN_ERRORS)[number];
+
 export type SignInResult =
 	| { kind: 'signed-in'; userId: number }
 	| { kind: 'not-invited'; email: string };

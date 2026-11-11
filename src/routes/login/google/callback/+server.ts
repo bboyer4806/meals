@@ -1,9 +1,18 @@
-import { error, redirect } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import { cookieName } from '#lib/server/auth/cookies.ts';
 import { exchangeCode, type GoogleClaims } from '#lib/server/auth/google.ts';
 import { createSession, setSessionCookie } from '#lib/server/auth/session.ts';
-import { NOT_INVITED_COOKIE, signIn } from '#lib/server/auth/sign-in.ts';
+import { NOT_INVITED_COOKIE, signIn, type SignInError } from '#lib/server/auth/sign-in.ts';
 import { config } from '#lib/server/config.ts';
+
+/**
+ * Sends someone back to the sign-in page, which says why their sign-in didn't finish and has
+ * "Sign in with Google" to try again (6.1). An error here would show a bare error page with
+ * nothing to tap, since an endpoint's errors skip the app's error page.
+ */
+function backToSignIn(error: SignInError): never {
+	redirect(303, `/login?error=${error}`);
+}
 
 export async function GET({ cookies, url }) {
 	const code = url.searchParams.get('code');
@@ -14,8 +23,11 @@ export async function GET({ cookies, url }) {
 	const codeVerifier = cookies.get(verifierCookie);
 	cookies.delete(stateCookie, { path: '/' });
 	cookies.delete(verifierCookie, { path: '/' });
+	// Cancel or an error at Google, which sends no code; more than 10 minutes there, so the cookies
+	// expired; or Back to Google's account chooser after signing in, which comes again without the
+	// cookies the first sign-in used up. The sign-in page sends someone signed in on to Meals.
 	if (!code || !state || !storedState || !codeVerifier || state !== storedState) {
-		error(400, 'Sign-in was cancelled or expired. Please try again.');
+		backToSignIn('cancelled');
 	}
 
 	let claims: GoogleClaims;
@@ -23,9 +35,9 @@ export async function GET({ cookies, url }) {
 		claims = await exchangeCode(url.origin, code, codeVerifier, Date.now());
 	} catch (e) {
 		console.error('Google sign-in failed', e);
-		error(400, 'Google sign-in failed. Please try again.');
+		backToSignIn('failed');
 	}
-	if (!claims.email_verified) error(403, 'Google has not verified this email address.');
+	if (!claims.email_verified) backToSignIn('unverified');
 
 	const now = Date.now();
 	const result = signIn(
