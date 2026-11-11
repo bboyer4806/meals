@@ -200,6 +200,14 @@ export function listActiveLines(householdId: number, timeZone: string, now: numb
 		.filter((line) => line.status !== 'received' || receivedToday(line, timeZone, now));
 }
 
+/** The lines To Order, oldest first, for the grocery list email (6.16). */
+export function listToOrderLines(householdId: number): GroceryLine[] {
+	return selectLines()
+		.where(and(eq(groceryNeeds.householdId, householdId), eq(groceryNeeds.status, 'to_order')))
+		.orderBy(asc(groceryNeeds.id))
+		.all();
+}
+
 /** Received lines, newest first, optionally filtered by item name. */
 export function listHistory(householdId: number, search: string, limit: number): GroceryLine[] {
 	return selectLines()
