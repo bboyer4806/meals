@@ -4,7 +4,7 @@ import { config } from './config.ts';
 // server. Every email comes from the same address, on the domain verified in Resend (design 4.3).
 
 const SEND_URL = 'https://api.resend.com/emails';
-const FROM = 'Meals <noreply@meals.dev.boyersoftware.com>';
+const FROM = 'Meals <noreply@boyersoftware.com>';
 const TIMEOUT_MS = 10_000;
 
 export type Email = {

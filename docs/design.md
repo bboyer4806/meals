@@ -207,7 +207,7 @@ development, configuration, and restoring a backup.
 | `ADMIN_EMAIL`                            | Your Google email. This account can invite new households.                                  | Once on the server |
 | `DATA_DIR`                               | `/data`                                                                                     | Once on the server |
 | `JIRA_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` | The Jira site that feedback goes to, and the Atlassian account and API token that create its tickets (7, Feedback) | Once on the server |
-| `RESEND_API_KEY`                         | The Resend API key that sends email from `meals.dev.boyersoftware.com` (7, Admin)           | Once on the server |
+| `RESEND_API_KEY`                         | The Resend API key that sends email from `boyersoftware.com` (7, Admin)                     | Once on the server |
 
 The app reads these when it starts, not when it's built, so building the image needs no
 secrets. It refuses to start if any is missing or if `DATA_DIR` doesn't exist (a missing
@@ -215,10 +215,10 @@ storage mount). For local development the same variables go in an untracked `.en
 `DATA_DIR=./data`.
 
 Meals sends email through Resend's API (MEA-260). Every email comes from
-`Meals <noreply@meals.dev.boyersoftware.com>`, as HTML with a plain-text version for mail apps
-that don't show HTML. Resend sends only from a domain verified in its account, so
-`meals.dev.boyersoftware.com` is verified there, and `RESEND_API_KEY` set on the server, before
-the first version that needs the key deploys (README, "Email through Resend").
+`Meals <noreply@boyersoftware.com>`, as HTML with a plain-text version for mail apps that don't
+show HTML. Resend sends only from a domain verified in its account, so `boyersoftware.com` is
+verified there, and `RESEND_API_KEY` set on the server, before the first version that needs the
+key deploys (README, "Email through Resend").
 
 No `ORIGIN` setting is needed: in SvelteKit 3, adapter-node builds the app's origin from the
 `Host` header Dokku passes through, with `https`.

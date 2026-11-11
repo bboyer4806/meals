@@ -67,17 +67,17 @@ can use your own account and token.
 ## Email through Resend
 
 Meals sends email through [Resend](https://resend.com), always from
-`Meals <noreply@meals.dev.boyersoftware.com>`. Resend sends only from a domain it has verified, so
-before the first version that needs `RESEND_API_KEY` deploys:
+`Meals <noreply@boyersoftware.com>`. Resend sends only from a domain it has verified, so before the
+first version that needs `RESEND_API_KEY` deploys:
 
 1. In Resend, open [Domains](https://resend.com/domains), choose "Add domain" and enter
-   `meals.dev.boyersoftware.com`.
+   `boyersoftware.com`.
 2. Add the DKIM and SPF records Resend lists for it to boyersoftware.com's DNS, exactly as shown,
    then wait until Resend shows the domain as Verified. That usually takes minutes, but can take up
    to 72 hours.
 3. Open [API keys](https://resend.com/api-keys), choose "Create API key", name it "Meals", give it
-   "Sending access" restricted to `meals.dev.boyersoftware.com`, and copy the key, which Resend
-   shows only once.
+   "Sending access" restricted to `boyersoftware.com`, and copy the key, which Resend shows only
+   once.
 4. Set it as `RESEND_API_KEY` on the server (see [One-time server setup](#one-time-server-setup)).
 
 To check it, sign in as `ADMIN_EMAIL`, open Admin and choose "Send test email", which emails that

@@ -41,7 +41,7 @@ describe('sendEmail', () => {
 			'user-agent': 'Meals'
 		});
 		expect(JSON.parse(init.body as string)).toEqual({
-			from: 'Meals <noreply@meals.dev.boyersoftware.com>',
+			from: 'Meals <noreply@boyersoftware.com>',
 			to: 'pat@example.com',
 			subject: 'Groceries for Saturday',
 			html: '<p>Milk and <strong>eggs</strong></p>',
@@ -52,7 +52,7 @@ describe('sendEmail', () => {
 	it("throws Resend's answer when it refuses the email, without the API key", async () => {
 		const refusal = {
 			statusCode: 403,
-			message: 'The meals.dev.boyersoftware.com domain is not verified.',
+			message: 'The boyersoftware.com domain is not verified.',
 			name: 'validation_error'
 		};
 		stubResend(async () => Response.json(refusal, { status: 403 }));

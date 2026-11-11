@@ -60,7 +60,7 @@ describe('the test email action', () => {
 			message: 'Test email sent to admin@example.com. Check your inbox.'
 		});
 		expect(sentEmail()).toEqual({
-			from: 'Meals <noreply@meals.dev.boyersoftware.com>',
+			from: 'Meals <noreply@boyersoftware.com>',
 			to: 'admin@example.com',
 			subject: 'Meals test email',
 			html: "<p>This is a test email from Meals. If you're reading it, Meals can send email.</p>",
