@@ -253,5 +253,6 @@ when it deploys.
 
 ## Changing the database
 
-Edit `src/lib/server/db/schema.ts`, then run `npm run db:generate -- --name <what-changed>` and
-commit the new file in `drizzle/`. The app applies new migrations when it starts.
+Follow the Database section of [AGENTS.md](AGENTS.md#database), and commit the new and changed
+files in `drizzle/` and `drizzle/meta/`. That includes the journal, `drizzle/meta/_journal.json`:
+the app applies only the migrations it lists.
