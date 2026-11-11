@@ -5,6 +5,7 @@ import {
 	KNOWN_UNITS,
 	knownUnit,
 	normalizeUnit,
+	sameUnit,
 	toBase,
 	unitLabel,
 	type KnownUnitCode
@@ -132,6 +133,29 @@ describe('toBase', () => {
 		expect(toBase(2, unit('tbsp'))).toBe(6);
 		expect(toBase(1 / 2, unit('gallon'))).toBe(384);
 		expect(toBase(1.5, unit('lb'))).toBe(24);
+	});
+});
+
+describe('sameUnit', () => {
+	it('matches a unit spelled another way, and a custom unit in another case (MEA-93)', () => {
+		expect(sameUnit('lb', 'lbs')).toBe(true);
+		expect(sameUnit('pounds', 'LB')).toBe(true);
+		expect(sameUnit(' Fl. Oz. ', 'fl oz')).toBe(true);
+		expect(sameUnit('t', 'tsp')).toBe(true);
+		expect(sameUnit('Can', 'can')).toBe(true);
+		expect(sameUnit(null, null)).toBe(true);
+	});
+
+	it('tells other units apart', () => {
+		// t is a teaspoon and T a tablespoon (MEA-77).
+		expect(sameUnit('t', 'T')).toBe(false);
+		// A custom unit spelled another way is another unit (design 6.15).
+		expect(sameUnit('bag', 'bags')).toBe(false);
+		// Units that convert into each other are still two units.
+		expect(sameUnit('lb', 'oz')).toBe(false);
+		// No unit is a count, which only matches another count.
+		expect(sameUnit(null, 'can')).toBe(false);
+		expect(sameUnit('lb', null)).toBe(false);
 	});
 });
 

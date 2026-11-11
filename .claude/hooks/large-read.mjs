@@ -1,11 +1,14 @@
-// PreToolUse hook for Read: blocks whole-file reads of large files so the agent
-// greps for what it needs and reads that range instead.
+// PreToolUse hook for Read: blocks whole-file reads of large text files so the agent
+// greps for what it needs and reads that range instead. Images and PDFs pass, since a
+// line limit doesn't apply to them: Read shows images and reads PDFs by page.
 import { readFileSync, statSync } from 'node:fs';
 
 const MAX_BYTES = 40_000;
+// The extensions Read treats as images and PDFs, in any letter case.
+const IMAGE_OR_PDF = /\.(png|jpe?g|gif|webp|pdf)$/i;
 
 const { tool_input: input } = JSON.parse(readFileSync(0, 'utf8'));
-if (input.limit !== undefined) process.exit(0);
+if (input.limit !== undefined || IMAGE_OR_PDF.test(input.file_path)) process.exit(0);
 
 const bytes = statSync(input.file_path, { throwIfNoEntry: false })?.size ?? 0;
 if (bytes <= MAX_BYTES) process.exit(0);

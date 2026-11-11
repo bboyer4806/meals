@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { and, asc, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import { dateIn } from '../../dates.ts';
 import { formatQuantity, normalizeName } from '../../text.ts';
-import { conversionFactor } from '../../units.ts';
+import { conversionFactor, sameUnit } from '../../units.ts';
 import { db, transaction } from '../db/index.ts';
 import {
 	groceryNeeds,
@@ -238,11 +238,8 @@ export type AddResult =
 			unit: string | null;
 			storeName: string | null;
 			suggestedQuantity: number;
+			suggestedUnit: string | null;
 	  };
-
-function sameUnit(a: string | null, b: string | null): boolean {
-	return (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
-}
 
 export function storeForNewLine(householdId: number, item: Item, store: StoreChoice): number | null {
 	if (store === 'none') return null;
@@ -288,6 +285,8 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 				fitAllocations(toOrder.id, input.quantity, input.unit);
 				return { kind: 'updated' };
 			}
+			// The same unit, however it's spelled, suggests the sum in the line's unit (6.4, MEA-93).
+			const same = sameUnit(toOrder.unit, input.unit);
 			return {
 				kind: 'duplicate',
 				status: 'to_order',
@@ -295,9 +294,8 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 				quantity: toOrder.quantity,
 				unit: toOrder.unit,
 				storeName: toOrder.storeName,
-				suggestedQuantity: sameUnit(toOrder.unit, input.unit)
-					? roundQuantity(toOrder.quantity + input.quantity)
-					: input.quantity
+				suggestedQuantity: same ? roundQuantity(toOrder.quantity + input.quantity) : input.quantity,
+				suggestedUnit: same ? toOrder.unit : input.unit
 			};
 		}
 		if (ordered && input.resolution !== 'add') {
@@ -308,7 +306,8 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 				quantity: ordered.quantity,
 				unit: ordered.unit,
 				storeName: ordered.storeName,
-				suggestedQuantity: input.quantity
+				suggestedQuantity: input.quantity,
+				suggestedUnit: input.unit
 			};
 		}
 

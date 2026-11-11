@@ -223,11 +223,12 @@ No `ORIGIN` setting is needed: in SvelteKit 3, adapter-node builds the app's ori
 ### 4.4 Storage and backups
 
 ```
-/data/meals.db                        database (WAL mode, foreign keys on)
-/data/photos/<key>.jpg                recipe photo or item image, longest side 1600 px
-/data/photos/<key>-thumb.jpg          its thumbnail, longest side 400 px
-/data/backups/<YYYY-MM-DD>/meals.db   nightly copy of the database
-/data/backups/<YYYY-MM-DD>/photos/    nightly snapshot of the photos
+/data/meals.db                              database (WAL mode, foreign keys on)
+/data/photos/<key>.jpg                      recipe photo or item image, longest side 1600 px
+/data/photos/<key>-thumb.jpg                its thumbnail, longest side 400 px
+/data/backups/<YYYY-MM-DD>/meals.db         nightly copy of the database
+/data/backups/<YYYY-MM-DD>/photos/          nightly snapshot of the photos
+/data/backups/pre-migrate-<time>/meals.db   copy of the database before a deploy's migrations
 ```
 
 During a deploy, Dokku runs the old and new containers on the same database for a short time.
@@ -250,6 +251,20 @@ only complete snapshots, so it stops advancing when backups fail.
 
 To restore, you stop the app, copy a snapshot's database and photos back into place,
 and start it. The README will have the exact commands.
+
+Before applying new migrations to a database that already has data, the app copies the database
+to `backups/pre-migrate-<time>/`, `<time>` being when it started, in UTC (MEA-97). It uses
+`VACUUM INTO`, which, like the online backup, makes a consistent copy while the old version is
+still running. The copy is built in a temporary folder and moved into place when it's complete. A
+failed copy stops the app from starting, as a failed migration does, so no migration runs without
+one. The copy holds only the database, since migrations don't change photos. The nightly job
+doesn't count or remove these copies, so they stay until removed by hand.
+
+To roll back, you deploy the older version's image. Past a migration, you first stop the app and
+restore the first pre-migrate copy made after the older version deployed. That loses the changes
+made since that copy, instead of every change since the last nightly backup. The older version
+alone would run on a database it wasn't written for, and what it saved there would stay in its
+old form, since a migration runs only once. The README has the exact commands ("Rolling back").
 
 **Risk you accepted:** the backups are on the same disk as the data. If the server is
 lost, so is everything. Moving backups off the server later is a small change.
@@ -300,7 +315,7 @@ lost, so is everything. Moving backups off the server later is a small change.
   `referrer-policy: strict-origin-when-cross-origin`, so other sites see this site's address but
   not the page's, and `permissions-policy: camera=(), microphone=(), geolocation=()`, which leaves
   the screen wake lock the cooking view uses (7) allowed. An endpoint's error page, such as the one
-  a cancelled sign-in gets, has no Content Security Policy from SvelteKit, so it gets
+  a missing photo gets, has no Content Security Policy from SvelteKit, so it gets
   `content-security-policy: frame-ancestors 'none'` and no other site can show it in a frame. On
   the server, Dokku's nginx adds `strict-transport-security: max-age=15724800; includeSubdomains`
   to every response, its default for an app with a certificate, so a browser that has been here
@@ -470,6 +485,16 @@ point at grocery lines. An ingredient points at a dish and an item. A dinner has
 
 1. People sign in with Google (scopes `openid`, `email` and `profile`). Google must
    report the email as verified.
+
+   A sign-in that doesn't finish goes back to the sign-in page, which says why above "Sign in
+   with Google", rather than to an error page with nothing to tap (MEA-94). After Cancel or an
+   error at Google, more than 10 minutes there, or Back to Google's account chooser after
+   signing in, it says "Sign-in was cancelled or expired. Please try again." When Meals can't
+   get the account from Google, it says "Google sign-in failed. Please try again.", and for an
+   email Google hasn't verified, "Google has not verified this email address." The page's
+   address carries only which of these it is, as `?error=cancelled`, `failed` or `unverified`,
+   so the page never shows text from its address. Someone already signed in, as after Back to
+   Google, goes on to Meals instead.
 2. A known Google account is signed in, and its email and name are refreshed.
 3. An unknown account is matched by email:
    - An invite to a household: the account joins that household (E5).
@@ -534,9 +559,11 @@ unless that store is archived (Q18).
   name with no match offers "Add new item".
 - Quantity starts at 1. The unit is pre-filled with the one used last time for that item.
 - If the item already has a To Order line, a warning shows it ("Milk is already on the
-  list: 2 gal at Walmart") and offers to update that line's quantity, pre-filled with the
-  sum when the units match. If the item only has an Ordered line, the warning offers to
-  add a new To Order line instead (Q22).
+  list: 2 gal at Walmart") and offers to change that line's quantity and unit. When the unit
+  typed is the line's, ignoring case and spelling ("lbs" is "lb", 6.5), the quantity is
+  pre-filled with the sum and the unit with the line's: adding 1 lbs of butter to a line of
+  2 lb suggests 3 lb (MEA-93). Otherwise both are pre-filled with what was typed. If the item
+  only has an Ordered line, the warning offers to add a new To Order line instead (Q22).
 
 ### 6.5 Amounts and units
 
@@ -921,7 +948,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 
 | Screen           | Path                                 | What it does                                                                                                                         |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Sign in          | `/login`                             | "Sign in with Google".                                                                                                               |
+| Sign in          | `/login`                             | "Sign in with Google", and above it, after a sign-in that didn't finish, why (6.1).                                                  |
 | Invite-only      | `/not-invited`                       | Shown to an account without an invite, with the email it used.                                                                      |
 | Household setup  | `/setup`                             | First sign-in for a new household: name, usual servings, time zone.                                                                 |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
