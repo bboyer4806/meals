@@ -14,6 +14,15 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.16',
+		released: '2026-11-12',
+		lines: [
+			"The site admin can now connect the AI assistants ChatGPT and Claude to Meals. A connected assistant can read every household's information, including your lists, recipes, menu and requests, and members' names and email addresses. What it reads is sent to OpenAI or Anthropic. It can propose changes, which happen only if the admin approves them. The Privacy page now says this.",
+			'Adding more of an item already on the grocery list now adds up the amounts when the same unit is spelled another way, so 1 lbs of butter on top of 2 lb suggests 3 lb instead of 1 lbs.',
+			"When signing in with Google doesn't finish, such as when you cancel at Google, Meals now takes you back to the sign-in page and says what happened, instead of showing an error page with nothing to tap. If Google stops answering, Meals says so after 10 seconds instead of showing an error page after about a minute."
+		]
+	},
+	{
 		version: '1.15',
 		released: '2026-11-08',
 		lines: [
