@@ -14,6 +14,9 @@ export default defineConfig({
 			// The commit the image is built from (Dockerfile), which /healthz answers with (4.2).
 			// Other builds, such as a local one, get SvelteKit's default: the time they were built.
 			version: { name: process.env.COMMIT },
+			// Turns off SvelteKit's check of where forms come from, which can't leave out OAuth's
+			// token endpoint. hooks.server.ts makes the same check without it (origin.ts, 4.5).
+			csrf: { trustedOrigins: ['*'] },
 			csp: {
 				mode: 'auto',
 				directives: {
@@ -23,7 +26,16 @@ export default defineConfig({
 					'img-src': ['self', 'data:'],
 					'font-src': ['self'],
 					'connect-src': ['self'],
-					'form-action': ['self'],
+					// Allow and Deny on an AI assistant's connection page send the admin back to
+					// ChatGPT or Claude (design 6.17), and a browser checks that redirect too. The
+					// same sites as ASSISTANT_ORIGINS in src/lib/server/auth/oauth.ts.
+					'form-action': [
+						'self',
+						'https://chatgpt.com',
+						'https://platform.openai.com',
+						'https://claude.ai',
+						'https://claude.com'
+					],
 					'frame-ancestors': ['none'],
 					'base-uri': ['self'],
 					'object-src': ['none']

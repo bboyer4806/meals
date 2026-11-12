@@ -8,6 +8,22 @@ export type GoogleProfile = { sub: string; email: string; name: string };
 export const NOT_INVITED_COOKIE = 'not_invited_email';
 
 /**
+ * Carries the page to come back to from starting a sign-in to its callback, such as an AI
+ * assistant's connection page (design 6.1, 6.17). Named with cookieName.
+ */
+export const RETURN_COOKIE = 'login_return';
+
+/**
+ * A page on this site to go to after signing in, as its path and query, or null for anything
+ * else, so a sign-in never ends on another site.
+ */
+export function returnPath(path: string | null | undefined, origin: string): string | null {
+	if (!path?.startsWith('/')) return null;
+	const url = new URL(path, origin);
+	return url.origin === origin ? `${url.pathname}${url.search}` : null;
+}
+
+/**
  * Why a sign-in didn't finish (design 6.1). The callback sends someone back to the sign-in page
  * with one in the address, as `/login?error=cancelled`, and the page says what happened.
  */

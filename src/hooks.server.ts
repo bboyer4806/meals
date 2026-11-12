@@ -5,6 +5,7 @@ import { checkBodySize } from '#lib/server/body-size.ts';
 import { config, loadConfig } from '#lib/server/config.ts';
 import { addStandardItemsToAllHouseholds } from '#lib/server/data/households.ts';
 import { openDb } from '#lib/server/db/index.ts';
+import { checkOrigin } from '#lib/server/origin.ts';
 import { assignAllStandardImages, checkLibrary } from '#lib/server/standard-images.ts';
 import {
 	deleteSessionCookie,
@@ -48,7 +49,9 @@ function checkWritable(paths: string[]): void {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
-	// First, so a body too large to read is refused before anything reads it (4.5).
+	// First, as SvelteKit's own check came before anything else (4.5).
+	checkOrigin(event.request, event.url, event.route.id);
+	// Before anything reads the body, so a body too large to read is refused (4.5).
 	checkBodySize(event.request, event.route.id);
 	event.locals.user = null;
 	const token = event.cookies.get(sessionCookieName(event.url));

@@ -297,8 +297,11 @@ lost, so is everything. Moving backups off the server later is a small change.
   dev.boyersoftware.com can't make someone's browser use its session in Meals, where whatever
   they add would land in its household, or finish its own sign-in there. Over http, as in
   development on localhost and the browser tests, the cookies keep their plain names.
-- **Forms:** SvelteKit's origin check blocks cross-site form posts. All input is validated
-  with Zod.
+- **Forms:** a form sent from another site is refused (403): a POST, PUT, PATCH or DELETE with a
+  form's content type, or none, needs this site's Origin. SvelteKit's own check did this until
+  MEA-266, but it can't leave out a route, so `hooks.server.ts` makes the same check
+  (`origin.ts`), leaving out only OAuth's token endpoint, which ChatGPT's and Claude's servers send
+  forms to with no Origin (6.17). All input is validated with Zod.
 - **Long text** (MEA-64). Names are matched and stored in one Unicode form (NFC), and putting
   text in that form takes time that grows with the square of a run of combining marks: one name
   of millions would hold up the server for every household for half an hour. So length is
@@ -316,7 +319,9 @@ lost, so is everything. Moving backups off the server later is a small change.
   recipes and feedback send more, a photo, an image, a file or a screenshot as multipart/form-data,
   which they may send up to 5 MB (`BODY_SIZE_LIMIT`, 4.2).
 - **No raw HTML** from user input is ever rendered (no `{@html}`), and SvelteKit's
-  built-in Content Security Policy is turned on.
+  built-in Content Security Policy is turned on. Its `form-action` allows ChatGPT's, OpenAI's and
+  Claude's sites as well as this one, since a browser checks the redirect a form's answer makes, and Allow
+  and Deny on an AI assistant's connection page send the admin back there (6.17).
 - **Headers** (MEA-82). Pages and endpoints send `x-content-type-options: nosniff`, so a browser
   goes by the type a response states instead of guessing from its content,
   `referrer-policy: strict-origin-when-cross-origin`, so other sites see this site's address but
@@ -327,8 +332,16 @@ lost, so is everything. Moving backups off the server later is a small change.
   the server, Dokku's nginx adds `strict-transport-security: max-age=15724800; includeSubdomains`
   to every response, its default for an app with a certificate, so a browser that has been here
   goes straight to https for the next 6 months.
-- **Admin** is only the `ADMIN_EMAIL` account. It sees household names and member
-  emails, not household data.
+- **Admin** is only the `ADMIN_EMAIL` account. On Admin it sees household names and member
+  emails, not household data. Through ChatGPT or Claude, once it connects them, it reads every
+  household's data and changes what it approves (6.17).
+- **AI assistants** (MEA-266, 6.17). ChatGPT and Claude connect with OAuth 2.1: they register
+  themselves, but only with their own redirect addresses, so a code only ever goes to them, and
+  only the admin, signed in with Google, can allow one. Codes need PKCE (S256), and work once.
+  Codes, tokens and client secrets are stored only as SHA-256 hashes, as sessions are. An access
+  token lasts an hour and a refresh token 30 days from its last use, and a connection works only
+  while the account that allowed it is the `ADMIN_EMAIL` account. Revoking one ends it at once.
+  An assistant changes nothing itself: it proposes, and the admin approves on Meals.
 - **Importing from a link** and an **image link** (7) have the server fetch a web page or an
   image, so a link could aim it at the server itself. Only http and https are fetched, and never
   from an address on this computer or a private or link-local network (such as 127.0.0.1,
@@ -359,7 +372,9 @@ src/lib/server/
   config.ts               settings from the environment, checked at startup
   db/schema.ts            tables
   db/index.ts             connection, settings, migrations at startup
-  auth/                   Google sign-in, sessions, invites
+  auth/                   Google sign-in, sessions, invites, and OAuth for AI assistants (6.17)
+  ai/                     the MCP server, the changes AI assistants can propose, and proposals
+  origin.ts               refuse forms sent from other sites (4.5)
   data/                   one module per area: households, stores, items, needs,
                           party-lists, dishes, dinners, requests. Every function takes
                           householdId first, except whats-new (a person's seen
@@ -480,13 +495,30 @@ while it's active) (6.12).
 `need`), `need_id` (the grocery line that a Need created; deleting that line also clears
 the mark).
 
+**ai_connections** (an AI assistant's connection; 6.17): `client_id` (random, unique, the OAuth
+client it registered as), `secret_hash` (SHA-256 of its client secret; empty for a client without
+one), `platform` (`chatgpt` or `claude`, from its redirect addresses), `redirect_uris`,
+`created_at`, `user_id` and `authorized_at` (the admin who allowed it and when; both empty until
+then), `last_used_at`.
+
+**ai_tokens**: `id` (SHA-256 of the code or token), `connection_id`, `kind` (`code`, `access` or
+`refresh`), `expires_at`, and on a code only, the `redirect_uri` and PKCE `code_challenge` it was
+given for.
+
+**ai_proposals** (changes an assistant proposed; 6.17): `connection_id`, `content` (the changes and
+what the confirmation page shows of each, as JSON, never changed), `status` (`pending`,
+`approved`, `rejected` or `failed`), `error` (why a failed one failed), `created_at`, `expires_at`
+(24 hours later), `decided_at`.
+
 How they connect: a household has users, invites, stores, items, grocery lines, party lists,
 dishes, dinners, requests and at most one checklist. A request points at the member who asked (a
 completed one only until they're removed) and, for a dish, its recipe. A rating points at a
 dish and, until they're removed, the member who rated it. A grocery line points at an item and
 a store. A party list has party items, which point at items, and a party item's allocations
 point at grocery lines. An ingredient points at a dish and an item. A dinner has dishes through
-`dinner_dishes`. A mark points at a checklist, an item and sometimes a grocery line.
+`dinner_dishes`. A mark points at a checklist, an item and sometimes a grocery line. The AI
+tables belong to no household: a connection points at the admin who allowed it, and its tokens
+and proposals at it, so revoking it deletes them too.
 
 ## 6. Rules
 
@@ -532,6 +564,11 @@ point at grocery lines. An ingredient points at a dish and an item. A dinner has
    same way; someone removed since shows their whole name while a current member has the same
    first name. Names are kept whole, and a removed member's ratings still show as "Former
    member".
+8. A page an AI assistant sends the admin to, its connection page or a proposal (6.17), sends
+   someone signed out straight to Google's sign-in, and back to that page, query and all, once
+   signed in (MEA-266). The page is kept in a cookie for the 10 minutes a sign-in may take, and
+   only a page on this site counts. Every other page still sends someone signed out to the sign-in
+   page, and on to the grocery list.
 
 ### 6.2 Grocery line statuses
 
@@ -970,6 +1007,71 @@ decides who gets it and when, and sends it through Resend like every other email
 text. Whatever sends it adds the recipient: `sendEmail({ to, ...groceryListEmail(householdId) })`.
 It only reads the list, and sends nothing itself.
 
+### 6.17 AI assistants
+
+The admin can connect ChatGPT and Claude to Meals, so they can read any household's information
+and propose changes, which happen only when the admin approves them in Meals (MEA-266). No other
+assistant can connect, and nobody but the admin can connect one.
+
+- **Connecting.** In ChatGPT or Claude, the admin adds a connector with the address of Meals's MCP
+  server, `https://meals.dev.boyersoftware.com/mcp`, which Admin shows. The assistant finds how to
+  sign in from Meals's OAuth metadata (RFC 9728, RFC 8414), registers itself (RFC 7591) and sends
+  the admin to Meals's connection page, "Connect Claude to Meals?", which says what it will be able
+  to do. Only the admin, signed in with Google, can answer it; anyone else gets Not found, and
+  someone signed out signs in first and comes back to it (6.1). Allow sends them back to the
+  assistant with a code, which it exchanges, with its PKCE verifier (S256), for an access token
+  that lasts an hour and a refresh token that lasts 30 days from its last use. Each code and
+  refresh token works once. Deny sends them back with nothing.
+- **Only ChatGPT and Claude.** An assistant must register with ChatGPT's or Claude's own redirect
+  addresses: `https://chatgpt.com/connector_platform_oauth_redirect`,
+  `https://chatgpt.com/connector/oauth/<id>`, or OpenAI's
+  `https://platform.openai.com/apps-manage/oauth` for apps it reviews; and
+  `https://claude.ai/api/mcp/auth_callback` or `https://claude.com/api/mcp/auth_callback`. So a
+  code only ever goes to them, and the connection page names the assistant by those addresses,
+  never by the name it registers with. Meals sends `iss` back with the code (RFC 9207), as ChatGPT
+  needs to use its fixed address. A registration the admin doesn't allow within a day is deleted.
+- **Who it works for.** A connection works as the admin who allowed it, and stops working when that
+  account is no longer the `ADMIN_EMAIL` account, or is removed. The MCP endpoint answers only a
+  connection's access token, and points anything else at how to connect (401 with
+  `resource_metadata`). Codes, tokens and client secrets are kept only as SHA-256 hashes (4.5).
+- **Revoking.** Admin lists the connections, with when each was connected and last used. Revoke,
+  after asking, deletes a connection with its tokens and its proposals, so the assistant can't read
+  or propose anything, and none of its proposals can be approved. To connect it again, the admin
+  removes the connector in the assistant and adds it again.
+- **Reading.** The assistant's tools read every household: settings, members (name and email),
+  invites, stores, items, the grocery list and its history, recipes with their ingredients and
+  ratings, the menu, requests and party lists, each by the household's id, and the invites to
+  start new households. They read through the data layer, as the pages do, so they never give
+  sign-in details: no sessions, Google account IDs, tokens or secrets. The pantry check is hidden
+  (6.8), so its data isn't read. Times are given in ISO 8601.
+- **Proposing.** `propose_changes` takes a summary and up to 50 changes, each to one household, of
+  these kinds and no others: changing the household's settings; adding, renaming, archiving or
+  restoring a store; renaming an item or changing its notes, archiving or restoring it; adding a
+  grocery line, changing one (amount, store and note) or deleting one; adding a recipe, changing one
+  (every field but the photo, which stays) or archiving or restoring one; planning a date or
+  changing a dinner (type, label, restaurant, servings, note and exactly the dishes listed, by
+  recipe name, where a new name adds a recipe with no details, as on the menu) or clearing one;
+  and completing or removing a request. Each is checked with the rules of the form that makes it in
+  Meals and made through the same data-layer function, so it keeps every rule those keep (6.2 to
+  6.12). A change to a record takes all its fields, so leaving one out never empties it. Nothing
+  else can change: there's no SQL, no change to the database's tables, and nothing about sign-in,
+  sessions, members or invites. Proposing makes the changes and undoes them, so a change that
+  can't be made is refused right away, saying which change and why, and nothing is saved.
+- **Approving.** A proposal is saved whole and never changed, and the assistant gets a link to it,
+  `/ai/proposals/<id>`, to give the admin. Its page, open only to the admin as the connection page
+  is, lists every change with its household, the record it changes as it was when proposed (Now)
+  and what it saves (Proposed), or the new record (New). Approve makes all the changes in one
+  transaction with recording the approval, so they all happen, once, or none does. Reject changes
+  nothing but the proposal. Both send back the SHA-256 of the proposal the page showed, which must
+  match. A proposal can't be approved once it's approved, rejected or failed, or 24 hours after it
+  was proposed (expired). Approving fails, changing nothing, when a record a change names isn't as
+  the page showed it anymore, or the data layer refuses a change; the proposal then fails for good,
+  with why, and the assistant can propose again. New items get their standard images afterward, as
+  after any save (6.14). `get_proposal` tells the assistant what happened to its own proposals.
+- **Errors.** A tool that can't do what was asked says why: the field, the change and the reason.
+  An unexpected failure is logged, and the assistant is told only that something went wrong, so no
+  query, stack or secret leaves the server.
+
 ## 7. Screens
 
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
@@ -997,7 +1099,9 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
 | Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
 | What's new       | `/whats-new`                         | See below.                                                                                                                           |
-| Admin            | `/admin`                             | Invite households, list households, last backup date, send a test email. See below.                                                  |
+| Admin            | `/admin`                             | Invite households, list households, last backup date, send a test email, AI assistants. See below.                                   |
+| Connect an assistant | `/oauth/authorize`               | "Connect ChatGPT to Meals?" (or Claude): what it will be able to do, Allow and Deny. Admin only (6.17).                             |
+| Proposed changes | `/ai/proposals/[id]`                 | An AI assistant's proposal: each change with its household, Now and Proposed, and Approve and Reject while it waits. Admin only (6.17). |
 
 **Feedback.** Every screen after household setup, from Grocery list to Admin, has a round "Send
 feedback" button with a speech-bubble icon at the bottom right, just above the tab bar. Pages
@@ -1438,14 +1542,17 @@ day: someone who saw 1.3 still gets a dot for 1.4 (MEA-25). Opening the page rec
 release's version, which clears the dot on every device. The link doesn't preload on hover, as
 that would run the page's load and clear the dot without anyone opening it.
 
-**Admin.** Only the `ADMIN_EMAIL` account can open it (4.5). Its sections are Backups, Email,
-Invite a household and Households. Email checks that Meals can send email (MEA-260): Send test
-email sends "Meals test email" to the signed-in admin's own Google email, the one in their
-session, and there's no field for another address. While it sends, the button reads "Sending…"
-and can't be tapped again. The app's server sends it through Resend with `RESEND_API_KEY` (4.3),
-so the key never reaches the browser. When Resend accepts it, the section says so with the address,
-such as "Test email sent to admin@example.com. Check your inbox." Accepted isn't delivered, since
-Resend can still bounce it or a spam filter hold it, so the inbox is the real check. If Resend
+**Admin.** Only the `ADMIN_EMAIL` account can open it (4.5). Its sections are Backups, Email, AI
+assistants, Invite a household and Households. AI assistants (MEA-266) shows the address to connect
+ChatGPT or Claude with, the connections, each with when it was connected and last used and Revoke,
+which asks first, and the 20 newest proposals, each linking to its page with its assistant, how many
+changes, when it was proposed and its status (6.17). Email checks that Meals can send email
+(MEA-260): Send test email sends "Meals test email" to the signed-in admin's own Google email, the
+one in their session, and there's no field for another address. While it sends, the button reads
+"Sending…" and can't be tapped again. The app's server sends it through Resend with `RESEND_API_KEY`
+(4.3), so the key never reaches the browser. When Resend accepts it, the section says so with the
+address, such as "Test email sent to admin@example.com. Check your inbox." Accepted isn't delivered,
+since Resend can still bounce it or a spam filter hold it, so the inbox is the real check. If Resend
 refuses it or doesn't answer within 10 seconds, the section says "Couldn't send test email. Please
 try again." and the app's log has Resend's answer or the error, never the key. Either way the page
 stays on Admin, with the message in the Email section.
@@ -1587,5 +1694,7 @@ ingredients.
 - Metric units in the known list.
 - Planning a party beyond its shopping: tasks, invitations, guests, dates, budgets, costs, and
   party lists made from recipes or the menu (MEA-247).
+- AI assistants other than ChatGPT and Claude, and assistants proposing changes to party lists,
+  ratings, members or invites, or adding requests (6.17).
 - Decided against: store integrations (Q15), offline use (Q10), live updates (Q11),
   categories (Q23), prices (Q25), inventory (Q6) and saved meals (Q3).

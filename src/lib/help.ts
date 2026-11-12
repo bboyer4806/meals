@@ -178,6 +178,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 			"Only the app's admin sees this page.",
 			'Backups shows when the last nightly backup ran.',
 			'Send test email sends a test email to your Google email, so you can check that Meals can send email.',
+			'AI assistants: connect ChatGPT or Claude with the address shown. Revoke stops one. Open a proposed change to approve or reject it.',
 			'Invite a household with their Google email. They set up their own household when they first sign in.',
 			'Households lists every household and when it started.'
 		]

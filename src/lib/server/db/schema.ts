@@ -563,3 +563,96 @@ export const dishRequests = sqliteTable(
 		check('dish_requests_asker', sql`${t.completedAt} is not null or ${t.userId} is not null`)
 	]
 );
+
+// AI assistants (design 6.17). These tables belong to the integration, not to a household, and
+// no assistant can read them.
+
+export const AI_PLATFORMS = ['chatgpt', 'claude'] as const;
+export type AiPlatform = (typeof AI_PLATFORMS)[number];
+
+// An AI assistant's connection: the OAuth client ChatGPT or Claude registered (RFC 7591), which
+// can be used once the admin allows it. Revoking it deletes it, with its tokens and proposals.
+export const aiConnections = sqliteTable(
+	'ai_connections',
+	{
+		// Never reused, so a revoked connection's id never names a newer one.
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		// The client_id it registered with: random, and not a secret.
+		clientId: text('client_id').notNull().unique(),
+		// SHA-256 of its client secret; empty for a client registered without one.
+		secretHash: text('secret_hash'),
+		// Which assistant it is, from the redirect URIs it registered.
+		platform: text('platform', { enum: AI_PLATFORMS }).notNull(),
+		// The redirect URIs it registered, as a JSON list.
+		redirectUris: text('redirect_uris').notNull(),
+		createdAt: integer('created_at').notNull(),
+		// The admin who allowed it, and when; empty until then.
+		userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+		authorizedAt: integer('authorized_at'),
+		lastUsedAt: integer('last_used_at')
+	},
+	(t) => [
+		check('ai_connections_platform', sql`${t.platform} in ('chatgpt', 'claude')`),
+		check('ai_connections_authorized', sql`(${t.userId} is null) = (${t.authorizedAt} is null)`)
+	]
+);
+
+export const AI_TOKEN_KINDS = ['code', 'access', 'refresh'] as const;
+
+// A connection's authorization codes, access tokens and refresh tokens. As for sessions, only a
+// SHA-256 hash of each is stored.
+export const aiTokens = sqliteTable(
+	'ai_tokens',
+	{
+		id: text('id').primaryKey(),
+		connectionId: integer('connection_id')
+			.notNull()
+			.references(() => aiConnections.id, { onDelete: 'cascade' }),
+		kind: text('kind', { enum: AI_TOKEN_KINDS }).notNull(),
+		expiresAt: integer('expires_at').notNull(),
+		// A code's redirect URI and PKCE challenge, which exchanging it must match.
+		redirectUri: text('redirect_uri'),
+		codeChallenge: text('code_challenge')
+	},
+	(t) => [
+		index('ai_tokens_connection').on(t.connectionId),
+		check('ai_tokens_kind', sql`${t.kind} in ('code', 'access', 'refresh')`),
+		check(
+			'ai_tokens_code',
+			sql`(${t.kind} = 'code') = (${t.redirectUri} is not null and ${t.codeChallenge} is not null)`
+		)
+	]
+);
+
+export const AI_PROPOSAL_STATUSES = ['pending', 'approved', 'rejected', 'failed'] as const;
+
+// Changes an assistant proposed, which happen only when the admin approves them (design 6.17).
+export const aiProposals = sqliteTable(
+	'ai_proposals',
+	{
+		// Never reused, so a link to a proposal that's gone never opens a newer one.
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		connectionId: integer('connection_id')
+			.notNull()
+			.references(() => aiConnections.id, { onDelete: 'cascade' }),
+		// The changes and what the confirmation page shows of each, as JSON. Never changed once
+		// saved: approving sends back its SHA-256, which must match.
+		content: text('content').notNull(),
+		status: text('status', { enum: AI_PROPOSAL_STATUSES }).notNull(),
+		// Why applying it failed, on a failed proposal.
+		error: text('error'),
+		createdAt: integer('created_at').notNull(),
+		expiresAt: integer('expires_at').notNull(),
+		// When the admin approved or rejected it, or approving it failed.
+		decidedAt: integer('decided_at')
+	},
+	(t) => [
+		index('ai_proposals_connection').on(t.connectionId),
+		check(
+			'ai_proposals_status',
+			sql`${t.status} in ('pending', 'approved', 'rejected', 'failed')`
+		),
+		check('ai_proposals_decided', sql`(${t.status} = 'pending') = (${t.decidedAt} is null)`),
+		check('ai_proposals_error', sql`(${t.status} = 'failed') = (${t.error} is not null)`)
+	]
+);

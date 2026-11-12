@@ -17,6 +17,10 @@ test("sends the security headers, and keeps a page's Content Security Policy", a
 	const policy = page.headers()['content-security-policy'];
 	expect(policy).toContain("script-src 'self' 'nonce-");
 	expect(policy).toContain("frame-ancestors 'none'");
+	// Allow and Deny on an AI assistant's connection page send the browser back to it (6.17).
+	expect(policy).toContain(
+		"form-action 'self' https://chatgpt.com https://platform.openai.com https://claude.ai https://claude.com"
+	);
 
 	const health = await request.get('/healthz');
 	expect(health.status()).toBe(200);
