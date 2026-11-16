@@ -345,15 +345,22 @@ lost, so is everything. Moving backups off the server later is a small change.
 - **Importing from a link** and an **image link** (7) have the server fetch a web page or an
   image, so a link could aim it at the server itself. Only http and https are fetched, and never
   from an address on this computer or a private or link-local network (such as 127.0.0.1,
-  10.0.0.1, 192.168.1.1, ::1, or the cloud's metadata service at 169.254.169.254). Every address a
-  name resolves to is checked as the connection is made, so the name can't resolve to a public
-  address for a check and a private one for the fetch. Redirects are followed one at a time, up to
-  5, each checked the same way. A fetch stops after 10 seconds or 5 MB, and a page sent gzipped
-  stops unzipping at 5 MB. Reading a page stops at the most the editor takes and follows its
-  JSON-LD no more than 32 deep, so a page built to be slow can't hold up the server or run it out
-  of stack (MEA-84; 7, Import from a link). An image link's answer goes back to the page's script
-  as data, and only when it starts as a JPEG, PNG, GIF or WebP does. The phone decodes and resizes
-  it, so the server never decodes an image (MEA-50).
+  10.0.0.1, 192.168.1.1, ::1, or the cloud's metadata service at 169.254.169.254), or in any other
+  range IANA sets aside as not reachable across the internet, such as those for documentation
+  (192.0.2.0/24), benchmarking and multicast (MEA-113). An IPv4 address written as IPv6 is checked
+  as IPv4, whether IPv4-mapped (::ffff:10.0.0.1), through NAT64 (64:ff9b::10.0.0.1), whose gateway
+  on an IPv6-only network would carry the fetch to 10.0.0.1, or through 6to4 (2002:a00:1::).
+  Checking it, rather than refusing NAT64, lets a server on such a network still import from sites
+  with only IPv4, whose names its DNS answers with NAT64 addresses. Addresses through Teredo, which
+  hides the IPv4 address it leads to, or in NAT64's prefix for local use, which can put it in more
+  than one place, are never fetched. Every address a name resolves to is checked as the connection
+  is made, so the name can't resolve to a public address for a check and a private one for the
+  fetch. Redirects are followed one at a time, up to 5, each checked the same way. A fetch stops
+  after 10 seconds or 5 MB, and a page sent gzipped stops unzipping at 5 MB. Reading a page stops at
+  the most the editor takes and follows its JSON-LD no more than 32 deep, so a page built to be slow
+  can't hold up the server or run it out of stack (MEA-84; 7, Import from a link). An image link's
+  answer goes back to the page's script as data, and only when it starts as a JPEG, PNG, GIF or WebP
+  does. The phone decodes and resizes it, so the server never decodes an image (MEA-50).
 
 ### 4.6 Code layout
 

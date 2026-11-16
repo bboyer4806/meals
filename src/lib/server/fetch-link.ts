@@ -13,23 +13,69 @@ const TIMEOUT_MS = 10_000;
 const MAX_BYTES = 5_000_000;
 const MAX_REDIRECTS = 5;
 
-// This computer, private networks and link-local ones. An IPv4 address written as IPv6, such
-// as ::ffff:127.0.0.1, is checked as IPv4.
+// Addresses off the public internet, all called private here: this computer, private networks,
+// link-local ones, and the other ranges IANA sets aside as not reachable across the internet
+// (MEA-113). An IPv4 address written as IPv6 is checked as IPv4: BlockList checks one such as
+// ::ffff:127.0.0.1 itself, and refuseIPv4 refuses each range as NAT64 and 6to4 write it too.
 const PRIVATE = new BlockList();
+
+/** An IPv4 address as two groups of an IPv6 address: 10.0.0.5 is a00:5. */
+function hexGroups(ipv4: string): string {
+	const bits = ipv4.split('.').reduce((value, octet) => value * 256 + Number(octet), 0);
+	return `${Math.floor(bits / 0x10000).toString(16)}:${(bits % 0x10000).toString(16)}`;
+}
+
+/**
+ * Refuses an IPv4 range, and the same range through NAT64, whose gateway on an IPv6-only network
+ * carries 64:ff9b::a00:5 to 10.0.0.5, and through 6to4, which tunnels 2002:a00:5:: to 10.0.0.5.
+ */
+function refuseIPv4(network: string, prefix: number): void {
+	PRIVATE.addSubnet(network, prefix, 'ipv4');
+	PRIVATE.addSubnet(`64:ff9b::${hexGroups(network)}`, 96 + prefix, 'ipv6');
+	PRIVATE.addSubnet(`2002:${hexGroups(network)}::`, 16 + prefix, 'ipv6');
+}
+
 // "This network": 0.0.0.0 reaches this computer.
-PRIVATE.addSubnet('0.0.0.0', 8);
-PRIVATE.addSubnet('10.0.0.0', 8);
+refuseIPv4('0.0.0.0', 8);
+refuseIPv4('10.0.0.0', 8);
 // Shared address space: private to a provider's network, as with carrier-grade NAT.
-PRIVATE.addSubnet('100.64.0.0', 10);
-PRIVATE.addSubnet('127.0.0.0', 8);
+refuseIPv4('100.64.0.0', 10);
+refuseIPv4('127.0.0.0', 8);
 // Link-local, where clouds put their metadata service: 169.254.169.254.
-PRIVATE.addSubnet('169.254.0.0', 16);
-PRIVATE.addSubnet('172.16.0.0', 12);
-PRIVATE.addSubnet('192.168.0.0', 16);
-PRIVATE.addAddress('::', 'ipv6');
-PRIVATE.addAddress('::1', 'ipv6');
+refuseIPv4('169.254.0.0', 16);
+refuseIPv4('172.16.0.0', 12);
+// For protocols, such as NAT64's discovery.
+refuseIPv4('192.0.0.0', 24);
+// For documentation: TEST-NET-1.
+refuseIPv4('192.0.2.0', 24);
+refuseIPv4('192.168.0.0', 16);
+// For benchmarking.
+refuseIPv4('198.18.0.0', 15);
+// For documentation: TEST-NET-2 and TEST-NET-3.
+refuseIPv4('198.51.100.0', 24);
+refuseIPv4('203.0.113.0', 24);
+// Multicast.
+refuseIPv4('224.0.0.0', 4);
+// Reserved, up to the broadcast address, 255.255.255.255.
+refuseIPv4('240.0.0.0', 4);
+// Unspecified (::), loopback (::1) and IPv4-compatible, which IPv6 no longer uses.
+PRIVATE.addSubnet('::', 96, 'ipv6');
+// NAT64 for local use, whose networks can put the IPv4 address in more than one place.
+PRIVATE.addSubnet('64:ff9b:1::', 48, 'ipv6');
+// Discard-only.
+PRIVATE.addSubnet('100::', 64, 'ipv6');
+// For protocols, such as Teredo (2001::/32), which hides the IPv4 address it leads to.
+PRIVATE.addSubnet('2001::', 23, 'ipv6');
+// For documentation.
+PRIVATE.addSubnet('2001:db8::', 32, 'ipv6');
+PRIVATE.addSubnet('3fff::', 20, 'ipv6');
+// Segment routing's identifiers (SRv6), for use within one network.
+PRIVATE.addSubnet('5f00::', 16, 'ipv6');
+// Unique local, for private networks, and link-local.
 PRIVATE.addSubnet('fc00::', 7, 'ipv6');
 PRIVATE.addSubnet('fe80::', 10, 'ipv6');
+// Multicast.
+PRIVATE.addSubnet('ff00::', 8, 'ipv6');
 
 function isPrivate(address: string): boolean {
 	return PRIVATE.check(address, isIP(address) === 6 ? 'ipv6' : 'ipv4');

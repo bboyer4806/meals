@@ -17,7 +17,8 @@ const PIE = 'https://recipes.example/pie';
 const BRULEE = '<h1>Grandma’s crème brûlée</h1><p>½ cup sugar at 325°F</p>';
 const BRULEE_1252 = Buffer.from(BRULEE.replace('’', '\x92'), 'latin1');
 
-// Addresses on this computer or a network beside it, written in the link.
+// Addresses on this computer or a network beside it, or off the public internet, written in the
+// link.
 const PRIVATE_LINKS = [
 	'http://127.0.0.1/',
 	'http://10.0.0.1/',
@@ -31,7 +32,30 @@ const PRIVATE_LINKS = [
 	'http://[fd00::1]/',
 	'http://[::ffff:169.254.169.254]/',
 	// 127.0.0.1 as one number.
-	'https://2130706433:8443/'
+	'https://2130706433:8443/',
+	// Other ranges off the public internet, such as for documentation, benchmarking and
+	// multicast (MEA-113).
+	'http://192.0.0.1/',
+	'http://192.0.2.2/',
+	'http://198.18.0.1/',
+	'http://198.51.100.1/',
+	'http://203.0.113.1/',
+	'http://224.0.0.1/',
+	'http://240.0.0.1/',
+	'http://255.255.255.255/',
+	'http://[::10.0.0.5]/',
+	'http://[100::1]/',
+	'http://[2001:db8::1]/',
+	'http://[3fff::1]/',
+	'http://[5f00::1]/',
+	'http://[ff02::1]/',
+	// 10.0.0.5 and 192.0.2.2 through NAT64, and 10.0.0.5 through 6to4.
+	'http://[64:ff9b::10.0.0.5]/',
+	'http://[64:ff9b::192.0.2.2]/',
+	'http://[2002:a00:5::]/',
+	// NAT64 for local use, and Teredo, whatever address they lead to.
+	'http://[64:ff9b:1::5db8:d70e]/',
+	'http://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/'
 ];
 
 describe('fetchPage', () => {
@@ -41,9 +65,15 @@ describe('fetchPage', () => {
 		expect(requested).toEqual([PIE]);
 	});
 
-	it('gets a page from a public address written in the link', async () => {
-		servePages({ 'http://93.184.215.14/pie': { status: 200, body: 'Pie' } });
-		expect(await fetchPage(new URL('http://93.184.215.14/pie'))).toBe('Pie');
+	// 93.184.215.14, and as IPv6 writes it: IPv4-mapped, through NAT64 and through 6to4.
+	it.each([
+		'http://93.184.215.14/pie',
+		'http://[::ffff:5db8:d70e]/pie',
+		'http://[64:ff9b::5db8:d70e]/pie',
+		'http://[2002:5db8:d70e::]/pie'
+	])('gets a page from a public address written in the link: %s', async (link) => {
+		servePages({ [link]: { status: 200, body: 'Pie' } });
+		expect(await fetchPage(new URL(link))).toBe('Pie');
 	});
 
 	it.each(['ftp://recipes.example/pie', 'file:///etc/passwd', 'data:text/html,<p>Pie</p>'])(
