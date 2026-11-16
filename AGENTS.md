@@ -6,7 +6,8 @@ deploying. [docs/design.md](docs/design.md) is the approved design.
 
 ## Development
 
-Use Node 26, matching README, CI and Docker; `package.json` declares a minimum of 26.
+Use Node 26, matching README, CI and Docker. CI reads the version from `.node-version`,
+and `package.json` allows Node 26 only.
 Install with `npm ci --ignore-scripts`. Follow [local setup](README.md#running-it-locally)
 to copy `.env.example` to `.env`, fill in the settings and create the `DATA_DIR` directory.
 Manual development needs a Google OAuth client. Start with `npm run dev`.
