@@ -1,0 +1,1 @@
+ALTER TABLE `households` ADD `default_dishes_revision` integer DEFAULT 0 NOT NULL;

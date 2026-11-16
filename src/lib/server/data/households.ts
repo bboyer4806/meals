@@ -1,16 +1,19 @@
 import { error } from '@sveltejs/kit';
-import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { DEFAULT_DISH_REVISIONS } from '../../default-dishes.ts';
 import { formatMemberName } from '../../member-names.ts';
 import { db, transaction } from '../db/index.ts';
 import { dishRatings, dishRequests, households, invites, users } from '../db/schema.ts';
 import { STANDARD_ITEMS } from '../standard-items.ts';
+import { findDishByName, insertDish } from './dishes.ts';
 import { createItem, findItemByName } from './items.ts';
 
 export type HouseholdSettings = { name: string; defaultServings: number; timeZone: string };
 
 /**
  * Creates a household for a signed-in person who doesn't have one yet (the setup page). Its
- * catalog starts with the standard items (design 6.13).
+ * catalog starts with the standard items (design 6.13), and its Recipes with the default dishes
+ * (6.18).
  */
 export function createHousehold(userId: number, settings: HouseholdSettings, now: number): number {
 	return transaction(() => {
@@ -28,6 +31,7 @@ export function createHousehold(userId: number, settings: HouseholdSettings, now
 			.get();
 		db().update(users).set({ householdId: household.id }).where(eq(users.id, userId)).run();
 		addStandardItems(household.id, now);
+		addDefaultDishes(household.id, now);
 		return household.id;
 	});
 }
@@ -60,6 +64,43 @@ function addStandardItems(householdId: number, now: number): void {
 		db()
 			.update(households)
 			.set({ standardItemsAddedAt: now })
+			.where(eq(households.id, householdId))
+			.run();
+	});
+}
+
+/**
+ * Gives each household the default dishes of every revision it hasn't had, oldest first: all of
+ * them for one set up before they came, and a newer revision's to every household. The app does
+ * this when it starts (design 6.18).
+ */
+export function addDefaultDishesToAllHouseholds(now: number): void {
+	const waiting = db()
+		.select({ id: households.id })
+		.from(households)
+		.where(lt(households.defaultDishesRevision, DEFAULT_DISH_REVISIONS.length))
+		.orderBy(asc(households.id))
+		.all();
+	for (const { id } of waiting) addDefaultDishes(id, now);
+}
+
+/**
+ * Adds the default dishes of each revision the household hasn't had, but for names it has,
+ * matched as everywhere else, so a dish it has, archived or not, stays as it is. Each revision is
+ * added once: a default dish renamed or archived afterward is never added again (design 6.18).
+ */
+function addDefaultDishes(householdId: number, now: number): void {
+	transaction(() => {
+		const { defaultDishesRevision } = getHousehold(householdId);
+		// Another version of the app, starting during a deploy (4.4), may have added them already,
+		// and a newer one more of them.
+		if (defaultDishesRevision >= DEFAULT_DISH_REVISIONS.length) return;
+		for (const name of DEFAULT_DISH_REVISIONS.slice(defaultDishesRevision).flat()) {
+			if (!findDishByName(householdId, name)) insertDish(householdId, name, now);
+		}
+		db()
+			.update(households)
+			.set({ defaultDishesRevision: DEFAULT_DISH_REVISIONS.length })
 			.where(eq(households.id, householdId))
 			.run();
 	});

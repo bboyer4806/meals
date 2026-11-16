@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createSession } from '#lib/server/auth/session.ts';
 import { loadConfig } from '#lib/server/config.ts';
+import { listDishes } from '#lib/server/data/dishes.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
 import { listCatalog } from '#lib/server/data/items.ts';
 import { openDb } from '#lib/server/db/index.ts';
@@ -42,11 +43,13 @@ afterEach(() => {
 	rmSync(dataDir, { recursive: true, force: true });
 });
 
-it('adds the standard items and their images to older households when the app starts', async () => {
-	// A household set up before them, which the migration leaves without them.
+it('adds the standard items, their images and the default dishes to older households', async () => {
+	// A household set up before them, which the migrations leave without them.
 	openDb(join(dataDir, 'meals.db'));
 	const { householdId } = makeHousehold();
 	useEnv();
+	const recipes = () =>
+		listDishes(householdId, { search: '', tags: [], archived: false, sort: 'name' });
 
 	await init();
 
@@ -58,10 +61,13 @@ it('adds the standard items and their images to older households when the app st
 	expect(keys.size).toBe(288);
 	expect(keys.has(null)).toBe(false);
 	expect(readdirSync(join(dataDir, 'photos'))).toHaveLength(576);
+	// 6.18.
+	expect(recipes()).toHaveLength(80);
 
 	// Starting again adds nothing.
 	await init();
 	expect(readdirSync(join(dataDir, 'photos'))).toHaveLength(576);
+	expect(recipes()).toHaveLength(80);
 });
 
 it("doesn't start without the standard images, as when they weren't packaged with the app", async () => {

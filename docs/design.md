@@ -368,6 +368,7 @@ src/lib/                  used by browser and server; no database access
   steps.ts                find numbers in steps that won't scale
   dates.ts                "today" and weeks in a time zone
   whats-new.ts            the releases listed on What's new, newest first
+  default-dishes.ts       the dishes every household's Recipes starts with (6.18)
 src/lib/server/
   config.ts               settings from the environment, checked at startup
   db/schema.ts            tables
@@ -408,7 +409,8 @@ Conventions:
 **households:** `name`, `default_servings` (the usual number of people, at least 1;
 Q28), `time_zone` (an IANA name such as `America/Chicago`), `created_at`,
 `standard_items_added_at` (when its catalog got the standard items, which happens once; empty
-until then; 6.13).
+until then; 6.13), `default_dishes_revision` (the last revision of the default dishes its Recipes
+got; 0 until it gets the first; 6.18).
 
 **users:** `household_id` (empty only until household setup is done), `google_sub`
 (Google's permanent account ID, unique), `email` (unique, lowercase), `name`,
@@ -1071,6 +1073,32 @@ assistant can connect, and nobody but the admin can connect one.
 - **Errors.** A tool that can't do what was asked says why: the field, the change and the reason.
   An unexpected failure is logged, and the assistant is told only that something went wrong, so no
   query, stack or secret leaves the server.
+
+### 6.18 Default dishes
+
+Every household's Recipes starts with 80 common, everyday dishes, from Hamburgers to Hash Browns,
+by name only, so people can plan dinners before writing any recipe (MEA-258). They're listed in
+`src/lib/default-dishes.ts`, grouped as main dishes, sides, desserts and breakfast only so the list
+is easy to review; dishes have no categories, and a dish's role is set per dinner (Q29).
+
+- Each is added as a dish made by name from the Menu or a request is (2.3, 6.12): a name and the
+  household's usual servings, with no ingredients, steps or anything else, so Recipes labels it
+  "No recipe" (2.1.1). They have no photos yet (MEA-259). They're ordinary dishes: suggested for
+  dinners and requests, given a recipe, renamed, archived and restored like any other.
+- A new household gets them as it's set up (6.1), with its standard items (6.13): it's set up with
+  all of them or not at all. A household set up before them gets them when the app starts, and so
+  does one set up on the old version during a deploy (4.4), at the next start.
+- A name the household already has, matched ignoring case as dish names are (2.3), keeps its dish
+  as it is, with its recipe, photo, ratings and dinners. An archived dish counts, and stays archived
+  (6.10). Every other name is added as an active dish. None goes on the Menu.
+- The list grows in revisions. Each revision lists the dishes it added and never changes once
+  released, so new dishes go in a new revision at the end. `default_dishes_revision` records the
+  last revision a household got. When the app starts, each household gets the dishes of every
+  revision it hasn't had, in one transaction, so a new revision reaches every household. Nothing
+  adds a revision's dishes again: a default dish renamed or archived since stays that way, and
+  starting again adds nothing. If adding them fails when the app starts, that household's Recipes
+  stay as they were and the app doesn't start, as with the standard items (6.13); the next start
+  tries again.
 
 ## 7. Screens
 

@@ -3,7 +3,10 @@ import { join } from 'node:path';
 import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
 import { checkBodySize } from '#lib/server/body-size.ts';
 import { config, loadConfig } from '#lib/server/config.ts';
-import { addStandardItemsToAllHouseholds } from '#lib/server/data/households.ts';
+import {
+	addDefaultDishesToAllHouseholds,
+	addStandardItemsToAllHouseholds
+} from '#lib/server/data/households.ts';
 import { openDb } from '#lib/server/db/index.ts';
 import { checkOrigin } from '#lib/server/origin.ts';
 import { assignAllStandardImages, checkLibrary } from '#lib/server/standard-images.ts';
@@ -26,6 +29,9 @@ export const init: ServerInit = async () => {
 	const now = Date.now();
 	// Households set up before the standard items get them, once each (design 6.13).
 	addStandardItemsToAllHouseholds(now);
+	// Households get each revision of the default dishes they haven't had: every one for a
+	// household set up before them, and a newer one for all (design 6.18).
+	addDefaultDishesToAllHouseholds(now);
 	// Items not yet checked for a standard image get theirs: every item when the images came, and
 	// any a save couldn't finish or the version a deploy replaces made (design 6.14).
 	await assignAllStandardImages(now);
