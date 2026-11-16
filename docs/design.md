@@ -766,6 +766,15 @@ the server, from a later return, a save or another page, and an earlier check th
 afterward doesn't bring it back. A page that did reload doesn't reload again when the connection
 comes back. If two people change the same thing, the last save wins.
 
+A change on the Grocery list, Items, Household or a recipe that gets no answer from Meals, such as
+a line's circle tapped with one bar of signal, leaves the page as it is, with any open sheet and
+what was typed, and says "Couldn't reach Meals. Check your connection and try again." where that
+form shows its other messages: beside the line, in its sheet, under the add bar, or in the store's
+group for Mark all (MEA-111). An error page from something in between, such as a proxy, counts as
+no answer. An unexpected error from Meals itself says "Something went wrong. Please try again."
+instead. Either way the page doesn't reload, since that needs the server too. Tried it goes back
+to what's saved, as the stars and Request still show it, so tapping it again tries again.
+
 ### 6.12 Requests
 
 - Anyone in the household can ask for a dish or a restaurant, see every request, and edit,
@@ -1154,7 +1163,9 @@ control's name, one line about it, Skip and Next; the last step has Done in plac
 it shows, the page behind can't be tapped, and screen readers announce each step. Done, Skip or
 Escape records `tour_seen`, so it never shows again on any device. Reloading or leaving the
 Grocery list before then records nothing, and the tour starts again from the first step the
-next time. There's no way to replay it, and no other screen has a tour.
+next time. So does Done, Skip or Escape that can't reach the server, though the tour still
+closes and the page stays as it is (6.11). There's no way to replay it, and no other screen has
+a tour.
 
 **Grocery list.** Beside the title, Items, Grocery History and Party lists open those screens; they
 go under it together on a screen too narrow for them (MEA-247). An add bar at the top: item (with

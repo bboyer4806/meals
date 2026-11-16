@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
@@ -17,6 +17,7 @@
 	} from '#lib/recipe-view.ts';
 	import { scaleFactor } from '#lib/scaling.ts';
 	import { splitSteps, stepHasUnscaledAmount } from '#lib/steps.ts';
+	import { keepPage } from '#lib/submit.ts';
 
 	let { data, form } = $props();
 
@@ -39,6 +40,28 @@
 	let fewerButton = $state<HTMLButtonElement>();
 	let moreButton = $state<HTMLButtonElement>();
 	let requestedLabel = $state<HTMLElement>();
+	let triedBox: HTMLInputElement;
+
+	/**
+	 * Sends a form whose messages show as `action`'s. When it can't be done, its message shows
+	 * there as the server's would, and the page stays as it is (MEA-111).
+	 */
+	function send(action: string, submit?: SubmitFunction): SubmitFunction {
+		return keepPage((error) => (form = { action, error }), submit);
+	}
+
+	// Tried it, saved on tap. When it can't be saved, the box goes back to what's saved, so tapping
+	// it again sends what the first tap did (MEA-111).
+	const sendTried = keepPage(
+		(error) => {
+			form = { action: 'tried', error };
+			triedBox.checked = dish.tried;
+		},
+		() =>
+			({ update }) =>
+				// Landing on ?/tried would drop ?servings= and show the recipe's own servings.
+				update({ navigate: false, reset: false })
+	);
 
 	function setServings(next: number) {
 		servings = next;
@@ -68,10 +91,11 @@
 {#if dish.archivedAt !== null}
 	<div class="archived no-print">
 		<span class="badge">Archived</span>
-		<form method="POST" action="?/restore" use:enhance>
+		<form method="POST" action="?/restore" use:enhance={send('restore')}>
 			<button>Restore</button>
 		</form>
 	</div>
+	{#if form?.action === 'restore' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
 {/if}
 
 {#if dish.tags.length > 0}
@@ -83,19 +107,12 @@
 {/if}
 
 <!-- Saved on tap, with no Save button (section 7, "Recipe"). -->
-<form
-	class="no-print"
-	method="POST"
-	action="?/tried"
-	use:enhance={() =>
-		({ update }) =>
-			// Landing on ?/tried would drop ?servings= and show the recipe's own servings.
-			update({ navigate: false, reset: false })}
->
+<form class="no-print" method="POST" action="?/tried" use:enhance={sendTried}>
 	<label class="check-off">
 		<input
 			type="checkbox"
 			name="tried"
+			bind:this={triedBox}
 			checked={dish.tried}
 			onchange={(event) => event.currentTarget.form?.requestSubmit()}
 		/>
@@ -112,10 +129,13 @@ same again instead of undoing it (MEA-86). Beside them, the household's average 
 	class="rating no-print"
 	method="POST"
 	action="?/rate"
-	use:enhance={() =>
-		({ update }) =>
-			// Landing on ?/rate would drop ?servings= and show the recipe's own servings.
-			update({ navigate: false, reset: false })}
+	use:enhance={send(
+		'rate',
+		() =>
+			({ update }) =>
+				// Landing on ?/rate would drop ?servings= and show the recipe's own servings.
+				update({ navigate: false, reset: false })
+	)}
 >
 	<div class="stars" role="group" aria-label="Your rating">
 		{#each [1, 2, 3, 4, 5] as stars (stars)}
@@ -157,13 +177,16 @@ or the Menu, says Requested in its place, and an archived one has no Request (6.
 		class="request no-print"
 		method="POST"
 		action="?/request"
-		use:enhance={() =>
-			async ({ update }) => {
-				// Landing on ?/request would drop ?servings= and show the recipe's own servings.
-				await update({ navigate: false });
-				// The button is gone, which would drop focus to the page.
-				requestedLabel?.focus();
-			}}
+		use:enhance={send(
+			'request',
+			() =>
+				async ({ update }) => {
+					// Landing on ?/request would drop ?servings= and show the recipe's own servings.
+					await update({ navigate: false });
+					// The button is gone, which would drop focus to the page.
+					requestedLabel?.focus();
+				}
+		)}
 	>
 		{#if data.requested}
 			<span class="badge" tabindex="-1" bind:this={requestedLabel}>Requested</span>
@@ -282,13 +305,14 @@ or the Menu, says Requested in its place, and an archived one has no Request (6.
 {/if}
 
 {#if dish.archivedAt === null}
-	<form class="archive no-print" method="POST" action="?/archive" use:enhance>
+	<form class="archive no-print" method="POST" action="?/archive" use:enhance={send('archive')}>
 		<ConfirmButton
 			label="Archive"
 			message={`Archive ${dish.name}? It leaves the recipe list, and you can restore it ` +
 				'from the archived recipes.'}
 			confirmLabel="Archive"
 		/>
+		{#if form?.action === 'archive' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
 	</form>
 {/if}
 

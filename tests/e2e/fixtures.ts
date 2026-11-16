@@ -74,6 +74,19 @@ export async function answerAction(page: Page, path: string, action: string, dat
 	);
 }
 
+/** What a page says by a form whose action got no answer from Meals (design 6.11, MEA-111). */
+export const UNREACHABLE = "Couldn't reach Meals. Check your connection and try again.";
+
+/**
+ * Makes the page's form actions fail on the way, as with one bar of signal, until the function it
+ * returns is called.
+ */
+export async function dropActions(page: Page): Promise<() => Promise<void>> {
+	const actions = (url: URL) => url.search.startsWith('?/');
+	await page.route(actions, (route) => route.abort('internetdisconnected'));
+	return () => page.unroute(actions);
+}
+
 /**
  * A household with one member, not signed in. Usual servings 4. The member has finished the
  * first-time tour unless `tourSeen` is false.

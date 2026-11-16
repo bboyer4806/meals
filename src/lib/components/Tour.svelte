@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { enhance } from '$app/forms';
+	import { keepPage } from '../submit.ts';
 
 	// The first-time tour on the Grocery list (design 7, "Tour"): one step per control, each
 	// found by its data-tour attribute in the layout. As a modal dialog it keeps the page behind
@@ -73,9 +74,13 @@
 			method="POST"
 			action="?/tourSeen"
 			bind:this={form}
-			use:enhance={() => {
-				dialog.close();
-			}}
+			use:enhance={keepPage(
+				// Not recorded, so the tour starts again next time, and the page stays (MEA-111).
+				() => {},
+				() => {
+					dialog.close();
+				}
+			)}
 		>
 			<button class="quiet">Skip</button>
 			<button

@@ -7,12 +7,12 @@
 	import ItemThumb from '#lib/components/ItemThumb.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
 	import Tour from '#lib/components/Tour.svelte';
+	import { keepPage, problemIn } from '#lib/submit.ts';
 	import { foldCase, formatQuantity, normalizeName } from '#lib/text.ts';
 
 	let { data, form } = $props();
 
 	type Line = (typeof data.groups)[number]['toOrder'][number];
-	type Failure = { error?: string } | undefined;
 
 	const activeStores = $derived(data.stores.filter((store) => store.archivedAt === null));
 
@@ -20,8 +20,13 @@
 		return line.unit ? `${formatQuantity(line.quantity)} ${line.unit}` : formatQuantity(line.quantity);
 	}
 
-	function failureMessage(data: unknown) {
-		return (data as Failure)?.error ?? 'Something went wrong. Please try again.';
+	/**
+	 * Sends a form whose messages show as `action`'s: the add bar's, or a store's Mark all in its
+	 * group, named by the group's key. When it can't be done, its message shows there as the
+	 * server's would, and the page and what was typed stay (MEA-111).
+	 */
+	function send(action: string, submit?: SubmitFunction): SubmitFunction {
+		return keepPage((error) => (form = { action, error }), submit);
 	}
 
 	// Add bar
@@ -88,7 +93,7 @@
 		promptOpen = true;
 	}
 
-	const submitAdd: SubmitFunction = () => {
+	const submitAdd = send('add', () => {
 		const sent = { itemName, quantity, unit, store };
 		return async ({ result, update }) => {
 			await update({ reset: false });
@@ -100,14 +105,15 @@
 				clearIfUnchanged(sent);
 			}
 		};
-	};
+	});
 
 	// The prompt's own forms: errors show in the prompt, and success clears the add bar only
 	// where it still holds the item the prompt was about.
 	const submitPrompt: SubmitFunction = () => {
 		return async ({ result, update }) => {
-			if (result.type === 'failure') {
-				promptError = failureMessage(result.data);
+			const problem = problemIn(result);
+			if (problem !== null) {
+				promptError = problem;
 				return;
 			}
 			await update({ reset: false });
@@ -128,10 +134,9 @@
 	let lineError = $state<{ where: Where; message: string } | null>(null);
 
 	function lineFailure(result: ActionResult): string | null {
-		if (result.type === 'failure') return failureMessage(result.data);
 		// Someone else deleted the line.
 		if (result.type === 'error' && result.status === 404) return 'This line is no longer on the list.';
-		return null;
+		return problemIn(result);
 	}
 
 	function lineSubmit(where: Where): SubmitFunction {
@@ -140,8 +145,10 @@
 				const message = lineFailure(result);
 				if (message !== null) {
 					lineError = { where, message };
-					// Someone else may have changed the line; show the list as it is now.
-					await refreshAll();
+					// Someone else may have changed the line; show the list as it is now. Not when
+					// Meals couldn't be reached or broke: the reload needs it too, and would put an
+					// error page in place of the list and what was typed (MEA-111).
+					if (result.type === 'failure' || result.status === 404) await refreshAll();
 					return;
 				}
 				lineError = null;
@@ -301,7 +308,7 @@
 		{#if group.storeId !== null && (group.toOrder.length > 0 || group.ordered.length > 0)}
 			<div class="group-actions row">
 				{#if group.toOrder.length > 0}
-					<form method="POST" action="?/orderAll" use:enhance>
+					<form method="POST" action="?/orderAll" use:enhance={send(group.key)}>
 						<input type="hidden" name="storeId" value={group.storeId} />
 						<input type="hidden" name="ids" value={lineIds(group.toOrder)} />
 						<ConfirmButton
@@ -312,7 +319,7 @@
 					</form>
 				{/if}
 				{#if group.ordered.length > 0}
-					<form method="POST" action="?/receiveAll" use:enhance>
+					<form method="POST" action="?/receiveAll" use:enhance={send(group.key)}>
 						<input type="hidden" name="storeId" value={group.storeId} />
 						<input type="hidden" name="ids" value={lineIds(group.ordered)} />
 						<ConfirmButton
@@ -327,6 +334,7 @@
 		{#if form?.action === 'group' && form.storeId === group.storeId && form.marked}
 			<p role="status">{markedMessage(form.count, group.name, form.marked)}</p>
 		{/if}
+		{#if form?.action === group.key && form.error}<p class="error" role="alert">{form.error}</p>{/if}
 
 		{#if group.toOrder.length > 0}
 			<ul class="lines">

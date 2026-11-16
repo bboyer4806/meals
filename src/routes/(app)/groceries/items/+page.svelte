@@ -6,6 +6,7 @@
 	import Sheet from '#lib/components/Sheet.svelte';
 	import SearchBox from '#lib/components/SearchBox.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
+	import { problemIn } from '#lib/submit.ts';
 
 	let { data } = $props();
 
@@ -40,8 +41,10 @@
 			}
 		}
 		return async ({ result, update }) => {
-			if (result.type === 'failure') {
-				sheetError = (result.data as { error?: string } | undefined)?.error ?? 'Please try again.';
+			// The sheet stays open with what was typed and picked (MEA-111).
+			const problem = problemIn(result);
+			if (problem !== null) {
+				sheetError = problem;
 				return;
 			}
 			await update({ reset: false });

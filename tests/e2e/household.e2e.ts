@@ -1,4 +1,14 @@
-import { adminId, answerAction, expect, open, signInAs, test } from './fixtures.ts';
+import {
+	UNREACHABLE,
+	addStore,
+	adminId,
+	answerAction,
+	dropActions,
+	expect,
+	open,
+	signInAs,
+	test
+} from './fixtures.ts';
 
 test('sends signed-out people to the sign-in page', async ({ page }) => {
 	await page.goto('/groceries');
@@ -130,6 +140,39 @@ test('keeps the Household page for a member or invite that is already gone (6.1)
 	await invite.getByRole('button', { name: 'Cancel' }).click();
 	await expect(page.getByText('Sam', { exact: true })).toBeVisible();
 	await expect(page.getByText('Waiting for them to sign in:')).toHaveCount(0);
+});
+
+test("keeps the Household page and what was typed when an action can't reach Meals (MEA-111)", async ({
+	page,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Costco');
+	await open(page, '/household');
+	const reconnect = await dropActions(page);
+
+	// The invite says so under it, with the address still typed.
+	await page.getByLabel('Email').fill('friend@example.com');
+	await page.getByRole('button', { name: 'Invite' }).click();
+	await expect(page.getByRole('alert')).toHaveText(UNREACHABLE);
+	await expect(page.getByLabel('Email')).toHaveValue('friend@example.com');
+
+	// A store's sheet stays open with the name typed in it.
+	await page.getByRole('button', { name: 'Edit' }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('Name').fill('Costco Wholesale');
+	await dialog.getByRole('button', { name: 'Save' }).click();
+	await expect(dialog.getByRole('alert')).toHaveText(UNREACHABLE);
+	await expect(dialog.getByLabel('Name')).toHaveValue('Costco Wholesale');
+
+	// Once Meals answers, the same Save goes through.
+	await reconnect();
+	await dialog.getByRole('button', { name: 'Save' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByText('Costco Wholesale', { exact: true })).toBeVisible();
+	expect(
+		db.prepare('select count(*) from invites where household_id = ?').pluck().get(person.householdId)
+	).toBe(0);
 });
 
 test('names members by first name, or whole name while another has it (6.1)', async ({

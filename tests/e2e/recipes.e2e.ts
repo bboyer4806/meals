@@ -4,6 +4,7 @@ import type Database from 'better-sqlite3';
 import type { LinkValues } from '#lib/recipe-schema.ts';
 import type { RecipeRow } from '#lib/server/recipe-form.ts';
 import {
+	UNREACHABLE,
 	addDays,
 	addDinner,
 	addItem,
@@ -12,6 +13,7 @@ import {
 	addRecipe,
 	answerAction,
 	dayLabel,
+	dropActions,
 	expect,
 	makeJpeg,
 	open,
@@ -1388,6 +1390,50 @@ test('has no Request on an archived recipe, and still says Requested if it has a
 	await page.reload();
 	await expect(requested(page)).toBeVisible();
 	await expect(requestButton(page)).toHaveCount(0);
+});
+
+test("keeps the recipe when Tried it, a star, Request or Archive can't reach Meals (MEA-111)", async ({
+	page,
+	db,
+	person
+}) => {
+	const dishId = addRecipe(db, person.householdId, scaled);
+	const tried = () => db.prepare('select tried from dishes where id = ?').pluck().get(dishId);
+	const box = page.getByRole('checkbox', { name: 'Tried it' });
+	const fourStars = page.getByRole('button', { name: '4 stars' });
+	const alertIn = (action: string) =>
+		page.locator(`form[action="?/${action}"]`).getByRole('alert');
+
+	await open(page, `/recipes/${dishId}`);
+	await page.getByRole('button', { name: 'More servings' }).click();
+	await expectThreeServings(page, dishId);
+	const reconnect = await dropActions(page);
+
+	// Each says so beside it and still shows what's saved, so a tap tries again.
+	await box.click();
+	await expect(alertIn('tried')).toHaveText(UNREACHABLE);
+	await expect(box).not.toBeChecked();
+	await fourStars.click();
+	await expect(alertIn('rate')).toHaveText(UNREACHABLE);
+	await expect(fourStars).toHaveAttribute('aria-pressed', 'false');
+	await requestButton(page).click();
+	await expect(alertIn('request')).toHaveText(UNREACHABLE);
+	await expect(requestButton(page)).toBeVisible();
+	await page.getByRole('button', { name: 'Archive' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Archive' }).click();
+	await expect(alertIn('archive')).toHaveText(UNREACHABLE);
+	await expect(page.getByText('Archived', { exact: true })).toHaveCount(0);
+	await expectThreeServings(page, dishId);
+
+	// Nothing was saved, and once Meals answers, the same tap goes through.
+	expect(tried()).toBe(0);
+	expect(requestRows(db, person.householdId)).toEqual([]);
+	await reconnect();
+	await box.click();
+	await expect.poll(tried).toBe(1);
+	await expect(box).toBeChecked();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await expectThreeServings(page, dishId);
 });
 
 test('sorts recipes by rating, kept with the search, tag and archived switch', async ({

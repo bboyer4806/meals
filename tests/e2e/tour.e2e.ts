@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, open, test } from './fixtures.ts';
+import { dropActions, expect, open, test } from './fixtures.ts';
 
 // The first-time tour on the Grocery list (design 7, "Tour").
 
@@ -52,6 +52,28 @@ test('Escape ends it for good', async ({ page, person: _ }) => {
 	await open(page, '/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(tour(page)).toHaveCount(0);
+});
+
+test("closes, keeping the page, when Skip can't reach Meals, and starts again next time (MEA-111)", async ({
+	page,
+	db,
+	person
+}) => {
+	await open(page, '/groceries');
+	const reconnect = await dropActions(page);
+	const failed = page.waitForEvent('requestfailed', (request) =>
+		request.url().endsWith('?/tourSeen')
+	);
+	await tour(page).getByRole('button', { name: 'Skip' }).click();
+	await expect(tour(page)).toHaveCount(0);
+	await failed;
+	await page.waitForTimeout(500);
+	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
+	expect(db.prepare('select tour_seen from users where id = ?').pluck().get(person.userId)).toBeNull();
+
+	await reconnect();
+	await open(page, '/groceries');
+	await expect(tour(page)).toContainText('1 of 6');
 });
 
 test('starts again from step 1 after a reload partway through', async ({ page, person: _ }) => {
