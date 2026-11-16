@@ -133,6 +133,20 @@ export function makeDinner(
 	return dinnerId;
 }
 
+/** The width and height a JPEG's frame header gives. */
+export function jpegSize(bytes: Buffer): { width: number; height: number } {
+	let at = 2;
+	while (at < bytes.length) {
+		const marker = bytes[at + 1]!;
+		// Start of frame: baseline, extended or progressive.
+		if (marker >= 0xc0 && marker <= 0xc2) {
+			return { height: bytes.readUInt16BE(at + 5), width: bytes.readUInt16BE(at + 7) };
+		}
+		at += 2 + bytes.readUInt16BE(at + 2);
+	}
+	throw new Error('No frame header');
+}
+
 export function expectHttpError(run: () => unknown, status: number): void {
 	try {
 		run();

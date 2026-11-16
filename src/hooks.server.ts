@@ -8,6 +8,10 @@ import {
 	addStandardItemsToAllHouseholds
 } from '#lib/server/data/households.ts';
 import { openDb } from '#lib/server/db/index.ts';
+import {
+	assignAllDefaultDishPhotos,
+	checkDefaultDishPhotos
+} from '#lib/server/default-dish-photos.ts';
 import { checkOrigin } from '#lib/server/origin.ts';
 import { assignAllStandardImages, checkLibrary } from '#lib/server/standard-images.ts';
 import {
@@ -25,6 +29,7 @@ export const init: ServerInit = async () => {
 	const database = join(DATA_DIR, 'meals.db');
 	checkWritable([DATA_DIR, database, join(DATA_DIR, 'photos')]);
 	checkLibrary();
+	checkDefaultDishPhotos();
 	openDb(database);
 	const now = Date.now();
 	// Households set up before the standard items get them, once each (design 6.13).
@@ -35,6 +40,9 @@ export const init: ServerInit = async () => {
 	// Items not yet checked for a standard image get theirs: every item when the images came, and
 	// any a save couldn't finish or the version a deploy replaces made (design 6.14).
 	await assignAllStandardImages(now);
+	// Households whose dishes haven't had the default dishes' photos get them, once each: every
+	// household when the photos came, and one the version a deploy replaces set up (design 6.19).
+	await assignAllDefaultDishPhotos(now);
 };
 
 /**

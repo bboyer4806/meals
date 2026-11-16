@@ -26,7 +26,7 @@ import {
 	libraryName
 } from './standard-images.ts';
 import { STANDARD_ITEMS } from './standard-items.ts';
-import { TEST_ENV, expectHttpError, freshDb, makeHousehold } from './testing.ts';
+import { TEST_ENV, expectHttpError, freshDb, jpegSize, makeHousehold } from './testing.ts';
 
 // Real files unless a test says otherwise.
 vi.mock('node:fs', async (importOriginal) => {
@@ -41,20 +41,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 const NOW = Date.UTC(2026, 10, 5, 17, 0);
 const LATER = NOW + 24 * 60 * 60 * 1000;
 const KEY = '0123456789abcdef0123456789abcdef';
-
-/** The width and height a JPEG's frame header gives. */
-function jpegSize(bytes: Buffer): { width: number; height: number } {
-	let at = 2;
-	while (at < bytes.length) {
-		const marker = bytes[at + 1]!;
-		// Start of frame: baseline, extended or progressive.
-		if (marker >= 0xc0 && marker <= 0xc2) {
-			return { height: bytes.readUInt16BE(at + 5), width: bytes.readUInt16BE(at + 7) };
-		}
-		at += 2 + bytes.readUInt16BE(at + 2);
-	}
-	throw new Error('No frame header');
-}
 
 describe('the library', () => {
 	it("has each standard item's photo and thumbnail, and its credits", () => {

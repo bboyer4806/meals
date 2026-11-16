@@ -17,6 +17,7 @@ import {
 import { addDinnerDish, dishSuggestions, getDay } from './dinners.ts';
 import {
 	findDishByName,
+	getDish,
 	getOwnRating,
 	listDishes,
 	rateDish,
@@ -25,12 +26,14 @@ import {
 } from './dishes.ts';
 import {
 	addDefaultDishesToAllHouseholds,
+	addDefaultDishPhotos,
 	addStandardItemsToAllHouseholds,
 	cancelInvite,
 	createHousehold,
 	createInvite,
 	getHousehold,
 	listHouseholds,
+	listHouseholdsWithoutDefaultDishPhotos,
 	listInvites,
 	listMembers,
 	removeMember,
@@ -499,6 +502,61 @@ describe('default dishes', () => {
 		expect(recipes.filter((dish) => dish.hasRecipe).map((dish) => dish.name)).toEqual(['Chili']);
 		const archived = listDishes(householdId, { ...ACTIVE, archived: true });
 		expect(archived.map((dish) => dish.name)).toEqual(['Pizza']);
+	});
+});
+
+describe('default dish photos', () => {
+	const NOW = Date.UTC(2026, 10, 16, 17, 0);
+	const LATER = NOW + 24 * 60 * 60 * 1000;
+	const A = 'a'.repeat(32);
+	const B = 'b'.repeat(32);
+	const C = 'c'.repeat(32);
+	const D = 'd'.repeat(32);
+
+	it('gives each dish its photo if it still has none, once, and returns the keys left over', () => {
+		const { householdId } = makeHousehold();
+		const pizza = makeDish(householdId, recipe('Pizza'));
+		const tacos = makeDish(householdId, recipe('Tacos'), 0, A);
+		const photo = (dishId: number) => getDish(householdId, dishId).photoKey;
+
+		const photos = new Map([
+			[pizza, B],
+			[tacos, C]
+		]);
+		expect(addDefaultDishPhotos(householdId, photos, NOW)).toEqual([C]);
+		expect([photo(pizza), photo(tacos)]).toEqual([B, A]);
+		expect(getHousehold(householdId).defaultDishPhotosAddedAt).toBe(NOW);
+
+		// Pizza's photo removed in the recipe editor stays removed (6.19).
+		updateDish(householdId, pizza, recipe('Pizza'), { photoKey: null }, [], NOW);
+		expect(addDefaultDishPhotos(householdId, new Map([[pizza, D]]), LATER)).toEqual([D]);
+		expect(photo(pizza)).toBeNull();
+		expect(getHousehold(householdId).defaultDishPhotosAddedAt).toBe(NOW);
+	});
+
+	it("is not found for another household's dish, and changes nothing", () => {
+		const mine = makeHousehold().householdId;
+		const theirs = makeHousehold().householdId;
+		const ours = makeDish(mine, recipe('Pizza'));
+		const pizza = makeDish(theirs, recipe('Pizza'));
+		const photos = new Map([
+			[ours, A],
+			[pizza, B]
+		]);
+
+		expectHttpError(() => addDefaultDishPhotos(mine, photos, NOW), 404);
+		expect(getDish(mine, ours).photoKey).toBeNull();
+		expect(getDish(theirs, pizza).photoKey).toBeNull();
+		expect(getHousehold(mine).defaultDishPhotosAddedAt).toBeNull();
+	});
+
+	it("lists the households that haven't had them, oldest first", () => {
+		const first = makeHousehold().householdId;
+		const second = makeHousehold().householdId;
+		const third = makeHousehold().householdId;
+		addDefaultDishPhotos(second, new Map(), NOW);
+
+		expect(listHouseholdsWithoutDefaultDishPhotos()).toEqual([first, third]);
 	});
 });
 

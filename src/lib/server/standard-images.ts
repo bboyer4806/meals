@@ -1,9 +1,8 @@
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { foldCase } from '../text.ts';
 import { listHouseholdsToCheck, listUncheckedItems, setStandardImage } from './data/items.ts';
-import { discardPhoto, savePhoto } from './photos.ts';
+import { discardPhoto, saveLibraryPhoto } from './photos.ts';
 import { STANDARD_ITEMS } from './standard-items.ts';
 
 // Each standard item's image (design 6.14, MEA-62): a photo from the library in standard-images/,
@@ -40,10 +39,6 @@ export function checkLibrary(): void {
 	}
 }
 
-async function libraryFile(path: string): Promise<File> {
-	return new File([await readFile(path)], path, { type: 'image/jpeg' });
-}
-
 /**
  * Gives each of the household's items that hasn't been checked for a standard image the one for its
  * name, if it's a standard item and has no image, and records that it's been checked, so nothing
@@ -56,7 +51,7 @@ export async function assignStandardImages(householdId: number, now: number): Pr
 		let key: string | null = null;
 		if (name !== undefined) {
 			const { photo, thumb } = libraryFiles(name);
-			key = await savePhoto(await libraryFile(photo), await libraryFile(thumb));
+			key = await saveLibraryPhoto(photo, thumb);
 		}
 		let taken = false;
 		try {

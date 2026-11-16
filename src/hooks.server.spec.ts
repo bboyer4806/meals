@@ -43,7 +43,7 @@ afterEach(() => {
 	rmSync(dataDir, { recursive: true, force: true });
 });
 
-it('adds the standard items, their images and the default dishes to older households', async () => {
+it('gives older households the standard items and default dishes, with their photos', async () => {
 	// A household set up before them, which the migrations leave without them.
 	openDb(join(dataDir, 'meals.db'));
 	const { householdId } = makeHousehold();
@@ -60,13 +60,19 @@ it('adds the standard items, their images and the default dishes to older househ
 	const keys = new Set(catalog.map((item) => item.photoKey));
 	expect(keys.size).toBe(288);
 	expect(keys.has(null)).toBe(false);
-	expect(readdirSync(join(dataDir, 'photos'))).toHaveLength(576);
-	// 6.18.
-	expect(recipes()).toHaveLength(80);
+	// 6.18 and 6.19.
+	const dishes = recipes();
+	expect(dishes).toHaveLength(80);
+	const photos = new Set(dishes.map((dish) => dish.photoKey));
+	expect(photos.size).toBe(80);
+	expect(photos.has(null)).toBe(false);
+	expect(getHousehold(householdId).defaultDishPhotosAddedAt).not.toBeNull();
+	// Two files for each image and photo.
+	expect(readdirSync(join(dataDir, 'photos'))).toHaveLength(736);
 
 	// Starting again adds nothing.
 	await init();
-	expect(readdirSync(join(dataDir, 'photos'))).toHaveLength(576);
+	expect(readdirSync(join(dataDir, 'photos'))).toHaveLength(736);
 	expect(recipes()).toHaveLength(80);
 });
 
@@ -78,6 +84,21 @@ it("doesn't start without the standard images, as when they weren't packaged wit
 
 	try {
 		await expect(init()).rejects.toThrow(`The standard image ${missing} is missing`);
+		// Before it opens the database.
+		expect(readdirSync(dataDir)).toEqual([]);
+	} finally {
+		vi.mocked(existsSync).mockImplementation(exists);
+	}
+});
+
+it("doesn't start without the default dishes' photos, as when they weren't packaged", async () => {
+	useEnv();
+	const exists = vi.mocked(existsSync).getMockImplementation()!;
+	const missing = join('default-dish-photos', 'pizza.jpg');
+	vi.mocked(existsSync).mockImplementation((path) => path !== missing && exists(path));
+
+	try {
+		await expect(init()).rejects.toThrow(`The default dish photo ${missing} is missing`);
 		// Before it opens the database.
 		expect(readdirSync(dataDir)).toEqual([]);
 	} finally {

@@ -191,8 +191,8 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
    the build as an argument, and the deploy fails unless the site then answers with the
    commit it deployed (MEA-98).
 4. **Dockerfile:** a build stage (install and build) and a runtime stage (production
-   dependencies, build output, migrations, the standard items' photos (6.14) and the backup
-   script). It installs with
+   dependencies, build output, migrations, the standard items' photos (6.14), the default dishes'
+   photos (6.19) and the backup script). It installs with
    `npm ci --ignore-scripts`, since no dependency needs its install script (better-sqlite3
    ships prebuilt binaries). It runs as the `node` user and exposes port 3000. In Phase 2 it
    also sets `BODY_SIZE_LIMIT=5M` so the app accepts photo uploads (adapter-node's default is
@@ -389,6 +389,7 @@ src/lib/server/
                           release), which takes the person's id.
   standard-items.ts       the items every household's catalog starts with (6.13)
   standard-images.ts      give items their standard images (6.14)
+  default-dish-photos.ts  give the default dishes their photos (6.19)
   photos.ts               save, delete and serve photos and item images, and get the image
                           an image link points at
   jira.ts                 create a feedback ticket in Jira and attach its screenshot
@@ -399,6 +400,7 @@ src/lib/server/
 src/routes/               pages and form actions; database access only through data/
 drizzle/                  generated SQL migrations
 standard-images/          the standard items' photos and their credits (6.14)
+default-dish-photos/      the default dishes' photos and their credits (6.19)
 scripts/backup.js         the nightly backup job
 ```
 
@@ -417,7 +419,8 @@ Conventions:
 Q28), `time_zone` (an IANA name such as `America/Chicago`), `created_at`,
 `standard_items_added_at` (when its catalog got the standard items, which happens once; empty
 until then; 6.13), `default_dishes_revision` (the last revision of the default dishes its Recipes
-got; 0 until it gets the first; 6.18).
+got; 0 until it gets the first; 6.18), `default_dish_photos_added_at` (when its dishes got the
+default dishes' photos, which happens once; empty until then; 6.19).
 
 **users:** `household_id` (empty only until household setup is done), `google_sub`
 (Google's permanent account ID, unique), `email` (unique, lowercase), `name`,
@@ -1100,8 +1103,8 @@ is easy to review; dishes have no categories, and a dish's role is set per dinne
 
 - Each is added as a dish made by name from the Menu or a request is (2.3, 6.12): a name and the
   household's usual servings, with no ingredients, steps or anything else, so Recipes labels it
-  "No recipe" (2.1.1). They have no photos yet (MEA-259). They're ordinary dishes: suggested for
-  dinners and requests, given a recipe, renamed, archived and restored like any other.
+  "No recipe" (2.1.1). The original 80 then get a photo (6.19). They're ordinary dishes: suggested
+  for dinners and requests, given a recipe, renamed, archived and restored like any other.
 - A new household gets them as it's set up (6.1), with its standard items (6.13): it's set up with
   all of them or not at all. A household set up before them gets them when the app starts, and so
   does one set up on the old version during a deploy (4.4), at the next start.
@@ -1116,6 +1119,40 @@ is easy to review; dishes have no categories, and a dish's role is set per dinne
   starting again adds nothing. If adding them fails when the app starts, that household's Recipes
   stay as they were and the app doesn't start, as with the standard items (6.13); the next start
   tries again.
+
+### 6.19 Default dish photos
+
+Each of the original 80 default dishes (6.18) has a photo, so people can tell them apart at a
+glance when browsing Recipes and planning dinners (MEA-259).
+
+- The photos are in `default-dish-photos/`, packaged with the app, so nothing is searched for or
+  downloaded while it runs. They're sourced as the standard images are (6.14): CC0 or public
+  domain photos from Wikimedia Commons and Openverse, or Pixabay photos under the Pixabay Content
+  License, never AI-generated. Each was chosen to show the dish plainly and without a brand, then
+  cropped to 4:3, as the recipe page shows a photo (7), and stored as the recipe editor stores one
+  (2.3): a JPEG of up to 1200 x 900 px and a 400 x 300 px thumbnail. They're named after the dish
+  as standard images are: `bbq-pulled-pork.jpg` and `bbq-pulled-pork-thumb.jpg` for BBQ Pulled
+  Pork. `default-dish-photos/credits.csv` records each one's source, author and license. Dishes a
+  later revision adds (6.18) may have no photo.
+- A household's dishes get them once, and `default_dish_photos_added_at` records when. Each dish
+  named as one of the 80, matched ignoring case as dish names are (2.3), with no photo gets a copy
+  of that photo of its own, stored as a photo saved in the recipe editor is: shown only to its
+  household, backed up, and replaced or removed in the recipe editor like any other (4.4, 4.5). That
+  includes a dish the household had before the default dishes came, and an archived dish, which
+  stays archived (6.10). A dish with a photo keeps it, and other dishes are left as they are.
+- A new household gets them right after it's set up (6.1), once its default dishes are added. When
+  the app starts, after the default dishes are added, every household that hasn't had them gets
+  them: every household when the photos came, and one set up by the old version during a deploy
+  (4.2).
+- The copies are all stored before any dish gets one, and the dishes get theirs, and the household
+  its date, in one transaction. A failure, such as a full disk, gives none: the copies stored are
+  deleted, and the household gets them at the next start. After setting up a household, the
+  failure shows as an error, although the household is set up. A failure when the app starts
+  stops it from starting, as with the standard images (6.14). The app also doesn't start if one of
+  the photos is missing from `default-dish-photos/`, as when it wasn't packaged with the app.
+- Since a household gets them once, nothing gives them again: a photo removed stays removed, a
+  replaced one stays, a dish renamed or added afterward with one of the names gets none, and a
+  change to the photos reaches only households that haven't had them.
 
 ## 7. Screens
 

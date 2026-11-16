@@ -1,0 +1,1 @@
+ALTER TABLE `households` ADD `default_dish_photos_added_at` integer;
