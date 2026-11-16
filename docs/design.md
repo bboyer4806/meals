@@ -731,12 +731,13 @@ The rest of this section describes it as built.
   without saving it. The date stays not planned until a dish, a copy, a type or Save plans it.
 - Every dish in a dinner has a role. The first dish added defaults to Main and later ones
   to Side. Dishes are listed Main, Side, Dessert, Other (Q29).
-- **Copy a dinner** (Q3, Q30): the picker groups all dinners that have dishes by their
-  exact set of non-archived dishes. Each group shows its dishes, how many times it was
-  made, and when it was last made. The most-made groups are listed first. Typing, up to 80
-  characters as in a dish name, filters to groups with a dish whose name matches, most recent
-  first. Copying sets the type and the dishes with their roles. Each dinner counts on its own,
-  so a date with Kids and Adults dinners counts as one make for each.
+- **Copy a dinner** (Q3, Q30): the picker groups past dinners that have dishes by their
+  exact set of non-archived dishes. Past means dated today or earlier, in the household's time
+  zone (2.3), since one planned for a later date isn't made yet. Each group shows its dishes,
+  how many times it was made, and when it was last made. The most-made groups are listed
+  first. Typing, up to 80 characters as in a dish name, filters to groups with a dish whose
+  name matches, most recent first. Copying sets the type and the dishes with their roles. Each
+  dinner counts on its own, so a date with Kids and Adults dinners counts as one make for each.
 - A copy has exactly the dishes the picked group showed (MEA-85). The type and roles come from
   the latest past dinner that still has just those dishes, so a change to the group's latest
   dinner since the page showed it, such as going out instead or adding a dish, doesn't come

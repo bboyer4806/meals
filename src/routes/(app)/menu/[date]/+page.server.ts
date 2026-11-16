@@ -61,7 +61,7 @@ export function load({ locals, params }) {
 		dinners: getDay(user.householdId, date),
 		// A date with no dinner shows Cooking at home at these servings, unsaved (6.9, Q28).
 		defaultServings: household.defaultServings,
-		// Dinners already made, so a plan for later in the week isn't offered (assumption 1).
+		// Dinners already made, so a plan for later in the week isn't offered (6.9, Q3, Q30).
 		copyGroups: listCopyGroups(user.householdId, today),
 		dishes: dishSuggestions(user.householdId),
 		// The Menu's requests, under the dinners, so a requested dish can go on one and a requested

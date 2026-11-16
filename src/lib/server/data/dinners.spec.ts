@@ -1041,7 +1041,7 @@ describe('copy groups (6.9)', () => {
 		]);
 	});
 
-	it('counts dinners up to today only (assumption 1)', () => {
+	it('counts dinners up to today only (6.9, Q3, Q30)', () => {
 		const today = makeDinner(householdId, TODAY, { dishes: [[tacos, 'main']] });
 		makeDinner(householdId, TOMORROW, { dishes: [[tacos, 'main']] });
 		makeDinner(householdId, '2026-10-20', { dishes: [[rice, 'main']] });
@@ -1178,7 +1178,7 @@ describe('copying a dinner', () => {
 			[salad, 'dessert']
 		];
 		makeDinner(householdId, '2026-09-01', { type: 'cook', dishes: otherRoles });
-		// Not made yet (assumption 1).
+		// Not made yet (6.9, Q3, Q30).
 		makeDinner(householdId, TOMORROW, { type: 'cook', dishes: otherRoles });
 		copyOnto(TODAY, [salad, rice, tacos, cake], NOW);
 		expect(dinnerOn(householdId, TODAY)?.type).toBe('going');
