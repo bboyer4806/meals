@@ -96,25 +96,29 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.DOKKU_SSH_KEY }}
           HOST: ${{ secrets.DOKKU_HOST }}
+          KNOWN_HOSTS: ${{ secrets.DOKKU_KNOWN_HOSTS }}
           IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
         run: |
           set -euo pipefail
           : "${SSH_KEY:?Add the DOKKU_SSH_KEY secret under Settings > Secrets and variables > Actions}"
           : "${HOST:?Add the DOKKU_HOST secret under Settings > Secrets and variables > Actions}"
+          : "${KNOWN_HOSTS:?Add the DOKKU_KNOWN_HOSTS secret under Settings > Secrets and variables > Actions}"
           mkdir -p ~/.ssh
           # Delete the key when this step ends, even if it fails, so no later
           # step can read it.
           trap 'rm -f ~/.ssh/id_ed25519' EXIT
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          # The runner starts with no known hosts, so trust the key the
-          # server presents now.
-          ssh-keyscan -t ed25519 "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # Trust only the host key saved from the server itself (README,
+          # "Deploying"). Scanning would trust whoever answers at $HOST.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
 
           # Dokku runs exactly one command per SSH call. The server limits
           # which commands this key may run (the projects-key-scope plugin in
           # bboyer4806/dev); these are the ones the placeholder deploy ran.
-          dokku() { ssh -i ~/.ssh/id_ed25519 "dokku@$HOST" "$@"; }
+          # StrictHostKeyChecking=yes refuses any host key but the saved one,
+          # whatever the runner's own SSH settings say.
+          dokku() { ssh -o StrictHostKeyChecking=yes -i ~/.ssh/id_ed25519 "dokku@$HOST" "$@"; }
 
           dokku apps:exists "$APP" || dokku apps:create "$APP"
           dokku domains:set "$APP" "$DOMAIN"

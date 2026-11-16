@@ -130,10 +130,22 @@ workflow) on any branch other than `main`.
 
 The repo needs these Actions secrets (Settings > Secrets and variables > Actions):
 
-| Secret          | Value                                                      |
-| --------------- | ---------------------------------------------------------- |
-| `DOKKU_SSH_KEY` | the private deploy key whose public half is added to Dokku |
-| `DOKKU_HOST`    | `15.204.120.53`                                            |
+| Secret              | Value                                                      |
+| ------------------- | ---------------------------------------------------------- |
+| `DOKKU_SSH_KEY`     | the private deploy key whose public half is added to Dokku |
+| `DOKKU_HOST`        | `15.204.120.53`                                            |
+| `DOKKU_KNOWN_HOSTS` | the server's SSH host key line, printed as shown below     |
+
+The deploy connects only to a server that presents the host key in `DOKKU_KNOWN_HOSTS`. Take the
+line from the server itself, logged in as described [below](#logging-in-to-the-server), not from a
+scan over the network, which trusts whoever answers:
+
+```sh
+awk '{ print "15.204.120.53", $1, $2 }' /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+It prints `15.204.120.53 ssh-ed25519 AAAA…`, the secret's value. If the server's address or host
+key changes, update this secret too, or the deploy stops with "Host key verification failed".
 
 Dokku checks `/healthz` before it switches traffic to a new version. `app.json` sets that check
 and the nightly backup. `/healthz` answers with the commit the image was built from, and the
