@@ -1,7 +1,8 @@
 import { asc, eq, sql } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DEFAULT_DISH_REVISIONS } from '../../default-dishes.ts';
 import { db } from '../db/index.ts';
-import { dishRequests, households, items, sessions, users } from '../db/schema.ts';
+import { dishes, dishRequests, households, items, sessions, users } from '../db/schema.ts';
 import { createSession } from '../auth/session.ts';
 import { signIn } from '../auth/sign-in.ts';
 import { STANDARD_ITEMS } from '../standard-items.ts';
@@ -13,8 +14,17 @@ import {
 	makeStore,
 	recipe
 } from '../testing.ts';
-import { getOwnRating, rateDish } from './dishes.ts';
+import { addDinnerDish, dishSuggestions, getDay } from './dinners.ts';
 import {
+	findDishByName,
+	getOwnRating,
+	listDishes,
+	rateDish,
+	setDishArchived,
+	updateDish
+} from './dishes.ts';
+import {
+	addDefaultDishesToAllHouseholds,
 	addStandardItemsToAllHouseholds,
 	cancelInvite,
 	createHousehold,
@@ -41,6 +51,15 @@ import { addRestaurantRequest, completeRequest, listRequests } from './requests.
 beforeEach(freshDb);
 
 const settings = { name: 'The Boyers', defaultServings: 4, timeZone: 'America/Chicago' };
+
+/** Someone signed in who hasn't set up a household yet. */
+function newcomer(): number {
+	return db()
+		.insert(users)
+		.values({ googleSub: 'g-new', email: 'new@example.com', name: 'New', createdAt: 0 })
+		.returning({ id: users.id })
+		.get().id;
+}
 
 describe('households', () => {
 	it('sets up a household once for a person without one', () => {
@@ -172,15 +191,6 @@ describe('standard items', () => {
 		}));
 	}
 
-	/** Someone signed in who hasn't set up a household yet. */
-	function newcomer(): number {
-		return db()
-			.insert(users)
-			.values({ googleSub: 'g-new', email: 'new@example.com', name: 'New', createdAt: 0 })
-			.returning({ id: users.id })
-			.get().id;
-	}
-
 	/** Makes adding an item with this name fail, as a full disk would. */
 	function failToAdd(name: string): void {
 		db().run(
@@ -304,6 +314,191 @@ describe('standard items', () => {
 		stopFailing();
 		const householdId = createHousehold(userId, settings, LATER);
 		expect(allItems(householdId)).toEqual(added(householdId, STANDARD_ITEMS, LATER));
+	});
+});
+
+// The dishes every household's Recipes starts with (design 6.18).
+describe('default dishes', () => {
+	// Sat 2026-10-03 12:00 in Chicago, and a day later.
+	const NOW = Date.UTC(2026, 9, 3, 17, 0);
+	const LATER = NOW + 24 * 60 * 60 * 1000;
+	const RELEASED = DEFAULT_DISH_REVISIONS.length;
+	const DEFAULT_DISHES = DEFAULT_DISH_REVISIONS.flat();
+	// Recipes as it opens.
+	const ACTIVE = { search: '', tags: [], archived: false, sort: 'name' as const };
+
+	afterEach(() => {
+		// Takes back a revision a test released.
+		(DEFAULT_DISH_REVISIONS as string[][]).splice(RELEASED);
+	});
+
+	/** Adds a revision of the default dishes, as a later version of the app would. */
+	function release(names: string[]): void {
+		(DEFAULT_DISH_REVISIONS as string[][]).push(names);
+	}
+
+	/** Every dish in the household, archived ones included, in the order they were added. */
+	function allDishes(householdId: number) {
+		return db()
+			.select()
+			.from(dishes)
+			.where(eq(dishes.householdId, householdId))
+			.orderBy(asc(dishes.id))
+			.all();
+	}
+
+	/** Dishes as the default dishes add them: active, with a name, servings and nothing else. */
+	function added(householdId: number, names: readonly string[], servings: number, at: number) {
+		return names.map((name) => ({
+			id: expect.any(Number),
+			householdId,
+			name,
+			servings,
+			prepMinutes: null,
+			cookMinutes: null,
+			steps: null,
+			notes: null,
+			source: null,
+			photoKey: null,
+			calories: null,
+			proteinG: null,
+			carbsG: null,
+			fatG: null,
+			tried: false,
+			archivedAt: null,
+			createdAt: at,
+			updatedAt: at
+		}));
+	}
+
+	it('gives a new household every one, by name only, at its usual servings', () => {
+		const householdId = createHousehold(newcomer(), { ...settings, defaultServings: 3 }, NOW);
+		expect(allDishes(householdId)).toEqual(added(householdId, DEFAULT_DISHES, 3, NOW));
+		expect(getHousehold(householdId).defaultDishesRevision).toBe(RELEASED);
+		// Recipes lists them all, each labeled "No recipe" (2.1.1).
+		const recipes = listDishes(householdId, ACTIVE);
+		expect(recipes).toHaveLength(80);
+		expect(recipes.filter((dish) => dish.hasRecipe)).toEqual([]);
+	});
+
+	it('adds what an existing household lacks when the app starts, keeping what it has', () => {
+		const { householdId } = makeHousehold();
+		// Hamburgers in other case with a recipe, an archived Pizza, and a dish not among them.
+		makeDish(householdId, recipe('hamburgers', { steps: 'Grill them.' }), 1);
+		setDishArchived(householdId, makeDish(householdId, recipe('Pizza'), 1), true, 2);
+		makeDish(householdId, recipe('Tuna Casserole'), 1);
+		const before = allDishes(householdId);
+
+		addDefaultDishesToAllHouseholds(NOW);
+
+		const had = ['Hamburgers', 'Pizza'];
+		expect(allDishes(householdId)).toEqual([
+			...before,
+			...added(householdId, DEFAULT_DISHES.filter((name) => !had.includes(name)), 4, NOW)
+		]);
+		const archived = listDishes(householdId, { ...ACTIVE, archived: true });
+		expect(archived.map((dish) => dish.name)).toEqual(['Pizza']);
+		expect(getHousehold(householdId).defaultDishesRevision).toBe(RELEASED);
+	});
+
+	it('adds them once, so ones renamed or archived afterward stay that way', () => {
+		const { householdId } = makeHousehold();
+		addDefaultDishesToAllHouseholds(NOW);
+		const id = (name: string) => findDishByName(householdId, name)!.id;
+		updateDish(householdId, id('Hot Dogs'), recipe('Corn Dogs'), 'keep', [], LATER);
+		setDishArchived(householdId, id('Pizza'), true, LATER);
+		const before = allDishes(householdId);
+
+		// The app starting again. Hot Dogs is missing, and stays missing.
+		addDefaultDishesToAllHouseholds(LATER);
+
+		expect(allDishes(householdId)).toEqual(before);
+	});
+
+	it("adds only a newer revision's dishes to a household that had the earlier ones", () => {
+		const { householdId } = makeHousehold();
+		addDefaultDishesToAllHouseholds(NOW);
+		const hotDogs = findDishByName(householdId, 'Hot Dogs')!.id;
+		updateDish(householdId, hotDogs, recipe('Corn Dogs'), 'keep', [], NOW);
+		// Meatballs as someone typed it, archived.
+		setDishArchived(householdId, makeDish(householdId, recipe('meatballs'), NOW), true, NOW);
+		const before = allDishes(householdId);
+
+		release(['Meatballs', "Shepherd's Pie"]);
+		addDefaultDishesToAllHouseholds(LATER);
+
+		expect(allDishes(householdId)).toEqual([
+			...before,
+			...added(householdId, ["Shepherd's Pie"], 4, LATER)
+		]);
+		expect(getHousehold(householdId).defaultDishesRevision).toBe(RELEASED + 1);
+	});
+
+	it('gives each household its own, and leaves alone one that has had them', () => {
+		const older = makeHousehold().householdId;
+		const other = makeHousehold().householdId;
+		// Tacos of the older household's own, archived, which is no other household's.
+		setDishArchived(older, makeDish(older, recipe('Tacos'), 0), true, 0);
+		const newer = createHousehold(newcomer(), settings, NOW);
+		updateDish(newer, findDishByName(newer, 'Pizza')!.id, recipe('Pizza night'), 'keep', [], NOW);
+		const olderDishes = allDishes(older);
+		const newerDishes = allDishes(newer);
+
+		addDefaultDishesToAllHouseholds(LATER);
+
+		expect(allDishes(older)).toEqual([
+			...olderDishes,
+			...added(older, DEFAULT_DISHES.filter((name) => name !== 'Tacos'), 4, LATER)
+		]);
+		expect(allDishes(other)).toEqual(added(other, DEFAULT_DISHES, 4, LATER));
+		expect(allDishes(newer)).toEqual(newerDishes);
+	});
+
+	it('rolls back a household whose dishes fail to add, and adds them at the next start', () => {
+		const first = makeHousehold().householdId;
+		const second = makeHousehold().householdId;
+		// So only the second adds Waffles, which fails partway through its dishes, as a full disk
+		// would.
+		makeDish(first, recipe('Waffles'));
+		makeDish(second, recipe('Lasagna'));
+		db().run(
+			sql.raw(
+				`create trigger fail_to_add before insert on dishes when new.name = 'Waffles'
+				begin select raise(abort, 'Simulated failure'); end`
+			)
+		);
+
+		expect(() => addDefaultDishesToAllHouseholds(NOW)).toThrow('Simulated failure');
+		// The first finished before the second started.
+		expect(allDishes(first)).toHaveLength(80);
+		expect(getHousehold(first).defaultDishesRevision).toBe(RELEASED);
+		expect(allDishes(second).map((dish) => dish.name)).toEqual(['Lasagna']);
+		expect(getHousehold(second).defaultDishesRevision).toBe(0);
+
+		db().run(sql.raw('drop trigger fail_to_add'));
+		addDefaultDishesToAllHouseholds(LATER);
+		expect(allDishes(second)).toHaveLength(80);
+		expect(getHousehold(second).defaultDishesRevision).toBe(RELEASED);
+	});
+
+	it('makes ordinary dishes, planned, given a recipe and archived like any other', () => {
+		const householdId = createHousehold(newcomer(), settings, NOW);
+		const id = (name: string) => findDishByName(householdId, name)!.id;
+		// The Menu's dish field suggests them, and picks one by name, ignoring case (6.9).
+		expect(dishSuggestions(householdId)).toHaveLength(80);
+		const result = addDinnerDish(householdId, '2026-10-05', null, { name: 'tacos' }, 'main', LATER);
+		expect(result).toEqual({ kind: 'added' });
+		expect(getDay(householdId, '2026-10-05')[0]?.dishes).toEqual([
+			{ dishId: id('Tacos'), name: 'Tacos', role: 'main', archived: false }
+		]);
+		// A recipe written for one, and another archived (6.10).
+		updateDish(householdId, id('Chili'), recipe('Chili', { steps: 'Simmer.' }), 'keep', [], LATER);
+		setDishArchived(householdId, id('Pizza'), true, LATER);
+		const recipes = listDishes(householdId, ACTIVE);
+		expect(recipes).toHaveLength(79);
+		expect(recipes.filter((dish) => dish.hasRecipe).map((dish) => dish.name)).toEqual(['Chili']);
+		const archived = listDishes(householdId, { ...ACTIVE, archived: true });
+		expect(archived.map((dish) => dish.name)).toEqual(['Pizza']);
 	});
 });
 

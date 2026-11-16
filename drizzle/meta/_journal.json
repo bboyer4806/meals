@@ -169,6 +169,13 @@
       "when": 1794435747124,
       "tag": "0023_ai-connections",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1794853744877,
+      "tag": "0024_default-dishes",
+      "breakpoints": true
     }
   ]
 }

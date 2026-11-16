@@ -26,7 +26,10 @@ export const households = sqliteTable(
 		createdAt: integer('created_at').notNull(),
 		// When its catalog got the standard items, which happens once; empty until then
 		// (design 6.13).
-		standardItemsAddedAt: integer('standard_items_added_at')
+		standardItemsAddedAt: integer('standard_items_added_at'),
+		// The last revision of the default dishes its Recipes got; 0 until it gets the first
+		// (design 6.18).
+		defaultDishesRevision: integer('default_dishes_revision').notNull().default(0)
 	},
 	(t) => [check('households_default_servings', sql`${t.defaultServings} >= 1`)]
 );
