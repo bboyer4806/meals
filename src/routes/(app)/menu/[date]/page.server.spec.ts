@@ -171,7 +171,7 @@ describe('loading a date', () => {
 				}
 			],
 			defaultServings: 3,
-			// Tomorrow's dinner isn't made yet (assumption 1).
+			// Tomorrow's dinner isn't made yet (6.9, Q3, Q30).
 			copyGroups: [
 				{
 					dinnerId: expect.any(Number),
