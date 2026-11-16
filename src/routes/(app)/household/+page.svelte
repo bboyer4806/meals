@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
 	import TimeZoneSelect from '#lib/components/TimeZoneSelect.svelte';
+	import { keepPage, problemIn } from '#lib/submit.ts';
 
 	let { data, form } = $props();
 
@@ -25,6 +26,14 @@
 	function messageFor(action: string) {
 		return form?.action === action ? form : null;
 	}
+
+	/**
+	 * Sends a form whose messages show as `action`'s. When it can't be done, its message shows
+	 * there as the server's would, and the page and what was typed stay (MEA-111).
+	 */
+	function send(action: string, submit?: SubmitFunction): SubmitFunction {
+		return keepPage((error) => (form = { action, error }), submit);
+	}
 </script>
 
 <svelte:head>
@@ -35,7 +44,11 @@
 
 <section class="card">
 	<h2>Settings</h2>
-	<form method="POST" action="?/settings" use:enhance={() => ({ update }) => update({ reset: false })}>
+	<form
+		method="POST"
+		action="?/settings"
+		use:enhance={send('settings', () => ({ update }) => update({ reset: false }))}
+	>
 		{#if messageFor('settings')?.error}<p class="error" role="alert">{form?.error}</p>{/if}
 		{#if messageFor('settings')?.message}<p role="status">{form?.message}</p>{/if}
 		<div class="field">
@@ -76,7 +89,7 @@
 				{#if member.id === data.user.id}
 					<span class="muted">You</span>
 				{:else}
-					<form method="POST" action="?/removeMember" use:enhance>
+					<form method="POST" action="?/removeMember" use:enhance={send('members')}>
 						<input type="hidden" name="id" value={member.id} />
 						<ConfirmButton
 							label="Remove"
@@ -91,7 +104,7 @@
 	</ul>
 
 	<h3>Invite someone</h3>
-	<form method="POST" action="?/invite" use:enhance class="row">
+	<form method="POST" action="?/invite" use:enhance={send('invite')} class="row">
 		<label class="visually-hidden" for="invite-email">Email</label>
 		<input
 			class="grow"
@@ -112,7 +125,7 @@
 			{#each data.invites as invite (invite.id)}
 				<li class="row">
 					<span class="grow">{invite.email}</span>
-					<form method="POST" action="?/cancelInvite" use:enhance>
+					<form method="POST" action="?/cancelInvite" use:enhance={send('invite')}>
 						<input type="hidden" name="id" value={invite.id} />
 						<button class="quiet">Cancel</button>
 					</form>
@@ -124,7 +137,7 @@
 
 <section class="card">
 	<h2>Stores</h2>
-	<form method="POST" action="?/addStore" use:enhance class="row">
+	<form method="POST" action="?/addStore" use:enhance={send('stores')} class="row">
 		<label class="visually-hidden" for="store-name">Store name</label>
 		<input class="grow" id="store-name" name="name" required maxlength="40" placeholder="Store name" />
 		<button class="primary">Add</button>
@@ -148,7 +161,7 @@
 			{#each archivedStores as store (store.id)}
 				<li class="row">
 					<span class="grow muted">{store.name}</span>
-					<form method="POST" action="?/restoreStore" use:enhance>
+					<form method="POST" action="?/restoreStore" use:enhance={send('stores')}>
 						<input type="hidden" name="id" value={store.id} />
 						<button class="quiet">Restore</button>
 					</form>
@@ -166,9 +179,10 @@
 				action="?/renameStore"
 				use:enhance={() =>
 					async ({ result, update }) => {
-						if (result.type === 'failure') {
-							storeSheetError =
-								(result.data as { error?: string } | undefined)?.error ?? 'Please try again.';
+						// The sheet stays open with what was typed (MEA-111).
+						const problem = problemIn(result);
+						if (problem !== null) {
+							storeSheetError = problem;
 							return;
 						}
 						await update({ reset: false });

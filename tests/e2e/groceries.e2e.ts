@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { addStore, expect, open, test } from './fixtures.ts';
+import { UNREACHABLE, addStore, dropActions, expect, open, test } from './fixtures.ts';
 
 function addForm(page: Page) {
 	return page.getByRole('form', { name: 'Add to the list' });
@@ -431,6 +431,93 @@ test('says so when someone else deleted the line, and stays on the list', async 
 	await dialog.getByRole('button', { name: 'Close' }).click();
 	await expect(aldi.getByRole('button', { name: /^Milk/ })).toHaveCount(0);
 	await expect(aldi.getByRole('button', { name: /^Eggs/ })).toBeVisible();
+});
+
+test("keeps the list, an open sheet and what was typed when an action can't reach Meals (MEA-111)", async ({
+	page,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Aldi');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Bread', store: 'Aldi' });
+	await addAndWait(page, { name: 'Milk', store: 'Aldi' });
+	const aldi = group(page, 'Aldi');
+	const item = addForm(page).getByRole('combobox', { name: 'Item' });
+	const reconnect = await dropActions(page);
+
+	// Bread's circle says so beside it, and the list, its tabs and what's typed above stay.
+	await item.fill('Eggs');
+	await aldi.getByRole('button', { name: 'Mark received: Bread' }).click();
+	await expect(aldi.getByRole('alert')).toHaveText(UNREACHABLE);
+	await expect(aldi.getByRole('button', { name: 'Mark received: Bread' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Recipes' })).toBeVisible();
+	await expect(item).toHaveValue('Eggs');
+
+	// The add bar keeps what it would have added.
+	await addForm(page).getByLabel('Quantity').fill('12');
+	await addForm(page).getByRole('button', { name: 'Add' }).click();
+	await expect(addForm(page).getByRole('alert')).toHaveText(UNREACHABLE);
+	await expect(item).toHaveValue('Eggs');
+	await expect(addForm(page).getByLabel('Quantity')).toHaveValue('12');
+
+	// An open sheet stays open with what was typed in it.
+	await aldi.getByRole('button', { name: /^Milk/ }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('Note').fill('Oat milk if they are out');
+	await dialog.getByRole('button', { name: 'Save' }).click();
+	await expect(dialog.getByRole('alert')).toHaveText(UNREACHABLE);
+	await expect(dialog.getByLabel('Note')).toHaveValue('Oat milk if they are out');
+	await dialog.getByRole('button', { name: 'Close' }).click();
+
+	// Mark all says so in its store's group.
+	await aldi.getByRole('button', { name: 'Mark all ordered' }).click();
+	await confirm(page, 'Mark ordered');
+	await expect(aldi.getByRole('alert')).toHaveText(UNREACHABLE);
+
+	// Nothing changed, and once Meals answers, the same tap goes through.
+	const toOrder = db.prepare(
+		"select count(*) from grocery_needs where household_id = ? and status = 'to_order' and note is null"
+	);
+	expect(toOrder.pluck().get(person.householdId)).toBe(2);
+	await reconnect();
+	await aldi.getByRole('button', { name: 'Mark received: Bread' }).click();
+	await expect(aldi.getByRole('heading', { name: 'Received today' })).toBeVisible();
+	await expect(aldi.getByRole('alert')).toHaveCount(0);
+	await expect(item).toHaveValue('Eggs');
+});
+
+test('says something went wrong when the server breaks, and keeps the list (MEA-111)', async ({
+	page,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Aldi');
+	await page.goto('/groceries');
+	await addAndWait(page, { name: 'Bread', store: 'Aldi' });
+	const aldi = group(page, 'Aldi');
+	const check = aldi.getByRole('button', { name: 'Mark received: Bread' });
+	const receive = (url: URL) => url.search === '?/receive';
+
+	// The action broke, and the server answers as SvelteKit does.
+	await page.route(receive, (route) =>
+		route.fulfill({
+			status: 500,
+			json: { type: 'error', error: { status: 500, message: 'Internal Error' } }
+		})
+	);
+	await check.click();
+	await expect(aldi.getByRole('alert')).toHaveText('Something went wrong. Please try again.');
+	await expect(check).toBeVisible();
+
+	// A proxy's own error page is no answer from Meals.
+	await page.unroute(receive);
+	await page.route(receive, (route) =>
+		route.fulfill({ status: 502, contentType: 'text/html', body: '<h1>502 Bad Gateway</h1>' })
+	);
+	await check.click();
+	await expect(aldi.getByRole('alert')).toHaveText(UNREACHABLE);
+	await expect(check).toBeVisible();
 });
 
 test("saves the sheet edits with Didn't come and Got fewer", async ({ page, db, person }) => {

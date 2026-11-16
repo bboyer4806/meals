@@ -2,9 +2,11 @@ import { existsSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
 import type Database from 'better-sqlite3';
 import {
+	UNREACHABLE,
 	addItem,
 	addPhotoFiles,
 	addStore,
+	dropActions,
 	expect,
 	makeJpeg,
 	makePng,
@@ -49,6 +51,32 @@ test('renames and archives an item, and asks before adding it again', async ({ p
 	await prompt.getByRole('button', { name: 'Restore and add' }).click();
 	// Restored, it's already on the list, so the duplicate question follows.
 	await expect(page.getByRole('dialog')).toContainText('Already on the list: 1');
+});
+
+test("keeps an item's sheet and what was typed when Save can't reach Meals (MEA-111)", async ({
+	page,
+	db,
+	person
+}) => {
+	const itemId = addItem(db, person.householdId, 'Dish soap');
+	await open(page, '/groceries/items');
+	const reconnect = await dropActions(page);
+
+	await page.getByRole('button', { name: /^Dish soap/ }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('Name').fill('Dawn dish soap');
+	await dialog.getByLabel('Notes').fill('Blue, 20 oz');
+	await dialog.getByRole('button', { name: 'Save' }).click();
+	await expect(dialog.getByRole('alert')).toHaveText(UNREACHABLE);
+	await expect(dialog.getByLabel('Name')).toHaveValue('Dawn dish soap');
+	await expect(dialog.getByLabel('Notes')).toHaveValue('Blue, 20 oz');
+	expect(db.prepare('select name from items where id = ?').pluck().get(itemId)).toBe('Dish soap');
+
+	// Once Meals answers, the same Save goes through.
+	await reconnect();
+	await dialog.getByRole('button', { name: 'Save' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByRole('button', { name: /^Dawn dish soap\s*Blue, 20 oz/ })).toBeVisible();
 });
 
 test("keeps an item's Always have when it's saved, without showing it", async ({
