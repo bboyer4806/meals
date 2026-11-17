@@ -69,15 +69,24 @@ export const sessions = sqliteTable(
 	(t) => [index('sessions_user').on(t.userId)]
 );
 
-export const invites = sqliteTable('invites', {
-	// Never reused after an invite is cancelled or used, so a page that still shows it can't
-	// cancel a newer invite (6.1).
-	id: integer('id').primaryKey({ autoIncrement: true }),
-	email: text('email').notNull().unique(),
-	// Empty means the person creates a new household.
-	householdId: integer('household_id').references(() => households.id),
-	createdAt: integer('created_at').notNull()
-});
+export const invites = sqliteTable(
+	'invites',
+	{
+		// Never reused after an invite is cancelled or used, so a page that still shows it can't
+		// cancel a newer invite (6.1).
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		email: text('email').notNull(),
+		// Empty means the person creates a new household.
+		householdId: integer('household_id').references(() => households.id),
+		createdAt: integer('created_at').notNull()
+	},
+	// One per household and email, so each household's invite stands on its own (6.1, MEA-112), and
+	// at most one to start a household per email, which has no household.
+	(t) => [
+		unique('invites_email_household').on(t.email, t.householdId),
+		uniqueIndex('invites_start_email').on(t.email).where(sql`${t.householdId} is null`)
+	]
+);
 
 export const stores = sqliteTable(
 	'stores',

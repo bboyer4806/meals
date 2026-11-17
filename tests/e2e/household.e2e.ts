@@ -1,5 +1,7 @@
 import {
 	UNREACHABLE,
+	addNewcomer,
+	addPerson,
 	addStore,
 	adminId,
 	answerAction,
@@ -17,13 +19,7 @@ test('sends signed-out people to the sign-in page', async ({ page }) => {
 });
 
 test('sets up a household on first sign-in', async ({ page, db, context, baseURL }) => {
-	const userId = Number(
-		db
-			.prepare(
-				"insert into users (google_sub, email, name, created_at) values (?, ?, 'Robin', 0)"
-			)
-			.run(`setup-${Date.now()}`, `setup-${Date.now()}@example.com`).lastInsertRowid
-	);
+	const { userId } = addNewcomer(db, { startInvite: true });
 	await signInAs(db, context, baseURL, userId);
 
 	await page.goto('/groceries');
@@ -82,6 +78,49 @@ test('sets up a household on first sign-in', async ({ page, db, context, baseURL
 		.toBe(400);
 });
 
+test('asks someone invited by more than one household which to join (MEA-112)', async ({
+	page,
+	db,
+	context,
+	baseURL
+}) => {
+	const tag = `${test.info().workerIndex}-${Date.now()}`;
+	const rename = db.prepare('update households set name = ? where id = ?');
+	const smiths = addPerson(db).householdId;
+	const joneses = addPerson(db).householdId;
+	rename.run(`Smiths ${tag}`, smiths);
+	rename.run(`Joneses ${tag}`, joneses);
+	// Signing in with invites from both gave them an account without a household (6.1).
+	const { userId, email } = addNewcomer(db, { startInvite: false });
+	const invite = db.prepare('insert into invites (email, household_id, created_at) values (?, ?, 0)');
+	invite.run(email, smiths);
+	invite.run(email, joneses);
+	db.prepare('update users set tour_seen = 0 where id = ?').run(userId);
+	await signInAs(db, context, baseURL, userId);
+
+	await open(page, '/groceries');
+	await expect(page).toHaveURL(/\/setup$/);
+	await expect(page.getByText('These households invited you.', { exact: false })).toBeVisible();
+	const choice = (name: string) => page.getByRole('listitem').filter({ hasText: name });
+	await expect(choice(`Smiths ${tag}`)).toBeVisible();
+	// Only the admin, or someone invited to start a household, can set one up.
+	await expect(page.getByLabel('Household name')).toHaveCount(0);
+
+	// The Smiths cancel their invite meanwhile, so it can't be used, and it leaves the list.
+	db.prepare('delete from invites where email = ? and household_id = ?').run(email, smiths);
+	await choice(`Smiths ${tag}`).getByRole('button', { name: 'Join' }).click();
+	await expect(page.getByRole('alert')).toHaveText('That invite was cancelled.');
+	await expect(choice(`Smiths ${tag}`)).toHaveCount(0);
+	await expect(page.getByText('This household invited you to join it.')).toBeVisible();
+
+	await choice(`Joneses ${tag}`).getByRole('button', { name: 'Join' }).click();
+	await expect(page).toHaveURL(/\/groceries$/);
+	await expect(page.getByRole('banner')).toContainText(`Joneses ${tag}`);
+	const householdOf = db.prepare('select household_id from users where id = ?').pluck();
+	expect(householdOf.get(userId)).toBe(joneses);
+	expect(db.prepare('select count(*) from invites where email = ?').pluck().get(email)).toBe(0);
+});
+
 test('manages stores and invites', async ({ page, person: _ }) => {
 	await page.goto('/household');
 
@@ -112,14 +151,27 @@ test('manages stores and invites', async ({ page, person: _ }) => {
 	await page.getByRole('button', { name: 'Restore' }).click();
 	await expect(page.getByRole('heading', { name: 'Archived' })).toHaveCount(0);
 
-	// Invites are unique across the whole site, so each run uses its own address.
-	const friend = `friend-${test.info().workerIndex}-${Date.now()}@example.com`;
+	// Each household's invites stand on their own, so other tests' don't get in the way (MEA-112).
+	const friend = 'friend@example.com';
 	await page.getByLabel('Email').fill(friend.toUpperCase());
 	await page.getByRole('button', { name: 'Invite' }).click();
 	await expect(page.getByRole('status')).toContainText(`Invited ${friend}`);
 	await expect(page.getByText(friend, { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Cancel' }).click();
 	await expect(page.getByText(friend, { exact: true })).toHaveCount(0);
+});
+
+test('keeps a household to 20 invites waiting (MEA-112)', async ({ page, db, person }) => {
+	const invite = db.prepare('insert into invites (email, household_id, created_at) values (?, ?, 0)');
+	for (let i = 0; i < 20; i += 1) invite.run(`guest-${i}@example.com`, person.householdId);
+	await open(page, '/household');
+
+	await page.getByLabel('Email').fill('one-more@example.com');
+	await page.getByRole('button', { name: 'Invite' }).click();
+	await expect(page.getByRole('alert')).toHaveText(
+		'Your household can have 20 invites waiting at a time. Cancel one to invite someone else.'
+	);
+	await expect(page.getByText('one-more@example.com', { exact: true })).toHaveCount(0);
 });
 
 test('keeps the Household page for a member or invite that is already gone (6.1)', async ({
@@ -152,7 +204,7 @@ test('keeps the Household page for a member or invite that is already gone (6.1)
 	const invite = page.getByRole('listitem').filter({ hasText: sam });
 	await invite.getByRole('button', { name: 'Cancel' }).click();
 	await expect(page.getByText('Sam', { exact: true })).toBeVisible();
-	await expect(page.getByText('Waiting for them to sign in:')).toHaveCount(0);
+	await expect(page.getByText('Waiting for them to join:')).toHaveCount(0);
 });
 
 test("keeps the Household page and what was typed when an action can't reach Meals (MEA-111)", async ({
@@ -246,6 +298,23 @@ test('lets the admin invite a household', async ({ page, db, context, baseURL })
 	expect(db.prepare('select household_id from invites where email = ?').get(email)).toEqual({
 		household_id: null
 	});
+});
+
+test("lists each household's invites waiting on Admin (MEA-112)", async ({
+	page,
+	db,
+	context,
+	baseURL
+}) => {
+	await signInAs(db, context, baseURL, adminId(db));
+	const household = addPerson(db);
+	const invite = db.prepare('insert into invites (email, household_id, created_at) values (?, ?, 0)');
+	invite.run('sam@example.com', household.householdId);
+	invite.run('pat@example.com', household.householdId);
+	await open(page, '/admin');
+
+	const listed = page.getByRole('listitem').filter({ hasText: household.email });
+	await expect(listed).toContainText('Invited: pat@example.com, sam@example.com');
 });
 
 test('keeps the Admin page for an invite that is already gone (6.1)', async ({

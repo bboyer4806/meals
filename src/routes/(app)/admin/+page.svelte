@@ -132,7 +132,7 @@
 	{#if messageFor('invite')?.error}<p class="error" role="alert">{form?.error}</p>{/if}
 	{#if messageFor('invite')?.message}<p role="status">{form?.message}</p>{/if}
 	{#if data.invites.length > 0}
-		<p class="muted">Waiting for them to sign in:</p>
+		<p class="muted">Waiting for them to set up their household:</p>
 		<ul class="list">
 			{#each data.invites as invite (invite.id)}
 				<li class="row">
@@ -154,6 +154,7 @@
 			<li>
 				<strong>{household.name}</strong>
 				<div class="muted">{household.members ?? 'No members'}</div>
+				{#if household.invites}<div class="muted">Invited: {household.invites}</div>{/if}
 				<div class="muted">Since {created(household.createdAt)}</div>
 			</li>
 		{/each}

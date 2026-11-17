@@ -37,8 +37,10 @@ export type SignInResult =
 
 /**
  * Applies the sign-in rules (design section 6.1): a known Google account signs in; an unknown one
- * needs an invite for its email, or must be the admin's first sign-in. A used invite is deleted.
- * An account invited to create a household, or the admin, starts without one and goes to setup.
+ * needs an invite for its email, or must be the admin's first sign-in. With one invite, to a
+ * household, the account joins it and the invite is used up. Anyone else starts without a
+ * household and goes to setup, where their invites wait for them to choose (MEA-112): someone
+ * invited by more than one household or to create one, and the admin.
  */
 export function signIn(profile: GoogleProfile, adminEmail: string, now: number): SignInResult {
 	const email = profile.email.toLowerCase();
@@ -49,21 +51,23 @@ export function signIn(profile: GoogleProfile, adminEmail: string, now: number):
 			return { kind: 'signed-in', userId: existing.id };
 		}
 
-		const invite = db().select().from(invites).where(eq(invites.email, email)).get();
-		if (!invite && email !== adminEmail) return { kind: 'not-invited', email };
+		const waiting = db()
+			.select({ householdId: invites.householdId })
+			.from(invites)
+			.where(eq(invites.email, email))
+			.all();
+		const isAdmin = email === adminEmail;
+		if (waiting.length === 0 && !isAdmin) return { kind: 'not-invited', email };
 
+		// One invite, to a household, leaves nothing to choose.
+		const only = waiting.length === 1 && !isAdmin ? waiting[0] : undefined;
+		const householdId = only?.householdId ?? null;
 		const user = db()
 			.insert(users)
-			.values({
-				householdId: invite?.householdId ?? null,
-				googleSub: profile.sub,
-				email,
-				name: profile.name,
-				createdAt: now
-			})
+			.values({ householdId, googleSub: profile.sub, email, name: profile.name, createdAt: now })
 			.returning({ id: users.id })
 			.get();
-		if (invite) db().delete(invites).where(eq(invites.id, invite.id)).run();
+		if (householdId !== null) db().delete(invites).where(eq(invites.email, email)).run();
 		return { kind: 'signed-in', userId: user.id };
 	});
 }

@@ -43,9 +43,9 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
   or `requireAdmin` from `src/lib/server/auth/guards.ts`; layout checks do not protect actions.
   Derive household identity from the signed-in session, never from request input.
 - Household data goes through `src/lib/server/data/`, one module per area. Operations on
-  household-owned data take `householdId` first; household creation, administrative
-  listing, adding standard items, default dishes and their images and photos at startup and a
-  person's What's new seen release have different signatures. Preserve household isolation in
+  household-owned data take `householdId` first; household creation, joining a household from
+  the setup page, administrative listing, adding standard items, default dishes and their images
+  and photos at startup and a person's What's new seen release have different signatures. Preserve household isolation in
   reads and writes.
 - Routes use that data layer rather than querying the database. Sign-in and sessions live
   in `src/lib/server/auth/`, photo files in `src/lib/server/photos.ts`. The `/healthz`

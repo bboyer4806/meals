@@ -2,7 +2,15 @@ import { asc, eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_DISH_REVISIONS } from '../../default-dishes.ts';
 import { db } from '../db/index.ts';
-import { dishes, dishRequests, households, items, sessions, users } from '../db/schema.ts';
+import {
+	dishes,
+	dishRequests,
+	households,
+	invites,
+	items,
+	sessions,
+	users
+} from '../db/schema.ts';
 import { createSession } from '../auth/session.ts';
 import { signIn } from '../auth/sign-in.ts';
 import { STANDARD_ITEMS } from '../standard-items.ts';
@@ -32,11 +40,14 @@ import {
 	createHousehold,
 	createInvite,
 	getHousehold,
+	INVITE_LIMIT,
+	joinHousehold,
 	listHouseholds,
 	listHouseholdsWithoutDefaultDishPhotos,
 	listInvites,
 	listMembers,
 	removeMember,
+	setupChoices,
 	updateHousehold
 } from './households.ts';
 import {
@@ -55,25 +66,54 @@ beforeEach(freshDb);
 
 const settings = { name: 'The Boyers', defaultServings: 4, timeZone: 'America/Chicago' };
 
-/** Someone signed in who hasn't set up a household yet. */
-function newcomer(): number {
+const ADMIN = 'admin@example.com';
+
+/** Someone signed in without a household, who hasn't joined or set one up yet (6.1). */
+function signedInWithout(email: string): number {
 	return db()
 		.insert(users)
-		.values({ googleSub: 'g-new', email: 'new@example.com', name: 'New', createdAt: 0 })
+		.values({ googleSub: `g-${email}`, email, name: 'New', createdAt: 0 })
 		.returning({ id: users.id })
 		.get().id;
 }
 
+/** Someone signed in with an invite to start a household, who hasn't set it up yet. */
+function newcomer(): number {
+	createInvite(null, 'new@example.com', 0);
+	return signedInWithout('new@example.com');
+}
+
 describe('households', () => {
-	it('sets up a household once for a person without one', () => {
-		const user = db()
-			.insert(users)
-			.values({ googleSub: 'g', email: 'a@example.com', name: 'A', createdAt: 0 })
-			.returning()
-			.get();
-		const householdId = createHousehold(user.id, settings, 0);
-		expect(listMembers(householdId).map((m) => m.email)).toEqual(['a@example.com']);
-		expectHttpError(() => createHousehold(user.id, settings, 0), 400);
+	it('sets up a household once, for someone invited to start one, using up their invites', () => {
+		const { householdId: other } = makeHousehold();
+		createInvite(other, 'new@example.com', 0);
+		const userId = newcomer();
+		const householdId = createHousehold(userId, ADMIN, settings, 0);
+		expect(listMembers(householdId).map((m) => m.email)).toEqual(['new@example.com']);
+		expect(db().select().from(invites).all()).toEqual([]);
+		expectHttpError(() => createHousehold(userId, ADMIN, settings, 0), 400);
+	});
+
+	it('sets up a household for the admin, without an invite', () => {
+		const admin = signedInWithout(ADMIN);
+		expect(setupChoices(admin, ADMIN)).toEqual({ invites: [], mayStart: true });
+		const householdId = createHousehold(admin, ADMIN, settings, 0);
+		expect(listMembers(householdId).map((m) => m.email)).toEqual([ADMIN]);
+	});
+
+	it('sets up no household for anyone else (MEA-112)', () => {
+		const { householdId } = makeHousehold();
+		createInvite(householdId, 'sam@example.com', 0);
+		const sam = signedInWithout('sam@example.com');
+		expect(setupChoices(sam, ADMIN).mayStart).toBe(false);
+		expectHttpError(() => createHousehold(sam, ADMIN, settings, 0), 400);
+
+		// Nor once their invite to start one is cancelled meanwhile.
+		const pat = newcomer();
+		cancelInvite(null, listInvites(null)[0]!.id);
+		expect(setupChoices(pat, ADMIN)).toEqual({ invites: [], mayStart: false });
+		expectHttpError(() => createHousehold(pat, ADMIN, settings, 0), 400);
+		expect(db().select().from(households).all()).toHaveLength(1);
 	});
 
 	it('lets members remove others but not themselves', () => {
@@ -158,6 +198,23 @@ describe('households', () => {
 		}
 		expect(listHouseholds().map((h) => h.name)).toEqual(['adams', 'Évora', 'Fischer', 'Zhou']);
 	});
+
+	it("lists each household's members and invites waiting for the admin (MEA-112)", () => {
+		const mine = makeHousehold();
+		const theirs = makeHousehold();
+		const quiet = makeHousehold();
+		createInvite(mine.householdId, 'sam@example.com', 0);
+		createInvite(mine.householdId, 'pat@example.com', 0);
+		createInvite(theirs.householdId, 'sam@example.com', 0);
+		createInvite(null, 'new@example.com', 0);
+		const listed = (householdId: number) => listHouseholds().find((h) => h.id === householdId);
+		expect(listed(mine.householdId)).toMatchObject({
+			members: listMembers(mine.householdId)[0]!.email,
+			invites: 'pat@example.com, sam@example.com'
+		});
+		expect(listed(theirs.householdId)?.invites).toBe('sam@example.com');
+		expect(listed(quiet.householdId)?.invites).toBeNull();
+	});
 });
 
 // The standard items every household's catalog starts with (design 6.13).
@@ -209,7 +266,7 @@ describe('standard items', () => {
 	}
 
 	it('gives a new household every one, ready to find and pick, and nothing on the list', () => {
-		const householdId = createHousehold(newcomer(), settings, NOW);
+		const householdId = createHousehold(newcomer(), ADMIN, settings, NOW);
 		expect(allItems(householdId)).toEqual(added(householdId, STANDARD_ITEMS, NOW));
 		expect(getHousehold(householdId).standardItemsAddedAt).toBe(NOW);
 		expect(listCatalog(householdId, false, '')).toHaveLength(288);
@@ -271,7 +328,7 @@ describe('standard items', () => {
 
 	it('gives each household its own, and leaves alone one that has had them', () => {
 		const older = makeHousehold(TZ).householdId;
-		const newer = createHousehold(newcomer(), settings, NOW);
+		const newer = createHousehold(newcomer(), ADMIN, settings, NOW);
 		const apples = findItemByName(newer, 'Apples')!.id;
 		updateItem(newer, apples, { name: 'Gala apples', notes: null });
 		const newerItems = allItems(newer);
@@ -308,14 +365,14 @@ describe('standard items', () => {
 		const userId = newcomer();
 		failToAdd('Pears');
 
-		expect(() => createHousehold(userId, settings, NOW)).toThrow('Simulated failure');
+		expect(() => createHousehold(userId, ADMIN, settings, NOW)).toThrow('Simulated failure');
 		expect(db().select().from(households).all()).toEqual([]);
 		expect(db().select().from(items).all()).toEqual([]);
 		const person = db().select().from(users).where(eq(users.id, userId)).get();
 		expect(person?.householdId).toBeNull();
 
 		stopFailing();
-		const householdId = createHousehold(userId, settings, LATER);
+		const householdId = createHousehold(userId, ADMIN, settings, LATER);
 		expect(allItems(householdId)).toEqual(added(householdId, STANDARD_ITEMS, LATER));
 	});
 });
@@ -375,7 +432,8 @@ describe('default dishes', () => {
 	}
 
 	it('gives a new household every one, by name only, at its usual servings', () => {
-		const householdId = createHousehold(newcomer(), { ...settings, defaultServings: 3 }, NOW);
+		const servings = { ...settings, defaultServings: 3 };
+		const householdId = createHousehold(newcomer(), ADMIN, servings, NOW);
 		expect(allDishes(householdId)).toEqual(added(householdId, DEFAULT_DISHES, 3, NOW));
 		expect(getHousehold(householdId).defaultDishesRevision).toBe(RELEASED);
 		// Recipes lists them all, each labeled "No recipe" (2.1.1).
@@ -442,7 +500,7 @@ describe('default dishes', () => {
 		const other = makeHousehold().householdId;
 		// Tacos of the older household's own, archived, which is no other household's.
 		setDishArchived(older, makeDish(older, recipe('Tacos'), 0), true, 0);
-		const newer = createHousehold(newcomer(), settings, NOW);
+		const newer = createHousehold(newcomer(), ADMIN, settings, NOW);
 		updateDish(newer, findDishByName(newer, 'Pizza')!.id, recipe('Pizza night'), 'keep', [], NOW);
 		const olderDishes = allDishes(older);
 		const newerDishes = allDishes(newer);
@@ -485,7 +543,7 @@ describe('default dishes', () => {
 	});
 
 	it('makes ordinary dishes, planned, given a recipe and archived like any other', () => {
-		const householdId = createHousehold(newcomer(), settings, NOW);
+		const householdId = createHousehold(newcomer(), ADMIN, settings, NOW);
 		const id = (name: string) => findDishByName(householdId, name)!.id;
 		// The Menu's dish field suggests them, and picks one by name, ignoring case (6.9).
 		expect(dishSuggestions(householdId)).toHaveLength(80);
@@ -561,24 +619,101 @@ describe('default dish photos', () => {
 });
 
 describe('invites', () => {
-	it('refuses members and people already invited', () => {
-		const { householdId } = makeHousehold();
-		const member = listMembers(householdId)[0]!;
-		expect(createInvite(householdId, member.email.toUpperCase(), 0)).toEqual({ kind: 'member' });
-		expect(createInvite(householdId, 'new@example.com', 0)).toEqual({ kind: 'invited' });
-		expect(createInvite(null, 'NEW@example.com', 0)).toEqual({ kind: 'invited-already' });
+	it("refuses members and people the household already invited, but not another's (MEA-112)", () => {
+		const mine = makeHousehold();
+		const theirs = makeHousehold();
+		const member = listMembers(mine.householdId)[0]!;
+		expect(createInvite(mine.householdId, member.email.toUpperCase(), 0)).toEqual({
+			kind: 'member'
+		});
+		expect(createInvite(theirs.householdId, member.email, 0)).toEqual({ kind: 'member' });
+		expect(createInvite(null, member.email, 0)).toEqual({ kind: 'member' });
+
+		expect(createInvite(mine.householdId, 'new@example.com', 0)).toEqual({ kind: 'invited' });
+		expect(createInvite(mine.householdId, 'NEW@example.com', 0)).toEqual({
+			kind: 'invited-already'
+		});
+		// Each household's invite stands on its own, and so does the admin's to start one.
+		expect(createInvite(theirs.householdId, 'new@example.com', 0)).toEqual({ kind: 'invited' });
+		expect(createInvite(null, 'new@example.com', 0)).toEqual({ kind: 'invited' });
+		expect(createInvite(null, 'New@example.com', 0)).toEqual({ kind: 'invited-already' });
+		for (const owner of [mine.householdId, theirs.householdId, null]) {
+			expect(listInvites(owner).map((invite) => invite.email)).toEqual(['new@example.com']);
+		}
 	});
 
-	it('adds someone who signed in but never set up a household (design 6.1)', () => {
+	it('leaves someone signed in without a household to choose on the setup page (MEA-112)', () => {
 		const { householdId } = makeHousehold();
-		const stranded = db()
-			.insert(users)
-			.values({ googleSub: 'g-dana', email: 'dana@example.com', name: 'Dana', createdAt: 0 })
-			.returning()
-			.get();
-		expect(createInvite(null, 'dana@example.com', 0)).toEqual({ kind: 'member' });
-		expect(createInvite(householdId, 'Dana@Example.com', 0)).toEqual({ kind: 'joined' });
-		expect(listMembers(householdId).map((m) => m.id)).toContain(stranded.id);
+		const dana = signedInWithout('dana@example.com');
+		expect(createInvite(householdId, 'Dana@Example.com', 0)).toEqual({ kind: 'invited' });
+		expect(createInvite(null, 'dana@example.com', 0)).toEqual({ kind: 'invited' });
+		expect(listMembers(householdId).map((m) => m.id)).not.toContain(dana);
+		const [invite] = listInvites(householdId);
+		expect(setupChoices(dana, ADMIN)).toEqual({
+			invites: [{ id: invite!.id, householdName: getHousehold(householdId).name }],
+			mayStart: true
+		});
+	});
+
+	it('keeps at most 20 invites waiting for a household, and for the admin (MEA-112)', () => {
+		expect(INVITE_LIMIT).toBe(20);
+		const mine = makeHousehold();
+		const theirs = makeHousehold();
+		for (let i = 0; i < INVITE_LIMIT; i += 1) {
+			expect(createInvite(mine.householdId, `p${i}@example.com`, 0)).toEqual({ kind: 'invited' });
+			expect(createInvite(null, `p${i}@example.com`, 0)).toEqual({ kind: 'invited' });
+		}
+		expect(createInvite(mine.householdId, 'more@example.com', 0)).toEqual({ kind: 'full' });
+		expect(createInvite(null, 'more@example.com', 0)).toEqual({ kind: 'full' });
+		// Another household's invites don't count against it.
+		expect(createInvite(theirs.householdId, 'more@example.com', 0)).toEqual({ kind: 'invited' });
+		// Cancelling one makes room.
+		cancelInvite(mine.householdId, listInvites(mine.householdId)[0]!.id);
+		expect(createInvite(mine.householdId, 'more@example.com', 0)).toEqual({ kind: 'invited' });
+		expect(listInvites(mine.householdId)).toHaveLength(INVITE_LIMIT);
+	});
+
+	it('joins a household that invited them, which uses up all their invites (MEA-112)', () => {
+		const mine = makeHousehold();
+		const theirs = makeHousehold();
+		updateHousehold(mine.householdId, { ...settings, name: 'Zhou' });
+		updateHousehold(theirs.householdId, { ...settings, name: 'Évora' });
+		createInvite(mine.householdId, 'sam@example.com', 0);
+		createInvite(theirs.householdId, 'sam@example.com', 0);
+		createInvite(null, 'sam@example.com', 0);
+		createInvite(mine.householdId, 'pat@example.com', 0);
+		const sam = signedInWithout('sam@example.com');
+
+		const { invites: choices, mayStart } = setupChoices(sam, ADMIN);
+		expect(choices.map((choice) => choice.householdName)).toEqual(['Évora', 'Zhou']);
+		expect(mayStart).toBe(true);
+		expect(joinHousehold(sam, choices[0]!.id)).toBe(theirs.householdId);
+		expect(listMembers(theirs.householdId).map((m) => m.id)).toContain(sam);
+		// Every invite for Sam is used up, whichever household it's from, and Pat's stays.
+		expect(listInvites(mine.householdId).map((invite) => invite.email)).toEqual([
+			'pat@example.com'
+		]);
+		expect(listInvites(theirs.householdId)).toEqual([]);
+		expect(listInvites(null)).toEqual([]);
+		expectHttpError(() => joinHousehold(sam, choices[1]!.id), 400);
+		expectHttpError(() => setupChoices(sam, ADMIN), 400);
+	});
+
+	it("can't join with an invite that was cancelled, someone else's or one to start a household", () => {
+		const { householdId } = makeHousehold();
+		createInvite(householdId, 'sam@example.com', 0);
+		createInvite(householdId, 'pat@example.com', 0);
+		createInvite(null, 'sam@example.com', 0);
+		const sam = signedInWithout('sam@example.com');
+		const [pats, sams] = listInvites(householdId);
+		const start = listInvites(null)[0]!;
+
+		expectHttpError(() => joinHousehold(sam, pats!.id), 400);
+		expectHttpError(() => joinHousehold(sam, start.id), 400);
+		cancelInvite(householdId, sams!.id);
+		expectHttpError(() => joinHousehold(sam, sams!.id), 400);
+		expect(setupChoices(sam, ADMIN)).toEqual({ invites: [], mayStart: true });
+		expect(listMembers(householdId)).toHaveLength(1);
 	});
 
 	it("keeps each household's invites to itself", () => {

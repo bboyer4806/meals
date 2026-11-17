@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import {
 	addDinner,
+	addNewcomer,
 	addPartyList,
 	addRecipe,
 	adminId,
@@ -95,13 +96,7 @@ test("closes with ✕, Escape or the backdrop and keeps a dinner's unsaved note"
 });
 
 test("isn't on Household setup", async ({ page, db, context, baseURL }) => {
-	const userId = Number(
-		db
-			.prepare(
-				"insert into users (google_sub, email, name, created_at) values (?, ?, 'Robin', 0)"
-			)
-			.run(`help-${Date.now()}`, `help-${Date.now()}@example.com`).lastInsertRowid
-	);
+	const { userId } = addNewcomer(db, { startInvite: true });
 	await signInAs(db, context, baseURL, userId);
 	await page.goto('/setup');
 	await expect(page.getByLabel('Household name')).toBeVisible();

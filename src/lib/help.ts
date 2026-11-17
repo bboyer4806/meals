@@ -160,8 +160,8 @@ export const HELP: Record<HelpRouteId, Help> = {
 		points: [
 			'Settings: the household name, the usual number of servings for new recipes and dinners, and the time zone.',
 			'Members: everyone in your household. Any member can remove another.',
-			'Invite someone with their Google email. They join when they first sign in with it.',
-			'Cancel an invite while it waits for them to sign in.',
+			'Invite someone with their Google email. They join when they first sign in with it, or choose if another household invited them too.',
+			'Cancel an invite while it waits for them to join.',
 			'Stores: add the stores you buy from. Edit renames or archives one, and archived stores can be restored.'
 		]
 	},
@@ -180,7 +180,7 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Send test email sends a test email to your Google email, so you can check that Meals can send email.',
 			'AI assistants: connect ChatGPT or Claude with the address shown. Revoke stops one. Open a proposed change to approve or reject it.',
 			'Invite a household with their Google email. They set up their own household when they first sign in.',
-			'Households lists every household and when it started.'
+			'Households lists every household with its members, who it invited and when it started.'
 		]
 	}
 };
