@@ -29,7 +29,10 @@ export const households = sqliteTable(
 		standardItemsAddedAt: integer('standard_items_added_at'),
 		// The last revision of the default dishes its Recipes got; 0 until it gets the first
 		// (design 6.18).
-		defaultDishesRevision: integer('default_dishes_revision').notNull().default(0)
+		defaultDishesRevision: integer('default_dishes_revision').notNull().default(0),
+		// When its dishes got the default dishes' photos, which happens once; empty until then
+		// (design 6.19).
+		defaultDishPhotosAddedAt: integer('default_dish_photos_added_at')
 	},
 	(t) => [check('households_default_servings', sql`${t.defaultServings} >= 1`)]
 );

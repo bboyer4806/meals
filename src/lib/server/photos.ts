@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { rmSync } from 'node:fs';
-import { mkdir, open } from 'node:fs/promises';
+import { mkdir, open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
@@ -72,6 +72,18 @@ export async function savePhoto(photo: File, thumb: File): Promise<string> {
 		throw e;
 	}
 	return key;
+}
+
+/**
+ * Stores a copy of a photo packaged with the app and its thumbnail, checked as savePhoto checks
+ * an upload, and returns its new key (design 6.14, 6.19).
+ */
+export async function saveLibraryPhoto(photo: string, thumb: string): Promise<string> {
+	return savePhoto(await libraryFile(photo), await libraryFile(thumb));
+}
+
+async function libraryFile(path: string): Promise<File> {
+	return new File([await readFile(path)], path, { type: 'image/jpeg' });
 }
 
 /** Removes both files. Files that are already gone are fine. */

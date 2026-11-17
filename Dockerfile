@@ -14,8 +14,8 @@ ARG COMMIT
 RUN npm run build && npm prune --omit=dev
 
 # Run: production dependencies, the built app, migrations, the standard items' images (design
-# 6.14), the backup script and app.json (Dokku reads its health check and nightly backup schedule
-# from there).
+# 6.14), the default dishes' photos (6.19), the backup script and app.json (Dokku reads its health
+# check and nightly backup schedule from there).
 FROM node:26-slim
 WORKDIR /app
 ENV NODE_ENV=production
@@ -30,6 +30,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
 COPY drizzle ./drizzle
 COPY standard-images ./standard-images
+COPY default-dish-photos ./default-dish-photos
 COPY scripts/backup.js ./scripts/backup.js
 COPY app.json ./
 USER node

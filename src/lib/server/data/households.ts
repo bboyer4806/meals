@@ -5,7 +5,7 @@ import { formatMemberName } from '../../member-names.ts';
 import { db, transaction } from '../db/index.ts';
 import { dishRatings, dishRequests, households, invites, users } from '../db/schema.ts';
 import { STANDARD_ITEMS } from '../standard-items.ts';
-import { findDishByName, insertDish } from './dishes.ts';
+import { findDishByName, insertDish, setDishPhotoIfNone } from './dishes.ts';
 import { createItem, findItemByName } from './items.ts';
 
 export type HouseholdSettings = { name: string; defaultServings: number; timeZone: string };
@@ -103,6 +103,44 @@ function addDefaultDishes(householdId: number, now: number): void {
 			.set({ defaultDishesRevision: DEFAULT_DISH_REVISIONS.length })
 			.where(eq(households.id, householdId))
 			.run();
+	});
+}
+
+/** Households whose dishes haven't had the default dishes' photos, oldest first (design 6.19). */
+export function listHouseholdsWithoutDefaultDishPhotos(): number[] {
+	return db()
+		.select({ id: households.id })
+		.from(households)
+		.where(isNull(households.defaultDishPhotosAddedAt))
+		.orderBy(asc(households.id))
+		.all()
+		.map((row) => row.id);
+}
+
+/**
+ * Gives each dish in `photos`, photo keys by dish id, its photo if it still has none, and records
+ * that the household has had the default dishes' photos, all at once. A household has them once,
+ * so a photo removed or replaced afterward stays that way (design 6.19). Returns the keys no dish
+ * took, every one when the household had them already, so the caller can delete their files.
+ */
+export function addDefaultDishPhotos(
+	householdId: number,
+	photos: ReadonlyMap<number, string>,
+	now: number
+): string[] {
+	return transaction(() => {
+		// Another version of the app, starting during a deploy (4.4), may have given them already.
+		if (getHousehold(householdId).defaultDishPhotosAddedAt !== null) return [...photos.values()];
+		const unused: string[] = [];
+		for (const [dishId, photoKey] of photos) {
+			if (!setDishPhotoIfNone(householdId, dishId, photoKey)) unused.push(photoKey);
+		}
+		db()
+			.update(households)
+			.set({ defaultDishPhotosAddedAt: now })
+			.where(eq(households.id, householdId))
+			.run();
+		return unused;
 	});
 }
 

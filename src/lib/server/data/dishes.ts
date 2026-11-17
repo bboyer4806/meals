@@ -175,6 +175,33 @@ export function dishesByName(householdId: number): Map<string, DishName> {
 }
 
 /**
+ * The household's dishes with no photo that are named as one of `names`, matching names as
+ * findDishByName does, archived ones included (design 6.19).
+ */
+export function dishesWithoutPhoto(householdId: number, names: readonly string[]): DishName[] {
+	const wanted = new Set(names.map(foldCase));
+	return db()
+		.select(nameFields)
+		.from(dishes)
+		.where(and(eq(dishes.householdId, householdId), isNull(dishes.photoKey)))
+		.orderBy(asc(dishes.id))
+		.all()
+		.filter((dish) => wanted.has(foldCase(dish.name)));
+}
+
+/**
+ * Gives the dish the photo `photoKey` (photos.ts) if it has none, and returns whether it took it,
+ * so the caller can delete the files of a key it didn't. A photo it has stays (design 6.19).
+ */
+export function setDishPhotoIfNone(householdId: number, dishId: number, photoKey: string): boolean {
+	return transaction(() => {
+		if (findDish(householdId, dishId).photoKey !== null) return false;
+		db().update(dishes).set({ photoKey }).where(eq(dishes.id, dishId)).run();
+		return true;
+	});
+}
+
+/**
  * A dish made by name, from a dinner or a request, has the usual servings and no recipe yet, so
  * Recipes labels it "No recipe" (2.3, 6.12). Returns its id.
  */
