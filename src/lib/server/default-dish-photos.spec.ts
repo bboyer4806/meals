@@ -68,7 +68,10 @@ describe('the library', () => {
 		for (const [dish, source, author, license] of rows) {
 			expect(source, dish).toMatch(/^https:\/\/\S+$/);
 			expect(author, dish).not.toBe('');
-			expect(['CC0', 'Public domain', 'Pixabay Content License'], dish).toContain(license);
+			expect(
+				['CC0', 'Public domain', 'Pixabay Content License', 'Unsplash License'],
+				dish
+			).toContain(license);
 		}
 	});
 });

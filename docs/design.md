@@ -1128,12 +1128,13 @@ glance when browsing Recipes and planning dinners (MEA-259).
 - The photos are in `default-dish-photos/`, packaged with the app, so nothing is searched for or
   downloaded while it runs. They're sourced as the standard images are (6.14): CC0 or public
   domain photos from Wikimedia Commons and Openverse, or Pixabay photos under the Pixabay Content
-  License, never AI-generated. Each was chosen to show the dish plainly and without a brand, then
-  cropped to 4:3, as the recipe page shows a photo (7), and stored as the recipe editor stores one
-  (2.3): a JPEG of up to 1200 x 900 px and a 400 x 300 px thumbnail. They're named after the dish
-  as standard images are: `bbq-pulled-pork.jpg` and `bbq-pulled-pork-thumb.jpg` for BBQ Pulled
-  Pork. `default-dish-photos/credits.csv` records each one's source, author and license. Dishes a
-  later revision adds (6.18) may have no photo.
+  License, never AI-generated. None of those had a photo of Sloppy Joes, so its photo is from
+  Unsplash, under the Unsplash License, which also needs no credit. Each was chosen to show the
+  dish plainly and without a brand, then cropped to 4:3, as the recipe page shows a photo (7), and
+  stored as the recipe editor stores one (2.3): a JPEG of up to 1200 x 900 px and a 400 x 300 px
+  thumbnail. They're named after the dish as standard images are: `bbq-pulled-pork.jpg` and
+  `bbq-pulled-pork-thumb.jpg` for BBQ Pulled Pork. `default-dish-photos/credits.csv` records each
+  one's source, author and license. Dishes a later revision adds (6.18) may have no photo.
 - A household's dishes get them once, and `default_dish_photos_added_at` records when. Each dish
   named as one of the 80, matched ignoring case as dish names are (2.3), with no photo gets a copy
   of that photo of its own, stored as a photo saved in the recipe editor is: shown only to its
