@@ -244,11 +244,21 @@ export function listMembers(householdId: number) {
  * Deletes the member's account and sessions. Their active requests go too, their completed ones
  * stay in the history with their name, and their ratings stay with nobody named on them (section
  * 5). Nobody can remove themselves (design 2.3). A member someone else already removed counts as
- * removed, so the page shows its members as they are (6.1).
+ * removed, so the page shows its members as they are (6.1). A member removed meanwhile can't
+ * remove anyone, so two members removing each other at once leave one of them, never an empty
+ * household (2.3, 6.1, MEA-114).
  */
 export function removeMember(householdId: number, actingUserId: number, memberId: number): void {
 	if (memberId === actingUserId) error(400, "You can't remove yourself");
 	transaction(() => {
+		// Inside the transaction, whose lock makes a removal wait for any other under way, so of two
+		// members removing each other at once, the second finds they were removed and stops.
+		const acting = db()
+			.select({ id: users.id })
+			.from(users)
+			.where(and(eq(users.id, actingUserId), eq(users.householdId, householdId)))
+			.get();
+		if (!acting) error(404, 'Not found');
 		// Empties who rated before the delete, since the composite key's SET NULL would empty the
 		// rating's household_id too (4.5).
 		db()

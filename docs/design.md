@@ -580,7 +580,9 @@ and proposals at it, so revoking it deletes them too.
    last backup date. The admin is also a normal member of their own household.
 6. An invite or member that's already gone counts as done (MEA-69). Cancel on an invite that
    was used or cancelled after the page opened, on the Household or Admin page, and Remove on
-   a member someone else removed meanwhile, show the page as it is now (6.11).
+   a member someone else removed meanwhile, show the page as it is now (6.11). A member removed
+   meanwhile can't remove anyone: their Remove shows Not found, so two members removing each
+   other at once leave one of them, never an empty household (2.3, MEA-114).
 7. Members are named by their first name, the first word of the name Google gives (MEA-255):
    "Alex Smith" is "Alex". While another of the household's current members has the same first
    name, ignoring case ("Alex" and "alex"), each of them shows their whole name instead, so
