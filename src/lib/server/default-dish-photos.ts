@@ -20,10 +20,18 @@ import { libraryName } from './standard-images.ts';
 export const LIBRARY = 'default-dish-photos';
 
 /**
- * Each original default dish's library name, named as the standard images are, by its name with
- * case folded, as dish names match (2.3).
+ * The original default dishes with a photo in the library: all but Sloppy Joes, which none of the
+ * photo sources had a photo of (6.19).
  */
-const NAMES = new Map(ORIGINAL_DEFAULT_DISHES.map((name) => [foldCase(name), libraryName(name)]));
+export const DISHES_WITH_PHOTOS: readonly string[] = ORIGINAL_DEFAULT_DISHES.filter(
+	(name) => name !== 'Sloppy Joes'
+);
+
+/**
+ * Each of those dishes' library name, named as the standard images are, by its name with case
+ * folded, as dish names match (2.3).
+ */
+const NAMES = new Map(DISHES_WITH_PHOTOS.map((name) => [foldCase(name), libraryName(name)]));
 
 function libraryFiles(name: string): { photo: string; thumb: string } {
 	return { photo: join(LIBRARY, `${name}.jpg`), thumb: join(LIBRARY, `${name}-thumb.jpg`) };
@@ -39,16 +47,16 @@ export function checkDefaultDishPhotos(): void {
 }
 
 /**
- * Gives each of the household's dishes named as an original default dish, archived ones included,
- * a copy of that dish's photo if it has none, and records that the household has had them, which
- * happens once (design 6.19). Stores every copy before giving any, so a failure gives none: it
- * deletes the copies it stored, and the household gets them the next time.
+ * Gives each of the household's dishes named as an original default dish with a photo, archived
+ * ones included, a copy of that photo if it has none, and records that the household has had them,
+ * which happens once (design 6.19). Stores every copy before giving any, so a failure gives none:
+ * it deletes the copies it stored, and the household gets them the next time.
  */
 export async function assignDefaultDishPhotos(householdId: number, now: number): Promise<void> {
 	const photos = new Map<number, string>();
 	let unused: string[] | undefined;
 	try {
-		for (const dish of dishesWithoutPhoto(householdId, ORIGINAL_DEFAULT_DISHES)) {
+		for (const dish of dishesWithoutPhoto(householdId, DISHES_WITH_PHOTOS)) {
 			const name = NAMES.get(foldCase(dish.name));
 			if (name === undefined) throw new Error(`${dish.name} has no default photo`);
 			const { photo, thumb } = libraryFiles(name);

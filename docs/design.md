@@ -1103,8 +1103,9 @@ is easy to review; dishes have no categories, and a dish's role is set per dinne
 
 - Each is added as a dish made by name from the Menu or a request is (2.3, 6.12): a name and the
   household's usual servings, with no ingredients, steps or anything else, so Recipes labels it
-  "No recipe" (2.1.1). The original 80 then get a photo (6.19). They're ordinary dishes: suggested
-  for dinners and requests, given a recipe, renamed, archived and restored like any other.
+  "No recipe" (2.1.1). The original 80 but Sloppy Joes then get a photo (6.19). They're ordinary
+  dishes: suggested for dinners and requests, given a recipe, renamed, archived and restored like
+  any other.
 - A new household gets them as it's set up (6.1), with its standard items (6.13): it's set up with
   all of them or not at all. A household set up before them gets them when the app starts, and so
   does one set up on the old version during a deploy (4.4), at the next start.
@@ -1122,21 +1123,21 @@ is easy to review; dishes have no categories, and a dish's role is set per dinne
 
 ### 6.19 Default dish photos
 
-Each of the original 80 default dishes (6.18) has a photo, so people can tell them apart at a
-glance when browsing Recipes and planning dinners (MEA-259).
+Each of the original 80 default dishes (6.18) but Sloppy Joes has a photo, so people can tell them
+apart at a glance when browsing Recipes and planning dinners (MEA-259).
 
 - The photos are in `default-dish-photos/`, packaged with the app, so nothing is searched for or
   downloaded while it runs. They're sourced as the standard images are (6.14): CC0 or public
   domain photos from Wikimedia Commons and Openverse, or Pixabay photos under the Pixabay Content
-  License, never AI-generated. None of those had a photo of Sloppy Joes, so its photo is from
-  Unsplash, under the Unsplash License, which also needs no credit. Each was chosen to show the
-  dish plainly and without a brand, then cropped to 4:3, as the recipe page shows a photo (7), and
-  stored as the recipe editor stores one (2.3): a JPEG of up to 1200 x 900 px and a 400 x 300 px
-  thumbnail. They're named after the dish as standard images are: `bbq-pulled-pork.jpg` and
-  `bbq-pulled-pork-thumb.jpg` for BBQ Pulled Pork. `default-dish-photos/credits.csv` records each
-  one's source, author and license. Dishes a later revision adds (6.18) may have no photo.
+  License, never AI-generated. None of those had a photo of Sloppy Joes, so it has none. Each was
+  chosen to show the dish plainly and without a brand, then cropped to 4:3, as the recipe page
+  shows a photo (7), and stored as the recipe editor stores one (2.3): a JPEG of up to 1200 x 900
+  px and a 400 x 300 px thumbnail. They're named after the dish as standard images are:
+  `bbq-pulled-pork.jpg` and `bbq-pulled-pork-thumb.jpg` for BBQ Pulled Pork.
+  `default-dish-photos/credits.csv` records each one's source, author and license. Dishes a later
+  revision adds (6.18) may have no photo.
 - A household's dishes get them once, and `default_dish_photos_added_at` records when. Each dish
-  named as one of the 80, matched ignoring case as dish names are (2.3), with no photo gets a copy
+  named as one of the 79, matched ignoring case as dish names are (2.3), with no photo gets a copy
   of that photo of its own, stored as a photo saved in the recipe editor is: shown only to its
   household, backed up, and replaced or removed in the recipe editor like any other (4.4, 4.5). That
   includes a dish the household had before the default dishes came, and an archived dish, which

@@ -63,16 +63,17 @@ it('gives older households the standard items and default dishes, with their pho
 	// 6.18 and 6.19.
 	const dishes = recipes();
 	expect(dishes).toHaveLength(80);
-	const photos = new Set(dishes.map((dish) => dish.photoKey));
-	expect(photos.size).toBe(80);
-	expect(photos.has(null)).toBe(false);
+	// Each but Sloppy Joes with a photo of its own.
+	const withoutPhoto = dishes.filter((dish) => dish.photoKey === null);
+	expect(withoutPhoto.map((dish) => dish.name)).toEqual(['Sloppy Joes']);
+	expect(new Set(dishes.map((dish) => dish.photoKey)).size).toBe(80);
 	expect(getHousehold(householdId).defaultDishPhotosAddedAt).not.toBeNull();
 	// Two files for each image and photo.
-	expect(readdirSync(join(dataDir, 'photos'))).toHaveLength(736);
+	expect(readdirSync(join(dataDir, 'photos'))).toHaveLength(734);
 
 	// Starting again adds nothing.
 	await init();
-	expect(readdirSync(join(dataDir, 'photos'))).toHaveLength(736);
+	expect(readdirSync(join(dataDir, 'photos'))).toHaveLength(734);
 	expect(recipes()).toHaveLength(80);
 });
 

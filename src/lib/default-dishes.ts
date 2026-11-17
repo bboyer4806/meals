@@ -6,8 +6,8 @@
 // each later one's dishes when the app starts, so revisions are only ever added at the end: a
 // change to one already released would never reach the households that got it.
 
-// Revision 1 (MEA-258): the original dishes. Only they have photos packaged with the app; a later
-// revision's dishes may have none (design 6.19, MEA-259).
+// Revision 1 (MEA-258): the original dishes. Only they have photos packaged with the app, all but
+// Sloppy Joes; a later revision's dishes may have none (design 6.19, MEA-259).
 export const ORIGINAL_DEFAULT_DISHES: readonly string[] = [
 	// Main dishes (30)
 	'Hamburgers', 'Hot Dogs', 'Spaghetti', 'Pizza', 'Tacos', 'Quesadillas', 'Burritos',

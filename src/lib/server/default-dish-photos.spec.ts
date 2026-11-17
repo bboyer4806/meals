@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseCsv } from '../csv.ts';
-import { ORIGINAL_DEFAULT_DISHES } from '../default-dishes.ts';
 import { loadConfig } from './config.ts';
 import { findDishByName, getDish, setDishArchived, updateDish } from './data/dishes.ts';
 import { addDefaultDishesToAllHouseholds, getHousehold } from './data/households.ts';
@@ -14,6 +13,7 @@ import {
 	assignAllDefaultDishPhotos,
 	assignDefaultDishPhotos,
 	checkDefaultDishPhotos,
+	DISHES_WITH_PHOTOS,
 	LIBRARY
 } from './default-dish-photos.ts';
 import { householdOwnsPhoto, PHOTO_MAX_BYTES, photoPath, THUMB_MAX_BYTES } from './photos.ts';
@@ -35,8 +35,10 @@ const LATER = NOW + 24 * 60 * 60 * 1000;
 const KEY = '0123456789abcdef0123456789abcdef';
 
 describe('the library', () => {
-	it("has each original default dish's photo and thumbnail, and its credits", () => {
-		const files = ORIGINAL_DEFAULT_DISHES.flatMap((name) => [
+	it('has a photo and thumbnail for each original default dish but Sloppy Joes, and credits', () => {
+		expect(DISHES_WITH_PHOTOS).toHaveLength(79);
+		expect(DISHES_WITH_PHOTOS).not.toContain('Sloppy Joes');
+		const files = DISHES_WITH_PHOTOS.flatMap((name) => [
 			`${libraryName(name)}.jpg`,
 			`${libraryName(name)}-thumb.jpg`
 		]);
@@ -45,7 +47,7 @@ describe('the library', () => {
 	});
 
 	it('stores them as the recipe editor stores a photo: 4:3 JPEGs, the thumbnail 400 px (2.3)', () => {
-		for (const name of ORIGINAL_DEFAULT_DISHES) {
+		for (const name of DISHES_WITH_PHOTOS) {
 			const photo = readFileSync(join(LIBRARY, `${libraryName(name)}.jpg`));
 			const thumb = readFileSync(join(LIBRARY, `${libraryName(name)}-thumb.jpg`));
 			for (const bytes of [photo, thumb]) expect([...bytes.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
@@ -64,14 +66,11 @@ describe('the library', () => {
 		if (csv.kind !== 'rows') throw new Error('Not CSV');
 		const [header, ...rows] = csv.rows;
 		expect(header).toEqual(['Dish', 'Source', 'Author', 'License']);
-		expect(rows.map((row) => row[0])).toEqual([...ORIGINAL_DEFAULT_DISHES]);
+		expect(rows.map((row) => row[0])).toEqual([...DISHES_WITH_PHOTOS]);
 		for (const [dish, source, author, license] of rows) {
 			expect(source, dish).toMatch(/^https:\/\/\S+$/);
 			expect(author, dish).not.toBe('');
-			expect(
-				['CC0', 'Public domain', 'Pixabay Content License', 'Unsplash License'],
-				dish
-			).toContain(license);
+			expect(['CC0', 'Public domain', 'Pixabay Content License'], dish).toContain(license);
 		}
 	});
 });
@@ -151,13 +150,14 @@ describe('assignDefaultDishPhotos', () => {
 		);
 	}
 
-	it('gives every default dish a copy of its own photo', async () => {
+	it('gives every default dish but Sloppy Joes a copy of its own photo', async () => {
 		addDefaultDishesToAllHouseholds(NOW);
 
 		await assignDefaultDishPhotos(householdId, NOW);
 
-		const keys = ORIGINAL_DEFAULT_DISHES.map((name) => copyOf(name, name));
-		expect(new Set(keys).size).toBe(80);
+		const keys = DISHES_WITH_PHOTOS.map((name) => copyOf(name, name));
+		expect(new Set(keys).size).toBe(79);
+		expect(photoOf('Sloppy Joes')).toBeNull();
 		expect(storedFiles()).toEqual(filesFor(...keys));
 		expect(getHousehold(householdId).defaultDishPhotosAddedAt).toBe(NOW);
 	});

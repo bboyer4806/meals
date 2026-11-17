@@ -71,9 +71,9 @@ to the test process's `PATH`. Keep real data out of `.e2e-data`.
 - Each standard item in `src/lib/server/standard-items.ts` has a photo in `standard-images/`,
   `<name>.jpg` and `<name>-thumb.jpg`, and a row in its `credits.csv` (design 6.14). The tests,
   and the app when it starts, check that every one is there.
-- Each of the original default dishes in `src/lib/default-dishes.ts` has a photo in
-  `default-dish-photos/`, named and credited the same way (design 6.19). Dishes a later revision
-  adds may have none.
+- Each of the original default dishes in `src/lib/default-dishes.ts` but Sloppy Joes has a photo
+  in `default-dish-photos/`, named and credited the same way (design 6.19); `DISHES_WITH_PHOTOS` in
+  `src/lib/server/default-dish-photos.ts` lists them. Dishes a later revision adds may have none.
 - Routes import shared code as `#lib/...` (`package.json` imports).
 
 ## Database

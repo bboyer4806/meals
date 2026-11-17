@@ -68,12 +68,12 @@ test('sets up a household on first sign-in', async ({ page, db, context, baseURL
 		.poll(() => zucchini.locator('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
 		.toBe(400);
 
-	// Its Recipes start with the default dishes (6.18), each with a copy of its photo of its own
-	// (6.19), shown like any recipe's photo.
+	// Its Recipes start with the default dishes (6.18), each but Sloppy Joes with a copy of its photo
+	// of its own (6.19), shown like any recipe's photo.
 	const photos = db
 		.prepare('select count(distinct photo_key) from dishes where household_id = ?')
 		.pluck();
-	expect(photos.get(household.id)).toBe(80);
+	expect(photos.get(household.id)).toBe(79);
 	await page.goto('/recipes');
 	const pie = page.getByRole('link', { name: /^Apple Pie/ });
 	await expect(pie.locator('img')).toHaveAttribute('src', /^\/photos\/[0-9a-f]{32}-thumb\.jpg$/);
