@@ -351,6 +351,7 @@ export const dishIngredients = sqliteTable(
 			foreignColumns: [items.householdId, items.id]
 		}),
 		uniqueIndex('dish_ingredients_dish_position').on(t.dishId, t.position),
+		index('dish_ingredients_household_dish').on(t.householdId, t.dishId),
 		index('dish_ingredients_item').on(t.itemId),
 		check('dish_ingredients_amount', sql`${t.amount} > 0`),
 		check('dish_ingredients_unit', sql`${t.unit} is null or ${t.amount} is not null`)
@@ -442,6 +443,7 @@ export const dinnerDishes = sqliteTable(
 			foreignColumns: [dishes.householdId, dishes.id]
 		}),
 		uniqueIndex('dinner_dishes_dinner_dish').on(t.dinnerId, t.dishId),
+		index('dinner_dishes_household_dish').on(t.householdId, t.dishId),
 		index('dinner_dishes_dish').on(t.dishId),
 		check('dinner_dishes_role', sql`${t.role} in ('main', 'side', 'dessert', 'other')`)
 	]

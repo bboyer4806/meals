@@ -1,0 +1,2 @@
+CREATE INDEX `dinner_dishes_household_dish` ON `dinner_dishes` (`household_id`,`dish_id`);--> statement-breakpoint
+CREATE INDEX `dish_ingredients_household_dish` ON `dish_ingredients` (`household_id`,`dish_id`);
