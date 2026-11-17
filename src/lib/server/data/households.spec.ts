@@ -159,6 +159,19 @@ describe('households', () => {
 		expect(listMembers(householdId).map((m) => m.id)).toEqual([userId]);
 	});
 
+	it('leaves one of two members who remove each other at once (2.3, MEA-114)', () => {
+		const { householdId, userId } = makeHousehold();
+		const other = db()
+			.insert(users)
+			.values({ householdId, googleSub: 'g2', email: 'b@example.com', name: 'B', createdAt: 0 })
+			.returning()
+			.get();
+		// Both were signed in when they sent Remove, and the first removal took the second's sender.
+		removeMember(householdId, userId, other.id);
+		expectHttpError(() => removeMember(householdId, other.id, userId), 404);
+		expect(listMembers(householdId).map((m) => m.id)).toEqual([userId]);
+	});
+
 	it("sorts members by name ignoring case, so Émile sorts with the E's (MEA-88)", () => {
 		const { householdId, userId } = makeHousehold();
 		db().update(users).set({ name: 'Zoe' }).where(eq(users.id, userId)).run();
