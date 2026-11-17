@@ -584,3 +584,51 @@ describe('completed-requests', () => {
 		expect(rows()).toEqual(before.map((row) => ({ ...row, completed_at: null, asked_by: null })));
 	});
 });
+
+// The change that keeps invites per household and email, and has setting up a household take an
+// invite to start one (design 6.1, MEA-112).
+describe('household-invites', () => {
+	it('keeps every invite, and gives an account without a household an invite to start one', () => {
+		const sqlite = new Database(':memory:');
+		migrate(sqlite, foldersBefore('0027_household-invites'));
+		const run = (statement: string, ...values: unknown[]) =>
+			Number(sqlite.prepare(statement).run(...values).lastInsertRowid);
+		const household = (name: string) =>
+			run(
+				"insert into households (name, default_servings, time_zone, created_at) values (?, 4, 'UTC', 0)",
+				name
+			);
+		const mine = household('Mine');
+		const theirs = household('Theirs');
+		run(
+			"insert into users (household_id, google_sub, email, name, created_at) values (?, 'a', 'member@example.com', 'M', 1)",
+			mine
+		);
+		run(
+			"insert into users (google_sub, email, name, created_at) values ('b', 'new@example.com', 'N', 2)"
+		);
+		const invite = (email: string, householdId: number | null) =>
+			run(
+				'insert into invites (email, household_id, created_at) values (?, ?, 3)',
+				email,
+				householdId
+			);
+		invite('sam@example.com', mine);
+		invite('pat@example.com', null);
+
+		migrate(sqlite, 'drizzle');
+
+		expect(
+			sqlite.prepare('select email, household_id, created_at from invites order by id').all()
+		).toEqual([
+			{ email: 'sam@example.com', household_id: mine, created_at: 3 },
+			{ email: 'pat@example.com', household_id: null, created_at: 3 },
+			{ email: 'new@example.com', household_id: null, created_at: 2 }
+		]);
+		// Another household can invite the same person, but no household twice, and nobody has two
+		// invites to start a household.
+		invite('sam@example.com', theirs);
+		expect(() => invite('sam@example.com', mine)).toThrow(/UNIQUE/);
+		expect(() => invite('pat@example.com', null)).toThrow(/UNIQUE/);
+	});
+});

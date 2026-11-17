@@ -190,6 +190,20 @@
       "when": 1794880575538,
       "tag": "0026_household-dish-indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1794882274636,
+      "tag": "0027_household-invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1794882286946,
+      "tag": "0028_start-household-invites",
+      "breakpoints": true
     }
   ]
 }

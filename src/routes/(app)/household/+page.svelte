@@ -120,7 +120,7 @@
 	{#if messageFor('invite')?.error}<p class="error" role="alert">{form?.error}</p>{/if}
 	{#if messageFor('invite')?.message}<p role="status">{form?.message}</p>{/if}
 	{#if data.invites.length > 0}
-		<p class="muted">Waiting for them to sign in:</p>
+		<p class="muted">Waiting for them to join:</p>
 		<ul class="list">
 			{#each data.invites as invite (invite.id)}
 				<li class="row">

@@ -11,29 +11,98 @@ import { createItem, findItemByName } from './items.ts';
 export type HouseholdSettings = { name: string; defaultServings: number; timeZone: string };
 
 /**
- * Creates a household for a signed-in person who doesn't have one yet (the setup page). Its
- * catalog starts with the standard items (design 6.13), and its Recipes with the default dishes
- * (6.18).
+ * Creates a household for a signed-in person who doesn't have one yet (the setup page): the admin,
+ * or someone with an invite to start one (6.1). Its catalog starts with the standard items (design
+ * 6.13), and its Recipes with the default dishes (6.18).
  */
-export function createHousehold(userId: number, settings: HouseholdSettings, now: number): number {
+export function createHousehold(
+	userId: number,
+	adminEmail: string,
+	settings: HouseholdSettings,
+	now: number
+): number {
 	return transaction(() => {
-		const user = db()
-			.select({ householdId: users.householdId })
-			.from(users)
-			.where(eq(users.id, userId))
-			.get();
-		if (!user) error(404, 'Not found');
-		if (user.householdId !== null) error(400, 'You already belong to a household');
+		const email = newcomerEmail(userId);
+		if (!mayStartHousehold(email, adminEmail)) {
+			error(400, 'Your invite to start a household was cancelled.');
+		}
 		const household = db()
 			.insert(households)
 			.values({ ...settings, createdAt: now })
 			.returning({ id: households.id })
 			.get();
-		db().update(users).set({ householdId: household.id }).where(eq(users.id, userId)).run();
+		putInHousehold(userId, email, household.id);
 		addStandardItems(household.id, now);
 		addDefaultDishes(household.id, now);
 		return household.id;
 	});
+}
+
+/**
+ * For the setup page: the households that invited someone signed in without a household, each to
+ * join by its invite, and whether they may set up one of their own (6.1, MEA-112). Sorted by name
+ * in code rather than in SQL, so "Évora" sorts with the E's (MEA-88).
+ */
+export function setupChoices(userId: number, adminEmail: string) {
+	const email = newcomerEmail(userId);
+	const joinable = db()
+		.select({ id: invites.id, householdName: households.name })
+		.from(invites)
+		.innerJoin(households, eq(invites.householdId, households.id))
+		.where(eq(invites.email, email))
+		.all()
+		.sort((a, b) => a.householdName.localeCompare(b.householdName));
+	return { invites: joinable, mayStart: mayStartHousehold(email, adminEmail) };
+}
+
+/**
+ * Joins the household whose invite this is, for someone signed in without a household (the setup
+ * page, 6.1, MEA-112). An invite to someone else, or one cancelled meanwhile, can't be used.
+ */
+export function joinHousehold(userId: number, inviteId: number): number {
+	return transaction(() => {
+		const email = newcomerEmail(userId);
+		const invite = db()
+			.select({ householdId: invites.householdId })
+			.from(invites)
+			.where(and(eq(invites.id, inviteId), eq(invites.email, email)))
+			.get();
+		if (!invite || invite.householdId === null) error(400, 'That invite was cancelled.');
+		putInHousehold(userId, email, invite.householdId);
+		return invite.householdId;
+	});
+}
+
+/** The email of someone signed in who hasn't joined or set up a household yet (6.1). */
+function newcomerEmail(userId: number): string {
+	const user = db()
+		.select({ householdId: users.householdId, email: users.email })
+		.from(users)
+		.where(eq(users.id, userId))
+		.get();
+	if (!user) error(404, 'Not found');
+	if (user.householdId !== null) error(400, 'You already belong to a household');
+	return user.email;
+}
+
+/** The admin may set up a household, and so may someone with an invite to start one (6.1). */
+function mayStartHousehold(email: string, adminEmail: string): boolean {
+	if (email === adminEmail) return true;
+	const invite = db()
+		.select({ id: invites.id })
+		.from(invites)
+		.where(and(eq(invites.email, email), isNull(invites.householdId)))
+		.get();
+	return invite !== undefined;
+}
+
+/**
+ * Puts someone in a household they joined or set up, which uses up every invite for their email,
+ * whichever household it's from (6.1, MEA-112).
+ */
+function putInHousehold(userId: number, email: string, householdId: number): void {
+	db().update(users).set({ householdId }).where(eq(users.id, userId)).run();
+	db().delete(invites).where(eq(invites.email, email)).run();
 }
 
 /**
@@ -209,31 +278,36 @@ export function removeMember(householdId: number, actingUserId: number, memberId
 
 export type InviteResult =
 	| { kind: 'invited' }
-	| { kind: 'joined' }
 	| { kind: 'member' }
-	| { kind: 'invited-already' };
+	| { kind: 'invited-already' }
+	| { kind: 'full' };
+
+/** The most invites a household, or the admin to start households, can have waiting (6.1). */
+export const INVITE_LIMIT = 20;
 
 /**
- * `householdId` null invites the person to create a new household (admin only). Someone who has
- * an account but never set up a household (they stopped at the setup page, or were removed and
- * signed in again) joins right away, as an invited account does when it signs in (design 6.1).
+ * `householdId` null invites the person to create a new household (admin only). Each household's
+ * invites stand on their own, so another household's invite to the same person never stops one
+ * (MEA-112). Someone signed in who hasn't joined or set up a household finds it on the setup page
+ * (design 6.1).
  */
 export function createInvite(householdId: number | null, email: string, now: number): InviteResult {
 	const address = email.toLowerCase();
+	const owner = inviteOwner(householdId);
 	return transaction(() => {
 		const account = db()
-			.select({ id: users.id, householdId: users.householdId })
+			.select({ householdId: users.householdId })
 			.from(users)
 			.where(eq(users.email, address))
 			.get();
-		if (account) {
-			if (account.householdId !== null || householdId === null) return { kind: 'member' };
-			db().update(users).set({ householdId }).where(eq(users.id, account.id)).run();
-			return { kind: 'joined' };
-		}
-		if (db().select({ id: invites.id }).from(invites).where(eq(invites.email, address)).get()) {
-			return { kind: 'invited-already' };
-		}
+		if (account !== undefined && account.householdId !== null) return { kind: 'member' };
+		const invited = db()
+			.select({ id: invites.id })
+			.from(invites)
+			.where(and(owner, eq(invites.email, address)))
+			.get();
+		if (invited) return { kind: 'invited-already' };
+		if (listInvites(householdId).length >= INVITE_LIMIT) return { kind: 'full' };
 		db().insert(invites).values({ email: address, householdId, createdAt: now }).run();
 		return { kind: 'invited' };
 	});
@@ -264,8 +338,9 @@ export function cancelInvite(householdId: number | null, inviteId: number): void
 }
 
 /**
- * For the admin page: names and member emails only, never household data. Sorted by name in code
- * rather than in SQL, so "Évora" sorts with the E's (MEA-88).
+ * For the admin page: names, member emails and the emails of the invites waiting, never household
+ * data (MEA-112). Sorted by name in code rather than in SQL, so "Évora" sorts with the E's
+ * (MEA-88).
  */
 export function listHouseholds() {
 	return db()
@@ -273,7 +348,9 @@ export function listHouseholds() {
 			id: households.id,
 			name: households.name,
 			createdAt: households.createdAt,
-			members: sql<string | null>`group_concat(${users.email}, ', ')`
+			members: sql<string | null>`group_concat(${users.email}, ', ')`,
+			invites: sql<string | null>`(select group_concat(${invites.email}, ', ' order by ${invites.email})
+				from ${invites} where ${invites.householdId} = ${households.id})`
 		})
 		.from(households)
 		.leftJoin(users, eq(users.householdId, households.id))

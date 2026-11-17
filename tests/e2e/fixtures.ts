@@ -115,6 +115,27 @@ export function addPerson(db: Database.Database, { tourSeen = true } = {}): Pers
 }
 
 /**
+ * Someone who signed in but hasn't joined or set up a household, named Robin, not signed in here.
+ * Setup lets them set one up only with an invite to start one, which `startInvite` gives them
+ * (design 6.1).
+ */
+export function addNewcomer(
+	db: Database.Database,
+	{ startInvite }: { startInvite: boolean }
+): { userId: number; email: string } {
+	counter += 1;
+	const tag = `${test.info().workerIndex}-${counter}-${Date.now()}`;
+	const email = `newcomer-${tag}@example.com`;
+	if (startInvite) db.prepare('insert into invites (email, created_at) values (?, 0)').run(email);
+	const userId = Number(
+		db
+			.prepare("insert into users (google_sub, email, name, created_at) values (?, ?, 'Robin', 0)")
+			.run(`sub-${tag}`, email).lastInsertRowid
+	);
+	return { userId, email };
+}
+
+/**
  * The ADMIN_EMAIL account, made by whichever test needs it first, in a household of its own.
  * It has finished the first-time tour.
  */

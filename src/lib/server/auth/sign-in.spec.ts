@@ -40,11 +40,33 @@ describe('signIn', () => {
 		expect(db().select().from(invites).all()).toHaveLength(0);
 	});
 
-	it('starts a person invited to create a household without one', () => {
+	it('starts a person invited to create a household without one, keeping the invite', () => {
 		createInvite(null, 'new@example.com', 0);
 		const result = signIn(profile('new@example.com'), ADMIN, 0);
 		if (result.kind !== 'signed-in') throw new Error('expected sign-in');
 		expect(userFor(result.userId)?.householdId).toBeNull();
+		// It's used up when they set up their household (6.1).
+		expect(db().select().from(invites).all()).toHaveLength(1);
+	});
+
+	it('leaves someone invited by more than one household to choose, keeping the invites (MEA-112)', () => {
+		const mine = makeHousehold();
+		const theirs = makeHousehold();
+		createInvite(mine.householdId, 'sam@example.com', 0);
+		createInvite(theirs.householdId, 'sam@example.com', 0);
+		const result = signIn(profile('Sam@Example.com'), ADMIN, 0);
+		if (result.kind !== 'signed-in') throw new Error('expected sign-in');
+		expect(userFor(result.userId)?.householdId).toBeNull();
+		expect(db().select().from(invites).all()).toHaveLength(2);
+	});
+
+	it('leaves the admin to choose when a household invited them too (MEA-112)', () => {
+		const { householdId } = makeHousehold();
+		createInvite(householdId, ADMIN, 0);
+		const result = signIn(profile(ADMIN), ADMIN, 0);
+		if (result.kind !== 'signed-in') throw new Error('expected sign-in');
+		expect(userFor(result.userId)?.householdId).toBeNull();
+		expect(db().select().from(invites).all()).toHaveLength(1);
 	});
 
 	it('recognizes a returning account by its Google ID and refreshes its email', () => {

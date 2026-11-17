@@ -4,6 +4,7 @@ import {
 	cancelInvite,
 	createInvite,
 	getHousehold,
+	INVITE_LIMIT,
 	listInvites,
 	listMembers,
 	removeMember,
@@ -32,6 +33,11 @@ export function load({ locals }) {
 
 const storeName = nameField(40, 'a store name');
 
+// A household can have only so many invites waiting (design 6.1, MEA-112).
+const TOO_MANY_INVITES =
+	`Your household can have ${INVITE_LIMIT} invites waiting at a time. ` +
+	'Cancel one to invite someone else.';
+
 function storeNameFailure(action: string, name: string, result: StoreNameResult) {
 	if (result.kind === 'saved') return null;
 	const error = result.archived
@@ -59,10 +65,10 @@ export const actions = {
 			return fail(400, { action: 'invite', error: `${email} already has a Meals account.` });
 		}
 		if (result.kind === 'invited-already') {
-			return fail(400, { action: 'invite', error: `${email} already has an invite.` });
+			return fail(400, { action: 'invite', error: `Your household already invited ${email}.` });
 		}
-		if (result.kind === 'joined') {
-			return { action: 'invite', message: `${email} already had an account and has joined.` };
+		if (result.kind === 'full') {
+			return fail(400, { action: 'invite', error: TOO_MANY_INVITES });
 		}
 		return {
 			action: 'invite',

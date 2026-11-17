@@ -332,9 +332,10 @@ lost, so is everything. Moving backups off the server later is a small change.
   the server, Dokku's nginx adds `strict-transport-security: max-age=15724800; includeSubdomains`
   to every response, its default for an app with a certificate, so a browser that has been here
   goes straight to https for the next 6 months.
-- **Admin** is only the `ADMIN_EMAIL` account. On Admin it sees household names and member
-  emails, not household data. Through ChatGPT or Claude, once it connects them, it reads every
-  household's data and changes what it approves (6.17).
+- **Admin** is only the `ADMIN_EMAIL` account. On Admin it sees household names, member emails
+  and the emails each household invited (MEA-112), not household data. Through ChatGPT or
+  Claude, once it connects them, it reads every household's data and changes what it approves
+  (6.17).
 - **AI assistants** (MEA-266, 6.17). ChatGPT and Claude connect with OAuth 2.1: they register
   themselves, but only with their own redirect addresses, so a code only ever goes to them, and
   only the admin, signed in with Google, can allow one. Codes need PKCE (S256), and work once.
@@ -422,7 +423,7 @@ until then; 6.13), `default_dishes_revision` (the last revision of the default d
 got; 0 until it gets the first; 6.18), `default_dish_photos_added_at` (when its dishes got the
 default dishes' photos, which happens once; empty until then; 6.19).
 
-**users:** `household_id` (empty only until household setup is done), `google_sub`
+**users:** `household_id` (empty only until they join or set up a household; 6.1), `google_sub`
 (Google's permanent account ID, unique), `email` (unique, lowercase), `name`,
 `created_at`, `whats_new_seen` (the version, such as `1.5`, of the newest release they've seen
 on What's new; empty until they first open it; section 7), `tour_seen` (when they finished or
@@ -433,8 +434,9 @@ as having seen 1.5.
 
 **sessions:** `id` (SHA-256 of the token), `user_id`, `expires_at`.
 
-**invites:** `email` (unique, lowercase), `household_id` (empty means "create a new
-household"), `created_at` (E5).
+**invites:** `email` (lowercase), `household_id` (empty means "create a new
+household"), `created_at` (E5). One per household and email, so each household's invite stands
+on its own, and at most one per email for a new household (MEA-112).
 
 **stores:** `name` (unique per household, ignoring case), `archived_at` (Q24).
 
@@ -549,21 +551,33 @@ and proposals at it, so revoking it deletes them too.
    so the page never shows text from its address. Someone already signed in, as after Back to
    Google, goes on to Meals instead.
 2. A known Google account is signed in, and its email and name are refreshed.
-3. An unknown account is matched by email:
-   - An invite to a household: the account joins that household (E5).
-   - An invite for a new household, or the `ADMIN_EMAIL` account signing in for the
-     first time: the account is created without a household and goes to the setup page
-     (household name, usual servings, time zone).
+3. An unknown account is matched by email against its invites:
+   - One invite, to a household: the account joins that household (E5).
+   - Invites from more than one household, an invite for a new household, or the
+     `ADMIN_EMAIL` account signing in for the first time: the account is created without a
+     household and goes to the setup page.
    - No invite: an "invite-only" page shows the email they used, so whoever invited
      them can check the address.
 
-   A used invite is deleted.
+   The setup page asks someone signed in without a household which household to join
+   (MEA-112). It lists each household that invited them, by name, with Join, and for someone
+   with an invite for a new household, or the admin, the form to set one up (household name,
+   usual servings, time zone). Nobody else can set up a household. Joining or setting up a
+   household uses up every invite for their email, from any household. Join on an invite that
+   was cancelled after the page opened says "That invite was cancelled." and shows the
+   invites as they are now. When none is left, the page says there's no invite waiting for
+   their address, with Use another account.
 4. Members (all equal; E2) can invite by email, cancel invites, and remove other
-   members. Inviting fails if the email already belongs to a member of any household or
-   already has an invite. A removed member's account and sessions are deleted, and they
-   can be invited again.
-5. The admin invites new households from the Admin page, which also lists households and
-   the last backup date. The admin is also a normal member of their own household.
+   members. Each household's invites stand on their own, so another household's invite to
+   the same email never stops one (MEA-112). Inviting fails if the email already belongs to
+   a member of any household, if the household already invited it, or if the household
+   already has 20 invites waiting, the most it can have at a time. An invite to someone
+   signed in without a household waits for them on the setup page. A removed member's
+   account and sessions are deleted, and they can be invited again.
+5. The admin invites new households from the Admin page, up to 20 waiting at a time. An
+   invite for a new household lasts until its household is set up. Admin also lists
+   households, each with its members' emails and the emails it invited (MEA-112), and the
+   last backup date. The admin is also a normal member of their own household.
 6. An invite or member that's already gone counts as done (MEA-69). Cancel on an invite that
    was used or cancelled after the page opened, on the Household or Admin page, and Remove on
    a member someone else removed meanwhile, show the page as it is now (6.11).
@@ -1167,7 +1181,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | Sign in          | `/login`                             | "Sign in with Google", and above it, after a sign-in that didn't finish, why (6.1).                                                  |
 | Invite-only      | `/not-invited`                       | Shown to an account without an invite, with the email it used.                                                                      |
-| Household setup  | `/setup`                             | First sign-in for a new household: name, usual servings, time zone.                                                                 |
+| Household setup  | `/setup`                             | After signing in without a household: the households that invited them, each with Join, and for a new household, name, usual servings and time zone (6.1). |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | Grocery History  | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
 | Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. |
@@ -1183,7 +1197,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
 | Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
 | What's new       | `/whats-new`                         | See below.                                                                                                                           |
-| Admin            | `/admin`                             | Invite households, list households, last backup date, send a test email, AI assistants. See below.                                   |
+| Admin            | `/admin`                             | Invite households, list households with their members and invites, last backup date, send a test email, AI assistants. See below.   |
 | Connect an assistant | `/oauth/authorize`               | "Connect ChatGPT to Meals?" (or Claude): what it will be able to do, Allow and Deny. Admin only (6.17).                             |
 | Proposed changes | `/ai/proposals/[id]`                 | An AI assistant's proposal: each change with its household, Now and Proposed, and Approve and Reject while it waits. Admin only (6.17). |
 
@@ -1629,7 +1643,10 @@ release's version, which clears the dot on every device. The link doesn't preloa
 that would run the page's load and clear the dot without anyone opening it.
 
 **Admin.** Only the `ADMIN_EMAIL` account can open it (4.5). Its sections are Backups, Email, AI
-assistants, Invite a household and Households. AI assistants (MEA-266) shows the address to connect
+assistants, Invite a household and Households. Invite a household lists the invites for new
+households not yet set up, each with Cancel. Households lists each household with its members'
+emails, the emails it invited that haven't joined, as "Invited: pat@example.com, sam@example.com"
+(MEA-112), and when it started. AI assistants (MEA-266) shows the address to connect
 ChatGPT or Claude with, the connections, each with when it was connected and last used and Revoke,
 which asks first, and the 20 newest proposals, each linking to its page with its assistant, how many
 changes, when it was proposed and its status (6.17). Email checks that Meals can send email
@@ -1763,6 +1780,7 @@ ingredients.
 | 1 1/2 eggs                                                       | Shown as a fraction; you decide (Q33).                                                                                                              |
 | Large phone photos                                               | Resized on the phone before upload.                                                                                                                 |
 | Someone signs in with a different address than the one invited  | The invite-only page shows the address they used.                                                                                                   |
+| Two households invite the same person                            | Each invite stands on its own, and the person chooses which household to join when they sign in (6.1, MEA-112).                                    |
 | "Today" is wrong late at night                                   | The household's time zone decides the date.                                                                                                         |
 | The server's disk fails                                          | Everything is lost (Q13). Moving backups off the server is in section 12.                                                                          |
 | A deploy runs migrations while the old version is still serving  | For a few seconds the old version may show errors. Acceptable at this size.                                                                        |

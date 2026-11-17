@@ -10,7 +10,13 @@ import {
 } from '#lib/server/auth/oauth.ts';
 import { latestBackupDate } from '#lib/server/backups.ts';
 import { config } from '#lib/server/config.ts';
-import { cancelInvite, createInvite, listHouseholds, listInvites } from '#lib/server/data/households.ts';
+import {
+	cancelInvite,
+	createInvite,
+	INVITE_LIMIT,
+	listHouseholds,
+	listInvites
+} from '#lib/server/data/households.ts';
 import { sendEmail } from '#lib/server/email.ts';
 import { emailField, id, parseForm } from '#lib/server/forms.ts';
 
@@ -26,6 +32,11 @@ const NOT_SENT = "Couldn't send test email. Please try again.";
 
 // How many of the newest proposals AI assistants shows (design 7, Admin).
 const PROPOSALS_SHOWN = 20;
+
+// The admin can have only so many invites to start a household waiting (design 6.1, MEA-112).
+const TOO_MANY_INVITES =
+	`You can have ${INVITE_LIMIT} invites to start a household waiting at a time. ` +
+	'Cancel one to invite another household.';
 
 export function load({ locals, url }) {
 	requireAdmin(locals);
@@ -57,7 +68,13 @@ export const actions = {
 			return fail(400, { action: 'invite', error: `${email} already has a Meals account.` });
 		}
 		if (result.kind === 'invited-already') {
-			return fail(400, { action: 'invite', error: `${email} already has an invite.` });
+			return fail(400, {
+				action: 'invite',
+				error: `You already invited ${email} to start a household.`
+			});
+		}
+		if (result.kind === 'full') {
+			return fail(400, { action: 'invite', error: TOO_MANY_INVITES });
 		}
 		return {
 			action: 'invite',
