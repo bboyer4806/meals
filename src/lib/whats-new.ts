@@ -14,6 +14,17 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.17',
+		released: '2026-11-17',
+		lines: [
+			'Recipes now includes 80 everyday dishes, such as Pancakes, Tacos, Meatloaf and Apple Pie, ready to plan. Each shows No recipe until you add one, and you can rename or archive them like your own. A dish you already had with one of these names stays as it was.',
+			'The 80 everyday dishes come with photos, all but Sloppy Joes. A dish of yours with one of their names gets the same photo if it had none. Change or remove any photo on Edit recipe.',
+			'When your connection drops, tapping something on the grocery list, Items, Household or a recipe no longer replaces the page with an error. The page, any open sheet and what you typed stay put, and Meals asks you to check your connection and try again.',
+			'Two households can now invite the same person. Someone invited by more than one chooses which household to join when they sign in, and the other invites are then removed.',
+			'The site admin can now see the email addresses each household has invited. The Privacy page now says this.'
+		]
+	},
+	{
 		version: '1.16',
 		released: '2026-11-12',
 		lines: [
