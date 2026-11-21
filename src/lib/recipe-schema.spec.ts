@@ -344,6 +344,11 @@ describe('schemaRecipeValues', () => {
 		);
 	});
 
+	it('drops &#129;, &#141;, &#143;, &#144; and &#157;, which windows-1252 leaves undefined (MEA-116)', () => {
+		// HTML reads them as control characters, which show as nothing.
+		expect(fromRecipe({ name: 'Peach&#129; pie&#x8D;&#143;&#144;&#157;' }).name).toBe('Peach pie');
+	});
+
 	it('reads text written to be slow to search as fast as any other', () => {
 		const started = performance.now();
 		// 1 MB each of tags that never close.

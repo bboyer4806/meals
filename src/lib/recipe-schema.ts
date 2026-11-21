@@ -81,6 +81,9 @@ export function findRecipe(jsonLd: unknown, depth = 0): JsonLdNode | null {
 const BREAK = /<\/?(?:br|p|div|li|ol|ul|h[1-6])\b[^<>]*>/gi;
 // Any other tag, such as a link around an ingredient's name.
 const TAG = /<\/?[a-z][^<>]*>/gi;
+// What HTML reads &#129;, &#141;, &#143;, &#144; and &#157;, which windows-1252 leaves undefined,
+// as: control characters, which show as nothing, so they're dropped (MEA-116).
+const UNDEFINED_1252 = /[\x81\x8d\x8f\x90\x9d]/g;
 
 /** Reads one piece of a page's text (plainReader). */
 type Plain = (text: string) => string;
@@ -99,7 +102,8 @@ function plainReader(): Plain {
 		// such as &eacute;, and numeric ones, where &#128; to &#159; are windows-1252's characters, as
 		// in HTML, so &#146; is ’ (design 7, MEA-116). An & in text that isn't HTML, as in
 		// "Tips&notes", stays.
-		const line = decodeHTMLStrict(text.replace(BREAK, ' ').replace(TAG, ''));
+		const decoded = decodeHTMLStrict(text.replace(BREAK, ' ').replace(TAG, ''));
+		const line = decoded.replace(UNDEFINED_1252, '');
 		const read = line.slice(0, Math.min(NORMALIZE_MAX_LENGTH, left));
 		left -= read.length;
 		return normalizeName(read);
