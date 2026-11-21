@@ -281,15 +281,15 @@ describe('listForgottenFavorites', () => {
 		expect(counts(listForgottenFavorites(householdId, TODAY))).toEqual([['Curry', 3]]);
 	});
 
-	it('leaves out dinners planned for later dates', () => {
-		// Two dinners up to today, so not a favorite yet.
-		const tacos = makeDish(householdId, recipe('Tacos'));
-		plan(tacos, [200, 300, -7]);
-		// Its last date up to today is 200 days ago, so it's forgotten until that dinner.
+	it('leaves out dishes already planned for a later date, which are not forgotten', () => {
 		const chili = makeDish(householdId, recipe('Chili'));
-		plan(chili, [200, 300, 400, -7]);
+		plan(chili, [200, 300, 400, -1]);
+		const tacos = makeDish(householdId, recipe('Tacos'));
+		plan(tacos, [200, 300, -30]);
+		const stew = makeDish(householdId, recipe('Stew'));
+		plan(stew, [200, 300, 400]);
 		expect(listForgottenFavorites(householdId, TODAY)).toEqual([
-			{ id: chili, name: 'Chili', count: 3, lastPlanned: ago(200) }
+			{ id: stew, name: 'Stew', count: 3, lastPlanned: ago(200) }
 		]);
 	});
 

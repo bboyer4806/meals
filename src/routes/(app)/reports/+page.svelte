@@ -122,8 +122,8 @@
 <section class="card" aria-labelledby="forgotten">
 	<h2 id="forgotten">Forgotten Favorites</h2>
 	<p class="muted">
-		Dishes planned at least {FAVORITE_TIMES} times, but not in the last {FORGOTTEN_DAYS} days, whatever
-		the period above.
+		Dishes planned at least {FAVORITE_TIMES} times, but not in the last {FORGOTTEN_DAYS} days or for a
+		later date, whatever the period above.
 	</p>
 	<RankingChart rows={forgottenRows} empty="No forgotten favorites right now." />
 </section>

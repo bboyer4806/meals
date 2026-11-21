@@ -128,8 +128,10 @@ export function countDinnerTypes(
 }
 
 /**
- * Active dishes planned at least 3 times up to today, but not from 90 days before today on, most
- * planned first, each with its last date up to today. It doesn't depend on the page's period.
+ * Active dishes on at least 3 dinners, the last of them dated before 90 days before today, most
+ * planned first, each with that last date. A dish already planned for a later date isn't
+ * forgotten: its last dinner is after the cutoff, so it's left out, and the dishes listed have no
+ * dinner after today to count. It doesn't depend on the page's period.
  */
 export function listForgottenFavorites(householdId: number, today: string): ForgottenFavorite[] {
 	const cutoff = addDays(today, -FORGOTTEN_DAYS);
@@ -143,7 +145,7 @@ export function listForgottenFavorites(householdId: number, today: string): Forg
 		.from(dinnerDishes)
 		.innerJoin(dinners, eq(dinners.id, dinnerDishes.dinnerId))
 		.innerJoin(dishes, eq(dishes.id, dinnerDishes.dishId))
-		.where(and(dinnersIn(householdId, null, today), isNull(dishes.archivedAt)))
+		.where(and(eq(dinners.householdId, householdId), isNull(dishes.archivedAt)))
 		.groupBy(dishes.id)
 		.all()
 		// YYYY-MM-DD dates compare as text.

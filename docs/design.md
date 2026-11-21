@@ -1661,11 +1661,10 @@ the household's own data (4.5).
   date with two dinners counts twice: Cooking at home, Eating out, Leftovers and Bringing a dish, in
   that order, each with a bar of its share, the share as a whole percent and how many dinners. A
   share above none never shows as 0% but as "<1%", and one below all as ">99%" rather than 100%.
-- **Forgotten Favorites** lists active dishes planned at least 3 times up to today, but not from 90
-  days before today on, the days Last 90 days counts, whatever the period. Each shows how many times
-  and when it was last planned ("Last planned Sat, Mar 7", with the year when it isn't this year).
-  Archived dishes and dinners planned for a later date don't count, so a dish already planned for
-  next week can still be listed.
+- **Forgotten Favorites** lists active dishes planned at least 3 times, but not from 90 days before
+  today on, the days Last 90 days counts, whatever the period. A dish already planned for a later
+  date isn't forgotten, so it isn't listed. Each shows how many times and when it was last planned
+  ("Last planned Sat, Mar 7", with the year when it isn't this year). Archived dishes don't count.
 - The rankings, Forgotten Favorites included, are horizontal bars, most first and then by name, each
   with its name and count and a bar as long as its count against the most. Each shows its top 10,
   and "Show all 23" shows the rest, "Show top 10" hiding them again; changing the period starts each

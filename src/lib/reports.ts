@@ -42,9 +42,9 @@ export function periodStart(period: ReportPeriod, today: string): string | null 
 	}
 }
 
-/** A Forgotten Favorite is a dish planned at least this many times up to today... */
+/** A Forgotten Favorite is a dish planned at least this many times... */
 export const FAVORITE_TIMES = 3;
-/** ...and not from this many days before today on, the days Last 90 days counts. */
+/** ...and not from this many days before today on, the days Last 90 days counts, or later. */
 export const FORGOTTEN_DAYS = 90;
 
 /**

@@ -170,6 +170,11 @@ test('Forgotten Favorites lists dishes planned often but not lately, whatever th
 	for (const days of [10, 200, 300]) {
 		addDinner(db, householdId, ago(days), { dishes: [[soup, 'main']] });
 	}
+	// Already planned for next week, so not forgotten either.
+	const lasagna = addRecipe(db, householdId, { name: 'Lasagna' });
+	for (const days of [150, 250, 350, -7]) {
+		addDinner(db, householdId, ago(days), { dishes: [[lasagna, 'main']] });
+	}
 
 	for (const period of ['', '?period=30d', '?period=all']) {
 		await open(page, `/reports${period}`);
