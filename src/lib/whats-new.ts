@@ -14,6 +14,18 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.18',
+		released: '2026-11-21',
+		lines: [
+			"On More, tap Reports to see your household's habits: Most Frequently Planned Dishes, Most Frequently Purchased Groceries, Most Popular Restaurants, Dinner Breakdown, and Forgotten Favorites, the dishes you've often planned but not lately. Choose Last 30 days, Last 90 days, Last 12 months or All time, and tap a dish to open its recipe or an item to open it on Items.",
+			"To plan a party's food, add it as its own dinner on that day, such as one labelled Party, then tap Add to party list on it. What its dishes need, scaled to its servings, goes on a party list you choose or a new one, and anything already on that list stays as it was.",
+			'When someone adds a dish or restaurant request, on the Menu or from a recipe, everyone else in the household now gets an email with what was asked for, who asked and any note, and a link to the Menu.',
+			"On the grocery list, tapping a line again under Received today now also puts back the store it had and the item's usual store, so a store picked by mistake when checking it off doesn't stick.",
+			"Import from a link now shows accented letters and symbols, such as the ñ in jalapeño and ®, as the page meant them instead of as codes, and leaves out characters you can't see.",
+			"A day's page on the Menu now loads faster, however long you've used Meals. Copy a dinner now loads your past dinners when you open it, showing Loading past dinners… for a moment."
+		]
+	},
+	{
 		version: '1.17',
 		released: '2026-11-17',
 		lines: [
