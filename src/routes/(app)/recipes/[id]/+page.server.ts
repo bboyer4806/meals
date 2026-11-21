@@ -12,6 +12,7 @@ import {
 } from '#lib/server/data/dishes.ts';
 import { hasRequest, requestDish } from '#lib/server/data/requests.ts';
 import { attempt, parseForm } from '#lib/server/forms.ts';
+import { notifyRequest } from '#lib/server/request-notifications.ts';
 
 // A checked box sends "on"; an unchecked one sends nothing.
 const triedSchema = z.object({
@@ -80,10 +81,17 @@ export const actions = {
 		return attempt('rate', () => rateDish(user.householdId, dishId, user.id, parsed.data.stars));
 	},
 
-	// Saved as soon as it's tapped, asked by the signed-in person (6.12; section 7, "Recipe").
-	request: ({ locals, params }) => {
+	// Saved as soon as it's tapped, asked by the signed-in person (6.12; section 7, "Recipe"). A new
+	// request emails the rest of the household; one someone else made first adds nothing, and sends
+	// nothing.
+	request: async ({ locals, params, url }) => {
 		const user = requireHousehold(locals);
 		const dishId = dishIdIn(params);
-		return attempt('request', () => requestDish(user.householdId, user.id, dishId, Date.now()));
+		const added = attempt('request', () =>
+			requestDish(user.householdId, user.id, dishId, Date.now())
+		);
+		if (added === null) return;
+		if (!('kind' in added)) return added;
+		await notifyRequest(user.householdId, added, url.origin);
 	}
 };

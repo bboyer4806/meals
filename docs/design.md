@@ -168,16 +168,19 @@ Backups:
 | Form validation        | Zod                                                                                    | Form input is untrusted, so it's checked when it arrives.          |
 | Styles                 | Plain CSS with variables; fonts self-hosted through Fontsource                         | No CSS framework and no requests to other sites.                   |
 | Tests                  | Vitest and Playwright                                                                  | See section 10.                                                    |
-| Runtime                | Node 26 (the current long-term support version) in the `node:26-slim` Docker image     |                                                                    |
+| Runtime                | Node 26 (the current long-term support version) in the `node:26-slim` Docker image, pinned by digest (4.2) |                                                                    |
 
 ### 4.2 Hosting and deploy
 
 The app stays a single container on Dokku at meals.dev.boyersoftware.com, deployed by
 `.github/workflows/deploy.yml` on every push to `main` (E4). Changes:
 
-1. **Checks before deploying.** A new check job runs the type check, unit tests and
-   end-to-end tests on pull requests and on pushes to `main`. The build job needs it,
-   and the deploy job needs the build, so code that fails never deploys.
+1. **Checks before deploying.** A check job runs the type check, unit tests and
+   end-to-end tests on pull requests and on pushes to `main`. It builds the Docker image and
+   runs the end-to-end tests against it, run as production runs it with an empty `DATA_DIR`,
+   so a mistake in the image, such as a lower `BODY_SIZE_LIMIT`, fails them (MEA-105). On
+   `main`, a push job then pushes that same image, and the deploy job needs the push, so code
+   that fails never deploys, and the image that deploys is the one tested.
 2. **One-time server setup.** The server limits which commands the deploy key can run, so
    these are done once on the server by hand (README, "One-time server setup"):
    - create a storage directory owned by uid 1000 (the image's `node` user) and mount
@@ -196,7 +199,8 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
    `npm ci --ignore-scripts`, since no dependency needs its install script (better-sqlite3
    ships prebuilt binaries). It runs as the `node` user and exposes port 3000. In Phase 2 it
    also sets `BODY_SIZE_LIMIT=5M` so the app accepts photo uploads (adapter-node's default is
-   512 KB).
+   512 KB). Both stages start from `node:26-slim` pinned by digest, so the base image changes
+   only in a pull request, which CI tests; Dependabot proposes each new one (MEA-105).
 
 The placeholder `index.html` is removed. The README gains instructions for local
 development, configuration, and restoring a backup.
@@ -377,6 +381,7 @@ src/lib/                  used by browser and server; no database access
   dates.ts                "today" and weeks in a time zone
   whats-new.ts            the releases listed on What's new, newest first
   default-dishes.ts       the dishes every household's Recipes starts with (6.18)
+  reports.ts              the Reports page's periods, Forgotten Favorites and shares (7)
 src/lib/server/
   config.ts               settings from the environment, checked at startup
   db/schema.ts            tables
@@ -385,7 +390,7 @@ src/lib/server/
   ai/                     the MCP server, the changes AI assistants can propose, and proposals
   origin.ts               refuse forms sent from other sites (4.5)
   data/                   one module per area: households, stores, items, needs,
-                          party-lists, dishes, dinners, requests. Every function takes
+                          party-lists, dishes, dinners, requests, reports. Every function takes
                           householdId first, except whats-new (a person's seen
                           release), which takes the person's id.
   standard-items.ts       the items every household's catalog starts with (6.13)
@@ -396,6 +401,7 @@ src/lib/server/
   jira.ts                 create a feedback ticket in Jira and attach its screenshot
   email.ts                send an email, as HTML with a plain-text version, through Resend
   grocery-email.ts        the grocery list email's subject, HTML and text (6.16)
+  request-notifications.ts email a new request to the rest of the household (6.12)
   fetch-link.ts           fetch a link from a public website (4.5)
   recipe-page.ts          fetch a recipe's web page and read its JSON-LD
 src/routes/               pages and form actions; database access only through data/
@@ -450,7 +456,10 @@ for a standard image, which happens once; empty until then; 6.14), `archived_at`
 **grocery_needs** (lines on the list): `item_id`, `quantity` (more than 0), `unit`
 (optional free text such as "bags"; Q16), `store_id` (required unless the status is To
 Order), `status` (`to_order`, `ordered` or `received`; Q14), `note`, `created_at`,
-`ordered_at`, `received_at`.
+`ordered_at`, `received_at`, and what receiving the line replaced, which undoing puts back
+(6.2, MEA-115): `store_before_received` (the store it had, empty when it had none) and
+`default_store_before_received` (when it was To Order, the item's default store, empty when it
+had none). Both are empty on lines not received.
 
 **party_lists:** `name` (unique per household, ignoring case), `created_at` (6.15).
 
@@ -607,7 +616,7 @@ and proposals at it, so revoking it deletes them too.
 | Ordered             | Check off, or "Mark all received" for a store              | Received.                                                                                              |
 | Ordered             | Didn't come                                                | Back to To Order, keeping its store (Q20).                                                             |
 | To Order or Ordered | Got fewer (enter the amount you got)                       | A Received line for that amount, and the original is To Order with the rest (Q20). The amount must be less than the line's ("Enter an amount less than 0.2"), and when the rest rounds to nothing (6.5), the whole line is received instead (MEA-92). A store is required. If the line was To Order, the store becomes the item's default store (6.3). |
-| Received today      | Tap again                                                  | Back to Ordered if it had been ordered, otherwise To Order (addition 2.2.3).                           |
+| Received today      | Tap again                                                  | Back to Ordered if it had been ordered, otherwise To Order, with the store it had, so a store picked under "Where did you get it?" comes off again (addition 2.2.3, MEA-115). If checking it off made its store the item's default store, the default goes back to what it was, if it's still that store (6.3). |
 
 Lines that are To Order or Ordered can be edited (quantity, unit, store, note) or
 deleted. Received lines leave the list, apart from "received today", and are kept as
@@ -623,8 +632,9 @@ changed: "Marked 7 Walmart items as ordered."
 ### 6.3 Default store
 
 When a line leaves To Order (to Ordered or Received), its store becomes the item's
-default store (Q17). When an item is added to the list, its default store is filled in,
-unless that store is archived (Q18).
+default store (Q17). Undoing a check-off (6.2) puts back the default store the item had before
+it, or none, if the default is still that line's store (MEA-115). When an item is added to the
+list, its default store is filled in, unless that store is archived (Q18).
 
 ### 6.4 Adding to the list
 
@@ -764,6 +774,11 @@ The rest of this section describes it as built.
   first. Typing, up to 80 characters as in a dish name, filters to groups with a dish whose
   name matches, most recent first. Copying sets the type and the dishes with their roles. Each
   dinner counts on its own, so a date with Kids and Adults dinners counts as one make for each.
+- The picker asks for the groups each time it opens, rather than the date's page sending them,
+  so the page and its reload after every change stay small however long the household's history
+  grows (MEA-102). Until they come, it says "Loading past dinners…". Without an answer from Meals
+  it says "Couldn't reach Meals. Check your connection and try again.", and after an error there
+  "Something went wrong. Please try again." (6.11). Opening it again asks again.
 - A copy has exactly the dishes the picked group showed (MEA-85). The type and roles come from
   the latest past dinner that still has just those dishes, so a change to the group's latest
   dinner since the page showed it, such as going out instead or adding a dish, doesn't come
@@ -837,6 +852,22 @@ to what's saved, as the stars and Request still show it, so tapping it again tri
 - The dish or restaurant name is required and up to 80 characters; the note is optional and up
   to 200. Each field stops taking characters at its limit, pasted text included, and says so
   while it's full. The server refuses anything longer (4.5).
+- Each new request emails everyone else in the household (MEA-254), so it doesn't go unnoticed
+  until someone opens the Menu: a dish or restaurant request from the Menu, one Restore it and
+  request adds, or Request on a recipe's page. Each member gets their own email, at their Google
+  account's address, through Resend (4.3); the person who asked gets none, and nor does anyone in
+  another household. The subject says who asked, named as the household sees them (6.1), and what
+  for, such as "Sam requested a dish: Lasagna" or "Sam requested a restaurant: Olive Garden". The
+  email says the same, then the note, such as "Note: Extra cheese", when there is one, and "See it
+  on the Menu", linking to the Menu at the address the request was sent to. The HTML escapes names
+  and the note, so they show as typed. The emails go out once the request is saved, outside its
+  transaction, all at once, and the page waits for them: at most the 10 seconds Meals gives Resend
+  to answer (7, Admin). The request stays saved when an email fails, and the others still go: the
+  app's log gets Resend's answer or the error with the member's id, never their address or the API
+  key, and nothing tries again. Nothing that adds no request sends any: a refused name or note, a
+  name that matches an archived dish until Restore it and request adds it (6.10), or Request on a
+  recipe someone requested first. Editing, completing, adding to a date or removing a request sends
+  nothing, and nobody can turn the emails off.
 - A date's page (MEA-57; section 7, Dinner) lists the same requests under its dinners, with the
   same dish link or "Eating out" and restaurant, note and "Asked by", Edit (below), and no
   Complete or Remove. A dish
@@ -1175,8 +1206,8 @@ apart at a glance when browsing Recipes and planning dinners (MEA-259).
 ## 7. Screens
 
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
-header menu, More, holds Items, Grocery History, Household, What's new, Admin (admin only) and Sign
-out. It closes when one of its links is followed, with Escape or with a tap outside it, and
+header menu, More, holds Items, Grocery History, Reports, Household, What's new, Admin (admin only)
+and Sign out. It closes when one of its links is followed, with Escape or with a tap outside it, and
 that tap still goes to the page. Help sits in the header to the left of More.
 
 | Screen           | Path                                 | What it does                                                                                                                         |
@@ -1186,7 +1217,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Household setup  | `/setup`                             | After signing in without a household: the households that invited them, each with Join, and for a new household, name, usual servings and time zone (6.1). |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | Grocery History  | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
-| Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. |
+| Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. A link to one item, such as from Reports, opens its sheet (see Reports below). |
 | Party lists      | `/groceries/parties`                 | "‹ Groceries", then New list and the household's party lists, each with how many of its things are bought (6.15). |
 | Party list       | `/groceries/parties/[id]`            | "‹ Party lists", the name with Edit, an add form, Add all to Groceries, and the things with their circles, amounts, what's bought and on Groceries, and Add to Groceries (6.15). Tapping a thing opens a sheet with its quantity, Save and Remove. |
 | Recipes          | `/recipes`                           | Search by name, filter by tags, sort by name or rating, or group by when each was last on the Menu (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, Import and New recipe. |
@@ -1197,6 +1228,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Menu             | `/menu`                              | See below.                                                                                                                           |
 | Dinner           | `/menu/[date]`                       | See below.                                                                                                                           |
 | Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
+| Reports          | `/reports`                           | See below.                                                                                                                           |
 | Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
 | What's new       | `/whats-new`                         | See below.                                                                                                                           |
 | Admin            | `/admin`                             | Invite households, list households with their members and invites, last backup date, send a test email, AI assistants. See below.   |
@@ -1237,8 +1269,8 @@ the header to the left of More, which printing hides with the rest of the header
 sheet titled "Help: " and the screen's name, such as "Help: Grocery list", that says what the
 screen is for and how to do its main tasks, in plain words and no more than about 6 short points.
 Recipe, Edit recipe and New recipe (which share the editor's points, each adding one about Import
-from a link), Import recipes, Cooking view, Dinner, Grocery History, Items, Party lists and Party
-list each have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
+from a link), Import recipes, Cooking view, Dinner, Grocery History, Items, Party lists, Party list
+and Reports each have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
 Opening it changes nothing on the page behind, so anything typed there and not saved stays. The
 help is fixed text in `src/lib/help.ts`, keyed by each screen's route, and the type check fails
 if a screen has none. It opens only when asked: there's no Help page or link in More, and the
@@ -1460,7 +1492,12 @@ a decimal point, even before three digits, so "1.250 kcal" is 1.25 and "1.125 g"
 (MEA-233). Each
 ingredient is split as Import recipes splits one, so "1 1/2 cups flour, sifted" is 1 1/2, cups,
 flour and sifted. Steps grouped in sections keep their order without the section names, and
-HTML and character references such as `&amp;` are taken out of the text. Text over 10,000
+HTML is taken out of the text. Character references that end in a semicolon, as pages write them,
+are read as the characters they stand for: every one HTML names, such as `&amp;` and `&eacute;`,
+and numeric ones, where `&#128;` to `&#159;` are windows-1252's characters, as in HTML, so
+`&#146;` is ’. Control characters other than whitespace, which show as nothing, are then dropped,
+whether a reference such as `&#1;` or `&#129;` (which windows-1252 leaves undefined) or the page's
+own text holds them, so imported text has none (MEA-116). Text over 10,000
 characters in one place, such as the name, an ingredient or a step, is cut to 10,000, and the
 text is read in the editor's order, the name, ingredients and then steps, up to 100,000
 characters in all, cutting the piece where it runs out and leaving out the rest (4.5). Save then
@@ -1631,6 +1668,48 @@ this dinner" in place of "Someone cleared this dinner". The page's own Clear or 
 called someone else's, also when it was still on its way as the phone dropped the app, or Back
 returns to the date it moved from: what it took off the page goes without a word.
 
+**Reports.** Five reports show a household its habits from what Meals already keeps, the Menu and
+Grocery History, so nobody tracks anything new (MEA-14). More opens it. They're stacked on one page
+in this order: Most Frequently Planned Dishes, Most Frequently Purchased Groceries, Most Popular
+Restaurants, Dinner Breakdown and Forgotten Favorites. The page only reads, and every report is of
+the household's own data (4.5).
+
+- **Period.** Last 30 days, Last 90 days, Last 12 months and All time sit above the reports, the
+  current one filled in, two to a row on a phone. Last 90 days is the default, and shows for a
+  missing or unknown period in the address. Each is a link, so it adds a Back step and a shared link
+  keeps it. The period applies to the first four reports. Dates are the household's (2.3), and as
+  Recipes' 60 days count from 60 days before today: Last 30 days counts from 30 days before today,
+  Last 90 days from 90 days before, Last 12 months from the same date a year before (Feb 28 for Feb
+  29), and All time from the first date, each through today. A dinner planned for a later date
+  doesn't count, since it hasn't happened yet.
+- **Most Frequently Planned Dishes** ranks dishes by how many of the period's dinners they were on,
+  of any type, Bringing a dish included. Archived dishes count, since their dinners happened (6.10).
+- **Most Frequently Purchased Groceries** ranks items by how many grocery lines were received for
+  them in the period: each line once, whatever its quantity, by when it was received rather than
+  added, from the moment the period's first date starts in the household's time zone. The part a Got
+  fewer received is a line of its own (6.2), as is a party's part checked off on its list (6.15),
+  and a line that's undone (2.2.3) no longer counts. Archived items count.
+- **Most Popular Restaurants** ranks restaurants by how many of the period's Eating out dinners went
+  to them (6.9). Names that differ only in case are one restaurant, written as its latest dinner has
+  it, and an Eating out dinner without a restaurant doesn't count.
+- **Dinner Breakdown** shows each type's share of the period's dinners, each dinner on its own, so a
+  date with two dinners counts twice: Cooking at home, Eating out, Leftovers and Bringing a dish, in
+  that order, each with a bar of its share, the share as a whole percent and how many dinners. A
+  share above none never shows as 0% but as "<1%", and one below all as ">99%" rather than 100%.
+- **Forgotten Favorites** lists active dishes planned at least 3 times, but not from 90 days before
+  today on, the days Last 90 days counts, whatever the period. A dish already planned for a later
+  date isn't forgotten, so it isn't listed. Each shows how many times and when it was last planned
+  ("Last planned Sat, Mar 7", with the year when it isn't this year). Archived dishes don't count.
+- The rankings, Forgotten Favorites included, are horizontal bars, most first and then by name, each
+  with its name and count and a bar as long as its count against the most. Each shows its top 10,
+  and "Show all 23" shows the rest, "Show top 10" hiding them again; changing the period starts each
+  at its top 10. A dish opens its recipe, archived or not. An item opens its sheet on Items, at
+  `/groceries/items?item=` and its id, in the archived list when it's archived and otherwise the
+  active one, whatever the link's other settings; another household's item, or anything that isn't
+  an item's id, is Not found. A restaurant opens nothing, since restaurants aren't kept anywhere
+  (6.9).
+- A report with nothing to show says so, such as "No dishes were planned in this period."
+
 **What's new.** What each release changed, newest first, in words for the people using the
 app; every household sees the same page. Each release's heading is its version, such as "1.2"
 for the "Meals 1.2" sprint, then "Released" with its date and one line per change people will
@@ -1762,7 +1841,8 @@ ingredients.
   rejection of cross-household references, and Copy a dinner grouping.
 - **End-to-end tests (Playwright, Chromium, phone-sized screen)** for the main flow of
   each phase. Tests sign in by writing a session straight into the test database, so the
-  app has no test-only way to sign in.
+  app has no test-only way to sign in. In CI they run against the Docker image that then
+  deploys (4.2); elsewhere, against a production build served by `vite preview`.
 - All of them run on pull requests and before every deploy.
 
 ## 11. Problems people may hit, and how the design handles them
@@ -1802,5 +1882,7 @@ ingredients.
   party lists made from recipes or the menu (MEA-247).
 - AI assistants other than ChatGPT and Claude, and assistants proposing changes to party lists,
   ratings, members or invites, or adding requests (6.17).
+- Reports beyond the five on Reports: reports people make, other date ranges or filters, exporting
+  or sharing them, and forecasts or suggested meal plans (MEA-14).
 - Decided against: store integrations (Q15), offline use (Q10), live updates (Q11),
   categories (Q23), prices (Q25), inventory (Q6) and saved meals (Q3).

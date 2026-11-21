@@ -7,6 +7,7 @@ import { groceryNeeds, items, partyAllocations, partyItems, partyLists } from '.
 import { createItem, findItemByName, getItem, setDefaultStore } from './items.ts';
 import {
 	getLine,
+	replacedByReceiving,
 	shareFactor,
 	storeForNewLine,
 	storeForStatusChange,
@@ -459,11 +460,13 @@ function receivePart(
 	now: number
 ): void {
 	const store = storeForStatusChange(householdId, line, line.storeId === null ? storeId : undefined);
+	// So undoing it on Groceries puts back the store and default store (MEA-115).
+	const replaced = replacedByReceiving(householdId, line);
 	const part = parts.reduce((sum, allocation) => sum + shareOf(allocation), 0);
 	if (part >= line.quantity - TOLERANCE) {
 		db()
 			.update(groceryNeeds)
-			.set({ status: 'received', storeId: store, receivedAt: now })
+			.set({ status: 'received', storeId: store, receivedAt: now, ...replaced })
 			.where(eq(groceryNeeds.id, line.id))
 			.run();
 	} else {
@@ -479,7 +482,8 @@ function receivePart(
 				note: line.note,
 				createdAt: now,
 				orderedAt: line.orderedAt,
-				receivedAt: now
+				receivedAt: now,
+				...replaced
 			})
 			.returning({ id: groceryNeeds.id })
 			.get();
@@ -531,7 +535,7 @@ function unreceivePart(householdId: number, line: GroceryLine, parts: Allocation
 	if (part >= line.quantity - TOLERANCE) {
 		db()
 			.update(groceryNeeds)
-			.set({ status, receivedAt: null })
+			.set({ status, receivedAt: null, storeBeforeReceived: null, defaultStoreBeforeReceived: null })
 			.where(eq(groceryNeeds.id, line.id))
 			.run();
 		return;

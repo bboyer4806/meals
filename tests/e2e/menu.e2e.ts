@@ -1,11 +1,13 @@
 import type { Dialog, Locator, Page } from '@playwright/test';
 import {
+	UNREACHABLE,
 	addDays,
 	addDinner,
 	addItem,
 	addPerson,
 	addRecipe,
 	dayLabel,
+	dropActions,
 	expect,
 	monthDay,
 	open,
@@ -1774,6 +1776,56 @@ test('copies the dishes a past dinner showed, or says to pick again, after it ch
 	await sheet.getByRole('button', { name: 'Replace dishes' }).click();
 	await expect(sheet).toHaveCount(0);
 	await expect(dishLinks(page)).toHaveText(['Pancakes', 'Rice']);
+});
+
+test("asks for the past dinners each time Copy a dinner opens, and says when they don't come (MEA-102)", async ({
+	page,
+	db,
+	person
+}) => {
+	const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+	const pancakes = addRecipe(db, person.householdId, { name: 'Pancakes' });
+	const now = today();
+	addDinner(db, person.householdId, addDays(now, -1), { dishes: [[tacos, 'main']] });
+	await open(page, `/menu/${addDays(now, 1)}`);
+	const copy = page.getByRole('button', { name: 'Copy a dinner' });
+	const sheet = page.getByRole('dialog', { name: 'Copy a dinner' });
+	const close = sheet.getByRole('button', { name: 'Close' });
+	const groups = sheet.getByRole('listitem');
+	const asked = (url: URL) => url.search === '?/copyGroups';
+
+	// The sheet says so until they come.
+	const release = await holdAnswers(page, asked);
+	await copy.click();
+	await expect(sheet.getByRole('status')).toHaveText('Loading past dinners…');
+	await expect(groups).toHaveCount(0);
+	release();
+	await expect(groups.locator('.names')).toHaveText(['Chicken tacos']);
+	await expect(sheet.getByRole('status')).toHaveCount(0);
+	await close.click();
+
+	// Without an answer from Meals, or with an error from it, the sheet says so (6.11).
+	const reconnect = await dropActions(page);
+	await copy.click();
+	await expect(sheet.getByRole('alert')).toHaveText(UNREACHABLE);
+	await expect(sheet.getByRole('status')).toHaveCount(0);
+	await expect(groups).toHaveCount(0);
+	await close.click();
+	await reconnect();
+	await page.route(asked, (route) =>
+		route.fulfill({ status: 500, json: { type: 'error', error: { message: 'Internal Error' } } })
+	);
+	await copy.click();
+	await expect(sheet.getByRole('alert')).toHaveText('Something went wrong. Please try again.');
+	await expect(groups).toHaveCount(0);
+	await close.click();
+	await page.unroute(asked);
+
+	// Opening it again asks again, and lists a dinner made since the page opened.
+	addDinner(db, person.householdId, now, { dishes: [[pancakes, 'main']] });
+	await copy.click();
+	await expect(groups.locator('.names')).toHaveText(['Pancakes', 'Chicken tacos']);
+	await expect(sheet.getByRole('alert')).toHaveCount(0);
 });
 
 test('moves a dinner to an empty date, and swaps it with a planned one', async ({

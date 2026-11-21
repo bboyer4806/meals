@@ -57,6 +57,7 @@
 			<nav aria-label="More">
 				<a href="/groceries/items">Items</a>
 				<a href="/groceries/history">Grocery History</a>
+				<a href="/reports">Reports</a>
 				<a href="/household">Household</a>
 				<!-- Preloading on hover would run its load, which clears the dot (design 7). -->
 				<a href="/whats-new" data-sveltekit-preload-data="false">What's new{@render dot()}</a>

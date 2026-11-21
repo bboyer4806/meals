@@ -1,6 +1,7 @@
 import {
 	addDays,
 	addDinner,
+	addItem,
 	addPartyList,
 	addPhotoFiles,
 	addRecipe,
@@ -307,4 +308,86 @@ test('menu screens', async ({ page, db, person }) => {
 	await page.getByRole('button', { name: 'Copy a dinner' }).click();
 	await page.getByRole('dialog', { name: 'Copy a dinner' }).getByRole('listitem').first().waitFor();
 	await page.screenshot({ path: 'test-results/screens/copy-dinner.png', animations: 'disabled' });
+});
+
+// Reports with a few months of dinners and groceries, in both themes (design 7, Reports).
+test('report screens', async ({ page, db, person }) => {
+	const { householdId } = person;
+	const dish = (name: string) => addRecipe(db, householdId, { name });
+	const chicken = dish('Roast chicken');
+	const mash = dish('Mashed potatoes');
+	const beans = dish('Green beans');
+	const caesar = dish('Caesar salad');
+	const mains = [
+		dish('Chicken tacos'),
+		dish('Spaghetti and meatballs'),
+		chicken,
+		dish('Lasagna'),
+		dish('Grilled cheese and tomato soup'),
+		dish('Pancakes'),
+		dish('Fried rice'),
+		dish('Turkey chili')
+	];
+	const plan = (daysAgo: number, seed: DinnerSeed) =>
+		addDinner(db, householdId, addDays(today(), -daysAgo), seed);
+	for (let day = 1; day <= 85; day += 1) {
+		if (day % 7 === 0) {
+			const restaurantName = ['Thai Garden', 'Olive Garden', 'Pho 99'][day % 3];
+			plan(day, { type: 'eat_out', restaurantName });
+		} else if (day % 5 === 0) {
+			plan(day, { type: 'leftovers' });
+		} else if (day % 11 === 0) {
+			plan(day, { type: 'going', dishes: [[caesar, 'main']] });
+		} else {
+			const main = mains[day % mains.length]!;
+			plan(day, {
+				dishes:
+					main === chicken
+						? [
+								[chicken, 'main'],
+								[mash, 'side'],
+								[beans, 'side']
+							]
+						: [[main, 'main']]
+			});
+		}
+	}
+	const stew = dish('Beef stew');
+	for (const daysAgo of [120, 180, 240, 300]) plan(daysAgo, { dishes: [[stew, 'main']] });
+	const roast = dish('Pot roast');
+	for (const daysAgo of [150, 210, 330]) plan(daysAgo, { dishes: [[roast, 'main']] });
+
+	const walmart = addStore(db, householdId, 'Walmart');
+	const received = db.prepare(
+		`insert into grocery_needs (household_id, item_id, quantity, store_id, status, created_at, received_at)
+		values (?, ?, 1, ?, 'received', ?, ?)`
+	);
+	const bought: [string, number][] = [
+		['Milk', 12],
+		['Bananas', 10],
+		['Eggs', 8],
+		['Bread', 7],
+		['Apples', 5],
+		['Coffee', 4],
+		['Chicken thighs', 4],
+		['Tortillas', 3],
+		['Cheddar cheese', 3],
+		['Spinach', 2],
+		['Paper towels', 1]
+	];
+	for (const [name, times] of bought) {
+		const itemId = addItem(db, householdId, name);
+		for (let week = 0; week < times; week += 1) {
+			const at = Date.now() - (week * 7 + 1) * 24 * 60 * 60 * 1000;
+			received.run(householdId, itemId, walmart, at - 60_000, at);
+		}
+	}
+
+	const shot = (name: string) =>
+		page.screenshot({ path: `test-results/screens/${name}.png`, fullPage: true });
+	await page.emulateMedia({ colorScheme: 'light' });
+	await open(page, '/reports');
+	await shot('reports');
+	await page.emulateMedia({ colorScheme: 'dark' });
+	await shot('reports-dark');
 });
