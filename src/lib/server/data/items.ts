@@ -262,8 +262,11 @@ export function setItemArchived(
 		.run();
 }
 
-/** The item's default store becomes the store it was just ordered or bought from (Q17). */
-export function setDefaultStore(householdId: number, itemId: number, storeId: number): void {
+/**
+ * The item's default store becomes the store it was just ordered or bought from (Q17), or goes
+ * back to the one it had, which may be none, when buying it is undone (6.3, MEA-115).
+ */
+export function setDefaultStore(householdId: number, itemId: number, storeId: number | null): void {
 	db()
 		.update(items)
 		.set({ defaultStoreId: storeId })

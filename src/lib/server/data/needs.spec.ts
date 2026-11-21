@@ -431,6 +431,91 @@ describe('status changes', () => {
 		expectHttpError(() => undoReceived(householdId, id, TZ, NOON + 24 * HOUR), 400);
 	});
 
+	it('puts back a store picked when checking off, and the default store it replaced (MEA-115)', () => {
+		add(householdId, { itemName: 'Paper towels', store: walmart });
+		markReceived(householdId, onlyLine(householdId).id, undefined, NOON - HOUR);
+		add(householdId, { itemName: 'Paper towels', store: 'none' });
+		const line = lines(householdId).find((l) => l.status === 'to_order')!;
+		// Where did you get it? Aldi, by mistake.
+		markReceived(householdId, line.id, aldi, NOON);
+		expect(defaultStoreOf(line.itemId)).toBe(aldi);
+
+		undoReceived(householdId, line.id, TZ, NOON);
+		expect(lines(householdId).find((l) => l.id === line.id)).toMatchObject({
+			status: 'to_order',
+			storeId: null,
+			receivedAt: null
+		});
+		expect(defaultStoreOf(line.itemId)).toBe(walmart);
+		deleteLine(householdId, line.id);
+		add(householdId, { itemName: 'Paper towels' });
+		expect(lines(householdId).find((l) => l.status === 'to_order')?.storeId).toBe(walmart);
+	});
+
+	it('puts back no default store for an item that had none, keeping the line its own store (MEA-115)', () => {
+		add(householdId, { itemName: 'Milk', store: aldi });
+		const line = onlyLine(householdId);
+		markReceived(householdId, line.id, undefined, NOON);
+		expect(defaultStoreOf(line.itemId)).toBe(aldi);
+
+		undoReceived(householdId, line.id, TZ, NOON);
+		expect(onlyLine(householdId)).toMatchObject({ status: 'to_order', storeId: aldi });
+		expect(defaultStoreOf(line.itemId)).toBeNull();
+	});
+
+	it('puts an ordered line back as ordered from its store (MEA-115)', () => {
+		add(householdId, { itemName: 'Milk', store: walmart });
+		add(householdId, { itemName: 'Eggs', store: 'none' });
+		const milk = lineFor(householdId, 'Milk');
+		const eggs = lineFor(householdId, 'Eggs');
+		markAllOrdered(householdId, walmart, [milk.id], NOON);
+		markAllReceived(householdId, walmart, [milk.id], NOON);
+		// Eggs is ordered from Walmart on another phone, while this one still asks where it was bought.
+		markOrdered(householdId, eggs.id, walmart, NOON);
+		markReceived(householdId, eggs.id, aldi, NOON);
+
+		undoReceived(householdId, milk.id, TZ, NOON);
+		undoReceived(householdId, eggs.id, TZ, NOON);
+		expect(lineFor(householdId, 'Milk')).toMatchObject({ status: 'ordered', storeId: walmart });
+		expect(lineFor(householdId, 'Eggs')).toMatchObject({ status: 'ordered', storeId: walmart });
+		// Ordering made Walmart their default store, and receiving left it (6.3).
+		expect(defaultStoreOf(milk.itemId)).toBe(walmart);
+		expect(defaultStoreOf(eggs.itemId)).toBe(walmart);
+	});
+
+	it('leaves a default store that changed again after the check-off (MEA-115)', () => {
+		add(householdId, { itemName: 'Milk', store: 'none' });
+		const first = onlyLine(householdId);
+		markReceived(householdId, first.id, aldi, NOON);
+		add(householdId, { itemName: 'Milk', store: walmart });
+		const second = lines(householdId).find((l) => l.status === 'to_order')!;
+		markOrdered(householdId, second.id, undefined, NOON);
+		expect(defaultStoreOf(first.itemId)).toBe(walmart);
+
+		undoReceived(householdId, first.id, TZ, NOON);
+		expect(lines(householdId).find((l) => l.id === first.id)).toMatchObject({
+			status: 'to_order',
+			storeId: null
+		});
+		expect(defaultStoreOf(first.itemId)).toBe(walmart);
+	});
+
+	it('puts back the default store when undoing what Got fewer received (MEA-115)', () => {
+		add(householdId, { itemName: 'Yogurt', quantity: 3, unit: 'cups', store: aldi });
+		const id = onlyLine(householdId).id;
+		markGotFewer(householdId, id, 2, undefined, NOON);
+		const received = lines(householdId).find((l) => l.status === 'received')!;
+		expect(defaultStoreOf(received.itemId)).toBe(aldi);
+
+		undoReceived(householdId, received.id, TZ, NOON);
+		const oldestFirst = lines(householdId).sort((a, b) => a.id - b.id);
+		expect(oldestFirst.map((l) => [l.status, l.quantity, l.storeId])).toEqual([
+			['to_order', 1, aldi],
+			['to_order', 2, aldi]
+		]);
+		expect(defaultStoreOf(received.itemId)).toBeNull();
+	});
+
 	it('only lets an ordered line keep a store', () => {
 		add(householdId, { itemName: 'Milk', store: walmart });
 		const id = onlyLine(householdId).id;
@@ -490,5 +575,28 @@ describe('listing', () => {
 				})
 				.run()
 		).toThrow(/FOREIGN KEY/);
+		// Nor what receiving it replaced (MEA-115).
+		const theirStore = makeStore(other.householdId, 'Target');
+		const replacements = [
+			{ storeBeforeReceived: theirStore },
+			{ defaultStoreBeforeReceived: theirStore }
+		];
+		for (const replaced of replacements) {
+			expect(() =>
+				db()
+					.insert(groceryNeeds)
+					.values({
+						householdId,
+						itemId,
+						quantity: 1,
+						storeId: walmart,
+						status: 'received',
+						createdAt: NOON,
+						receivedAt: NOON,
+						...replaced
+					})
+					.run()
+			).toThrow(/FOREIGN KEY/);
+		}
 	});
 });
