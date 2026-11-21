@@ -1,4 +1,5 @@
-import { addItem, expect, makeJpeg, open, test } from './fixtures.ts';
+import { statSync } from 'node:fs';
+import { addItem, expect, makeJpeg, open, photoFile, test } from './fixtures.ts';
 
 // Request bodies over 64 KB are refused before anything reads them, except a photo, an image or a
 // file sent to the recipe editor, Items or Import recipes (design 4.5).
@@ -6,6 +7,15 @@ import { addItem, expect, makeJpeg, open, test } from './fixtures.ts';
 const LIMIT = 64 * 1024;
 const PADDING = 'x'.repeat(LIMIT);
 const REFUSED = { status: 413, message: "That's too much to send at once." };
+// The largest photo and thumbnail the server takes (PHOTO_MAX_BYTES and THUMB_MAX_BYTES in
+// src/lib/server/photos.ts).
+const PHOTO_MAX = 3_000_000;
+const THUMB_MAX = 400_000;
+
+/** The JPEG made `bytes` long with zeros after its end, which viewers ignore. */
+function padTo(jpeg: Buffer, bytes: number): Buffer {
+	return Buffer.concat([jpeg, Buffer.alloc(bytes - jpeg.length)]);
+}
 
 // The recipe editor's fields, all blank but the name and servings.
 const RECIPE = {
@@ -47,11 +57,17 @@ test('refuses a form over 64 KB without reading it', async ({ page, db, person, 
 	expect(lines()).toBe(1);
 });
 
-test('saves a recipe with a photo over 64 KB', async ({ page, db, person, baseURL }) => {
+test('saves a recipe with the largest photo and thumbnail it takes', async ({
+	page,
+	db,
+	person,
+	baseURL
+}) => {
 	const headers = { origin: baseURL ?? '', 'x-sveltekit-action': 'true' };
-	const photo = await makeJpeg(page, { width: 3000, height: 2250 });
-	const thumb = await makeJpeg(page, { width: 400, height: 300 });
-	expect(photo.length).toBeGreaterThan(LIMIT);
+	// About 3.4 MB to send, over adapter-node's default limit of 512 KB, so against the image this
+	// checks its BODY_SIZE_LIMIT too (Dockerfile, MEA-105).
+	const photo = padTo(await makeJpeg(page, { width: 1600, height: 1200 }), PHOTO_MAX);
+	const thumb = padTo(await makeJpeg(page, { width: 400, height: 300 }), THUMB_MAX);
 
 	const saved = await page.request.post('/recipes/new?/save', {
 		multipart: {
@@ -62,12 +78,12 @@ test('saves a recipe with a photo over 64 KB', async ({ page, db, person, baseUR
 		headers
 	});
 	expect(await saved.json()).toMatchObject({ type: 'redirect' });
-	expect(
-		db
-			.prepare('select photo_key from dishes where household_id = ? and name = ?')
-			.pluck()
-			.get(person.householdId, 'Pound cake')
-	).toMatch(/^[0-9a-f]{32}$/);
+	const key = db
+		.prepare('select photo_key from dishes where household_id = ? and name = ?')
+		.pluck()
+		.get(person.householdId, 'Pound cake') as string;
+	expect(key).toMatch(/^[0-9a-f]{32}$/);
+	expect(statSync(photoFile(key, 'full')).size).toBe(PHOTO_MAX);
 });
 
 test("saves an item's image over 64 KB", async ({ page, db, person, baseURL }) => {

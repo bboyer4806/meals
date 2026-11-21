@@ -33,6 +33,14 @@ The browser tests use Playwright's Chromium (`npx playwright install chromium`).
 writing a session straight into a throwaway database in `.e2e-data`, so the app has no test-only
 way to sign in.
 
+CI builds the Docker image and runs the browser tests against it, run as production runs it, and
+`main` deploys that same image. To run them that way on Linux with Docker:
+
+```sh
+docker build --build-arg COMMIT=e2e-commit --tag meals-e2e .
+E2E_IMAGE=meals-e2e npm run test:e2e
+```
+
 ## Settings
 
 The app reads these when it starts and refuses to start if one is missing. Building the image
@@ -121,10 +129,11 @@ One-time setup in [Google Cloud Console](https://console.cloud.google.com):
 
 ## Deploying
 
-Every push to `main` runs `.github/workflows/deploy.yml`. It runs the checks, builds the image on
-GitHub, pushes it to GHCR, and has Dokku on the server run it as the app `meals`. The same run
-creates the app if it is missing, sets its domain, and requests its first HTTPS certificate. The
-server renews it, as described in the [dev repo's README](https://github.com/bboyer4806/dev#one-time-server-setup).
+Every push to `main` runs `.github/workflows/deploy.yml`. It builds the image on GitHub and runs
+the checks, with the browser tests against that image, then pushes the same image to GHCR and has
+Dokku on the server run it as the app `meals`. The same run creates the app if it is missing, sets
+its domain, and requests its first HTTPS certificate. The server renews it, as described in the
+[dev repo's README](https://github.com/bboyer4806/dev#one-time-server-setup).
 Pull requests run the checks only, and so does a run started by hand (Actions > Deploy > Run
 workflow) on any branch other than `main`.
 
