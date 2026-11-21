@@ -171,7 +171,11 @@ export function updateItem(
 	if (existing && existing.id !== itemId) {
 		return { kind: 'taken', archived: existing.archivedAt !== null };
 	}
-	db().update(items).set(changes).where(eq(items.id, itemId)).run();
+	db()
+		.update(items)
+		.set(changes)
+		.where(and(eq(items.id, itemId), eq(items.householdId, householdId)))
+		.run();
 	return { kind: 'saved' };
 }
 
@@ -254,7 +258,7 @@ export function setItemArchived(
 	db()
 		.update(items)
 		.set({ archivedAt: archived ? now : null })
-		.where(eq(items.id, itemId))
+		.where(and(eq(items.id, itemId), eq(items.householdId, householdId)))
 		.run();
 }
 
