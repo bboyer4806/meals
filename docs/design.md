@@ -1460,7 +1460,10 @@ a decimal point, even before three digits, so "1.250 kcal" is 1.25 and "1.125 g"
 (MEA-233). Each
 ingredient is split as Import recipes splits one, so "1 1/2 cups flour, sifted" is 1 1/2, cups,
 flour and sifted. Steps grouped in sections keep their order without the section names, and
-HTML and character references such as `&amp;` are taken out of the text. Text over 10,000
+HTML is taken out of the text. Character references that end in a semicolon, as pages write them,
+are read as the characters they stand for: every one HTML names, such as `&amp;` and `&eacute;`,
+and numeric ones, where `&#128;` to `&#159;` are windows-1252's characters, as in HTML, so
+`&#146;` is ’ (MEA-116). Text over 10,000
 characters in one place, such as the name, an ingredient or a step, is cut to 10,000, and the
 text is read in the editor's order, the name, ingredients and then steps, up to 100,000
 characters in all, cutting the piece where it runs out and leaving out the rest (4.5). Save then

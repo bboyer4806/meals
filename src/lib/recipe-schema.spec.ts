@@ -323,6 +323,27 @@ describe('schemaRecipeValues', () => {
 		]);
 	});
 
+	it("reads every character reference HTML names, and &#128; to &#159; as windows-1252's (MEA-116)", () => {
+		const values = fromRecipe({
+			name: 'Caf&eacute;-Style Chili',
+			recipeIngredient: ['2 jalape&ntilde;os, seeded', '1 tbsp Acme&reg; hot sauce'],
+			recipeInstructions: [
+				// As a page whose text was in windows-1252 writes its quotes and dashes.
+				'Stir in Grandma&#146;s &#147;secret&#148; sauce &#150; or any you like.',
+				// A reference ends in a semicolon, so this & stays, where HTML would read &not as ¬.
+				'Tips&notes: serve warm.'
+			]
+		});
+		expect(values.name).toBe('Café-Style Chili');
+		expect(ingredients(values)).toEqual([
+			['2', '', 'jalapeños', 'seeded'],
+			['1', 'tbsp', 'Acme® hot sauce', '']
+		]);
+		expect(values.steps).toBe(
+			'Stir in Grandma’s “secret” sauce – or any you like.\nTips&notes: serve warm.'
+		);
+	});
+
 	it('reads text written to be slow to search as fast as any other', () => {
 		const started = performance.now();
 		// 1 MB each of tags that never close.

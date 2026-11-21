@@ -1,3 +1,4 @@
+import { decodeHTMLStrict } from 'entities/decode';
 import { splitIngredient } from './ingredient-text.ts';
 import { IMPORT_MAX_LENGTH, NORMALIZE_MAX_LENGTH, normalizeName } from './text.ts';
 import type { RecipeFormValues, RecipeRow } from './server/recipe-form.ts';
@@ -74,43 +75,6 @@ export function findRecipe(jsonLd: unknown, depth = 0): JsonLdNode | null {
 	return findRecipe(jsonLd['@graph'], depth + 1);
 }
 
-// The character references recipe sites use, such as &amp; and &frac12;. Numeric ones, such as
-// &#39;, are all read. The fractions are the ones amounts can be typed with (6.5).
-const ENTITIES = new Map([
-	['amp', '&'],
-	['lt', '<'],
-	['gt', '>'],
-	['quot', '"'],
-	['apos', "'"],
-	['nbsp', ' '],
-	['deg', '°'],
-	['ndash', '–'],
-	['mdash', '—'],
-	['lsquo', '‘'],
-	['rsquo', '’'],
-	['ldquo', '“'],
-	['rdquo', '”'],
-	['hellip', '…'],
-	['frac14', '¼'],
-	['frac12', '½'],
-	['frac34', '¾'],
-	['frac13', '⅓'],
-	['frac23', '⅔'],
-	['frac18', '⅛'],
-	['frac38', '⅜'],
-	['frac58', '⅝'],
-	['frac78', '⅞']
-]);
-const ENTITY = /&(?:#(\d+)|#x([\da-f]+)|([a-z\d]+));/gi;
-
-function decodeEntities(text: string): string {
-	return text.replace(ENTITY, (entity, decimal?: string, hex?: string, name?: string) => {
-		if (name !== undefined) return ENTITIES.get(name) ?? entity;
-		const code = decimal !== undefined ? Number(decimal) : parseInt(hex ?? '', 16);
-		return code <= 0x10ffff ? String.fromCodePoint(code) : entity;
-	});
-}
-
 // A line break in HTML: <br>, or the start or end of a paragraph, list item or the like. A tag
 // ends at the next < as well as at >, so each search for one stops where the next could start:
 // text written to make the search backtrack would otherwise take minutes.
@@ -131,7 +95,11 @@ function plainReader(): Plain {
 	let left = IMPORT_MAX_LENGTH;
 	return (text) => {
 		if (left === 0) return '';
-		const line = decodeEntities(text.replace(BREAK, ' ').replace(TAG, ''));
+		// Character references that end in a semicolon, as pages write them: every one HTML names,
+		// such as &eacute;, and numeric ones, where &#128; to &#159; are windows-1252's characters, as
+		// in HTML, so &#146; is ’ (design 7, MEA-116). An & in text that isn't HTML, as in
+		// "Tips&notes", stays.
+		const line = decodeHTMLStrict(text.replace(BREAK, ' ').replace(TAG, ''));
 		const read = line.slice(0, Math.min(NORMALIZE_MAX_LENGTH, left));
 		left -= read.length;
 		return normalizeName(read);
