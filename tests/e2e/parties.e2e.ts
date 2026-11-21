@@ -1,6 +1,20 @@
 import type { Page } from '@playwright/test';
 import type Database from 'better-sqlite3';
-import { addItem, addPartyList, addPerson, addStore, expect, open, test } from './fixtures.ts';
+import {
+	addDays,
+	addDinner,
+	addItem,
+	addPartyList,
+	addPerson,
+	addRecipe,
+	addStore,
+	expect,
+	monthDay,
+	open,
+	test,
+	today,
+	weekday
+} from './fixtures.ts';
 
 // Party lists (design 6.15) and how they keep the grocery list in step.
 
@@ -254,4 +268,82 @@ test("can't open or change another household's list", async ({
 	});
 	expect(post.status()).toBe(404);
 	expect(db.prepare('select count(*) from party_lists where id = ?').pluck().get(listId)).toBe(1);
+});
+
+test("adds a party dinner's ingredients to a new party list from its date's page", async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 3);
+	const burgers = addRecipe(db, person.householdId, {
+		name: 'Burgers',
+		servings: 4,
+		ingredients: [
+			{ item: 'Ground beef', amount: 1, unit: 'lb' },
+			{ item: 'Buns', amount: 4 },
+			{ item: 'Mayonnaise', amount: 2, unit: 'tbsp' },
+			{ item: 'Salt' }
+		]
+	});
+	const slaw = addRecipe(db, person.householdId, {
+		name: 'Slaw',
+		servings: 4,
+		ingredients: [
+			{ item: 'Cabbage', amount: 1 },
+			{ item: 'Mayonnaise', amount: 0.25, unit: 'cup' }
+		]
+	});
+	// The family eats out, and the cookout is a dinner of its own for twice the recipes' servings.
+	const family = addDinner(db, person.householdId, date, { type: 'eat_out' });
+	const cookout = addDinner(db, person.householdId, date, {
+		servings: 8,
+		dishes: [
+			[burgers, 'main'],
+			[slaw, 'side']
+		]
+	});
+	const label = db.prepare('update dinners set label = ? where id = ?');
+	label.run('Family', family);
+	label.run('Cookout', cookout);
+
+	await open(page, `/menu/${date}`);
+	// Only a dinner with dishes has it.
+	await expect(page.getByRole('button', { name: 'Add to party list' })).toHaveCount(1);
+	const cookoutDinner = page.getByRole('region', { name: 'Cookout' });
+	await cookoutDinner.getByRole('button', { name: 'Add to party list' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Add to party list' });
+	await expect(dialog).toContainText('for its 8 servings');
+	const name = `Cookout ${weekday(date)} ${monthDay(date)}`;
+	await expect(dialog.getByLabel('New list')).toHaveValue(name);
+	await dialog.getByRole('button', { name: 'Add to new list' }).click();
+	await expect(dialog).toBeHidden();
+	await expect(cookoutDinner.getByText(`Added 5 things to ${name}.`)).toBeVisible();
+	await expect(
+		cookoutDinner.getByText('Salt is on the list as 1. Set how much the party needs there.')
+	).toBeVisible();
+
+	// Again, to the list it went on: nothing changes.
+	await cookoutDinner.getByRole('button', { name: 'Add to party list' }).click();
+	await dialog.getByRole('button', { name, exact: true }).click();
+	await expect(cookoutDinner.getByText(`Nothing was added to ${name}.`)).toBeVisible();
+	await expect(
+		cookoutDinner.getByText(
+			"Buns, Cabbage, Ground beef, Mayonnaise and Salt were already on the list and weren't changed."
+		)
+	).toBeVisible();
+
+	await cookoutDinner.getByRole('link', { name }).click();
+	await expect(page.getByRole('heading', { name })).toBeVisible();
+	// Twice each recipe's amounts, and the mayonnaise from both dishes, 4 tbsp and 1/2 cup.
+	for (const thing of [
+		/^Buns\s*8$/,
+		/^Cabbage\s*2$/,
+		/^Ground beef\s*2 lb$/,
+		/^Mayonnaise\s*0\.75 cup$/,
+		/^Salt\s*1$/
+	]) {
+		await expect(page.getByRole('button', { name: thing })).toBeVisible();
+	}
+	await expect(page.getByRole('button', { name: /^Mark bought:/ })).toHaveCount(5);
 });

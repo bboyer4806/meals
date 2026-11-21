@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, daysBetween, hasDishes, isDate, weekDates, weekStart } from './menu.ts';
+import {
+	addDays,
+	daysBetween,
+	hasDishes,
+	isDate,
+	partyListNameFor,
+	weekDates,
+	weekStart
+} from './menu.ts';
 
 describe('dates', () => {
 	it('reads only real dates written YYYY-MM-DD', () => {
@@ -58,5 +66,12 @@ describe('dinner types', () => {
 		expect(hasDishes('going')).toBe(true);
 		expect(hasDishes('eat_out')).toBe(false);
 		expect(hasDishes('leftovers')).toBe(false);
+	});
+});
+
+describe('party lists', () => {
+	it("start a dinner's new list with its label, or Party without one, and its date (6.15)", () => {
+		expect(partyListNameFor(null, '2026-12-05')).toBe('Party Sat Dec 5');
+		expect(partyListNameFor('Adults', '2027-01-03')).toBe('Adults Sun Jan 3');
 	});
 });

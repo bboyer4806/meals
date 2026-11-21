@@ -33,11 +33,16 @@ import {
 } from '#lib/server/data/dinners.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
 import {
+	addDinnerToPartyList,
+	listPartyLists,
+	type PartyListChoice
+} from '#lib/server/data/party-lists.ts';
+import {
 	listRequests,
 	promoteDishRequest,
 	promoteRestaurantRequest
 } from '#lib/server/data/requests.ts';
-import { attempt, id, idList, parseForm, sentName } from '#lib/server/forms.ts';
+import { attempt, id, idList, parseForm, partyListName, sentName } from '#lib/server/forms.ts';
 import { restoreAndSaveRequest, saveRequest } from '#lib/server/request-form.ts';
 
 // A date's dinners (design 7, Dinner; 6.9). Each form sends only what it changes and the rest
@@ -64,7 +69,9 @@ export function load({ locals, params }) {
 		dishes: dishSuggestions(user.householdId),
 		// The Menu's requests, under the dinners, so a requested dish can go on one and a requested
 		// restaurant can become one (6.12).
-		requests: listRequests(user.householdId)
+		requests: listRequests(user.householdId),
+		// The lists Add to party list offers, by name (6.15).
+		partyLists: listPartyLists(user.householdId).map((list) => ({ id: list.id, name: list.name }))
 	};
 }
 
@@ -163,7 +170,20 @@ const promoteSchema = z.object({
 // asked for when the date has dinners (6.12, 6.9).
 const promoteRestaurantSchema = promoteSchema.omit({ dinnerId: true });
 
+// Add to party list: the dinner the page showed, and a party list the household has, or a new
+// list's name, checked before it's normalized (6.15).
+const partyListSchema = z.object({ dinnerId: id, listId: id });
+const newPartyListSchema = z.object({ dinnerId: id, name: partyListName });
+
 const CHANGED_SINCE = 'Someone has added dishes to this dinner since you opened it.';
+
+/** Adds the dinner's ingredients to the party list, for the page to say what it added (6.15). */
+function addToParty(householdId: number, date: string, dinnerId: number, to: PartyListChoice) {
+	return attempt('partyList', () => ({
+		action: 'partyList' as const,
+		...addDinnerToPartyList(householdId, date, dinnerId, to, Date.now())
+	}));
+}
 
 export const actions = {
 	type: async ({ locals, params, request }) => {
@@ -290,6 +310,27 @@ export const actions = {
 		return attempt('dishes', () =>
 			removeDinnerDish(user.householdId, date, dinnerId, dishId, Date.now())
 		);
+	},
+
+	// Add to party list puts what a party dinner's dishes need, for its servings, on one of the
+	// household's party lists (6.15, MEA-268), or on a new list (below). The dinners stay as they
+	// are.
+	addToPartyList: async ({ locals, params, request }) => {
+		const user = requireHousehold(locals);
+		const date = dinnerDate(params);
+		const parsed = parseForm(partyListSchema, await request.formData(), 'partyList');
+		if ('failure' in parsed) return parsed.failure;
+		const { dinnerId, listId } = parsed.data;
+		return addToParty(user.householdId, date, dinnerId, { listId });
+	},
+
+	addToNewPartyList: async ({ locals, params, request }) => {
+		const user = requireHousehold(locals);
+		const date = dinnerDate(params);
+		const parsed = parseForm(newPartyListSchema, await request.formData(), 'partyList');
+		if ('failure' in parsed) return parsed.failure;
+		const { dinnerId, name } = parsed.data;
+		return addToParty(user.householdId, date, dinnerId, { name });
 	},
 
 	// The past dinners Copy a dinner offers, asked for when it opens rather than sent with the page,

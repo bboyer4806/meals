@@ -102,3 +102,19 @@ export function weekStart(date: string): string {
 export function weekDates(start: string): string[] {
 	return Array.from({ length: 7 }, (_, index) => addDays(start, index));
 }
+
+// "Sat, Dec 6", which a party list's name has without the comma.
+const PARTY_DATE = new Intl.DateTimeFormat('en-US', {
+	timeZone: 'UTC',
+	weekday: 'short',
+	month: 'short',
+	day: 'numeric'
+});
+
+/**
+ * The name a new party list starts with when a dinner's ingredients go on it (6.15, MEA-268): the
+ * dinner's label, or "Party" when it has none, and its date, such as "Party Sat Dec 6".
+ */
+export function partyListNameFor(label: string | null, date: string): string {
+	return `${label ?? 'Party'} ${PARTY_DATE.format(utcDay(date)).replace(',', '')}`;
+}

@@ -590,6 +590,7 @@
 			editing={slot.editing}
 			{labeled}
 			suggestions={data.dishes}
+			partyLists={data.partyLists}
 			today={data.today}
 			onlost={showNotice}
 			{send}

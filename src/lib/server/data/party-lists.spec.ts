@@ -1,11 +1,22 @@
 import { isHttpError } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { DishRole } from '../../menu.ts';
 import { foldCase, normalizeName } from '../../text.ts';
 import { db } from '../db/index.ts';
 import { items, partyAllocations } from '../db/schema.ts';
-import { expectHttpError, freshDb, makeHousehold, makeStore } from '../testing.ts';
-import { setItemArchived } from './items.ts';
+import {
+	expectHttpError,
+	freshDb,
+	ingredient,
+	makeDinner,
+	makeDish,
+	makeHousehold,
+	makeStore,
+	recipe
+} from '../testing.ts';
+import { setDishArchived } from './dishes.ts';
+import { findItemByName, setItemArchived } from './items.ts';
 import {
 	addNeed,
 	deleteLine,
@@ -21,6 +32,7 @@ import {
 	type GroceryLine
 } from './needs.ts';
 import {
+	addDinnerToPartyList,
 	addPartyItem,
 	addToGroceries,
 	createPartyList,
@@ -31,7 +43,8 @@ import {
 	removePartyItem,
 	renamePartyList,
 	setPartyItemQuantity,
-	unmarkBought
+	unmarkBought,
+	type PartyListChoice
 } from './party-lists.ts';
 
 const TZ = 'America/Chicago';
@@ -654,5 +667,256 @@ describe('changing a line on Groceries', () => {
 			kind: 'updated'
 		});
 		expect(thing(birthday, 'Chips')).toMatchObject({ onGroceries: 2, toAdd: 1 });
+	});
+});
+
+describe("a dinner's ingredients", () => {
+	// A Saturday, after NOON's.
+	const DATE = '2026-10-10';
+
+	/** A Cooking at home dinner on DATE with these dishes, the first as Main and the rest as Sides. */
+	function partyDinner(dishIds: number[], servings: number): number {
+		const dishes = dishIds.map((dishId, index): [number, DishRole] => [
+			dishId,
+			index === 0 ? 'main' : 'side'
+		]);
+		return makeDinner(householdId, DATE, { servings, dishes });
+	}
+
+	function addDinner(dinnerId: number, to: PartyListChoice, date = DATE) {
+		return addDinnerToPartyList(householdId, date, dinnerId, to, NOON);
+	}
+
+	/** The list's things as [name, quantity, unit], by name. */
+	function thingsOn(listId: number) {
+		return getPartyList(householdId, listId).items.map((t) => [t.itemName, t.quantity, t.unit]);
+	}
+
+	function itemId(name: string): number {
+		const item = findItemByName(householdId, name);
+		if (!item) throw new Error(`No item called ${name}`);
+		return item.id;
+	}
+
+	it("scales each ingredient by the dinner's servings over its recipe's", () => {
+		const burgers = makeDish(
+			householdId,
+			recipe('Burgers', {
+				servings: 4,
+				ingredients: [
+					ingredient('Ground beef', 1, 'lb'),
+					ingredient('Buns', 4),
+					ingredient('Pickles', 2, 'jar')
+				]
+			})
+		);
+		const slaw = makeDish(
+			householdId,
+			recipe('Slaw', { servings: 8, ingredients: [ingredient('Cabbage', 1)] })
+		);
+		// An archived dish is still on the dinner, so it counts (6.10).
+		setDishArchived(householdId, slaw, true, NOON);
+		const cookout = newList('Cookout');
+		expect(addDinner(partyDinner([burgers, slaw], 12), { listId: cookout })).toEqual({
+			list: { id: cookout, name: 'Cookout' },
+			added: 4,
+			unmeasured: [],
+			alreadyOnList: [],
+			archived: []
+		});
+		expect(thingsOn(cookout)).toEqual([
+			['Buns', 12, null],
+			['Cabbage', 1.5, null],
+			['Ground beef', 3, 'lb'],
+			['Pickles', 6, 'jar']
+		]);
+		// Nothing goes on Groceries until the list's Add to Groceries.
+		expect(thing(cookout, 'Buns')).toMatchObject({ onGroceries: 0, toAdd: 12 });
+	});
+
+	it("adds up an item's amounts from each dish when their units convert", () => {
+		const burgers = makeDish(
+			householdId,
+			recipe('Burgers', {
+				ingredients: [
+					ingredient('Mayonnaise', 2, 'tbsp'),
+					ingredient('Beef', 8, 'oz'),
+					ingredient('Tomatoes', 1, 'can')
+				]
+			})
+		);
+		const slaw = makeDish(
+			householdId,
+			recipe('Slaw', {
+				ingredients: [
+					ingredient('Mayonnaise', 0.25, 'cup'),
+					ingredient('Beef', 1, 'lb'),
+					ingredient('Tomatoes', 2, 'Can')
+				]
+			})
+		);
+		const cookout = newList('Cookout');
+		// Twice each recipe's 4 servings.
+		expect(addDinner(partyDinner([burgers, slaw], 8), { listId: cookout })).toMatchObject({
+			added: 3,
+			unmeasured: []
+		});
+		// 4 tbsp and 1/2 cup are 3/4 cup, and 16 oz and 2 lb are 3 lb, in the unit whose range holds
+		// the total (6.6). A custom unit adds up with the same one, ignoring case.
+		expect(thingsOn(cookout)).toEqual([
+			['Beef', 3, 'lb'],
+			['Mayonnaise', 0.75, 'cup'],
+			['Tomatoes', 6, 'can']
+		]);
+	});
+
+	it("adds an item with no amount, or amounts that don't add up, once at 1 with no unit", () => {
+		const burgers = makeDish(
+			householdId,
+			recipe('Burgers', {
+				ingredients: [
+					ingredient('Salt'),
+					ingredient('Garlic', 2, 'cloves'),
+					ingredient('Pepper', 1, 'tsp'),
+					ingredient('Bacon', 4, 'slices'),
+					ingredient('Onion', 1)
+				]
+			})
+		);
+		const slaw = makeDish(
+			householdId,
+			recipe('Slaw', {
+				ingredients: [
+					ingredient('Garlic', 1, 'tbsp'),
+					ingredient('Pepper'),
+					ingredient('Bacon', 1, 'slice'),
+					ingredient('Onion', 2, 'oz')
+				]
+			})
+		);
+		const cookout = newList('Cookout');
+		expect(addDinner(partyDinner([burgers, slaw], 8), { listId: cookout })).toMatchObject({
+			added: 5,
+			unmeasured: ['Bacon', 'Garlic', 'Onion', 'Pepper', 'Salt']
+		});
+		expect(thingsOn(cookout)).toEqual([
+			['Bacon', 1, null],
+			['Garlic', 1, null],
+			['Onion', 1, null],
+			['Pepper', 1, null],
+			['Salt', 1, null]
+		]);
+	});
+
+	it('leaves out items marked Always have and archived items, naming the archived ones', () => {
+		const tacos = makeDish(
+			householdId,
+			recipe('Tacos', {
+				ingredients: [
+					ingredient('Salt', 1, 'tsp'),
+					ingredient('Cilantro', 1, 'bunch'),
+					ingredient('Tortillas', 12)
+				]
+			})
+		);
+		db().update(items).set({ alwaysHave: true }).where(eq(items.id, itemId('Salt'))).run();
+		setItemArchived(householdId, itemId('Cilantro'), true, NOON);
+		const fiesta = newList('Fiesta');
+		expect(addDinner(partyDinner([tacos], 4), { listId: fiesta })).toEqual({
+			list: { id: fiesta, name: 'Fiesta' },
+			added: 1,
+			unmeasured: [],
+			alreadyOnList: [],
+			archived: ['Cilantro']
+		});
+		expect(thingsOn(fiesta)).toEqual([['Tortillas', 12, null]]);
+	});
+
+	it("leaves what's already on the list as it was, so adding the same dinner again adds nothing", () => {
+		const burgers = makeDish(
+			householdId,
+			recipe('Burgers', {
+				ingredients: [ingredient('Buns', 4), ingredient('Ground beef', 1, 'lb'), ingredient('Salt')]
+			})
+		);
+		const dinnerId = partyDinner([burgers], 8);
+		const cookout = newList('Cookout');
+		addToList(cookout, addThing(cookout, 'buns', 3, 'packs'));
+		expect(addDinner(dinnerId, { listId: cookout })).toEqual({
+			list: { id: cookout, name: 'Cookout' },
+			added: 2,
+			unmeasured: ['Salt'],
+			alreadyOnList: ['Buns'],
+			archived: []
+		});
+		const before = getPartyList(householdId, cookout);
+		const groceries = linesOf('Buns');
+		expect(addDinner(dinnerId, { listId: cookout })).toEqual({
+			list: { id: cookout, name: 'Cookout' },
+			added: 0,
+			unmeasured: [],
+			alreadyOnList: ['Buns', 'Ground beef', 'Salt'],
+			archived: []
+		});
+		expect(getPartyList(householdId, cookout)).toEqual(before);
+		expect(linesOf('Buns')).toEqual(groceries);
+		expect(thingsOn(cookout)).toEqual([
+			['Buns', 3, 'packs'],
+			['Ground beef', 2, 'lb'],
+			['Salt', 1, null]
+		]);
+	});
+
+	it('starts a new list by the name given, unless the household has a list by that name', () => {
+		const burgers = makeDish(householdId, recipe('Burgers', { ingredients: [ingredient('Buns', 4)] }));
+		const dinnerId = partyDinner([burgers], 4);
+		const added = addDinner(dinnerId, { name: 'Party Sat Oct 10' });
+		expect(added).toMatchObject({ list: { name: 'Party Sat Oct 10' }, added: 1 });
+		expect(listPartyLists(householdId)).toEqual([
+			{ id: added.list.id, name: 'Party Sat Oct 10', itemCount: 1, doneCount: 0 }
+		]);
+		expectRefused(
+			() => addDinner(dinnerId, { name: 'PARTY sat oct 10' }),
+			'You already have a party list called PARTY sat oct 10.'
+		);
+		expect(listPartyLists(householdId)).toHaveLength(1);
+	});
+
+	it('adds nothing for dishes without ingredients, though a new list still starts', () => {
+		const rolls = makeDish(householdId, recipe('Rolls'));
+		const added = addDinner(partyDinner([rolls], 4), { name: 'Bake sale' });
+		expect(added).toMatchObject({ added: 0, unmeasured: [], alreadyOnList: [], archived: [] });
+		expect(thingsOn(added.list.id)).toEqual([]);
+	});
+
+	it("refuses a dinner that isn't on the date, or has no dishes now", () => {
+		const burgers = makeDish(householdId, recipe('Burgers', { ingredients: [ingredient('Buns', 4)] }));
+		const dinnerId = partyDinner([burgers], 4);
+		const cookout = newList('Cookout');
+		// Someone moved it to another date since the page showed it.
+		expectHttpError(() => addDinner(dinnerId, { listId: cookout }, '2026-10-11'), 404);
+		const noDishes = makeDinner(householdId, '2026-10-12', { servings: 8 });
+		const eatingOut = makeDinner(householdId, '2026-10-13', { type: 'eat_out' });
+		for (const [id, date] of [
+			[noDishes, '2026-10-12'],
+			[eatingOut, '2026-10-13']
+		] as const) {
+			expectRefused(() => addDinner(id, { name: 'New' }, date), 'This dinner has no dishes now.');
+		}
+		expect(thingsOn(cookout)).toEqual([]);
+		expect(listPartyLists(householdId).map((list) => list.name)).toEqual(['Cookout']);
+	});
+
+	it("uses only the household's own dinners and party lists", () => {
+		const burgers = makeDish(householdId, recipe('Burgers', { ingredients: [ingredient('Buns', 4)] }));
+		const dinnerId = partyDinner([burgers], 4);
+		const cookout = newList('Cookout');
+		const other = makeHousehold(TZ).householdId;
+		const theirs = createPartyList(other, 'Theirs', NOON);
+		expectHttpError(() => addDinnerToPartyList(other, DATE, dinnerId, { listId: theirs }, NOON), 404);
+		expectHttpError(() => addDinnerToPartyList(other, DATE, dinnerId, { name: 'Ours' }, NOON), 404);
+		expectHttpError(() => addDinner(dinnerId, { listId: theirs }), 404);
+		expect(listPartyLists(other)).toEqual([{ id: theirs, name: 'Theirs', itemCount: 0, doneCount: 0 }]);
+		expect(thingsOn(cookout)).toEqual([]);
 	});
 });

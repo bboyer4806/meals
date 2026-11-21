@@ -24,6 +24,7 @@
 	import { refreshAll } from '$app/navigation';
 	import { DINNER_TYPES, DINNER_TYPE_LABELS, NO_DISHES, hasDishes, type DinnerType } from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
+	import AddToPartyList from './AddToPartyList.svelte';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import CopyDinner from './CopyDinner.svelte';
 	import DinnerDetails from './DinnerDetails.svelte';
@@ -31,14 +32,15 @@
 	import Sheet from './Sheet.svelte';
 
 	// One dinner on a date's page (design 7, Dinner; 6.9): its type, dishes, servings or
-	// restaurant, and note, Copy a dinner and Clear. Each of a date's dinners has its own, and a
-	// change to one never changes another. Its forms send the dinner's id, so they act on this
-	// dinner only.
+	// restaurant, and note, Copy a dinner, Add to party list and Clear. Each of a date's dinners has
+	// its own, and a change to one never changes another. Its forms send the dinner's id, so they act
+	// on this dinner only.
 	let {
 		dinner,
 		editing,
 		labeled,
 		suggestions,
+		partyLists,
 		today,
 		onlost,
 		send,
@@ -51,6 +53,8 @@
 		/** Whether the date has more than one dinner, so each has a label (6.9). */
 		labeled: boolean;
 		suggestions: { id: number; name: string; timesAdded: number }[];
+		/** The household's party lists, by name, for Add to party list (6.15). */
+		partyLists: { id: number; name: string }[];
 		today: string;
 		/** Shows a failure on the page, once the part of this dinner it belonged to is gone. */
 		onlost: (message: string) => void;
@@ -278,6 +282,10 @@
 
 	<div class="actions">
 		<CopyDinner dinnerId={dinner?.id} {dishCount} {today} {send} />
+		<!-- Only Cooking at home and Bringing a dish have dishes (6.9). -->
+		{#if dinner && dishCount > 0}
+			<AddToPartyList {dinner} {partyLists} {onlost} />
+		{/if}
 	</div>
 
 	{#if dinner}
