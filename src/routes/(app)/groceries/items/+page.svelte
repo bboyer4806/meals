@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance, type SubmitFunction } from '$app/forms';
+	import { afterNavigate } from '$app/navigation';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import ItemImage, { type ImageChoice } from '#lib/components/ItemImage.svelte';
 	import ItemThumb from '#lib/components/ItemThumb.svelte';
@@ -28,6 +29,13 @@
 		preparingImage = false;
 		open = true;
 	}
+
+	// A link to one item, such as from Reports, opens its sheet (design 7, Items). Only when the
+	// page is opened: a save or a reload of its data leaves the sheet as it is.
+	afterNavigate(() => {
+		const item = data.items.find((candidate) => candidate.id === data.openedId);
+		if (item) edit(item);
+	});
 
 	const submitSheet: SubmitFunction = ({ action, formData, cancel }) => {
 		// Save sends the image with the name and notes. Archive and Restore leave it as it is.

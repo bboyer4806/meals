@@ -377,6 +377,7 @@ src/lib/                  used by browser and server; no database access
   dates.ts                "today" and weeks in a time zone
   whats-new.ts            the releases listed on What's new, newest first
   default-dishes.ts       the dishes every household's Recipes starts with (6.18)
+  reports.ts              the Reports page's periods, Forgotten Favorites and shares (7)
 src/lib/server/
   config.ts               settings from the environment, checked at startup
   db/schema.ts            tables
@@ -385,7 +386,7 @@ src/lib/server/
   ai/                     the MCP server, the changes AI assistants can propose, and proposals
   origin.ts               refuse forms sent from other sites (4.5)
   data/                   one module per area: households, stores, items, needs,
-                          party-lists, dishes, dinners, requests. Every function takes
+                          party-lists, dishes, dinners, requests, reports. Every function takes
                           householdId first, except whats-new (a person's seen
                           release), which takes the person's id.
   standard-items.ts       the items every household's catalog starts with (6.13)
@@ -1201,8 +1202,8 @@ apart at a glance when browsing Recipes and planning dinners (MEA-259).
 ## 7. Screens
 
 On a phone, tabs at the bottom switch between **Groceries**, **Menu** and **Recipes**. A
-header menu, More, holds Items, Grocery History, Household, What's new, Admin (admin only) and Sign
-out. It closes when one of its links is followed, with Escape or with a tap outside it, and
+header menu, More, holds Items, Grocery History, Reports, Household, What's new, Admin (admin only)
+and Sign out. It closes when one of its links is followed, with Escape or with a tap outside it, and
 that tap still goes to the page. Help sits in the header to the left of More.
 
 | Screen           | Path                                 | What it does                                                                                                                         |
@@ -1212,7 +1213,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Household setup  | `/setup`                             | After signing in without a household: the households that invited them, each with Join, and for a new household, name, usual servings and time zone (6.1). |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | Grocery History  | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
-| Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. |
+| Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. A link to one item, such as from Reports, opens its sheet (see Reports below). |
 | Party lists      | `/groceries/parties`                 | "‹ Groceries", then New list and the household's party lists, each with how many of its things are bought (6.15). |
 | Party list       | `/groceries/parties/[id]`            | "‹ Party lists", the name with Edit, an add form, Add all to Groceries, and the things with their circles, amounts, what's bought and on Groceries, and Add to Groceries (6.15). Tapping a thing opens a sheet with its quantity, Save and Remove. |
 | Recipes          | `/recipes`                           | Search by name, filter by tags, sort by name or rating, or group by when each was last on the Menu (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, Import and New recipe. |
@@ -1223,6 +1224,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Menu             | `/menu`                              | See below.                                                                                                                           |
 | Dinner           | `/menu/[date]`                       | See below.                                                                                                                           |
 | Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
+| Reports          | `/reports`                           | See below.                                                                                                                           |
 | Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
 | What's new       | `/whats-new`                         | See below.                                                                                                                           |
 | Admin            | `/admin`                             | Invite households, list households with their members and invites, last backup date, send a test email, AI assistants. See below.   |
@@ -1263,8 +1265,8 @@ the header to the left of More, which printing hides with the rest of the header
 sheet titled "Help: " and the screen's name, such as "Help: Grocery list", that says what the
 screen is for and how to do its main tasks, in plain words and no more than about 6 short points.
 Recipe, Edit recipe and New recipe (which share the editor's points, each adding one about Import
-from a link), Import recipes, Cooking view, Dinner, Grocery History, Items, Party lists and Party
-list each have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
+from a link), Import recipes, Cooking view, Dinner, Grocery History, Items, Party lists, Party list
+and Reports each have their own help. The sheet closes with ✕, Escape or a tap on the backdrop.
 Opening it changes nothing on the page behind, so anything typed there and not saved stays. The
 help is fixed text in `src/lib/help.ts`, keyed by each screen's route, and the type check fails
 if a screen has none. It opens only when asked: there's no Help page or link in More, and the
@@ -1657,6 +1659,48 @@ this dinner" in place of "Someone cleared this dinner". The page's own Clear or 
 called someone else's, also when it was still on its way as the phone dropped the app, or Back
 returns to the date it moved from: what it took off the page goes without a word.
 
+**Reports.** Five reports show a household its habits from what Meals already keeps, the Menu and
+Grocery History, so nobody tracks anything new (MEA-14). More opens it. They're stacked on one page
+in this order: Most Frequently Planned Dishes, Most Frequently Purchased Groceries, Most Popular
+Restaurants, Dinner Breakdown and Forgotten Favorites. The page only reads, and every report is of
+the household's own data (4.5).
+
+- **Period.** Last 30 days, Last 90 days, Last 12 months and All time sit above the reports, the
+  current one filled in, two to a row on a phone. Last 90 days is the default, and shows for a
+  missing or unknown period in the address. Each is a link, so it adds a Back step and a shared link
+  keeps it. The period applies to the first four reports. Dates are the household's (2.3), and as
+  Recipes' 60 days count from 60 days before today: Last 30 days counts from 30 days before today,
+  Last 90 days from 90 days before, Last 12 months from the same date a year before (Feb 28 for Feb
+  29), and All time from the first date, each through today. A dinner planned for a later date
+  doesn't count, since it hasn't happened yet.
+- **Most Frequently Planned Dishes** ranks dishes by how many of the period's dinners they were on,
+  of any type, Bringing a dish included. Archived dishes count, since their dinners happened (6.10).
+- **Most Frequently Purchased Groceries** ranks items by how many grocery lines were received for
+  them in the period: each line once, whatever its quantity, by when it was received rather than
+  added, from the moment the period's first date starts in the household's time zone. The part a Got
+  fewer received is a line of its own (6.2), as is a party's part checked off on its list (6.15),
+  and a line that's undone (2.2.3) no longer counts. Archived items count.
+- **Most Popular Restaurants** ranks restaurants by how many of the period's Eating out dinners went
+  to them (6.9). Names that differ only in case are one restaurant, written as its latest dinner has
+  it, and an Eating out dinner without a restaurant doesn't count.
+- **Dinner Breakdown** shows each type's share of the period's dinners, each dinner on its own, so a
+  date with two dinners counts twice: Cooking at home, Eating out, Leftovers and Bringing a dish, in
+  that order, each with a bar of its share, the share as a whole percent and how many dinners. A
+  share above none never shows as 0% but as "<1%", and one below all as ">99%" rather than 100%.
+- **Forgotten Favorites** lists active dishes planned at least 3 times, but not from 90 days before
+  today on, the days Last 90 days counts, whatever the period. A dish already planned for a later
+  date isn't forgotten, so it isn't listed. Each shows how many times and when it was last planned
+  ("Last planned Sat, Mar 7", with the year when it isn't this year). Archived dishes don't count.
+- The rankings, Forgotten Favorites included, are horizontal bars, most first and then by name, each
+  with its name and count and a bar as long as its count against the most. Each shows its top 10,
+  and "Show all 23" shows the rest, "Show top 10" hiding them again; changing the period starts each
+  at its top 10. A dish opens its recipe, archived or not. An item opens its sheet on Items, at
+  `/groceries/items?item=` and its id, in the archived list when it's archived and otherwise the
+  active one, whatever the link's other settings; another household's item, or anything that isn't
+  an item's id, is Not found. A restaurant opens nothing, since restaurants aren't kept anywhere
+  (6.9).
+- A report with nothing to show says so, such as "No dishes were planned in this period."
+
 **What's new.** What each release changed, newest first, in words for the people using the
 app; every household sees the same page. Each release's heading is its version, such as "1.2"
 for the "Meals 1.2" sprint, then "Released" with its date and one line per change people will
@@ -1828,5 +1872,7 @@ ingredients.
   party lists made from recipes or the menu (MEA-247).
 - AI assistants other than ChatGPT and Claude, and assistants proposing changes to party lists,
   ratings, members or invites, or adding requests (6.17).
+- Reports beyond the five on Reports: reports people make, other date ranges or filters, exporting
+  or sharing them, and forecasts or suggested meal plans (MEA-14).
 - Decided against: store integrations (Q15), offline use (Q10), live updates (Q11),
   categories (Q23), prices (Q25), inventory (Q6) and saved meals (Q3).
