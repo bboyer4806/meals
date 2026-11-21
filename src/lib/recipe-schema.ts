@@ -81,9 +81,10 @@ export function findRecipe(jsonLd: unknown, depth = 0): JsonLdNode | null {
 const BREAK = /<\/?(?:br|p|div|li|ol|ul|h[1-6])\b[^<>]*>/gi;
 // Any other tag, such as a link around an ingredient's name.
 const TAG = /<\/?[a-z][^<>]*>/gi;
-// What HTML reads &#129;, &#141;, &#143;, &#144; and &#157;, which windows-1252 leaves undefined,
-// as: control characters, which show as nothing, so they're dropped (MEA-116).
-const UNDEFINED_1252 = /[\x81\x8d\x8f\x90\x9d]/g;
+// A control character other than whitespace, which normalizeName makes a space. It shows as
+// nothing, whether a reference such as &#1; or &#129; or the page's own text holds it, so it's
+// dropped and imported text has none (MEA-116).
+const CONTROL = /(?!\s)\p{Cc}/gu;
 
 /** Reads one piece of a page's text (plainReader). */
 type Plain = (text: string) => string;
@@ -103,7 +104,7 @@ function plainReader(): Plain {
 		// in HTML, so &#146; is ’ (design 7, MEA-116). An & in text that isn't HTML, as in
 		// "Tips&notes", stays.
 		const decoded = decodeHTMLStrict(text.replace(BREAK, ' ').replace(TAG, ''));
-		const line = decoded.replace(UNDEFINED_1252, '');
+		const line = decoded.replace(CONTROL, '');
 		const read = line.slice(0, Math.min(NORMALIZE_MAX_LENGTH, left));
 		left -= read.length;
 		return normalizeName(read);

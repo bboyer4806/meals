@@ -344,9 +344,18 @@ describe('schemaRecipeValues', () => {
 		);
 	});
 
-	it('drops &#129;, &#141;, &#143;, &#144; and &#157;, which windows-1252 leaves undefined (MEA-116)', () => {
-		// HTML reads them as control characters, which show as nothing.
-		expect(fromRecipe({ name: 'Peach&#129; pie&#x8D;&#143;&#144;&#157;' }).name).toBe('Peach pie');
+	it('drops control characters other than whitespace, from references or the text (MEA-116)', () => {
+		const values = fromRecipe({
+			// The references windows-1252 leaves undefined, which HTML reads as control characters.
+			name: 'Peach&#129; pie&#x8D;&#143;&#144;&#157;',
+			// References to control characters, and ones the page's own text holds.
+			recipeIngredient: ['2 cups&#1;&#x1F;&#127; flour\u0007\u0092'],
+			// A tab is whitespace, so it's a space, as a typed one is.
+			recipeInstructions: ['Mix&#9;well.']
+		});
+		expect(values.name).toBe('Peach pie');
+		expect(ingredients(values)).toEqual([['2', 'cups', 'flour', '']]);
+		expect(values.steps).toBe('Mix well.');
 	});
 
 	it('reads text written to be slow to search as fast as any other', () => {

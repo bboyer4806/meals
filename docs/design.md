@@ -1463,9 +1463,9 @@ flour and sifted. Steps grouped in sections keep their order without the section
 HTML is taken out of the text. Character references that end in a semicolon, as pages write them,
 are read as the characters they stand for: every one HTML names, such as `&amp;` and `&eacute;`,
 and numeric ones, where `&#128;` to `&#159;` are windows-1252's characters, as in HTML, so
-`&#146;` is ’ (MEA-116). `&#129;`, `&#141;`, `&#143;`, `&#144;` and `&#157;`, which windows-1252
-leaves undefined, would be control characters that show as nothing, so those characters are
-dropped. Text over 10,000
+`&#146;` is ’. Control characters other than whitespace, which show as nothing, are then dropped,
+whether a reference such as `&#1;` or `&#129;` (which windows-1252 leaves undefined) or the page's
+own text holds them, so imported text has none (MEA-116). Text over 10,000
 characters in one place, such as the name, an ingredient or a step, is cut to 10,000, and the
 text is read in the editor's order, the name, ingredients and then steps, up to 100,000
 characters in all, cutting the piece where it runs out and leaving out the rest (4.5). Save then
