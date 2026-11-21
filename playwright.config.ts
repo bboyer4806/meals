@@ -13,6 +13,8 @@ export default defineConfig({
 	testDir: 'tests/e2e',
 	testMatch: '**/*.e2e.ts',
 	fullyParallel: true,
+	// A test.only left in fails CI instead of skipping the other tests (design section 10).
+	forbidOnly: !!process.env.CI,
 	// CLAUDECODE is set in Claude Code's shell; dot keeps passing tests out of its context.
 	reporter: process.env.CI ? 'github' : process.env.CLAUDECODE ? 'dot' : 'list',
 	use: {
