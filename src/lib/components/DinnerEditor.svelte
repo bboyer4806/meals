@@ -24,7 +24,6 @@
 	import { refreshAll } from '$app/navigation';
 	import { DINNER_TYPES, DINNER_TYPE_LABELS, NO_DISHES, hasDishes, type DinnerType } from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
-	import type { CopyGroup } from '../server/data/dinners.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import CopyDinner from './CopyDinner.svelte';
 	import DinnerDetails from './DinnerDetails.svelte';
@@ -40,7 +39,6 @@
 		editing,
 		labeled,
 		suggestions,
-		copyGroups,
 		today,
 		onlost,
 		send,
@@ -53,7 +51,6 @@
 		/** Whether the date has more than one dinner, so each has a label (6.9). */
 		labeled: boolean;
 		suggestions: { id: number; name: string; timesAdded: number }[];
-		copyGroups: CopyGroup[];
 		today: string;
 		/** Shows a failure on the page, once the part of this dinner it belonged to is gone. */
 		onlost: (message: string) => void;
@@ -80,9 +77,6 @@
 			? shownServings
 			: dinner?.servings
 	);
-
-	// Copying the group whose latest dinner is this one would change nothing, so it's left out.
-	const groups = $derived(copyGroups.filter((group) => group.dinnerId !== dinner?.id));
 
 	/** Whether there's a dish section: no dinner yet, or one of a type with dishes. */
 	function withDishes(shown: Dinner | null): boolean {
@@ -283,7 +277,7 @@
 	/>
 
 	<div class="actions">
-		<CopyDinner {groups} dinnerId={dinner?.id} {dishCount} {today} {send} />
+		<CopyDinner dinnerId={dinner?.id} {dishCount} {today} {send} />
 	</div>
 
 	{#if dinner}
