@@ -632,3 +632,54 @@ describe('household-invites', () => {
 		expect(() => invite('pat@example.com', null)).toThrow(/UNIQUE/);
 	});
 });
+
+// The change that has undoing a check-off put back the store and default store that receiving
+// replaced (design 2.2.3, MEA-115).
+describe('received-line-stores', () => {
+	it('keeps every line, and records its own store as what each received line replaced', () => {
+		const sqlite = new Database(':memory:');
+		migrate(sqlite, foldersBefore('0029_received-line-stores'));
+		const run = (statement: string, ...values: unknown[]) =>
+			Number(sqlite.prepare(statement).run(...values).lastInsertRowid);
+		const household = run(
+			"insert into households (name, default_servings, time_zone, created_at) values ('H', 4, 'UTC', 0)"
+		);
+		const walmart = run("insert into stores (household_id, name) values (?, 'Walmart')", household);
+		const milk = run(
+			"insert into items (household_id, name, default_store_id, created_at) values (?, 'Milk', ?, 0)",
+			household,
+			walmart
+		);
+		const line = (status: string, storeId: number | null, orderedAt: number | null) =>
+			run(
+				'insert into grocery_needs (household_id, item_id, quantity, store_id, status, created_at, ordered_at, received_at) values (?, ?, 1, ?, ?, 0, ?, ?)',
+				household,
+				milk,
+				storeId,
+				status,
+				orderedAt,
+				status === 'received' ? 2 : null
+			);
+		line('to_order', null, null);
+		line('ordered', walmart, 1);
+		// Bought in the store, and ordered before it came.
+		line('received', walmart, null);
+		line('received', walmart, 1);
+		const rows = () =>
+			sqlite.prepare('select * from grocery_needs order by id').all() as Record<string, unknown>[];
+		const before = rows();
+
+		migrate(sqlite, 'drizzle');
+
+		const kept = (storeBefore: number | null, defaultStoreBefore: number | null) => ({
+			store_before_received: storeBefore,
+			default_store_before_received: defaultStoreBefore
+		});
+		expect(rows()).toMatchObject([
+			{ ...before[0], ...kept(null, null) },
+			{ ...before[1], ...kept(null, null) },
+			{ ...before[2], ...kept(walmart, walmart) },
+			{ ...before[3], ...kept(walmart, null) }
+		]);
+	});
+});

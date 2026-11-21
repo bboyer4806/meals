@@ -58,7 +58,11 @@ export function renameStore(householdId: number, storeId: number, name: string):
 	if (existing && existing.id !== storeId) {
 		return { kind: 'taken', archived: existing.archivedAt !== null };
 	}
-	db().update(stores).set({ name }).where(eq(stores.id, storeId)).run();
+	db()
+		.update(stores)
+		.set({ name })
+		.where(and(eq(stores.id, storeId), eq(stores.householdId, householdId)))
+		.run();
 	return { kind: 'saved' };
 }
 
@@ -72,6 +76,6 @@ export function setStoreArchived(
 	db()
 		.update(stores)
 		.set({ archivedAt: archived ? now : null })
-		.where(eq(stores.id, storeId))
+		.where(and(eq(stores.id, storeId), eq(stores.householdId, householdId)))
 		.run();
 }

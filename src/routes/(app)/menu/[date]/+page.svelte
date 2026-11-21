@@ -590,7 +590,6 @@
 			editing={slot.editing}
 			{labeled}
 			suggestions={data.dishes}
-			copyGroups={data.copyGroups}
 			today={data.today}
 			onlost={showNotice}
 			{send}

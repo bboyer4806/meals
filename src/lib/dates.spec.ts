@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dateIn, formatDateLabel, isValidTimeZone, startOfDate } from './dates.ts';
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
 
 describe('dateIn', () => {
 	it('uses the time zone, not UTC', () => {
@@ -7,6 +11,16 @@ describe('dateIn', () => {
 		const ms = Date.UTC(2026, 9, 4, 3, 30);
 		expect(dateIn(ms, 'America/Chicago')).toBe('2026-10-03');
 		expect(dateIn(ms, 'UTC')).toBe('2026-10-04');
+	});
+
+	it('builds one formatter for a time zone and reuses it', () => {
+		const built = vi.spyOn(Intl, 'DateTimeFormat');
+		// Tokyo is in no other test here, so its formatter isn't built yet. 2026-10-04 20:00 UTC is
+		// already Oct 5 in Tokyo (UTC+9).
+		const ms = Date.UTC(2026, 9, 4, 20);
+		expect(dateIn(ms, 'Asia/Tokyo')).toBe('2026-10-05');
+		expect(dateIn(ms + 24 * 60 * 60 * 1000, 'Asia/Tokyo')).toBe('2026-10-06');
+		expect(built).toHaveBeenCalledOnce();
 	});
 });
 

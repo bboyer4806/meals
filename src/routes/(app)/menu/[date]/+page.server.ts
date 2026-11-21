@@ -61,8 +61,6 @@ export function load({ locals, params }) {
 		dinners: getDay(user.householdId, date),
 		// A date with no dinner shows Cooking at home at these servings, unsaved (6.9, Q28).
 		defaultServings: household.defaultServings,
-		// Dinners already made, so a plan for later in the week isn't offered (6.9, Q3, Q30).
-		copyGroups: listCopyGroups(user.householdId, today),
 		dishes: dishSuggestions(user.householdId),
 		// The Menu's requests, under the dinners, so a requested dish can go on one and a requested
 		// restaurant can become one (6.12).
@@ -292,6 +290,17 @@ export const actions = {
 		return attempt('dishes', () =>
 			removeDinnerDish(user.householdId, date, dinnerId, dishId, Date.now())
 		);
+	},
+
+	// The past dinners Copy a dinner offers, asked for when it opens rather than sent with the page,
+	// so the page and the reload after every change stay small however long the household's
+	// history grows (MEA-102). Only dinners already made, so a plan for later in the week isn't
+	// offered (6.9, Q3, Q30). It changes nothing.
+	copyGroups: ({ locals, params }) => {
+		const user = requireHousehold(locals);
+		dinnerDate(params);
+		const today = dateIn(Date.now(), getHousehold(user.householdId).timeZone);
+		return { action: 'copyGroups', groups: listCopyGroups(user.householdId, today) };
 	},
 
 	copy: async ({ locals, params, request }) => {

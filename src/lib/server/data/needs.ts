@@ -12,7 +12,7 @@ import {
 	stores,
 	type NeedStatus
 } from '../db/schema.ts';
-import { createItem, findItemByName, setDefaultStore, type Item } from './items.ts';
+import { createItem, findItemByName, getItem, setDefaultStore, type Item } from './items.ts';
 import { getStore, requireActiveStore } from './stores.ts';
 
 // The rules in this file are design sections 6.2 to 6.4, and how grocery lines keep the party
@@ -353,6 +353,19 @@ export function storeForStatusChange(
 	return line.storeId;
 }
 
+/**
+ * What receiving a line replaces, kept on it so undoing puts it back (addition 2.2.3, MEA-115):
+ * its store, and when it's To Order, the item's default store, which receiving makes its store
+ * (6.3). Read before receiving changes either.
+ */
+export function replacedByReceiving(householdId: number, line: GroceryLine) {
+	return {
+		storeBeforeReceived: line.storeId,
+		defaultStoreBeforeReceived:
+			line.status === 'to_order' ? getItem(householdId, line.itemId).defaultStoreId : null
+	};
+}
+
 export function markOrdered(
 	householdId: number,
 	needId: number,
@@ -384,7 +397,12 @@ export function markReceived(
 		const store = storeForStatusChange(householdId, line, storeId);
 		db()
 			.update(groceryNeeds)
-			.set({ status: 'received', storeId: store, receivedAt: now })
+			.set({
+				status: 'received',
+				storeId: store,
+				receivedAt: now,
+				...replacedByReceiving(householdId, line)
+			})
 			.where(eq(groceryNeeds.id, needId))
 			.run();
 		if (line.status === 'to_order') setDefaultStore(householdId, line.itemId, store);
@@ -434,9 +452,11 @@ export function markAllReceived(
 ): number {
 	return transaction(() => {
 		getStore(householdId, storeId);
+		// Ordered lines keep their store, and receiving them leaves the default store as it is
+		// (6.3), so the store is all there is to put back (MEA-115).
 		const lines = db()
 			.update(groceryNeeds)
-			.set({ status: 'received', receivedAt: now })
+			.set({ status: 'received', receivedAt: now, storeBeforeReceived: storeId })
 			.where(
 				and(
 					eq(groceryNeeds.householdId, householdId),
@@ -498,7 +518,8 @@ export function markGotFewer(
 				note: line.note,
 				createdAt: now,
 				orderedAt: line.orderedAt,
-				receivedAt: now
+				receivedAt: now,
+				...replacedByReceiving(householdId, line)
 			})
 			.returning({ id: groceryNeeds.id })
 			.get();
@@ -517,22 +538,48 @@ export function markGotFewer(
 	});
 }
 
-/** Undoes a mis-tap: a line received today goes back to Ordered or To Order (addition 2.2.3). */
+/**
+ * Undoes a mis-tap: a line received today goes back to Ordered or To Order with the store it had
+ * (addition 2.2.3). When receiving it made its store the item's default store, the default goes
+ * back to what it was, if it's still that store (6.3, MEA-115).
+ */
 export function undoReceived(
 	householdId: number,
 	needId: number,
 	timeZone: string,
 	now: number
 ): void {
-	const line = getLine(householdId, needId);
-	if (line.status !== 'received' || !receivedToday(line, timeZone, now)) {
-		error(400, 'Only lines received today can be undone');
-	}
-	db()
-		.update(groceryNeeds)
-		.set({ status: line.orderedAt === null ? 'to_order' : 'ordered', receivedAt: null })
-		.where(eq(groceryNeeds.id, needId))
-		.run();
+	transaction(() => {
+		const line = getLine(householdId, needId);
+		if (line.status !== 'received' || !receivedToday(line, timeZone, now)) {
+			error(400, 'Only lines received today can be undone');
+		}
+		const replaced = db()
+			.select({
+				storeId: groceryNeeds.storeBeforeReceived,
+				defaultStoreId: groceryNeeds.defaultStoreBeforeReceived
+			})
+			.from(groceryNeeds)
+			.where(eq(groceryNeeds.id, needId))
+			.get();
+		if (!replaced) error(404, 'Not found');
+		db()
+			.update(groceryNeeds)
+			.set({
+				status: line.orderedAt === null ? 'to_order' : 'ordered',
+				storeId: replaced.storeId,
+				receivedAt: null,
+				storeBeforeReceived: null,
+				defaultStoreBeforeReceived: null
+			})
+			.where(eq(groceryNeeds.id, needId))
+			.run();
+		// Only receiving a line that was To Order changed the default store (6.3).
+		const defaultStoreId = getItem(householdId, line.itemId).defaultStoreId;
+		if (line.orderedAt === null && defaultStoreId === line.storeId) {
+			setDefaultStore(householdId, line.itemId, replaced.defaultStoreId);
+		}
+	});
 }
 
 export type LineChanges = {

@@ -171,7 +171,11 @@ export function updateItem(
 	if (existing && existing.id !== itemId) {
 		return { kind: 'taken', archived: existing.archivedAt !== null };
 	}
-	db().update(items).set(changes).where(eq(items.id, itemId)).run();
+	db()
+		.update(items)
+		.set(changes)
+		.where(and(eq(items.id, itemId), eq(items.householdId, householdId)))
+		.run();
 	return { kind: 'saved' };
 }
 
@@ -254,12 +258,15 @@ export function setItemArchived(
 	db()
 		.update(items)
 		.set({ archivedAt: archived ? now : null })
-		.where(eq(items.id, itemId))
+		.where(and(eq(items.id, itemId), eq(items.householdId, householdId)))
 		.run();
 }
 
-/** The item's default store becomes the store it was just ordered or bought from (Q17). */
-export function setDefaultStore(householdId: number, itemId: number, storeId: number): void {
+/**
+ * The item's default store becomes the store it was just ordered or bought from (Q17), or goes
+ * back to the one it had, which may be none, when buying it is undone (6.3, MEA-115).
+ */
+export function setDefaultStore(householdId: number, itemId: number, storeId: number | null): void {
 	db()
 		.update(items)
 		.set({ defaultStoreId: storeId })

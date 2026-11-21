@@ -1,13 +1,26 @@
 import { isDate } from './menu.ts';
 
+// Each time zone's formatter is built once and kept: building one takes far longer than using it,
+// and pages that date every line they show, such as Items and History, reload often (Q11).
+const dateFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function dateFormatter(timeZone: string): Intl.DateTimeFormat {
+	let formatter = dateFormatters.get(timeZone);
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat('en-US', {
+			timeZone,
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit'
+		});
+		dateFormatters.set(timeZone, formatter);
+	}
+	return formatter;
+}
+
 /** The calendar date, as YYYY-MM-DD, of an instant in a time zone. */
 export function dateIn(ms: number, timeZone: string): string {
-	const parts = new Intl.DateTimeFormat('en-US', {
-		timeZone,
-		year: 'numeric',
-		month: '2-digit',
-		day: '2-digit'
-	}).formatToParts(ms);
+	const parts = dateFormatter(timeZone).formatToParts(ms);
 	const part = (type: Intl.DateTimeFormatPartTypes) => {
 		const value = parts.find((p) => p.type === type)?.value;
 		if (!value) throw new Error(`No ${type} in formatted date`);

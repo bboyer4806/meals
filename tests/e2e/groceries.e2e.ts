@@ -190,8 +190,11 @@ test('asks for a store when checking off a line without one, and can undo', asyn
 	const aldi = group(page, 'Aldi');
 	await expect(aldi.getByRole('heading', { name: 'Received today' })).toBeVisible();
 	await aldi.getByRole('button', { name: 'Undo received: Paper towels' }).click();
-	await expect(aldi.getByRole('button', { name: 'Mark received: Paper towels' })).toBeVisible();
-	await expect(group(page, 'No store')).toHaveCount(0);
+	// Undoing takes off the store picked for it, so checking it off asks again (MEA-115).
+	const noStore = group(page, 'No store');
+	await noStore.getByRole('button', { name: 'Mark received: Paper towels' }).click();
+	await expect(aldi).toHaveCount(0);
+	await expect(dialog).toContainText("Paper towels doesn't have a store yet.");
 });
 
 test('splits off what arrived when an order comes up short', async ({ page, db, person }) => {

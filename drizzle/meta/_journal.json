@@ -204,6 +204,27 @@
       "when": 1794882286946,
       "tag": "0028_start-household-invites",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1795280136446,
+      "tag": "0029_received-line-stores",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1795280142865,
+      "tag": "0030_keep-received-line-stores",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1795280159171,
+      "tag": "0031_received-line-store-keys",
+      "breakpoints": true
     }
   ]
 }

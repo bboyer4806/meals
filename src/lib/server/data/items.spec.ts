@@ -113,6 +113,22 @@ describe("an item's image", () => {
 	});
 });
 
+describe("another household's item", () => {
+	it("can't be edited, archived or restored, and stays as it was (4.5)", () => {
+		const other = makeHousehold(TZ).householdId;
+		const theirs = createItem(other, 'Eggs', 0).id;
+
+		const changes = { name: 'Brown eggs', notes: 'Dozen' };
+		expectHttpError(() => updateItem(householdId, theirs, changes), 404);
+		expectHttpError(() => setItemArchived(householdId, theirs, true, NOON), 404);
+		expect(getItem(other, theirs)).toMatchObject({ name: 'Eggs', notes: null, archivedAt: null });
+
+		setItemArchived(other, theirs, true, NOON);
+		expectHttpError(() => setItemArchived(householdId, theirs, false, NOON), 404);
+		expect(getItem(other, theirs).archivedAt).toBe(NOON);
+	});
+});
+
 describe('the Items page', () => {
 	it("sorts by name ignoring case, so Éclairs sorts with the E's (MEA-88)", () => {
 		for (const name of ['Zucchini', 'Éclairs', 'apples', 'Eggs']) createItem(householdId, name, 0);
