@@ -2,7 +2,7 @@ import { formatQuantity } from '../text.ts';
 import { getHousehold } from './data/households.ts';
 import { listToOrderLines, type GroceryLine } from './data/needs.ts';
 import { listStores } from './data/stores.ts';
-import type { Email } from './email.ts';
+import { escapeHtml, type Email } from './email.ts';
 
 // The grocery list as an email: what a household has To Order, by store (design 6.16). Nothing
 // sends it yet. A later change picks who gets it and when, then sends it with sendEmail.
@@ -58,14 +58,4 @@ function textGroup(group: StoreGroup): string {
 function htmlGroup(group: StoreGroup): string {
 	const items = group.lines.map((line) => `<li>${lineText(line).map(escapeHtml).join('<br>')}</li>`);
 	return [`<h2>${escapeHtml(group.name)}</h2>`, '<ul>', ...items, '</ul>'].join('\n');
-}
-
-/** Text that shows as typed in HTML, so a name such as "<b>Tea</b>" can't change the email (6.16). */
-function escapeHtml(text: string): string {
-	return text
-		.replaceAll('&', '&amp;')
-		.replaceAll('<', '&lt;')
-		.replaceAll('>', '&gt;')
-		.replaceAll('"', '&quot;')
-		.replaceAll("'", '&#39;');
 }

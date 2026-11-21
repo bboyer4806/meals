@@ -29,6 +29,7 @@ import {
 } from '#lib/server/data/requests.ts';
 import { attempt, id, nameField, parseForm } from '#lib/server/forms.ts';
 import { requestNote, restoreAndSaveRequest, saveRequest } from '#lib/server/request-form.ts';
+import { notifyRequest } from '#lib/server/request-notifications.ts';
 
 // The week view (design 7, Menu): Sunday to Saturday, one row per day with its dinners. ?week=
 // can be any date in the week. The weeks before and after come too, to show beside it while a
@@ -163,7 +164,8 @@ export const actions = {
 		return attempt('move', () => moveDinners(user.householdId, from, to, dinnerId, Date.now()));
 	},
 
-	request: async ({ locals, request }) => {
+	// Each new request emails the rest of the household once it's saved (6.12).
+	request: async ({ locals, request, url }) => {
 		const user = requireHousehold(locals);
 		const parsed = parseForm(requestSchema, await request.formData(), 'request');
 		if ('failure' in parsed) return parsed.failure;
@@ -175,27 +177,32 @@ export const actions = {
 		if (added.kind === 'archived') {
 			return { action: 'request', archived: { dishId: added.dishId, name: added.name } };
 		}
+		await notifyRequest(user.householdId, added.request, url.origin);
 		return { action: 'request', archived: null };
 	},
 
-	restoreRequest: async ({ locals, request }) => {
+	restoreRequest: async ({ locals, request, url }) => {
 		const user = requireHousehold(locals);
 		const parsed = parseForm(restoreRequestSchema, await request.formData(), 'request');
 		if ('failure' in parsed) return parsed.failure;
 		const { dishId, ...fields } = parsed.data;
-		return attempt('request', () =>
+		const added = attempt('request', () =>
 			restoreAndAddRequest(user.householdId, user.id, dishId, fields, Date.now())
 		);
+		if (!('kind' in added)) return added;
+		await notifyRequest(user.householdId, added, url.origin);
 	},
 
 	// Adds a request to eat out at a restaurant, linked to nothing (6.12).
-	requestRestaurant: async ({ locals, request }) => {
+	requestRestaurant: async ({ locals, request, url }) => {
 		const user = requireHousehold(locals);
 		const parsed = parseForm(restaurantRequestSchema, await request.formData(), 'restaurant');
 		if ('failure' in parsed) return parsed.failure;
-		return attempt('restaurant', () =>
+		const added = attempt('restaurant', () =>
 			addRestaurantRequest(user.householdId, user.id, parsed.data, Date.now())
 		);
+		if (!('kind' in added)) return added;
+		await notifyRequest(user.householdId, added, url.origin);
 	},
 
 	// Saves Edit's name and note on a request, from anyone in the household (6.12).
