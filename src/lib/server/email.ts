@@ -43,3 +43,16 @@ export async function sendEmail(email: Email): Promise<void> {
 		throw new Error(`Resend send-email request failed: ${response.status} ${await response.text()}`);
 	}
 }
+
+/**
+ * Text that shows as typed in an email's HTML, so a name such as "<b>Tea</b>" can't change the
+ * email (6.16).
+ */
+export function escapeHtml(text: string): string {
+	return text
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;')
+		.replaceAll("'", '&#39;');
+}

@@ -35,7 +35,20 @@ export type DishRequest =
 /** A request in the completed history, with when it was completed. */
 export type CompletedRequest = DishRequest & { completedAt: number };
 
-export type AddRequestResult = { kind: 'added' } | { kind: 'archived'; dishId: number; name: string };
+/**
+ * A request just added, as it was saved, and who asked, so the rest of the household can be told
+ * about it (request-notifications.ts).
+ */
+export type NewRequest = {
+	kind: DishRequest['kind'];
+	name: string;
+	note: string | null;
+	userId: number;
+};
+
+export type AddRequestResult =
+	| { kind: 'added'; request: NewRequest }
+	| { kind: 'archived'; dishId: number; name: string };
 
 export type EditRequestResult =
 	| { kind: 'saved' }
@@ -148,7 +161,7 @@ function insertDishRequest(
 	fields: { name: string; note: string | null },
 	dishId: number,
 	now: number
-): void {
+): NewRequest {
 	db()
 		.insert(dishRequests)
 		.values({
@@ -161,13 +174,14 @@ function insertDishRequest(
 			createdAt: now
 		})
 		.run();
+	return { kind: 'dish', name: fields.name, note: fields.note, userId };
 }
 
 /**
  * Adds a request from the signed-in member, linked to its recipe: an active dish with the name,
  * ignoring case, or a new one with the household's usual servings, as a dish typed on a dinner
- * is (6.9, 6.12). An archived dish with the name changes nothing and returns 'archived', so the
- * page can offer to restore it (6.10).
+ * is (6.9, 6.12), and returns it as 'added'. An archived dish with the name changes nothing and
+ * returns 'archived', so the page can offer to restore it (6.10).
  */
 export function addRequest(
 	householdId: number,
@@ -182,21 +196,20 @@ export function addRequest(
 			return { kind: 'archived', dishId: found.id, name: found.name };
 		}
 		const dishId = found?.id ?? insertDish(householdId, checked.name, now);
-		insertDishRequest(householdId, userId, checked, dishId, now);
-		return { kind: 'added' };
+		return { kind: 'added', request: insertDishRequest(householdId, userId, checked, dishId, now) };
 	});
 }
 
 /**
- * Adds a request from the signed-in member to eat out at a restaurant, named as typed. It looks
- * up and makes nothing, and links to nothing (6.12).
+ * Adds a request from the signed-in member to eat out at a restaurant, named as typed, and
+ * returns it. It looks up and makes nothing, and links to nothing (6.12).
  */
 export function addRestaurantRequest(
 	householdId: number,
 	userId: number,
 	fields: { name: string; note: string | null },
 	now: number
-): void {
+): NewRequest {
 	const checked = checkFields(fields, 'a restaurant name');
 	db()
 		.insert(dishRequests)
@@ -209,11 +222,12 @@ export function addRestaurantRequest(
 			createdAt: now
 		})
 		.run();
+	return { kind: 'restaurant', name: checked.name, note: checked.note, userId };
 }
 
 /**
- * Restores an archived dish and adds a request linked to it, in one transaction. The request
- * keeps its name as typed (6.12).
+ * Restores an archived dish and adds a request linked to it, in one transaction, and returns the
+ * request. The request keeps its name as typed (6.12).
  */
 export function restoreAndAddRequest(
 	householdId: number,
@@ -221,8 +235,8 @@ export function restoreAndAddRequest(
 	dishId: number,
 	fields: { name: string; note: string | null },
 	now: number
-): void {
-	transaction(() => {
+): NewRequest {
+	return transaction(() => {
 		const checked = checkFields(fields, 'a dish name');
 		const result = db()
 			.update(dishes)
@@ -230,22 +244,23 @@ export function restoreAndAddRequest(
 			.where(and(eq(dishes.id, dishId), eq(dishes.householdId, householdId)))
 			.run();
 		if (result.changes === 0) error(404, 'Not found');
-		insertDishRequest(householdId, userId, checked, dishId, now);
+		return insertDishRequest(householdId, userId, checked, dishId, now);
 	});
 }
 
 /**
  * Requests the dish from its recipe's page, asked by the signed-in member, named as the dish is
- * named now and with no note. Adds nothing when an active request already links to it, from either
- * place, so someone else's request since the page loaded doesn't make a second one (6.12).
+ * named now and with no note, and returns the request. Adds nothing and returns null when an
+ * active request already links to it, from either place, so someone else's request since the page
+ * loaded doesn't make a second one (6.12).
  */
 export function requestDish(
 	householdId: number,
 	userId: number,
 	dishId: number,
 	now: number
-): void {
-	transaction(() => {
+): NewRequest | null {
+	return transaction(() => {
 		const dish = db()
 			.select({ name: dishes.name, archivedAt: dishes.archivedAt })
 			.from(dishes)
@@ -254,8 +269,8 @@ export function requestDish(
 		if (!dish) error(404, 'Not found');
 		// An archived recipe's page has no Request, so this one was archived after it loaded.
 		if (dish.archivedAt !== null) error(400, `Restore ${dish.name} before requesting it`);
-		if (hasRequest(householdId, dishId)) return;
-		insertDishRequest(householdId, userId, { name: dish.name, note: null }, dishId, now);
+		if (hasRequest(householdId, dishId)) return null;
+		return insertDishRequest(householdId, userId, { name: dish.name, note: null }, dishId, now);
 	});
 }
 

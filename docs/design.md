@@ -396,6 +396,7 @@ src/lib/server/
   jira.ts                 create a feedback ticket in Jira and attach its screenshot
   email.ts                send an email, as HTML with a plain-text version, through Resend
   grocery-email.ts        the grocery list email's subject, HTML and text (6.16)
+  request-notifications.ts email a new request to the rest of the household (6.12)
   fetch-link.ts           fetch a link from a public website (4.5)
   recipe-page.ts          fetch a recipe's web page and read its JSON-LD
 src/routes/               pages and form actions; database access only through data/
@@ -837,6 +838,22 @@ to what's saved, as the stars and Request still show it, so tapping it again tri
 - The dish or restaurant name is required and up to 80 characters; the note is optional and up
   to 200. Each field stops taking characters at its limit, pasted text included, and says so
   while it's full. The server refuses anything longer (4.5).
+- Each new request emails everyone else in the household (MEA-254), so it doesn't go unnoticed
+  until someone opens the Menu: a dish or restaurant request from the Menu, one Restore it and
+  request adds, or Request on a recipe's page. Each member gets their own email, at their Google
+  account's address, through Resend (4.3); the person who asked gets none, and nor does anyone in
+  another household. The subject says who asked, named as the household sees them (6.1), and what
+  for, such as "Sam requested a dish: Lasagna" or "Sam requested a restaurant: Olive Garden". The
+  email says the same, then the note, such as "Note: Extra cheese", when there is one, and "See it
+  on the Menu", linking to the Menu at the address the request was sent to. The HTML escapes names
+  and the note, so they show as typed. The emails go out once the request is saved, outside its
+  transaction, all at once, and the page waits for them: at most the 10 seconds Meals gives Resend
+  to answer (7, Admin). The request stays saved when an email fails, and the others still go: the
+  app's log gets Resend's answer or the error with the member's id, never their address or the API
+  key, and nothing tries again. Nothing that adds no request sends any: a refused name or note, a
+  name that matches an archived dish until Restore it and request adds it (6.10), or Request on a
+  recipe someone requested first. Editing, completing, adding to a date or removing a request sends
+  nothing, and nobody can turn the emails off.
 - A date's page (MEA-57; section 7, Dinner) lists the same requests under its dinners, with the
   same dish link or "Eating out" and restaurant, note and "Asked by", Edit (below), and no
   Complete or Remove. A dish
