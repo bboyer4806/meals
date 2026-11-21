@@ -4,9 +4,15 @@ import { join } from 'node:path';
 import { isHttpError, isRedirect } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '#lib/server/config.ts';
-import { createItem, getItem } from '#lib/server/data/items.ts';
-import { TEST_ENV, freshDb, makeHousehold, servePages } from '#lib/server/testing.ts';
-import { actions } from './+page.server.ts';
+import { createItem, getItem, setItemArchived } from '#lib/server/data/items.ts';
+import {
+	TEST_ENV,
+	expectHttpError,
+	freshDb,
+	makeHousehold,
+	servePages
+} from '#lib/server/testing.ts';
+import { actions, load } from './+page.server.ts';
 
 const LINK = 'https://shop.example/milk.png';
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3];
@@ -109,5 +115,48 @@ describe('the update action', () => {
 		form.set('id', String(createItem(other, 'Eggs', 0).id));
 		const thrown = await Promise.resolve(run('update', form)).catch((e: unknown) => e);
 		expect(isHttpError(thrown, 404), String(thrown)).toBe(true);
+	});
+});
+
+// A link to one item, such as from Reports (design 7, Items).
+describe('a link to an item', () => {
+	/** Loads Items with the query as a member of the household. */
+	function open(query: string, member = { householdId, userId }) {
+		const url = new URL(`http://localhost/groceries/items${query}`);
+		const user = { id: member.userId, email: 'pat@example.com', name: 'Pat', isAdmin: false };
+		const locals = { user: { ...user, householdId: member.householdId } };
+		return load({ locals, url } as unknown as Parameters<typeof load>[0]);
+	}
+
+	const ids = (items: { id: number }[]) => items.map((item) => item.id);
+
+	it('opens its sheet in the list it is in now, archived or not', () => {
+		const milk = createItem(householdId, 'Milk', 0).id;
+		const saffron = createItem(householdId, 'Saffron', 0).id;
+		setItemArchived(householdId, saffron, true, 0);
+
+		const active = open(`?item=${milk}`);
+		expect(active).toMatchObject({ archived: false, openedId: milk });
+		expect(ids(active.items)).toEqual([milk]);
+
+		const archived = open(`?item=${saffron}`);
+		expect(archived).toMatchObject({ archived: true, openedId: saffron });
+		expect(ids(archived.items)).toEqual([saffron]);
+
+		// Whichever list the link asks for.
+		expect(open(`?archived=1&item=${milk}`)).toMatchObject({ archived: false, openedId: milk });
+	});
+
+	it('opens nothing without one', () => {
+		createItem(householdId, 'Milk', 0);
+		expect(open('').openedId).toBeNull();
+		expect(open('?archived=1').openedId).toBeNull();
+	});
+
+	it("is not found for another household's item, or a link that isn't to an item", () => {
+		const theirs = createItem(makeHousehold().householdId, 'Milk', 0).id;
+		for (const query of [`?item=${theirs}`, '?item=99999', '?item=0', '?item=abc', '?item=']) {
+			expectHttpError(() => open(query), 404);
+		}
 	});
 });

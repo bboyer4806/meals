@@ -139,7 +139,7 @@ function october() {
 }
 
 describe('loading a date', () => {
-	it('gives the dinner, today in the household time zone, past dinners to copy and dishes', () => {
+	it('gives the dinner, today in the household time zone and dishes, and no past dinners to copy', () => {
 		makeDinner(householdId, YESTERDAY, { dishes: [[tacos, 'main']] });
 		makeDinner(householdId, TOMORROW, {
 			servings: 6,
@@ -152,6 +152,8 @@ describe('loading a date', () => {
 		makeDinner(otherId, TOMORROW, { type: 'eat_out' });
 		setDishArchived(householdId, cake, true, NOW);
 
+		// Not the past dinners to copy, such as yesterday's: Copy a dinner asks for those when it
+		// opens, so they stay out of every reload (MEA-102).
 		expect(loadPage(TOMORROW)).toEqual({
 			date: TOMORROW,
 			today: TODAY,
@@ -171,15 +173,6 @@ describe('loading a date', () => {
 				}
 			],
 			defaultServings: 3,
-			// Tomorrow's dinner isn't made yet (6.9, Q3, Q30).
-			copyGroups: [
-				{
-					dinnerId: expect.any(Number),
-					dishes: [{ dishId: tacos, name: 'Tacos', role: 'main' }],
-					timesMade: 1,
-					lastMade: YESTERDAY
-				}
-			],
 			// The archived dish isn't suggested (6.10).
 			dishes: [
 				{ id: tacos, name: 'Tacos', timesAdded: 2 },
@@ -655,6 +648,46 @@ describe('removing a dish', () => {
 		expectNotFound(await post('removeDish', { dishId: String(rice), dinnerId }));
 		expectNotFound(await post('removeDish', { dishId: String(tacos), dinnerId }, { date: TODAY }));
 		expect(dishesOn(TOMORROW)).toEqual(['Tacos (main)']);
+	});
+});
+
+describe('getting the past dinners to copy (6.9, MEA-102)', () => {
+	it('gives the dinners made up to today in the household time zone, grouped, and changes nothing', async () => {
+		const tonight = makeDinner(householdId, TODAY, {
+			dishes: [
+				[rice, 'side'],
+				[tacos, 'main']
+			]
+		});
+		const yesterday = makeDinner(householdId, YESTERDAY, { dishes: [[tacos, 'main']] });
+		makeDinner(householdId, '2026-10-01', { dishes: [[tacos, 'main']] });
+		// Already October 8 in UTC, but tomorrow in Chicago, so not made yet (Q3, Q30).
+		makeDinner(householdId, TOMORROW, { dishes: [[cake, 'dessert']] });
+		const stew = makeDish(otherId, recipe('Stew'));
+		makeDinner(otherId, YESTERDAY, { dishes: [[stew, 'main']] });
+		const before = october();
+
+		expect(await post('copyGroups')).toEqual({
+			action: 'copyGroups',
+			groups: [
+				{
+					dinnerId: yesterday,
+					dishes: [{ dishId: tacos, name: 'Tacos', role: 'main' }],
+					timesMade: 2,
+					lastMade: YESTERDAY
+				},
+				{
+					dinnerId: tonight,
+					dishes: [
+						{ dishId: tacos, name: 'Tacos', role: 'main' },
+						{ dishId: rice, name: 'Rice', role: 'side' }
+					],
+					timesMade: 1,
+					lastMade: TODAY
+				}
+			]
+		});
+		expect(october()).toEqual(before);
 	});
 });
 
@@ -1273,6 +1306,7 @@ describe('every action', () => {
 		restoreDish: { dishId: '1', role: 'main' },
 		role: { dishId: '1', role: 'main', dinnerId: '1' },
 		removeDish: { dishId: '1', dinnerId: '1' },
+		copyGroups: {},
 		copy: { dishIds: '1' },
 		move: { to: TODAY },
 		clear: {},

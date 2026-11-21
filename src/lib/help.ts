@@ -155,6 +155,16 @@ export const HELP: Record<HelpRouteId, Help> = {
 			'Clear removes the dinner. ‹ Week of goes back to the week.'
 		]
 	},
+	'/(app)/reports': {
+		title: 'Reports',
+		points: [
+			'What your household plans, buys and eats out most, from the Menu and Grocery History.',
+			'Pick Last 30 days, Last 90 days, Last 12 months or All time for the first four reports. Dinners planned for later dates never count.',
+			'Each ranking shows the top 10. Show all shows the rest.',
+			'Tap a dish to open its recipe, or a grocery item to open it on Items, archived ones included.',
+			"Forgotten Favorites are dishes you've planned at least 3 times but not in the last 90 days or for a later date, whatever the period."
+		]
+	},
 	'/(app)/household': {
 		title: 'Household',
 		points: [

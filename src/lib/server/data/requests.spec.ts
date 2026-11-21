@@ -57,7 +57,7 @@ function ask(name: string, note: string | null = null, now = NOW, user = userId)
 }
 
 function askRestaurant(name: string, note: string | null = null, now = NOW, user = userId) {
-	addRestaurantRequest(householdId, user, { name, note }, now);
+	return addRestaurantRequest(householdId, user, { name, note }, now);
 }
 
 /** Another member of the household. */
@@ -122,7 +122,10 @@ function everything() {
 
 describe('addRequest', () => {
 	it('adds a new name to Recipes at the usual servings, and links to it', () => {
-		expect(ask('  Shrimp   boil ', 'With corn')).toEqual({ kind: 'added' });
+		expect(ask('  Shrimp   boil ', 'With corn')).toEqual({
+			kind: 'added',
+			request: { kind: 'dish', name: 'Shrimp boil', note: 'With corn', userId }
+		});
 		const dish = dishNamed('Shrimp boil');
 		expect(dish).toMatchObject({ householdId, servings: 4, archivedAt: null, createdAt: NOW });
 		expect(listRequests(householdId)).toEqual([
@@ -185,7 +188,13 @@ describe('addRequest', () => {
 
 describe('addRestaurantRequest', () => {
 	it('asks for the restaurant by name as typed, with the note and who asked, linked to nothing', () => {
-		askRestaurant('  Olive   Garden ', 'For her birthday', NOW, addMember('Sam'));
+		const sam = addMember('Sam');
+		expect(askRestaurant('  Olive   Garden ', 'For her birthday', NOW, sam)).toEqual({
+			kind: 'restaurant',
+			name: 'Olive Garden',
+			note: 'For her birthday',
+			userId: sam
+		});
 		expect(listRequests(householdId)).toEqual([
 			{
 				id: expect.any(Number),
@@ -223,7 +232,9 @@ describe('addRestaurantRequest', () => {
 describe('restoreAndAddRequest', () => {
 	it('restores the dish and adds the request linked to it, with the name as typed', () => {
 		setDishArchived(householdId, lasagna, true, NOW);
-		restoreAndAddRequest(householdId, userId, lasagna, { name: ' LASAGNA ', note: 'Extra' }, NOW);
+		expect(
+			restoreAndAddRequest(householdId, userId, lasagna, { name: ' LASAGNA ', note: 'Extra' }, NOW)
+		).toEqual({ kind: 'dish', name: 'LASAGNA', note: 'Extra', userId });
 		expect(dishNamed('Lasagna')!.archivedAt).toBeNull();
 		expect(listRequests(householdId)).toEqual([
 			expect.objectContaining({ name: 'LASAGNA', note: 'Extra', dishId: lasagna })
@@ -492,7 +503,12 @@ describe('restoreAndEditRequest', () => {
 describe('requestDish', () => {
 	it('asks for the dish as it is named now, from the person, with no note', () => {
 		updateDish(householdId, lasagna, recipe('Veggie lasagna'), 'keep', [], NOW);
-		requestDish(householdId, userId, lasagna, NOW);
+		expect(requestDish(householdId, userId, lasagna, NOW)).toEqual({
+			kind: 'dish',
+			name: 'Veggie lasagna',
+			note: null,
+			userId
+		});
 		expect(db().select().from(dishRequests).all()).toEqual([
 			{
 				id: expect.any(Number),
@@ -509,16 +525,16 @@ describe('requestDish', () => {
 		]);
 	});
 
-	it('adds nothing when a request already links to the dish, from either place', () => {
+	it('adds nothing and returns null when a request already links to the dish, from either place', () => {
 		ask('LASAGNA', 'Extra cheese');
-		requestDish(householdId, userId, lasagna, NOW);
+		expect(requestDish(householdId, userId, lasagna, NOW)).toBeNull();
 		expect(listRequests(householdId)).toEqual([
 			expect.objectContaining({ name: 'LASAGNA', note: 'Extra cheese', dishId: lasagna })
 		]);
 
 		removeRequest(householdId, listRequests(householdId)[0]!.id);
-		requestDish(householdId, userId, lasagna, NOW);
-		requestDish(householdId, userId, lasagna, NOW);
+		expect(requestDish(householdId, userId, lasagna, NOW)).not.toBeNull();
+		expect(requestDish(householdId, userId, lasagna, NOW)).toBeNull();
 		expect(listRequests(householdId)).toEqual([
 			expect.objectContaining({ name: 'Lasagna', note: null, dishId: lasagna })
 		]);

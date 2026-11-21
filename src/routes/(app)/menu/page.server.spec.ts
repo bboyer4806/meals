@@ -1,5 +1,7 @@
+import { format } from 'node:util';
 import { isHttpError, isRedirect } from '@sveltejs/kit';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadConfig } from '#lib/server/config.ts';
 import { addDinner, getDinners } from '#lib/server/data/dinners.ts';
 import { setDishArchived } from '#lib/server/data/dishes.ts';
 import { listMembers } from '#lib/server/data/households.ts';
@@ -11,7 +13,14 @@ import {
 } from '#lib/server/data/requests.ts';
 import { db } from '#lib/server/db/index.ts';
 import { users } from '#lib/server/db/schema.ts';
-import { freshDb, makeDinner, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
+import {
+	freshDb,
+	makeDinner,
+	makeDish,
+	makeHousehold,
+	recipe,
+	TEST_ENV
+} from '#lib/server/testing.ts';
 import { actions, load } from './+page.server.ts';
 
 // Sat 2026-10-03 22:00 in Chicago, already Sunday Oct 4 in UTC. The household's week runs from
@@ -270,8 +279,11 @@ type Action = keyof typeof actions;
 async function post(action: Action, fields: Record<string, string>): Promise<unknown> {
 	const body = new FormData();
 	for (const [name, value] of Object.entries(fields)) body.set(name, value);
-	const request = new Request(`http://localhost/menu?/${action}`, { method: 'POST', body });
-	const event = { locals: locals(), request } as unknown as Parameters<(typeof actions)[Action]>[0];
+	const url = new URL(`http://localhost/menu?/${action}`);
+	const request = new Request(url, { method: 'POST', body });
+	const event = { locals: locals(), request, url } as unknown as Parameters<
+		(typeof actions)[Action]
+	>[0];
 	try {
 		return await actions[action](event);
 	} catch (e) {
@@ -281,6 +293,21 @@ async function post(action: Action, fields: Record<string, string>): Promise<unk
 
 function expectFailure(result: unknown, action: string, error: string) {
 	expect(result).toMatchObject({ status: 400, data: { action, error } });
+}
+
+/** Another member of the household, with the email `<name>@example.com`. */
+function addMember(name: string): number {
+	return db()
+		.insert(users)
+		.values({
+			householdId,
+			googleSub: `sub-${name}`,
+			email: `${name}@example.com`,
+			name,
+			createdAt: 0
+		})
+		.returning({ id: users.id })
+		.get().id;
 }
 
 describe('requests (6.12)', () => {
@@ -480,22 +507,117 @@ describe('restaurant requests (6.12)', () => {
 	});
 });
 
-describe('request edits (6.12, MEA-251)', () => {
-	/** Another member of the household. */
-	function addMember(name: string): number {
-		return db()
-			.insert(users)
-			.values({
-				householdId,
-				googleSub: `sub-${name}`,
-				email: `${name}@example.com`,
-				name,
-				createdAt: 0
-			})
-			.returning({ id: users.id })
-			.get().id;
+describe('request emails (6.12, MEA-254)', () => {
+	let fetch: ReturnType<typeof vi.fn<(url: string, init: RequestInit) => Promise<Response>>>;
+
+	beforeAll(() => {
+		loadConfig({ ...TEST_ENV, DATA_DIR: '/tmp' });
+	});
+
+	beforeEach(() => {
+		addMember('Sam');
+		// Resend accepts each email.
+		fetch = vi.fn(async () => Response.json({ id: '49a3999c-0ce1-4ea6-ab68' }));
+		vi.stubGlobal('fetch', fetch);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	/** Each email Resend was asked to send, in the order asked. */
+	function sent(): { to: string; subject: string; text: string }[] {
+		return fetch.mock.calls.map(([, init]) => JSON.parse(init.body as string));
 	}
 
+	it('go to the rest of the household once a dish request is saved, linking to the Menu', async () => {
+		addMember('Robin');
+		const other = makeHousehold(TZ);
+		expect(await post('request', { name: 'Pot pie', note: ' Extra crust ' })).toEqual({
+			action: 'request',
+			archived: null
+		});
+		expect(listRequests(householdId)).toHaveLength(1);
+		// Not the person who asked, Person, and nobody in another household.
+		expect(sent().map((email) => email.to)).toEqual(['Robin@example.com', 'Sam@example.com']);
+		expect(sent()[0]).toMatchObject({
+			subject: 'Person requested a dish: Pot pie',
+			text: [
+				'Person requested a dish: Pot pie',
+				'Note: Extra crust',
+				'',
+				'See it on the Menu: http://localhost/menu'
+			].join('\n')
+		});
+		expect(listRequests(other.householdId)).toEqual([]);
+	});
+
+	it('go out for a restaurant request', async () => {
+		expect(await post('requestRestaurant', { name: 'Olive Garden', note: '' })).toBeUndefined();
+		expect(sent()).toEqual([
+			expect.objectContaining({
+				to: 'Sam@example.com',
+				subject: 'Person requested a restaurant: Olive Garden'
+			})
+		]);
+	});
+
+	it('wait for Restore it and request, and go out once it adds the request (6.10)', async () => {
+		const chili = makeDish(householdId, recipe('Chili'));
+		setDishArchived(householdId, chili, true, NOW);
+		await post('request', { name: 'CHILI', note: '' });
+		expect(fetch).not.toHaveBeenCalled();
+		await post('restoreRequest', { dishId: String(chili), name: 'CHILI', note: 'Spicy' });
+		expect(sent()).toEqual([
+			expect.objectContaining({ to: 'Sam@example.com', subject: 'Person requested a dish: CHILI' })
+		]);
+	});
+
+	it('are not sent for a refused request', async () => {
+		expectFailure(await post('request', { name: '  ', note: '' }), 'request', 'Enter a dish name');
+		expectFailure(
+			await post('requestRestaurant', { name: 'Diner', note: 'a'.repeat(201) }),
+			'restaurant',
+			'Keep the note under 200 characters'
+		);
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	it('are not sent when a request is edited, completed or removed', async () => {
+		const sam = listMembers(householdId).find((member) => member.name === 'Sam')!.id;
+		addRequest(householdId, sam, { name: 'Soup', note: null }, NOW);
+		addRequest(householdId, sam, { name: 'Pie', note: null }, NOW);
+		const [soup, pie] = listRequests(householdId);
+		await post('editRequest', { id: String(soup!.id), name: 'Soup', note: 'Hot' });
+		await post('completeRequest', { id: String(soup!.id) });
+		await post('removeRequest', { id: String(pie!.id) });
+		expect(listCompletedRequests(householdId)).toMatchObject([{ name: 'Soup', note: 'Hot' }]);
+		expect(listRequests(householdId)).toEqual([]);
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	it("still save the request when its email can't be sent, and log why", async () => {
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const refusal = { statusCode: 401, message: 'API key is invalid', name: 'validation_error' };
+		fetch.mockImplementation(async () => Response.json(refusal, { status: 401 }));
+		expect(await post('request', { name: 'Pot pie', note: '' })).toEqual({
+			action: 'request',
+			archived: null
+		});
+		expect(await post('requestRestaurant', { name: 'Olive Garden', note: '' })).toBeUndefined();
+		expect(listRequests(householdId).map((request) => request.name)).toEqual([
+			'Pot pie',
+			'Olive Garden'
+		]);
+		expect(consoleError).toHaveBeenCalledTimes(2);
+		for (const call of consoleError.mock.calls) {
+			expect(format(...call)).toContain('API key is invalid');
+			expect(format(...call)).not.toContain('resend-key');
+		}
+	});
+});
+
+describe('request edits (6.12, MEA-251)', () => {
 	/** The id of the household's active request with this name, as the form sends it. */
 	function requestId(name: string): string {
 		const request = listRequests(householdId).find((candidate) => candidate.name === name);
