@@ -23,6 +23,9 @@ npm test           # unit and database tests (Vitest)
 npm run test:e2e   # browser tests (Playwright), including a production build
 ```
 
+CI runs the browser tests against the Docker image it builds, which `E2E_IMAGE` selects
+(`playwright.config.ts`). On Linux with Docker, run them that way, as README's
+[Checks](README.md#checks) shows; elsewhere, run them as above and report the image run as blocked.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Install browser-test Chromium with `npx playwright install chromium`, or set
 `PW_CHROMIUM_PATH` to an existing compatible Chromium (see `playwright.config.ts`).
