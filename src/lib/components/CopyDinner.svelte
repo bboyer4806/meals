@@ -1,24 +1,25 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { enhance, type SubmitFunction } from '$app/forms';
+	import { deserialize, enhance, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import { filterCopyGroups } from '../copy-groups.ts';
 	import { formatDateLabel } from '../dates.ts';
 	import type { CopyGroup } from '../server/data/dinners.ts';
+	import { UNREACHABLE, WENT_WRONG } from '../submit.ts';
 	import Sheet from './Sheet.svelte';
 
 	// Copy a dinner (design 6.9, Q3, Q30): past dinners grouped by their dishes, most made first.
 	// Typing keeps the groups with a matching dish, most recent first. Copying sets this dinner's
 	// type and dishes and keeps its note and servings (2.3), so it asks before replacing dishes. It
-	// sends the group's dishes, so it copies exactly the ones shown, or says to pick again.
+	// sends the group's dishes, so it copies exactly the ones shown, or says to pick again. It asks
+	// for the groups each time it opens, since the page doesn't send them, so the page and the
+	// reload after every change stay small however long the household's history grows (MEA-102).
 	let {
-		groups,
 		dinnerId,
 		dishCount,
 		today,
 		send
 	}: {
-		groups: CopyGroup[];
 		/** The dinner the page shows, if any, so a copy doesn't land on another one. */
 		dinnerId: number | undefined;
 		/** How many dishes this dinner has now. */
@@ -34,6 +35,11 @@
 	const uid = $props.id();
 	let open = $state(false);
 	let search = $state('');
+	// The past dinners as the server last gave them, or null while they're on their way or when
+	// they didn't come.
+	let groups = $state<CopyGroup[] | null>(null);
+	// How many times the sheet has asked for them, so only the latest answer shows.
+	let asked = 0;
 	let confirming = $state<CopyGroup | null>(null);
 	let busy = $state(false);
 	let problem = $state('');
@@ -41,13 +47,50 @@
 	let replaceButton = $state<HTMLButtonElement>();
 	let opener = $state<HTMLButtonElement>();
 
-	const shown = $derived(filterCopyGroups(groups, search));
+	// Copying the group whose latest dinner is this one would change nothing, so it's left out.
+	const offered = $derived((groups ?? []).filter((group) => group.dinnerId !== dinnerId));
+	const shown = $derived(filterCopyGroups(offered, search));
 
 	function show() {
 		search = '';
 		confirming = null;
 		problem = '';
+		groups = null;
 		open = true;
+		void getGroups();
+	}
+
+	/**
+	 * The past dinners to copy as they are now, or what the sheet says when they don't come (6.11).
+	 * The page's copyGroups action changes nothing.
+	 */
+	async function pastDinners(): Promise<CopyGroup[] | string> {
+		try {
+			const response = await fetch('?/copyGroups', {
+				method: 'POST',
+				headers: { accept: 'application/json', 'x-sveltekit-action': 'true' },
+				body: new URLSearchParams()
+			});
+			const result = deserialize(await response.text());
+			if (result.type !== 'success') return WENT_WRONG;
+			return (result.data as { groups: CopyGroup[] }).groups;
+		} catch {
+			// No connection, or an answer from something else, such as a proxy.
+			return UNREACHABLE;
+		}
+	}
+
+	/** Shows the past dinners as they are now, or why they didn't come. Opening again tries again. */
+	async function getGroups(): Promise<void> {
+		const asking = ++asked;
+		const answer = await pastDinners();
+		if (asking !== asked) return;
+		if (typeof answer === 'string') {
+			groups = null;
+			problem = answer;
+		} else {
+			groups = answer;
+		}
 	}
 
 	/** Asking replaces the list, so focus moves to the question's answer, and back again. */
@@ -78,11 +121,9 @@
 		return async ({ result, update }) => {
 			try {
 				if (result.type === 'failure') {
-					problem =
-						(result.data as { error?: string } | undefined)?.error ??
-						'Something went wrong. Please try again.';
+					problem = (result.data as { error?: string } | undefined)?.error ?? WENT_WRONG;
 					// Shows this dinner's dishes and the past dinners as they are now.
-					await refreshAll();
+					await Promise.all([refreshAll(), getGroups()]);
 					await confirm(null);
 					return;
 				}
@@ -125,7 +166,10 @@
 				<button type="button" onclick={() => confirm(null)}>Back</button>
 			</div>
 		</form>
-	{:else if groups.length === 0}
+	{:else if groups === null}
+		<!-- On their way, unless the problem above says they didn't come. -->
+		{#if !problem}<p class="muted" role="status">Loading past dinners…</p>{/if}
+	{:else if offered.length === 0}
 		<!-- This dinner's own group isn't offered, so it can be the only past dinner. -->
 		<p class="muted">No past dinners to copy yet.</p>
 	{:else}

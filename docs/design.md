@@ -764,6 +764,11 @@ The rest of this section describes it as built.
   first. Typing, up to 80 characters as in a dish name, filters to groups with a dish whose
   name matches, most recent first. Copying sets the type and the dishes with their roles. Each
   dinner counts on its own, so a date with Kids and Adults dinners counts as one make for each.
+- The picker asks for the groups each time it opens, rather than the date's page sending them,
+  so the page and its reload after every change stay small however long the household's history
+  grows (MEA-102). Until they come, it says "Loading past dinners…". Without an answer from Meals
+  it says "Couldn't reach Meals. Check your connection and try again.", and after an error there
+  "Something went wrong. Please try again." (6.11). Opening it again asks again.
 - A copy has exactly the dishes the picked group showed (MEA-85). The type and roles come from
   the latest past dinner that still has just those dishes, so a change to the group's latest
   dinner since the page showed it, such as going out instead or adding a dish, doesn't come
