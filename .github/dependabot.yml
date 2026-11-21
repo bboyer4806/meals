@@ -25,11 +25,12 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
-  # node:26-slim already picks up each Node 26 release when the image is built,
-  # so this proposes only new Node majors. A new major also changes .node-version,
-  # package.json's engines and @types/node. The cooldown is off because Dependabot
-  # dates a tag by its last push, so it would pass over a tag rebuilt within the
-  # week, as 26-slim often is, for an older one.
+  # The Dockerfile pins node:26-slim by digest (MEA-105), so this proposes the
+  # new digest when the tag is rebuilt, as it is for each Node 26 release and
+  # Debian update, and proposes new Node majors. A new major also changes
+  # .node-version, package.json's engines and @types/node. The cooldown is off
+  # because Dependabot dates a tag by its last push, so it would pass over a tag
+  # rebuilt within the week, as 26-slim often is, for an older one.
   - package-ecosystem: docker
     directory: /
     schedule:

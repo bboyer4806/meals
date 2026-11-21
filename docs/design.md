@@ -168,16 +168,19 @@ Backups:
 | Form validation        | Zod                                                                                    | Form input is untrusted, so it's checked when it arrives.          |
 | Styles                 | Plain CSS with variables; fonts self-hosted through Fontsource                         | No CSS framework and no requests to other sites.                   |
 | Tests                  | Vitest and Playwright                                                                  | See section 10.                                                    |
-| Runtime                | Node 26 (the current long-term support version) in the `node:26-slim` Docker image     |                                                                    |
+| Runtime                | Node 26 (the current long-term support version) in the `node:26-slim` Docker image, pinned by digest (4.2) |                                                                    |
 
 ### 4.2 Hosting and deploy
 
 The app stays a single container on Dokku at meals.dev.boyersoftware.com, deployed by
 `.github/workflows/deploy.yml` on every push to `main` (E4). Changes:
 
-1. **Checks before deploying.** A new check job runs the type check, unit tests and
-   end-to-end tests on pull requests and on pushes to `main`. The build job needs it,
-   and the deploy job needs the build, so code that fails never deploys.
+1. **Checks before deploying.** A check job runs the type check, unit tests and
+   end-to-end tests on pull requests and on pushes to `main`. It builds the Docker image and
+   runs the end-to-end tests against it, run as production runs it with an empty `DATA_DIR`,
+   so a mistake in the image, such as a lower `BODY_SIZE_LIMIT`, fails them (MEA-105). On
+   `main`, a push job then pushes that same image, and the deploy job needs the push, so code
+   that fails never deploys, and the image that deploys is the one tested.
 2. **One-time server setup.** The server limits which commands the deploy key can run, so
    these are done once on the server by hand (README, "One-time server setup"):
    - create a storage directory owned by uid 1000 (the image's `node` user) and mount
@@ -196,7 +199,8 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
    `npm ci --ignore-scripts`, since no dependency needs its install script (better-sqlite3
    ships prebuilt binaries). It runs as the `node` user and exposes port 3000. In Phase 2 it
    also sets `BODY_SIZE_LIMIT=5M` so the app accepts photo uploads (adapter-node's default is
-   512 KB).
+   512 KB). Both stages start from `node:26-slim` pinned by digest, so the base image changes
+   only in a pull request, which CI tests; Dependabot proposes each new one (MEA-105).
 
 The placeholder `index.html` is removed. The README gains instructions for local
 development, configuration, and restoring a backup.
@@ -1762,7 +1766,8 @@ ingredients.
   rejection of cross-household references, and Copy a dinner grouping.
 - **End-to-end tests (Playwright, Chromium, phone-sized screen)** for the main flow of
   each phase. Tests sign in by writing a session straight into the test database, so the
-  app has no test-only way to sign in.
+  app has no test-only way to sign in. In CI they run against the Docker image that then
+  deploys (4.2); elsewhere, against a production build served by `vite preview`.
 - All of them run on pull requests and before every deploy.
 
 ## 11. Problems people may hit, and how the design handles them
