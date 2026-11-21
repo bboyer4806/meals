@@ -450,7 +450,10 @@ for a standard image, which happens once; empty until then; 6.14), `archived_at`
 **grocery_needs** (lines on the list): `item_id`, `quantity` (more than 0), `unit`
 (optional free text such as "bags"; Q16), `store_id` (required unless the status is To
 Order), `status` (`to_order`, `ordered` or `received`; Q14), `note`, `created_at`,
-`ordered_at`, `received_at`.
+`ordered_at`, `received_at`, and what receiving the line replaced, which undoing puts back
+(6.2, MEA-115): `store_before_received` (the store it had, empty when it had none) and
+`default_store_before_received` (when it was To Order, the item's default store, empty when it
+had none). Both are empty on lines not received.
 
 **party_lists:** `name` (unique per household, ignoring case), `created_at` (6.15).
 
@@ -607,7 +610,7 @@ and proposals at it, so revoking it deletes them too.
 | Ordered             | Check off, or "Mark all received" for a store              | Received.                                                                                              |
 | Ordered             | Didn't come                                                | Back to To Order, keeping its store (Q20).                                                             |
 | To Order or Ordered | Got fewer (enter the amount you got)                       | A Received line for that amount, and the original is To Order with the rest (Q20). The amount must be less than the line's ("Enter an amount less than 0.2"), and when the rest rounds to nothing (6.5), the whole line is received instead (MEA-92). A store is required. If the line was To Order, the store becomes the item's default store (6.3). |
-| Received today      | Tap again                                                  | Back to Ordered if it had been ordered, otherwise To Order (addition 2.2.3).                           |
+| Received today      | Tap again                                                  | Back to Ordered if it had been ordered, otherwise To Order, with the store it had, so a store picked under "Where did you get it?" comes off again (addition 2.2.3, MEA-115). If checking it off made its store the item's default store, the default goes back to what it was, if it's still that store (6.3). |
 
 Lines that are To Order or Ordered can be edited (quantity, unit, store, note) or
 deleted. Received lines leave the list, apart from "received today", and are kept as
@@ -623,8 +626,9 @@ changed: "Marked 7 Walmart items as ordered."
 ### 6.3 Default store
 
 When a line leaves To Order (to Ordered or Received), its store becomes the item's
-default store (Q17). When an item is added to the list, its default store is filled in,
-unless that store is archived (Q18).
+default store (Q17). Undoing a check-off (6.2) puts back the default store the item had before
+it, or none, if the default is still that line's store (MEA-115). When an item is added to the
+list, its default store is filled in, unless that store is archived (Q18).
 
 ### 6.4 Adding to the list
 

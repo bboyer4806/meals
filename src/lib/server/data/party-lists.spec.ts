@@ -476,6 +476,32 @@ describe('undoing on Groceries', () => {
 			['to_order', 1, 'bags']
 		]);
 	});
+
+	it('puts back no store when one was picked on the party list, and the default store (MEA-115)', () => {
+		const birthday = newList('Birthday');
+		addNeed(
+			householdId,
+			{ itemName: 'Balloons', quantity: 2, unit: null, store: 'none', resolution: 'none' },
+			NOON
+		);
+		const balloons = addThing(birthday, 'Balloons', 10);
+		const candles = addThing(birthday, 'Candles', 12);
+		addToList(birthday, balloons, candles);
+		markBought(householdId, birthday, balloons.id, aldi, NOON);
+		markBought(householdId, birthday, candles.id, aldi, NOON);
+
+		undoReceived(householdId, lineOf('Balloons', 'received').id, TZ, NOON);
+		undoReceived(householdId, lineOf('Candles', 'received').id, TZ, NOON);
+		expect(itemLines('Balloons').map((line) => [line.status, line.quantity, line.storeId])).toEqual([
+			['to_order', 2, null],
+			['to_order', 10, null]
+		]);
+		expect(itemLines('Candles')).toMatchObject([{ status: 'to_order', quantity: 12, storeId: null }]);
+		const defaultStore = (itemId: number) =>
+			db().select().from(items).where(eq(items.id, itemId)).get()?.defaultStoreId;
+		expect(defaultStore(balloons.itemId)).toBeNull();
+		expect(defaultStore(candles.itemId)).toBeNull();
+	});
 });
 
 describe('changing what a party needs', () => {

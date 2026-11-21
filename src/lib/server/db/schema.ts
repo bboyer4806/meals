@@ -156,7 +156,13 @@ export const groceryNeeds = sqliteTable(
 		note: text('note'),
 		createdAt: integer('created_at').notNull(),
 		orderedAt: integer('ordered_at'),
-		receivedAt: integer('received_at')
+		receivedAt: integer('received_at'),
+		// What receiving a line replaced, which undoing puts back; empty on lines not received
+		// (addition 2.2.3, MEA-115). The store it had before, empty when it had none.
+		storeBeforeReceived: integer('store_before_received'),
+		// When it was received from To Order, the item's default store before receiving made it the
+		// line's store, empty when it had none (6.3).
+		defaultStoreBeforeReceived: integer('default_store_before_received')
 	},
 	(t) => [
 		unique('grocery_needs_household_id').on(t.householdId, t.id),
@@ -166,6 +172,14 @@ export const groceryNeeds = sqliteTable(
 		}),
 		foreignKey({
 			columns: [t.householdId, t.storeId],
+			foreignColumns: [stores.householdId, stores.id]
+		}),
+		foreignKey({
+			columns: [t.householdId, t.storeBeforeReceived],
+			foreignColumns: [stores.householdId, stores.id]
+		}),
+		foreignKey({
+			columns: [t.householdId, t.defaultStoreBeforeReceived],
 			foreignColumns: [stores.householdId, stores.id]
 		}),
 		index('grocery_needs_household_status').on(t.householdId, t.status),
@@ -178,6 +192,10 @@ export const groceryNeeds = sqliteTable(
 		check(
 			'grocery_needs_received',
 			sql`(${t.status} = 'received') = (${t.receivedAt} is not null)`
+		),
+		check(
+			'grocery_needs_before_received',
+			sql`${t.status} = 'received' or (${t.storeBeforeReceived} is null and ${t.defaultStoreBeforeReceived} is null)`
 		)
 	]
 );
