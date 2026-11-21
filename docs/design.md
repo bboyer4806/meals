@@ -788,6 +788,10 @@ The rest of this section describes it as built.
   with the other date's if it has any; a date's dinners can't be moved separately. Tapping
   the date at the top of its page opens it (7). On a computer, dragging a day onto another in
   the week view does the same (7, Menu).
+- **Add to party list** (MEA-268) puts what a dinner's dishes need, for its servings, on a party
+  list (6.15), so a party can be planned as a dinner of its own beside the family's, such as one
+  labeled Party. Each Cooking at home or Bringing a dish dinner with at least one dish has it, and
+  it changes no dinner.
 
 ### 6.10 Archiving
 
@@ -1006,6 +1010,22 @@ shows on both.
   "Candles is archived. Restore it on Items first." A thing's quantity can be changed and the thing
   removed, but its unit stays as it was added; another unit means removing it and adding it again.
   Things are listed by name.
+- **Add to party list**, on a date's page, puts what a dinner's dishes need on a party list, for a
+  party planned as a dinner of its own (6.9, MEA-268). It asks for the list: one the household has,
+  or a new one, whose name starts as the dinner's label, or "Party" when it has none, and its date,
+  such as "Party Sat Dec 6", and follows the rules for any list's name. Each ingredient is scaled by
+  the dinner's servings, as saved, over its recipe's, as the recipe opened from the dinner scales it
+  (6.6), archived dishes included. An item is one thing on the list however many of the dinner's
+  ingredients name it, with their amounts added up when they convert, volume with volume and weight
+  with weight, in the unit whose range holds the total (6.6); a custom unit adds up only with the
+  same one, ignoring case, and a count only with counts (6.5). An item with an ingredient that has
+  no amount, or with amounts that don't add up, goes on once as 1 with no unit. Items marked Always
+  have are left out (2.2.1), and so are archived ones, as adding one by hand refuses it. Items
+  already on the list stay as they were, so adding the same dinner again adds nothing. Nothing goes
+  on Groceries until the list's Add to Groceries. The date's page then says how many things went on
+  which list, with a link to it ("Added 5 things to Party Sat Dec 6."), names the things on it as 1
+  ("Salt is on the list as 1. Set how much the party needs there."), and names the items that were
+  already on it and the archived ones, which are restored on Items.
 - **Add to Groceries** on a thing puts what it still needs on the grocery list: its quantity, less
   what's bought and what's on the grocery list for it already, so adding it again adds nothing.
   **Add all to Groceries** asks first ("Add 3 items to Groceries?"), adds what each thing it
@@ -1614,10 +1634,11 @@ person leaves it; only those changes move it (MEA-265). Scrolled under the heade
 afterwards, they pass beneath it, so a tap there does what it says (MEA-143). Once a dish is
 added, the field is empty and ready for the next. Each dish links to its
 recipe at this dinner's servings. Eating out has a Restaurant field, with "Where to go" as its
-hint, in place of servings and dishes (MEA-58; 6.9). Actions: Copy a dinner and Clear. A date
+hint, in place of servings and dishes (MEA-58; 6.9). Actions: Copy a dinner, Add to party list on
+a dinner with dishes (6.15), and Clear. A date
 with more than one dinner shows them all on its one page, in the order they were added, each with its own label
 (as a heading, and a Label field saved with its servings and note), type, dishes, servings,
-note, Copy a dinner and Clear; changing one never changes another (6.9). A planned date has
+note, Copy a dinner, Add to party list and Clear; changing one never changes another (6.9). A planned date has
 **Add a dinner** until it has 5. On a planned date,
 the date at the top is a button, with an icon, that opens Move to another date; on a date
 with no dinner it's plain text. A date with no dinner says "Not planned yet" and shows Cooking
@@ -1878,8 +1899,9 @@ ingredients.
 - Deleting a household.
 - Different servings for different dishes in the same dinner.
 - Metric units in the known list.
-- Planning a party beyond its shopping: tasks, invitations, guests, dates, budgets, costs, and
-  party lists made from recipes or the menu (MEA-247).
+- Planning a party beyond its shopping: tasks, invitations, guests or headcount, a party apart from
+  a dinner, repeating party dates, budgets and costs (MEA-247). A party's dinner puts its
+  ingredients on a party list (6.15, MEA-268), but no dinner puts them straight on the grocery list.
 - AI assistants other than ChatGPT and Claude, and assistants proposing changes to party lists,
   ratings, members or invites, or adding requests (6.17).
 - Reports beyond the five on Reports: reports people make, other date ranges or filters, exporting

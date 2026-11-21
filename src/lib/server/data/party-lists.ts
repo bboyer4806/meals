@@ -1,9 +1,12 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
+import { scaleFactor } from '../../scaling.ts';
 import { normalizeName } from '../../text.ts';
-import { conversionFactor } from '../../units.ts';
+import { bestUnit, conversionFactor, knownUnit, toBase } from '../../units.ts';
 import { db, transaction } from '../db/index.ts';
 import { groceryNeeds, items, partyAllocations, partyItems, partyLists } from '../db/schema.ts';
+import { getDay } from './dinners.ts';
+import { getDish } from './dishes.ts';
 import { createItem, findItemByName, getItem, setDefaultStore } from './items.ts';
 import {
 	getLine,
@@ -229,6 +232,140 @@ export function addPartyItem(
 				createdAt: now
 			})
 			.run();
+	});
+}
+
+/** One ingredient's amount, scaled to a dinner's servings, with its unit; null for no amount. */
+type ScaledAmount = { amount: number | null; unit: string | null };
+
+/**
+ * An item's amounts added up into one quantity and unit, or null when one has no amount or they
+ * don't all convert to one unit: volume with volume, weight with weight, and a custom unit or a
+ * count only with the same (6.5). A volume or weight is in the unit whose range holds the total
+ * (6.6), as the pantry checklist's totals were (6.8), and a custom unit or a count keeps its unit.
+ */
+function totalAmount(amounts: ScaledAmount[]): { quantity: number; unit: string | null } | null {
+	const first = amounts[0];
+	if (first === undefined) throw new Error('No amounts to add up');
+	let sum = 0;
+	for (const { amount, unit } of amounts) {
+		const factor = conversionFactor(unit, first.unit);
+		if (amount === null || factor === undefined) return null;
+		sum += amount * factor;
+	}
+	const known = first.unit === null ? undefined : knownUnit(first.unit);
+	if (known === undefined) return { quantity: sum, unit: first.unit };
+	const base = toBase(sum, known);
+	const unit = bestUnit(known.kind, base);
+	return { quantity: base / unit.size, unit: unit.code };
+}
+
+/** A party list the household has, or a new one by this name, checked as partyListName checks it. */
+export type PartyListChoice = { listId: number } | { name: string };
+
+/** What adding a dinner's ingredients to a party list did. Each list of names is by name. */
+export type DinnerIngredientsAdded = {
+	list: PartyListRow;
+	/** How many things went on the list. */
+	added: number;
+	/** Things that went on at quantity 1 with no unit, for people to set how much the party needs. */
+	unmeasured: string[];
+	/** Items that were already on the list, which stay as they were. */
+	alreadyOnList: string[];
+	/** Archived items, which go on a party list only once they're restored (6.10). */
+	archived: string[];
+};
+
+/**
+ * Adds what a dinner's dishes need to a party list, for a party planned as a dinner of its own
+ * (6.15, MEA-268): one the household has, or a new one by `to.name`. Each ingredient is scaled by
+ * the dinner's servings over its recipe's, as the recipe opened from the dinner scales it (6.6),
+ * and an item is one thing however many ingredients name it, with their amounts added up
+ * (totalAmount). One with an ingredient that has no amount, or with amounts that don't add up,
+ * goes on at 1 with no unit. Always have items are left out, and so are items already on the list,
+ * which stay as they were, so adding the same dinner again adds nothing, and archived items, as
+ * adding one by hand refuses it. Not found for a dinner that isn't on the date or a list that isn't
+ * the household's.
+ */
+export function addDinnerToPartyList(
+	householdId: number,
+	date: string,
+	dinnerId: number,
+	to: PartyListChoice,
+	now: number
+): DinnerIngredientsAdded {
+	return transaction(() => {
+		const dinner = getDay(householdId, date).find((candidate) => candidate.id === dinnerId);
+		if (!dinner) error(404, 'Not found');
+		// Someone took its dishes off, or switched it to a type without dishes, since the page showed it.
+		if (dinner.dishes.length === 0) error(400, 'This dinner has no dishes now.');
+
+		// Each item's amounts, in the order the dinner lists its dishes and each recipe its ingredients.
+		const needs = new Map<number, { name: string; amounts: ScaledAmount[] }>();
+		for (const { dishId } of dinner.dishes) {
+			const dish = getDish(householdId, dishId);
+			const factor = scaleFactor(dinner.servings, dish.servings);
+			for (const { itemId, itemName, amount, unit } of dish.ingredients) {
+				const scaled = { amount: amount === null ? null : amount * factor, unit };
+				const need = needs.get(itemId);
+				if (need) need.amounts.push(scaled);
+				else needs.set(itemId, { name: itemName, amounts: [scaled] });
+			}
+		}
+
+		const list =
+			'listId' in to
+				? requireList(householdId, to.listId)
+				: { id: createPartyList(householdId, to.name, now), name: to.name };
+		const onList = new Set(
+			db()
+				.select({ itemId: partyItems.itemId })
+				.from(partyItems)
+				.where(eq(partyItems.partyListId, list.id))
+				.all()
+				.map((row) => row.itemId)
+		);
+		const flags = new Map(
+			db()
+				.select({ id: items.id, alwaysHave: items.alwaysHave, archivedAt: items.archivedAt })
+				.from(items)
+				.where(and(eq(items.householdId, householdId), inArray(items.id, [...needs.keys()])))
+				.all()
+				.map((item) => [item.id, item])
+		);
+
+		const rows: (typeof partyItems.$inferInsert)[] = [];
+		const unmeasured: string[] = [];
+		const alreadyOnList: string[] = [];
+		const archived: string[] = [];
+		for (const [itemId, { name, amounts }] of needs) {
+			const item = flags.get(itemId);
+			if (item === undefined) throw new Error(`Item ${itemId} isn't the household's`);
+			if (item.alwaysHave) continue;
+			if (onList.has(itemId)) {
+				alreadyOnList.push(name);
+				continue;
+			}
+			if (item.archivedAt !== null) {
+				archived.push(name);
+				continue;
+			}
+			const total = totalAmount(amounts);
+			if (total === null) unmeasured.push(name);
+			// What can't be added up goes on as 1, with no unit, for people to set.
+			const { quantity, unit } = total ?? { quantity: 1, unit: null };
+			rows.push({ householdId, partyListId: list.id, itemId, quantity, unit, createdAt: now });
+		}
+		if (rows.length > 0) db().insert(partyItems).values(rows).run();
+
+		const byName = (a: string, b: string) => a.localeCompare(b);
+		return {
+			list,
+			added: rows.length,
+			unmeasured: unmeasured.sort(byName),
+			alreadyOnList: alreadyOnList.sort(byName),
+			archived: archived.sort(byName)
+		};
 	});
 }
 

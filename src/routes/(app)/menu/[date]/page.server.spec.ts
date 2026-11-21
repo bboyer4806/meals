@@ -10,6 +10,11 @@ import {
 } from '#lib/server/data/dinners.ts';
 import { getDish, setDishArchived } from '#lib/server/data/dishes.ts';
 import {
+	createPartyList,
+	getPartyList,
+	listPartyLists
+} from '#lib/server/data/party-lists.ts';
+import {
 	addRequest,
 	addRestaurantRequest,
 	completeRequest,
@@ -19,7 +24,14 @@ import {
 } from '#lib/server/data/requests.ts';
 import { db } from '#lib/server/db/index.ts';
 import { dishes, households } from '#lib/server/db/schema.ts';
-import { freshDb, makeDinner, makeDish, makeHousehold, recipe } from '#lib/server/testing.ts';
+import {
+	freshDb,
+	ingredient,
+	makeDinner,
+	makeDish,
+	makeHousehold,
+	recipe
+} from '#lib/server/testing.ts';
 import { NORMALIZE_MAX_LENGTH } from '#lib/text.ts';
 import { actions, load } from './+page.server.ts';
 
@@ -178,8 +190,19 @@ describe('loading a date', () => {
 				{ id: tacos, name: 'Tacos', timesAdded: 2 },
 				{ id: rice, name: 'Rice', timesAdded: 1 }
 			],
-			requests: []
+			requests: [],
+			partyLists: []
 		});
+	});
+
+	it("gives the household's party lists by name, for Add to party list, and no other household's", () => {
+		const picnic = createPartyList(householdId, 'Picnic', NOW);
+		const birthday = createPartyList(householdId, 'Birthday', NOW);
+		createPartyList(otherId, 'Theirs', NOW);
+		expect((loadPage(TOMORROW) as { partyLists: unknown }).partyLists).toEqual([
+			{ id: birthday, name: 'Birthday' },
+			{ id: picnic, name: 'Picnic' }
+		]);
 	});
 
 	it("gives the Menu's active requests, dish and restaurant, oldest first, and no other household's", () => {
@@ -1297,6 +1320,97 @@ describe('editing a request (6.12, MEA-251)', () => {
 	});
 });
 
+describe('adding a dinner to a party list (6.15)', () => {
+	let dinnerId: string;
+
+	beforeEach(() => {
+		const burgers = makeDish(
+			householdId,
+			recipe('Burgers', {
+				servings: 4,
+				ingredients: [ingredient('Buns', 4), ingredient('Ground beef', 1, 'lb'), ingredient('Salt')]
+			})
+		);
+		dinnerId = shown(makeDinner(householdId, TOMORROW, { servings: 8, dishes: [[burgers, 'main']] }));
+	});
+
+	/** The household's one party list. */
+	function onlyList() {
+		const [list, ...others] = listPartyLists(householdId);
+		if (!list || others.length > 0) throw new Error('Expected one party list');
+		return list;
+	}
+
+	it("adds the dinner's ingredients to a new list or one the household has, and no dinner changes", async () => {
+		const before = october();
+		const added = await post('addToNewPartyList', { dinnerId, name: '  Party   Thu Oct 8 ' });
+		const { id } = onlyList();
+		expect(added).toEqual({
+			action: 'partyList',
+			list: { id, name: 'Party Thu Oct 8' },
+			added: 3,
+			unmeasured: ['Salt'],
+			alreadyOnList: [],
+			archived: []
+		});
+		expect(await post('addToPartyList', { dinnerId, listId: String(id) })).toEqual({
+			action: 'partyList',
+			list: { id, name: 'Party Thu Oct 8' },
+			added: 0,
+			unmeasured: [],
+			alreadyOnList: ['Buns', 'Ground beef', 'Salt'],
+			archived: []
+		});
+		const things = getPartyList(householdId, id).items;
+		expect(things.map((thing) => [thing.itemName, thing.quantity, thing.unit])).toEqual([
+			['Buns', 8, null],
+			['Ground beef', 2, 'lb'],
+			['Salt', 1, null]
+		]);
+		expect(october()).toEqual(before);
+	});
+
+	it('says what is wrong', async () => {
+		const cookout = createPartyList(householdId, 'Cookout', NOW);
+		const tries: [Action, Record<string, string>, string][] = [
+			['addToNewPartyList', { dinnerId }, expect.any(String)],
+			['addToNewPartyList', { dinnerId, name: '   ' }, 'Enter a name'],
+			['addToNewPartyList', { dinnerId, name: 'x'.repeat(61) }, 'Keep a name under 60 characters'],
+			[
+				'addToNewPartyList',
+				{ dinnerId, name: 'COOKOUT' },
+				'You already have a party list called COOKOUT.'
+			],
+			['addToNewPartyList', { name: 'Picnic' }, expect.any(String)],
+			['addToPartyList', { dinnerId }, expect.any(String)],
+			['addToPartyList', { dinnerId, listId: 'soon' }, expect.any(String)],
+			['addToPartyList', { listId: String(cookout) }, expect.any(String)]
+		];
+		for (const [action, fields, error] of tries) {
+			expectFailure(await post(action, fields), 'partyList', error);
+		}
+		expect(onlyList()).toEqual({ id: cookout, name: 'Cookout', itemCount: 0, doneCount: 0 });
+	});
+
+	it("uses only the signed-in household's dinners and party lists", async () => {
+		const cookout = createPartyList(householdId, 'Cookout', NOW);
+		const stew = makeDish(otherId, recipe('Stew', { ingredients: [ingredient('Beef', 1, 'lb')] }));
+		const theirDinner = String(makeDinner(otherId, TOMORROW, { dishes: [[stew, 'main']] }));
+		const theirList = createPartyList(otherId, 'Theirs', NOW);
+		const tries: [Action, Record<string, string>][] = [
+			['addToPartyList', { dinnerId: theirDinner, listId: String(cookout) }],
+			['addToPartyList', { dinnerId: theirDinner, listId: String(theirList) }],
+			['addToNewPartyList', { dinnerId: theirDinner, name: 'Stew night' }],
+			['addToPartyList', { dinnerId, listId: String(theirList) }]
+		];
+		for (const [action, fields] of tries) expectNotFound(await post(action, fields));
+		expect(onlyList()).toEqual({ id: cookout, name: 'Cookout', itemCount: 0, doneCount: 0 });
+		expect(listPartyLists(otherId)).toEqual([
+			{ id: theirList, name: 'Theirs', itemCount: 0, doneCount: 0 }
+		]);
+	});
+});
+
 describe('every action', () => {
 	const forms: Record<Action, Record<string, string>> = {
 		type: { type: 'cook' },
@@ -1306,6 +1420,8 @@ describe('every action', () => {
 		restoreDish: { dishId: '1', role: 'main' },
 		role: { dishId: '1', role: 'main', dinnerId: '1' },
 		removeDish: { dishId: '1', dinnerId: '1' },
+		addToPartyList: { dinnerId: '1', listId: '1' },
+		addToNewPartyList: { dinnerId: '1', name: 'Party' },
 		copyGroups: {},
 		copy: { dishIds: '1' },
 		move: { to: TODAY },
@@ -1396,6 +1512,12 @@ describe('labels and names too long to normalize (MEA-64)', () => {
 				{ id: dish, dishId: String(cake), name: long, note: '' },
 				'editRequest',
 				'Keep the name under 80 characters'
+			],
+			[
+				'addToNewPartyList',
+				{ dinnerId, name: long },
+				'partyList',
+				'Keep a name under 60 characters'
 			]
 		];
 		const before = october();
