@@ -74,6 +74,7 @@ test('has no way to reach the pantry check, and keeps a check already started', 
 	await expect(page.getByRole('navigation', { name: 'More' }).getByRole('link')).toHaveText([
 		'Items',
 		'Grocery History',
+		'Reports',
 		'Household',
 		"What's new"
 	]);

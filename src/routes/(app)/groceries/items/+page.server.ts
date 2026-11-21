@@ -1,9 +1,9 @@
-import { fail } from '@sveltejs/kit';
+import { error, fail } from '@sveltejs/kit';
 import { z } from 'zod';
 import { dateIn } from '#lib/dates.ts';
 import { requireHousehold } from '#lib/server/auth/guards.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
-import { listCatalog, setItemArchived } from '#lib/server/data/items.ts';
+import { getItem, listCatalog, setItemArchived } from '#lib/server/data/items.ts';
 import { id, parseForm } from '#lib/server/forms.ts';
 import { saveItem } from '#lib/server/item-form.ts';
 import { fetchImage } from '#lib/server/photos.ts';
@@ -11,7 +11,10 @@ import { fetchImage } from '#lib/server/photos.ts';
 export function load({ locals, url }) {
 	const user = requireHousehold(locals);
 	const { timeZone } = getHousehold(user.householdId);
-	const archived = url.searchParams.get('archived') === '1';
+	// A link to one item, such as from Reports, opens its sheet in the list it's in now, archived
+	// or not (design 7, Items). Another household's item is not found.
+	const opened = openedItem(user.householdId, url.searchParams.get('item'));
+	const archived = opened ? opened.archivedAt !== null : url.searchParams.get('archived') === '1';
 	const search = (url.searchParams.get('q') ?? '').trim();
 	// The household's time zone decides the date (design 11), not the server's or the phone's.
 	const catalog = listCatalog(user.householdId, archived, search);
@@ -19,7 +22,21 @@ export function load({ locals, url }) {
 		...item,
 		lastBoughtDate: lastBoughtAt === null ? null : dateIn(lastBoughtAt, timeZone)
 	}));
-	return { archived, search, items, today: dateIn(Date.now(), timeZone) };
+	return {
+		archived,
+		search,
+		items,
+		openedId: opened?.id ?? null,
+		today: dateIn(Date.now(), timeZone)
+	};
+}
+
+/** The household's item an `item` link names, if there is one. */
+function openedItem(householdId: number, param: string | null) {
+	if (param === null) return null;
+	const parsed = id.safeParse(param);
+	if (!parsed.success) error(404, 'Not found');
+	return getItem(householdId, parsed.data);
 }
 
 // An image link (design 7, Item images). It isn't kept, so its limit is only there to refuse a long

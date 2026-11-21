@@ -1,3 +1,5 @@
+import { isDate } from './menu.ts';
+
 /** The calendar date, as YYYY-MM-DD, of an instant in a time zone. */
 export function dateIn(ms: number, timeZone: string): string {
 	const parts = new Intl.DateTimeFormat('en-US', {
@@ -12,6 +14,29 @@ export function dateIn(ms: number, timeZone: string): string {
 		return value;
 	};
 	return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * When a YYYY-MM-DD date starts in a time zone, in milliseconds since 1970: the first instant
+ * whose date there is `date` or later. Usually midnight, but 1 a.m. where daylight time begins at
+ * midnight. Found by halving the two days around midnight UTC, since every time zone's date
+ * starts within a day of it.
+ */
+export function startOfDate(date: string, timeZone: string): number {
+	if (!isDate(date)) throw new Error(`Not a date: ${date}`);
+	const midnightUtc = Date.parse(`${date}T00:00:00Z`);
+	// The date hasn't started at `before`, and has at `after`.
+	let before = midnightUtc - DAY;
+	let after = midnightUtc + DAY;
+	while (after - before > 1) {
+		const middle = Math.floor((before + after) / 2);
+		// YYYY-MM-DD dates compare as text.
+		if (dateIn(middle, timeZone) < date) before = middle;
+		else after = middle;
+	}
+	return after;
 }
 
 /**
