@@ -37,7 +37,14 @@ export const MAX_DISH_NAME = 80;
 
 const CHANGED = 'Someone changed this dinner since you opened it.';
 
-export type DinnerDish = { dishId: number; name: string; role: DishRole; archived: boolean };
+export type DinnerDish = {
+	dishId: number;
+	name: string;
+	role: DishRole;
+	archived: boolean;
+	/** Its recipe photo (photos.ts), which the page shows beside it (MEA-269), or null for none. */
+	photoKey: string | null;
+};
 
 export type Dinner = {
 	id: number;
@@ -180,7 +187,8 @@ function dinnerDishRows(where: SQL | undefined) {
 			dishId: dishes.id,
 			name: dishes.name,
 			role: dinnerDishes.role,
-			archivedAt: dishes.archivedAt
+			archivedAt: dishes.archivedAt,
+			photoKey: dishes.photoKey
 		})
 		.from(dinnerDishes)
 		.innerJoin(dinners, eq(dinners.id, dinnerDishes.dinnerId))

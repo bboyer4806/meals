@@ -179,8 +179,8 @@ describe('loading a date', () => {
 					note: 'Grandma visits',
 					servings: 6,
 					dishes: [
-						{ dishId: tacos, name: 'Tacos', role: 'main', archived: false },
-						{ dishId: rice, name: 'Rice', role: 'side', archived: false }
+						{ dishId: tacos, name: 'Tacos', role: 'main', archived: false, photoKey: null },
+						{ dishId: rice, name: 'Rice', role: 'side', archived: false, photoKey: null }
 					]
 				}
 			],

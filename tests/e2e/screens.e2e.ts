@@ -235,6 +235,20 @@ test('menu screens', async ({ page, db, person }) => {
 		{ item: 'Sugar', amount: 1.5, unit: 'cup' },
 		{ item: 'Eggs', amount: 4 }
 	]);
+	// Some dishes have a recipe photo, which the dinner shows beside them (MEA-269), and the rest
+	// show as they did before.
+	const setPhoto = db.prepare('update dishes set photo_key = ? where id = ?');
+	for (const [dishId, hue] of [
+		[lasagna, 10],
+		[bread, 35],
+		[cake, 45]
+	] as const) {
+		const key = addPhotoFiles(
+			await makeJpeg(page, { width: 1200, height: 900, hue }),
+			await makeJpeg(page, { width: 400, height: 300, hue })
+		);
+		setPhoto.run(key, dishId);
+	}
 
 	// A dinner for each weekday but Saturday, from this week's Sunday through the next 7 days.
 	const byWeekday: (DinnerSeed | null)[] = [

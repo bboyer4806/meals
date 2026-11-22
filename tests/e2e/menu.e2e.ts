@@ -5,10 +5,12 @@ import {
 	addDinner,
 	addItem,
 	addPerson,
+	addPhotoFiles,
 	addRecipe,
 	dayLabel,
 	dropActions,
 	expect,
+	makeJpeg,
 	monthDay,
 	open,
 	sundayOf,
@@ -743,6 +745,250 @@ test("opens each dish's recipe at the servings shown, and asks before leaving wi
 	await saveToWeek(page, date);
 	await expect(day(page, date).locator('.note')).toHaveText('Use the good butter');
 	expect(questions).toHaveLength(4);
+});
+
+// A dish's recipe photo beside it on its dinner (MEA-269; design 7, Dinner).
+
+/**
+ * A recipe photo and its thumbnail, stored as the recipe editor stores them, and their key. A tall
+ * photo's thumbnail is 300 x 400 px, and a wide one's 400 x 300 px.
+ */
+async function addDishPhoto(page: Page, hue: number, shape: 'wide' | 'tall' = 'wide') {
+	const [width, height] = shape === 'wide' ? [400, 300] : [300, 400];
+	return addPhotoFiles(
+		await makeJpeg(page, { width: width * 3, height: height * 3, hue }),
+		await makeJpeg(page, { width, height, hue })
+	);
+}
+
+/** A thumbnail's address. */
+function thumb(key: string): string {
+	return `/photos/${key}-thumb.jpg`;
+}
+
+/** The photo beside a dish, which is part of its recipe link. */
+function dishPhoto(dishes: Locator, name: string) {
+	return dishes.getByRole('link', { name, exact: true }).locator('img');
+}
+
+/** The addresses of the photos the dishes show, in the order they're listed. */
+function dishPhotos(dishes: Locator) {
+	return dishes
+		.getByRole('list')
+		.locator('img')
+		.evaluateAll((images) => images.map((image) => image.getAttribute('src')));
+}
+
+/** Checks the image has loaded, and returns its width. */
+async function loadedWidth(image: Locator): Promise<number> {
+	await image.scrollIntoViewIfNeeded();
+	await expect
+		.poll(() =>
+			image.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth)
+		)
+		.toBeGreaterThan(0);
+	return image.evaluate((element: HTMLImageElement) => element.naturalWidth);
+}
+
+type Box = { x: number; y: number; width: number; height: number };
+
+/** Where the element is on the screen. */
+async function box(locator: Locator): Promise<Box> {
+	const found = await locator.boundingBox();
+	if (!found) throw new Error('Not shown');
+	return found;
+}
+
+/** Where a dish's name is on the screen: its link's text, after the photo. */
+function nameBox(link: Locator): Promise<Box> {
+	return link.evaluate((element) => {
+		const text = document.createRange();
+		text.selectNodeContents(element);
+		const photo = element.querySelector('img');
+		if (photo) text.setStartAfter(photo);
+		const { x, y, width, height } = text.getBoundingClientRect();
+		return { x, y, width, height };
+	});
+}
+
+function overlap(a: Box, b: Box): boolean {
+	return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+test("shows each dish's recipe photo beside its name on each dinner, and none for a dish without one (MEA-269)", async ({
+	page,
+	db,
+	person
+}) => {
+	const lasagnaPhoto = await addDishPhoto(page, 10);
+	const macPhoto = await addDishPhoto(page, 45);
+	const lasagna = addRecipe(db, person.householdId, { name: 'Lasagna', photoKey: lasagnaPhoto });
+	const salad = addRecipe(db, person.householdId, { name: 'Caesar salad' });
+	const mac = addRecipe(db, person.householdId, { name: 'Mac and cheese', photoKey: macPhoto });
+	const date = addDays(today(), 1);
+	const label = db.prepare('update dinners set label = ? where id = ?');
+	label.run(
+		'Adults',
+		addDinner(db, person.householdId, date, {
+			dishes: [
+				[lasagna, 'main'],
+				[salad, 'side']
+			]
+		})
+	);
+	label.run(
+		'Kids',
+		addDinner(db, person.householdId, date, {
+			dishes: [
+				[mac, 'main'],
+				[lasagna, 'side']
+			]
+		})
+	);
+	// Another household's dinner that day, with a photo of its own.
+	const other = addPerson(db);
+	const theirPhoto = await addDishPhoto(page, 200);
+	const stew = addRecipe(db, other.householdId, { name: 'Stew', photoKey: theirPhoto });
+	addDinner(db, other.householdId, date, { dishes: [[stew, 'main']] });
+
+	await open(page, `/menu/${date}`);
+	const dishes = (dinner: string) =>
+		page.getByRole('region', { name: dinner }).getByRole('region', { name: 'Dishes' });
+	// The photos add nothing to the links' names, since each dish's name is beside its photo.
+	await expect(dishes('Adults').getByRole('link')).toHaveText(['Lasagna', 'Caesar salad']);
+	await expect(dishes('Kids').getByRole('link')).toHaveText(['Mac and cheese', 'Lasagna']);
+	// Caesar salad has no photo, so its row has no image.
+	expect(await dishPhotos(dishes('Adults'))).toEqual([thumb(lasagnaPhoto)]);
+	expect(await dishPhotos(dishes('Kids'))).toEqual([thumb(macPhoto), thumb(lasagnaPhoto)]);
+	await expect(page.locator(`img[src="${thumb(theirPhoto)}"]`)).toHaveCount(0);
+
+	// Each has loaded, as a 40 px square left of its dish's name and level with it.
+	for (const [dinner, name] of [
+		['Adults', 'Lasagna'],
+		['Kids', 'Mac and cheese'],
+		['Kids', 'Lasagna']
+	] as const) {
+		const photo = dishPhoto(dishes(dinner), name);
+		await expect(photo).toHaveAttribute('alt', '');
+		expect(await loadedWidth(photo)).toBe(400);
+		const picture = await box(photo);
+		const text = await nameBox(dishes(dinner).getByRole('link', { name, exact: true }));
+		expect(picture).toMatchObject({ width: 40, height: 40 });
+		expect(picture.x + picture.width).toBeLessThan(text.x);
+		expect(text.y + text.height / 2).toBeGreaterThan(picture.y);
+		expect(text.y + text.height / 2).toBeLessThan(picture.y + picture.height);
+	}
+	// A dish without a photo keeps no space for one: its name starts where the photos do.
+	const saladName = await nameBox(dishes('Adults').getByRole('link', { name: 'Caesar salad' }));
+	expect(saladName.x).toBeCloseTo((await box(dishPhoto(dishes('Adults'), 'Lasagna'))).x, 0);
+});
+
+test('fits dish photos beside the names, roles and Remove on a phone and a computer (MEA-269)', async ({
+	page,
+	db,
+	person
+}) => {
+	const stewName = 'Beef stew with root vegetables';
+	// 80 characters without a space, the longest a dish name can be.
+	const long = 'Grandmas'.repeat(10);
+	const names = [stewName, long, 'Pie'];
+	const stew = addRecipe(db, person.householdId, {
+		name: stewName,
+		photoKey: await addDishPhoto(page, 25)
+	});
+	const grandmas = addRecipe(db, person.householdId, {
+		name: long,
+		photoKey: await addDishPhoto(page, 100)
+	});
+	// A tall photo gets the same square as the wide ones.
+	const pie = addRecipe(db, person.householdId, {
+		name: 'Pie',
+		photoKey: await addDishPhoto(page, 50, 'tall')
+	});
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, {
+		dishes: [
+			[stew, 'main'],
+			[grandmas, 'side'],
+			[pie, 'dessert']
+		]
+	});
+
+	await open(page, `/menu/${date}`);
+	await expect(dishLinks(page)).toHaveText(names);
+	for (const size of [null, { width: 360, height: 740 }, { width: 1280, height: 800 }]) {
+		if (size) await page.setViewportSize(size);
+		for (const name of names) {
+			const link = dishSection(page).getByRole('link', { name, exact: true });
+			const photo = link.locator('img');
+			expect(await loadedWidth(photo)).toBe(name === 'Pie' ? 300 : 400);
+			const picture = await box(photo);
+			const text = await nameBox(link);
+			expect(picture).toMatchObject({ width: 40, height: 40 });
+			expect(overlap(picture, text)).toBe(false);
+			// Nothing covers or crowds the dish's role and Remove.
+			for (const control of [
+				dishSection(page).getByLabel(`Role for ${name}`),
+				dishSection(page).getByRole('button', { name: `Remove ${name}` })
+			]) {
+				const shown = await box(control);
+				expect(shown.height).toBeGreaterThanOrEqual(44);
+				expect(overlap(shown, picture)).toBe(false);
+				expect(overlap(shown, text)).toBe(false);
+			}
+		}
+		expect(await sideways(page)).toBe(0);
+	}
+});
+
+test("keeps each dish's photo with it as dishes are added, moved and removed, and shows a changed photo once the day reloads (MEA-269)", async ({
+	page,
+	db,
+	person
+}) => {
+	const tacosPhoto = await addDishPhoto(page, 15);
+	const ricePhoto = await addDishPhoto(page, 60);
+	const tacos = addRecipe(db, person.householdId, { name: 'Tacos', photoKey: tacosPhoto });
+	addRecipe(db, person.householdId, { name: 'Rice', photoKey: ricePhoto });
+	addRecipe(db, person.householdId, { name: 'Beans' });
+	const date = addDays(today(), 1);
+	addDinner(db, person.householdId, date, { servings: 6, dishes: [[tacos, 'main']] });
+
+	await open(page, `/menu/${date}`);
+	// A dish added with a photo shows it straight away, and one without shows none.
+	await addDish(page, 'Ri', { suggestion: 'Rice' });
+	await addDish(page, 'Be', { suggestion: 'Beans' });
+	await expect(dishLinks(page)).toHaveText(['Tacos', 'Rice', 'Beans']);
+	const photos = () => dishPhotos(dishSection(page));
+	await expect.poll(photos).toEqual([thumb(tacosPhoto), thumb(ricePhoto)]);
+
+	// A new role moves the dish with its photo.
+	await dishSection(page).getByLabel('Role for Tacos').selectOption('dessert');
+	await expect(dishLinks(page)).toHaveText(['Rice', 'Beans', 'Tacos']);
+	await expect.poll(photos).toEqual([thumb(ricePhoto), thumb(tacosPhoto)]);
+
+	// The photo opens the dish's recipe at the servings shown, as its name does.
+	await dishPhoto(dishSection(page), 'Tacos').click();
+	await expect(page).toHaveURL(new RegExp(`/recipes/${tacos}\\?servings=6$`));
+	await page.goBack();
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+
+	// Removing a dish takes its photo with it.
+	await dishSection(page).getByRole('button', { name: 'Remove Rice' }).click();
+	await expect(dishLinks(page)).toHaveText(['Beans', 'Tacos']);
+	await expect.poll(photos).toEqual([thumb(tacosPhoto)]);
+
+	// Someone replaces the recipe's photo, then removes it: the day shows the photo it has now once
+	// its data reloads (6.11).
+	const newPhoto = await addDishPhoto(page, 300);
+	db.prepare('update dishes set photo_key = ? where id = ?').run(newPhoto, tacos);
+	await comeBack(page);
+	await expect.poll(photos).toEqual([thumb(newPhoto)]);
+	expect(await loadedWidth(dishPhoto(dishSection(page), 'Tacos'))).toBe(400);
+	db.prepare('update dishes set photo_key = null where id = ?').run(tacos);
+	await page.reload();
+	await expect(dishLinks(page)).toHaveText(['Beans', 'Tacos']);
+	await expect(dishSection(page).locator('img')).toHaveCount(0);
 });
 
 test('goes to the week after a save, which says Saved on that day for a moment', async ({
