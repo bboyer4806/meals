@@ -176,7 +176,9 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
 `.github/workflows/deploy.yml` on every push to `main` (E4). Changes:
 
 1. **Checks before deploying.** A check job runs the type check, unit tests and
-   end-to-end tests on pull requests and on pushes to `main`. It builds the Docker image and
+   end-to-end tests on pull requests and on pushes to `main`. First it fails unless
+   `npm run db:generate` finds no schema changes, which catches a change to the schema that
+   has no migration in `drizzle/` (MEA-121). It builds the Docker image and
    runs the end-to-end tests against it, run as production runs it with an empty `DATA_DIR`,
    so a mistake in the image, such as a lower `BODY_SIZE_LIMIT`, fails them (MEA-105). On
    `main`, a push job then pushes that same image, and the deploy job needs the push, so code
