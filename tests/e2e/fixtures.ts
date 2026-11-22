@@ -312,9 +312,9 @@ export function addRecipe(db: Database.Database, householdId: number, recipe: Re
 // The menu's dates. Test households are in Chicago (addPerson), so "today" is the date there.
 // Worked out here rather than with the app's own date code, so the tests check it.
 
-/** Today's date in the test households' time zone, as YYYY-MM-DD. */
-export function today(): string {
-	return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(Date.now());
+/** Today's date in the test households' time zone, or in `timeZone`, as YYYY-MM-DD. */
+export function today(timeZone = 'America/Chicago'): string {
+	return new Intl.DateTimeFormat('en-CA', { timeZone }).format(Date.now());
 }
 
 /** The date some days later, or earlier for a negative number. */

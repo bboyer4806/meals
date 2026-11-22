@@ -1677,7 +1677,10 @@ editor before Save asks first, as it does after any change.
 **Menu.** Sunday to Saturday (Q27b), one row per day: the date, type, the restaurant (Eating
 out; MEA-58) or dishes by role, and the whole note, with its line breaks (MEA-59). A day with
 more than one dinner shows each one (label, type, restaurant or dishes by role, note) in the
-order they were added. Today is highlighted.
+order they were added. Today is highlighted, and each date before it, in the household's time
+zone, is crossed off on every week (MEA-270). Only the date is: its dinners show and open as any
+day's do. The week works out which dates have passed as it loads, so one left open past midnight
+crosses off the day just gone once it loads again, as when coming back to it.
 Previous, next and "This week" buttons. On a touch screen, swiping the days sideways changes the
 week as the buttons do, address included (MEA-45): to the left for the next week and to the right
 for the previous one, one week per swipe however far it goes. A swipe takes one finger going at
