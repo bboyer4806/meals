@@ -22,7 +22,7 @@ test('sets up a household on first sign-in', async ({ page, db, context, baseURL
 	const { userId } = addNewcomer(db, { startInvite: true });
 	await signInAs(db, context, baseURL, userId);
 
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await expect(page).toHaveURL(/\/setup$/);
 	await page.getByLabel('Household name').fill('The Robins');
 	await page.getByLabel('Usual number of servings').fill('3');
@@ -122,7 +122,7 @@ test('asks someone invited by more than one household which to join (MEA-112)', 
 });
 
 test('manages stores and invites', async ({ page, person: _ }) => {
-	await page.goto('/household');
+	await open(page, '/household');
 
 	await page.getByLabel('Store name').fill('Costco');
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
@@ -288,7 +288,7 @@ test('lets the admin invite a household', async ({ page, db, context, baseURL })
 	const userId = adminId(db);
 	await signInAs(db, context, baseURL, userId);
 
-	await page.goto('/admin');
+	await open(page, '/admin');
 	await expect(page.getByRole('heading', { name: 'Admin', level: 1 })).toBeVisible();
 	await expect(page.getByText('No backups yet.')).toBeVisible();
 	const email = `household-${Date.now()}@example.com`;
@@ -362,7 +362,7 @@ test('says where the admin test email went, and stays on Admin', async ({
 });
 
 test('shows the privacy page to anyone, linked from the sign-in page', async ({ page }) => {
-	await page.goto('/login');
+	await open(page, '/login');
 	await page.getByRole('link', { name: 'Privacy' }).click();
 	await expect(page).toHaveURL(/\/privacy$/);
 	await expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible();
