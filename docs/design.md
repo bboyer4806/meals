@@ -152,7 +152,7 @@ Backups:
 | E2    | Roles                  | All members can do everything.                                                                                                                   |
 | E3    | Deleting               | Archive instead of delete.                                                                                                                       |
 | E4    | Deploy                 | The existing pipeline and domain.                                                                                                                |
-| E5    | Invites                | By email address. The site sends no email.                                                                                                       |
+| E5    | Invites                | By email address. The site emails each new invite to that address (MEA-26).                                                                      |
 | A1-A4 | Starting assumptions   | Dokku deploy (E4), TypeScript (Q12), a responsive website (Q9) and US units (Q32b) are all confirmed.                                           |
 
 ## 4. Architecture
@@ -403,6 +403,7 @@ src/lib/server/
   jira.ts                 create a feedback ticket in Jira and attach its screenshot
   email.ts                send an email, as HTML with a plain-text version, through Resend
   grocery-email.ts        the grocery list email's subject, HTML and text (6.16)
+  invite-email.ts         the invite email's subject, HTML and text (6.1)
   request-notifications.ts email a new request to the rest of the household (6.12)
   fetch-link.ts           fetch a link from a public website (4.5)
   recipe-page.ts          fetch a recipe's web page and read its JSON-LD
@@ -598,12 +599,37 @@ and proposals at it, so revoking it deletes them too.
    used up at sign-in: it waits until they set up a household or join one. Admin also lists
    households, each with its members' emails and the emails it invited (MEA-112), and the last
    backup date. The admin is also a normal member of their own household.
-6. An invite or member that's already gone counts as done (MEA-69). Cancel on an invite that
+6. A new invite, from a household or from the admin, emails the address invited (MEA-26), so
+   whoever invited them doesn't have to tell them. It goes through Resend (4.3), to that address
+   only. The subject says what it's for: "You're invited to join The Smiths on Meals", with the
+   household's name, or for the admin's invite "You're invited to start a household on Meals".
+   The email starts with the same words, then what Meals is in the sign-in page's words,
+   "groceries, recipes and dinner plans for your household", then says how to accept: "To
+   join, sign in with Google using pat@example.com." or "To start it, sign in with Google using
+   pat@example.com. Meals then asks for your household's name, usual number of servings and time
+   zone." Last, "Sign in to Meals" links to the sign-in page at the address the invite was sent
+   to. Its HTML and plain-text versions have the same text (4.3), and the HTML escapes the
+   household's name and the address, so they show as typed.
+
+   The email goes out once the invite is saved, outside its transaction, and the page waits for
+   it: at most the 10 seconds Meals gives Resend to answer (7, Admin). When Resend accepts it,
+   the page says "Invited pat@example.com. An invite email was sent to them." Accepted isn't
+   delivered, since Resend can still bounce it or a spam filter hold it. When Resend refuses it
+   or doesn't answer in time, the invite stays saved: the page lists it and clears the address,
+   as for any new invite, and warns "Invited pat@example.com, but the invite email couldn't be
+   sent. Tell them to sign in with that Google account." On Admin, both messages say "Invited
+   pat@example.com to start a household" in place of "Invited pat@example.com". The app's log
+   gets Resend's answer or the error, with the household's id for a household's invite, never
+   the address or the API key, and nothing tries again. Nothing that adds no invite sends an
+   email: an address that's refused, already invited, or past the 20 waiting. Cancelling an
+   invite or using it sends none, and nobody can turn the emails off. Cancelling an invite and
+   inviting the address again sends a new email.
+7. An invite or member that's already gone counts as done (MEA-69). Cancel on an invite that
    was used or cancelled after the page opened, on the Household or Admin page, and Remove on
    a member someone else removed meanwhile, show the page as it is now (6.11). A member removed
    meanwhile can't remove anyone: their Remove shows Not found, so two members removing each
    other at once leave one of them, never an empty household (2.3, MEA-114).
-7. Members are named by their first name, the first word of the name Google gives (MEA-255):
+8. Members are named by their first name, the first word of the name Google gives (MEA-255):
    "Alex Smith" is "Alex". While another of the household's current members has the same first
    name, ignoring case ("Alex" and "alex"), each of them shows their whole name instead, so
    names go back to first names once one of them is removed. This is how the Household page,
@@ -612,7 +638,7 @@ and proposals at it, so revoking it deletes them too.
    same way; someone removed since shows their whole name while a current member has the same
    first name. Names are kept whole, and a removed member's ratings still show as "Former
    member".
-8. A page an AI assistant sends the admin to, its connection page or a proposal (6.17), sends
+9. A page an AI assistant sends the admin to, its connection page or a proposal (6.17), sends
    someone signed out straight to Google's sign-in, and back to that page, query and all, once
    signed in (MEA-266). The page is kept in a cookie for the 10 minutes a sign-in may take, and
    only a page on this site counts. Every other page still sends someone signed out to the sign-in
@@ -1897,7 +1923,7 @@ ingredients.
 | Steps mention amounts that don't scale                           | A warning on those steps (Q34).                                                                                                                     |
 | 1 1/2 eggs                                                       | Shown as a fraction; you decide (Q33).                                                                                                              |
 | Large phone photos                                               | Resized on the phone before upload.                                                                                                                 |
-| Someone signs in with a different address than the one invited  | The invite-only page shows the address they used.                                                                                                   |
+| Someone signs in with a different address than the one invited  | The invite email says which address to sign in with (6.1), and the invite-only page shows the address they used.                                    |
 | Two households invite the same person                            | Each invite stands on its own, and the person chooses which household to join when they sign in (6.1, MEA-112).                                    |
 | "Today" is wrong late at night                                   | The household's time zone decides the date.                                                                                                         |
 | The server's disk fails                                          | Everything is lost (Q13). Moving backups off the server is in section 12.                                                                          |

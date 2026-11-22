@@ -179,6 +179,14 @@ export function addStore(db: Database.Database, householdId: number, name: strin
 	);
 }
 
+/** An invite from the household, or for null the admin's to start one, as Invite saves it. */
+export function addInvite(db: Database.Database, email: string, householdId: number | null): void {
+	db.prepare('insert into invites (email, household_id, created_at) values (?, ?, 0)').run(
+		email,
+		householdId
+	);
+}
+
 /**
  * The household's item with this name (ignoring case), added if it's new. A new one has been
  * checked for a standard image and has none (design 6.14), so a save that checks the household's

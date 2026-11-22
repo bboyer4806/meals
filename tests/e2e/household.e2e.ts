@@ -1,5 +1,6 @@
 import {
 	UNREACHABLE,
+	addInvite,
 	addNewcomer,
 	addPerson,
 	addStore,
@@ -121,7 +122,7 @@ test('asks someone invited by more than one household which to join (MEA-112)', 
 	expect(db.prepare('select count(*) from invites where email = ?').pluck().get(email)).toBe(0);
 });
 
-test('manages stores and invites', async ({ page, person: _ }) => {
+test('manages stores and invites', async ({ page, db, person }) => {
 	await open(page, '/household');
 
 	await page.getByLabel('Store name').fill('Costco');
@@ -151,14 +152,40 @@ test('manages stores and invites', async ({ page, person: _ }) => {
 	await page.getByRole('button', { name: 'Restore' }).click();
 	await expect(page.getByRole('heading', { name: 'Archived' })).toHaveCount(0);
 
-	// Each household's invites stand on their own, so other tests' don't get in the way (MEA-112).
+	// Answered here, so nothing goes to Resend (the server's side is in page.server.spec.ts), with
+	// the invite saved as the action saves it. Each household's invites stand on their own, so other
+	// tests' don't get in the way (MEA-112).
 	const friend = 'friend@example.com';
-	await page.getByLabel('Email').fill(friend.toUpperCase());
+	const sent = `Invited ${friend}. An invite email was sent to them.`;
+	await answerAction(page, '/household', 'invite', { action: 'invite', message: sent });
+	await page.getByLabel('Email').fill(friend);
+	addInvite(db, friend, person.householdId);
 	await page.getByRole('button', { name: 'Invite' }).click();
-	await expect(page.getByRole('status')).toContainText(`Invited ${friend}`);
+	await expect(page.getByRole('status')).toHaveText(sent);
+	await expect(page.getByLabel('Email')).toHaveValue('');
 	await expect(page.getByText(friend, { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Cancel' }).click();
 	await expect(page.getByText(friend, { exact: true })).toHaveCount(0);
+});
+
+test("shows an invite whose email couldn't be sent as saved, and says so (MEA-26)", async ({
+	page,
+	db,
+	person
+}) => {
+	await open(page, '/household');
+
+	// Answered as the server answers when Resend refuses the email, once the invite is saved.
+	const friend = 'friend@example.com';
+	const notSent = `Invited ${friend}, but the invite email couldn't be sent. Tell them to sign in with that Google account.`;
+	await answerAction(page, '/household', 'invite', { action: 'invite', error: notSent });
+	await page.getByLabel('Email').fill(friend);
+	addInvite(db, friend, person.householdId);
+	await page.getByRole('button', { name: 'Invite' }).click();
+	await expect(page.getByRole('alert')).toHaveText(notSent);
+	await expect(page.getByRole('status')).toHaveCount(0);
+	await expect(page.getByLabel('Email')).toHaveValue('');
+	await expect(page.getByText(friend, { exact: true })).toBeVisible();
 });
 
 test('keeps a household to 20 invites waiting (MEA-112)', async ({ page, db, person }) => {
@@ -291,13 +318,17 @@ test('lets the admin invite a household', async ({ page, db, context, baseURL })
 	await open(page, '/admin');
 	await expect(page.getByRole('heading', { name: 'Admin', level: 1 })).toBeVisible();
 	await expect(page.getByText('No backups yet.')).toBeVisible();
-	const email = `household-${Date.now()}@example.com`;
+	// Answered here, so nothing goes to Resend (the server's side is in page.server.spec.ts), with
+	// the invite saved as the action saves it.
+	const email = `household-${test.info().workerIndex}-${Date.now()}@example.com`;
+	const sent = `Invited ${email} to start a household. An invite email was sent to them.`;
+	await answerAction(page, '/admin', 'invite', { action: 'invite', message: sent });
 	await page.getByLabel('Email').fill(email);
+	addInvite(db, email, null);
 	await page.getByRole('button', { name: 'Invite' }).click();
-	await expect(page.getByRole('status')).toContainText(`Invited ${email} to start a household.`);
-	expect(db.prepare('select household_id from invites where email = ?').get(email)).toEqual({
-		household_id: null
-	});
+	await expect(page.getByRole('status')).toHaveText(sent);
+	await expect(page.getByLabel('Email')).toHaveValue('');
+	await expect(page.getByText(email, { exact: true })).toBeVisible();
 });
 
 test("lists each household's invites waiting on Admin (MEA-112)", async ({
