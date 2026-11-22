@@ -2,10 +2,16 @@ import { format } from 'node:util';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionUser } from '#lib/server/auth/session.ts';
 import { loadConfig } from '#lib/server/config.ts';
-import { TEST_ENV } from '#lib/server/testing.ts';
+import { INVITE_LIMIT, listInvites } from '#lib/server/data/households.ts';
+import { db } from '#lib/server/db/index.ts';
+import { invites, users } from '#lib/server/db/schema.ts';
+import { freshDb, makeHousehold, TEST_ENV } from '#lib/server/testing.ts';
 import { actions } from './+page.server.ts';
 
 const NOT_SENT = "Couldn't send test email. Please try again.";
+const INVITE_SENT = 'An invite email was sent to them.';
+const INVITE_NOT_SENT =
+	"the invite email couldn't be sent. Tell them to sign in with that Google account.";
 
 const admin: SessionUser = {
 	id: 1,
@@ -108,6 +114,141 @@ describe('the test email action', () => {
 		const member = { ...admin, id: 2, email: 'pat@example.com', name: 'Pat', isAdmin: false };
 		await expect(sendTestEmail(member)).rejects.toMatchObject({ status: 404 });
 		await expect(sendTestEmail(null)).rejects.toMatchObject({ status: 303, location: '/login' });
+		expect(fetch).not.toHaveBeenCalled();
+	});
+});
+
+describe('invite emails to start a household (6.1, MEA-26)', () => {
+	beforeEach(() => {
+		freshDb();
+	});
+
+	/** Posts the Admin page's form `action` as `user`, giving what it returned or what it threw. */
+	async function post(
+		action: 'invite' | 'cancelInvite',
+		fields: Record<string, string>,
+		user: SessionUser | null = admin
+	): Promise<unknown> {
+		const body = new FormData();
+		for (const [name, value] of Object.entries(fields)) body.set(name, value);
+		const url = new URL(`http://localhost/admin?/${action}`);
+		const request = new Request(url, { method: 'POST', body });
+		const event = { locals: { user }, request, url } as unknown as Parameters<
+			(typeof actions)[typeof action]
+		>[0];
+		try {
+			return await actions[action](event);
+		} catch (e) {
+			return e;
+		}
+	}
+
+	function inviteFor(email: string): void {
+		db().insert(invites).values({ email, householdId: null, createdAt: 0 }).run();
+	}
+
+	it('email a new invite to the address entered, saying how to set up a household', async () => {
+		expect(await post('invite', { email: ' Pat@Example.com ' })).toEqual({
+			action: 'invite',
+			message: `Invited pat@example.com to start a household. ${INVITE_SENT}`
+		});
+		expect(listInvites(null).map((invite) => invite.email)).toEqual(['pat@example.com']);
+		const email = sentEmail();
+		expect(email).toMatchObject({
+			from: 'Meals <noreply@boyersoftware.com>',
+			to: 'pat@example.com',
+			subject: "You're invited to start a household on Meals"
+		});
+		expect(email.text).toContain(
+			"To start it, sign in with Google using pat@example.com. Meals then asks for your household's name"
+		);
+		expect(email.html).toContain('<a href="http://localhost/login">Sign in to Meals</a>');
+	});
+
+	it('go out though a household invited the same address (MEA-112)', async () => {
+		db()
+			.insert(invites)
+			.values({ email: 'pat@example.com', householdId: makeHousehold().householdId, createdAt: 0 })
+			.run();
+		expect(await post('invite', { email: 'pat@example.com' })).toEqual({
+			action: 'invite',
+			message: `Invited pat@example.com to start a household. ${INVITE_SENT}`
+		});
+		expect(sentEmail().subject).toBe("You're invited to start a household on Meals");
+	});
+
+	it('are not sent for an invite that is refused', async () => {
+		db()
+			.insert(users)
+			.values({
+				householdId: makeHousehold().householdId,
+				googleSub: 'sub-sam',
+				email: 'sam@example.com',
+				name: 'Sam',
+				createdAt: 0
+			})
+			.run();
+		inviteFor('kim@example.com');
+		expect(await post('invite', { email: '' })).toMatchObject({
+			status: 400,
+			data: { action: 'invite', error: 'Enter an email address' }
+		});
+		expect(await post('invite', { email: 'sam@example.com' })).toMatchObject({
+			status: 400,
+			data: { action: 'invite', error: 'sam@example.com already has a Meals account.' }
+		});
+		expect(await post('invite', { email: 'kim@example.com' })).toMatchObject({
+			status: 400,
+			data: { action: 'invite', error: 'You already invited kim@example.com to start a household.' }
+		});
+		for (let i = 1; i < INVITE_LIMIT; i += 1) inviteFor(`guest-${i}@example.com`);
+		expect(await post('invite', { email: 'one-more@example.com' })).toMatchObject({
+			status: 400,
+			data: { action: 'invite', error: expect.stringContaining('20 invites to start a household') }
+		});
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	it('are not sent when an invite is cancelled', async () => {
+		inviteFor('pat@example.com');
+		const [invite] = listInvites(null);
+		expect(await post('cancelInvite', { id: String(invite!.id) })).toBeUndefined();
+		expect(listInvites(null)).toEqual([]);
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	it('keep the invite when the email fails, say so, and log why without key or address', async () => {
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const refusal = {
+			statusCode: 403,
+			message: 'The domain is not verified.',
+			name: 'validation_error'
+		};
+		fetch.mockResolvedValueOnce(Response.json(refusal, { status: 403 }));
+		// Not a failure, so the page shows the invite saved and clears the field.
+		expect(await post('invite', { email: 'pat@example.com' })).toEqual({
+			action: 'invite',
+			error: `Invited pat@example.com to start a household, but ${INVITE_NOT_SENT}`
+		});
+		expect(listInvites(null).map((invite) => invite.email)).toEqual(['pat@example.com']);
+		const log = logged(consoleError);
+		expect(log).toContain('The invite email to start a household was not sent');
+		expect(log).toContain('403');
+		expect(log).toContain('The domain is not verified.');
+		expect(log).not.toContain('resend-key');
+		expect(log).not.toContain('pat@example.com');
+	});
+
+	it('are not found for anyone but the admin, and send nothing', async () => {
+		const member = { ...admin, id: 2, email: 'pat@example.com', name: 'Pat', isAdmin: false };
+		expect(await post('invite', { email: 'kim@example.com' }, member)).toMatchObject({
+			status: 404
+		});
+		expect(await post('invite', { email: 'kim@example.com' }, null)).toMatchObject({
+			status: 303,
+			location: '/login'
+		});
+		expect(listInvites(null)).toEqual([]);
 		expect(fetch).not.toHaveBeenCalled();
 	});
 });

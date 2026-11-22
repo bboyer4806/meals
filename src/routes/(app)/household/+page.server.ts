@@ -17,7 +17,9 @@ import {
 	setStoreArchived,
 	type StoreNameResult
 } from '#lib/server/data/stores.ts';
+import { sendEmail } from '#lib/server/email.ts';
 import { attempt, emailField, householdSettings, id, nameField, parseForm } from '#lib/server/forms.ts';
+import { inviteEmail } from '#lib/server/invite-email.ts';
 import { fail } from '@sveltejs/kit';
 
 export function load({ locals }) {
@@ -55,7 +57,9 @@ export const actions = {
 		return { action: 'settings', message: 'Saved.' };
 	},
 
-	invite: async ({ locals, request }) => {
+	// A new invite emails the address invited once it's saved, outside its transaction, so an email
+	// that fails never undoes it (6.1, MEA-26).
+	invite: async ({ locals, request, url }) => {
 		const user = requireHousehold(locals);
 		const parsed = parseForm(z.object({ email: emailField }), await request.formData(), 'invite');
 		if ('failure' in parsed) return parsed.failure;
@@ -70,10 +74,17 @@ export const actions = {
 		if (result.kind === 'full') {
 			return fail(400, { action: 'invite', error: TOO_MANY_INVITES });
 		}
-		return {
-			action: 'invite',
-			message: `Invited ${email}. Tell them to sign in with that Google account.`
-		};
+		try {
+			await sendEmail(inviteEmail(email, getHousehold(user.householdId).name, url.origin));
+		} catch (e) {
+			console.error(`The invite email for household ${user.householdId} was not sent:`, e);
+			// Not a failure: the invite was saved, so the page shows it and clears the field.
+			return {
+				action: 'invite',
+				error: `Invited ${email}, but the invite email couldn't be sent. Tell them to sign in with that Google account.`
+			};
+		}
+		return { action: 'invite', message: `Invited ${email}. An invite email was sent to them.` };
 	},
 
 	cancelInvite: async ({ locals, request }) => {

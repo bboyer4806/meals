@@ -19,6 +19,7 @@ import {
 } from '#lib/server/data/households.ts';
 import { sendEmail } from '#lib/server/email.ts';
 import { emailField, id, parseForm } from '#lib/server/forms.ts';
+import { inviteEmail } from '#lib/server/invite-email.ts';
 
 // Send test email checks that Meals can send email (design 7, Admin).
 const TEST_EMAIL_TEXT =
@@ -58,7 +59,9 @@ export function load({ locals, url }) {
 }
 
 export const actions = {
-	invite: async ({ locals, request }) => {
+	// A new invite emails the address invited once it's saved, outside its transaction, so an email
+	// that fails never undoes it (6.1, MEA-26).
+	invite: async ({ locals, request, url }) => {
 		requireAdmin(locals);
 		const parsed = parseForm(z.object({ email: emailField }), await request.formData(), 'invite');
 		if ('failure' in parsed) return parsed.failure;
@@ -76,9 +79,19 @@ export const actions = {
 		if (result.kind === 'full') {
 			return fail(400, { action: 'invite', error: TOO_MANY_INVITES });
 		}
+		try {
+			await sendEmail(inviteEmail(email, null, url.origin));
+		} catch (e) {
+			console.error('The invite email to start a household was not sent:', e);
+			// Not a failure: the invite was saved, so the page shows it and clears the field.
+			return {
+				action: 'invite',
+				error: `Invited ${email} to start a household, but the invite email couldn't be sent. Tell them to sign in with that Google account.`
+			};
+		}
 		return {
 			action: 'invite',
-			message: `Invited ${email} to start a household. Tell them to sign in with that Google account.`
+			message: `Invited ${email} to start a household. An invite email was sent to them.`
 		};
 	},
 
