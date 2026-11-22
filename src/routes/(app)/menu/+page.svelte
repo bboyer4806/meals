@@ -18,9 +18,9 @@
 	let { data } = $props();
 
 	// Saving a dinner's servings and note comes here with ?saved=<its id> (design 7, Dinner),
-	// and that dinner's line says "Saved" for 3 seconds. The week scrolls to that dinner's day, so
-	// the line is on screen (MEA-192). The address drops it straight away, so a reload, or coming
-	// back with Back, doesn't say it again.
+	// and that dinner's line says "Saved" for 3 seconds. The week scrolls to that line, so it's on
+	// screen (MEA-192, MEA-243). The address drops it straight away, so a reload, or coming back
+	// with Back, doesn't say it again.
 	let saved = $state<string | null>(null);
 	let savedTimer: ReturnType<typeof setTimeout> | undefined;
 	afterNavigate(({ to, shallow }) => {
@@ -34,15 +34,26 @@
 		const address = new URL(to.url);
 		address.searchParams.delete('saved');
 		void goto(address, { shallow: true, replace: true });
-		void tick().then(() => showDayOf(dinnerId));
+		void tick().then(() => showSaved(dinnerId));
 	});
 
-	/** Scrolls the dinner's day to the middle of the screen, clear of the header and tabs. */
-	function showDayOf(dinnerId: string) {
+	/** Scrolls the saved dinner's line onto the screen, clear of the header and tabs. */
+	function showSaved(dinnerId: string) {
 		const day = data.days.find(({ dinners }) => dinners.some(({ id }) => String(id) === dinnerId));
 		// Someone cleared or moved it since, so this week has no line to show.
 		if (!day) return;
-		document.querySelector(`a.day[data-date="${day.date}"]`)?.scrollIntoView({ block: 'center' });
+		const row = document.querySelector(`a.day[data-date="${day.date}"]`);
+		// With more than one dinner, each has its own line, which goes to the middle of the screen
+		// however tall the day is (MEA-243).
+		if (day.dinners.length > 1) {
+			row?.querySelector(`[data-dinner-id="${dinnerId}"]`)?.scrollIntoView({ block: 'center' });
+			return;
+		}
+		// A day's only dinner is its whole row, which goes to the middle of the screen (MEA-192). One
+		// taller than the screen, as with a long note, then has its top line, with "Saved", above
+		// the screen or under the header, so that line comes back down to just under the header.
+		row?.scrollIntoView({ block: 'center' });
+		row?.querySelector('.when')?.scrollIntoView({ block: 'nearest' });
 	}
 
 	// Requests for a dish or a restaurant (6.12). The fields stop taking characters at their limit,
@@ -463,7 +474,8 @@
 	{:else if dinners.length > 0}
 		{#each dinners as dinner (dinner.id)}
 			<span class="dinner">
-				<span class="label">
+				<!-- Found by its dinner's id after a save (MEA-243). -->
+				<span class="label" data-dinner-id={dinner.id}>
 					{dinner.label}
 					{@render savedStatus(saved === String(dinner.id))}
 				</span>
@@ -800,6 +812,9 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
+		/* Scrolled back down after a save, it's clear of the sticky header, with the top of its day
+		   showing (MEA-243). */
+		scroll-margin-top: calc(5rem + env(safe-area-inset-top));
 	}
 
 	.date {

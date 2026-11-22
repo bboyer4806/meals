@@ -1752,9 +1752,13 @@ done while the change that plans it is still on its way, such as picking a dish 
 just after a type, waits for it, then goes to the dinner it planned as if done then, so quick
 changes in a row all go through; a switch that would now take a dish off asks first. When that
 change is refused, what waited isn't sent, and the page says why (MEA-128). Save on the servings
-or restaurant and note goes to the dinner's week, scrolled so that dinner's day is on screen,
-clear of the header and tabs (MEA-192), where that dinner's line says "Saved" for 3 seconds; on a
-date with no dinner it plans it as the type shown. Leaving with something typed
+or restaurant and note goes to the dinner's week, where that dinner's line says "Saved" for 3
+seconds, scrolled so that line is on screen, clear of the header and tabs; on a date with no
+dinner it plans it as the type shown. A day's only dinner is its whole row, which goes to the
+middle of the screen (MEA-192), and a row taller than the screen, as with a long note, shows its
+top line, with "Saved", just under the header. On a day with more than one dinner, the saved
+dinner's own line goes to the middle of the screen, however tall the day is (MEA-243). Leaving
+with something typed
 asks first: "Leave without saving? What you typed may be lost." A name in the dish field that
 isn't added counts, since Save doesn't add it, and the question names it: "Leave without adding
 Garlic bread?" (MEA-127). A dish on its way to the dinner doesn't. If someone cleared or moved the

@@ -1029,30 +1029,129 @@ test('goes to the week after a save, which says Saved on that day for a moment',
 	expect(questions).toEqual([]);
 });
 
-test('opens the week at the saved day on a phone, so its Saved is on screen', async ({
-	page,
-	db,
-	person
-}) => {
-	// A dinner with a long note on every day runs the week well past a phone's screen (MEA-192).
-	const sunday = addDays(sundayOf(today()), 7);
-	for (let days = 0; days < 7; days += 1) {
-		addDinner(db, person.householdId, addDays(sunday, days), {
-			note: 'Shop on the way home\nSet the table early\nCall Grandma after\nWalk the dog'
-		});
-	}
-	const thursday = addDays(sunday, 4);
-	const row = day(page, thursday);
-	await open(page, `/menu?week=${sunday}`);
-	await expect(row).not.toBeInViewport();
+// After a save, the week opens at the saved dinner's line, so its Saved is on screen, on a phone
+// and on a computer (design 7, Dinner; MEA-192, MEA-243). A dinner with a long note on every other
+// day puts the saved day below the screen as the week opens.
 
-	await open(page, `/menu/${thursday}`);
-	await page.getByLabel('Note', { exact: true }).fill('Pizza night');
-	await saveToWeek(page, thursday);
-	await expect(row).toBeInViewport({ ratio: 1 });
-	// Its date and Saved line is clear of the header and the tabs.
-	expect(await uncovered(row.locator('.when'))).toBe(true);
-});
+/** A note four lines long. */
+const FOUR_LINES = 'Shop on the way home\nSet the table early\nCall Grandma after\nWalk the dog';
+/** A recipe pasted in as a note, which runs its day on the week past the screen. */
+const RECIPE = Array.from({ length: 40 }, (_, step) => `Step ${step + 1}`).join('\n');
+
+/** Whether the element is taller than the screen. */
+async function tallerThanScreen(page: Page, locator: Locator) {
+	const { top, bottom } = await edges(locator);
+	return bottom - top > page.viewportSize()!.height;
+}
+
+const SCREENS = [
+	{ name: 'a phone', use: {} },
+	{
+		name: 'a computer',
+		use: { isMobile: false, hasTouch: false, viewport: { width: 1280, height: 800 } }
+	}
+];
+
+for (const screen of SCREENS) {
+	test.describe(`the week after a save on ${screen.name}`, () => {
+		test.use(screen.use);
+
+		test('opens at the saved day, so its Saved is on screen', async ({ page, db, person }) => {
+			const sunday = addDays(sundayOf(today()), 7);
+			for (let days = 0; days < 7; days += 1) {
+				addDinner(db, person.householdId, addDays(sunday, days), { note: FOUR_LINES });
+			}
+			const thursday = addDays(sunday, 4);
+			const row = day(page, thursday);
+			await open(page, `/menu?week=${sunday}`);
+			await expect(row).not.toBeInViewport();
+
+			await open(page, `/menu/${thursday}`);
+			await page.getByLabel('Note', { exact: true }).fill('Pizza night');
+			await saveToWeek(page, thursday);
+			await expect(row).toBeInViewport({ ratio: 1 });
+			// Its date and Saved line is clear of the header and the tabs.
+			expect(await uncovered(row.locator('.when'))).toBe(true);
+		});
+
+		test('opens at the top of a saved day taller than the screen, so its Saved is on screen', async ({
+			page,
+			db,
+			person
+		}) => {
+			const sunday = addDays(sundayOf(today()), 7);
+			const thursday = addDays(sunday, 4);
+			for (let days = 0; days < 7; days += 1) {
+				const date = addDays(sunday, days);
+				addDinner(db, person.householdId, date, { note: date === thursday ? RECIPE : FOUR_LINES });
+			}
+			const row = day(page, thursday);
+			await open(page, `/menu?week=${sunday}`);
+			await expect(row).not.toBeInViewport();
+
+			await open(page, `/menu/${thursday}`);
+			await page.getByRole('button', { name: 'More servings' }).click();
+			await saveToWeek(page, thursday);
+			expect(await tallerThanScreen(page, row)).toBe(true);
+			// Its top, with its date and Saved line, shows just under the header (MEA-243).
+			const header = await edges(page.getByRole('banner'));
+			expect((await edges(row)).top).toBeGreaterThan(header.bottom);
+			expect(await uncovered(row.locator('.when'))).toBe(true);
+		});
+
+		test("opens at the saved dinner's own line on a day with several, so its Saved is on screen", async ({
+			page,
+			db,
+			person
+		}) => {
+			// Thursday has three dinners, and the middle one's note runs the day past the screen, so
+			// the first and last dinners' lines are far from the day's middle (MEA-243).
+			const sunday = addDays(sundayOf(today()), 7);
+			const thursday = addDays(sunday, 4);
+			for (let days = 0; days < 7; days += 1) {
+				const date = addDays(sunday, days);
+				if (date !== thursday) addDinner(db, person.householdId, date, { note: FOUR_LINES });
+			}
+			const notes = { Kids: 'Early', Adults: RECIPE, Guests: 'Bring dessert' };
+			for (const [label, note] of Object.entries(notes)) {
+				labelDinner(db, addDinner(db, person.householdId, thursday, { note }), label);
+			}
+			const region = (label: string) => page.getByRole('region', { name: label });
+			const row = day(page, thursday);
+			await open(page, `/menu?week=${sunday}`);
+			await expect(row).not.toBeInViewport();
+
+			// A save that fails stays on the day with its error, so the week doesn't open.
+			await open(page, `/menu/${thursday}`);
+			await region('Guests').getByLabel('Label', { exact: true }).fill('kids');
+			await region('Guests').getByRole('button', { name: 'Save' }).click();
+			const problem = region('Guests').getByRole('alert');
+			await expect(problem).toHaveText('Give each dinner on this day a different label');
+			await expect(problem).toBeInViewport();
+			await expect(page).toHaveURL(new RegExp(`/menu/${thursday}$`));
+			await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toHaveCount(0);
+			await region('Guests').getByLabel('Label', { exact: true }).fill('Guests');
+
+			/** Saves the dinner's servings, which opens the week with Saved on that dinner's line. */
+			async function saveAndSee(label: string, statuses: string[]) {
+				await open(page, `/menu/${thursday}`);
+				await region(label).getByRole('button', { name: 'More servings' }).click();
+				await region(label).getByRole('button', { name: 'Save' }).click();
+				await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sunday}$`));
+				await expect(row.getByRole('status')).toHaveText(statuses);
+				expect(await tallerThanScreen(page, row)).toBe(true);
+				// That line is on screen, clear of the header and the tabs.
+				const saved = row.locator('.dinner .label', { hasText: label }).getByRole('status');
+				await expect(saved).toBeInViewport({ ratio: 1 });
+				expect(await uncovered(saved)).toBe(true);
+			}
+
+			// The last dinner, then the first.
+			await saveAndSee('Guests', ['', '', '', 'Saved']);
+			await saveAndSee('Kids', ['', 'Saved', '', '']);
+		});
+	});
+}
 
 test('lets someone leave while a save is on its way, and stays where they went', async ({
 	page,
