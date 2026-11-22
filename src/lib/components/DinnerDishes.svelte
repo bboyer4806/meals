@@ -17,13 +17,15 @@
 	import { DISH_ROLES, DISH_ROLE_LABELS, NO_DISHES, defaultRole, type DishRole } from '../menu.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
 	import ItemInput from './ItemInput.svelte';
+	import ItemThumb from './ItemThumb.svelte';
 	import Sheet from './Sheet.svelte';
 
-	// A dinner's dishes (design 7, Dinner; 6.9). Each links to its recipe at the dinner's servings
-	// and has its role and Remove. A dish is added by name with the role shown: Main for the
-	// first, Side after. An existing one is added as soon as it's picked from the suggestions,
-	// and a new one with Add (MEA-56). Adding one to a date with no dinner plans it as Cooking at
-	// home. The forms post to the dinner page's actions, with the dinner's id.
+	// A dinner's dishes (design 7, Dinner; 6.9). Each links to its recipe at the dinner's servings,
+	// with its recipe photo's thumbnail when it has one (MEA-269), and has its role and Remove. A
+	// dish is added by name with the role shown: Main for the first, Side after. An existing one is
+	// added as soon as it's picked from the suggestions, and a new one with Add (MEA-56). Adding
+	// one to a date with no dinner plans it as Cooking at home. The forms post to the dinner page's
+	// actions, with the dinner's id.
 	let {
 		dinner,
 		suggestions,
@@ -315,6 +317,7 @@
 				<li class="dish">
 					<span class="name">
 						<a class="link-tap" href="/recipes/{dish.dishId}?servings={servings}">
+							<ItemThumb photoKey={dish.photoKey} size={40} />
 							{dish.name}
 						</a>
 						{#if dish.archived}<span class="badge">Archived</span>{/if}
@@ -445,9 +448,12 @@
 		font-weight: 700;
 	}
 
-	/* A short name, such as "Pie", is still a full-size tap target. */
+	/* A short name, such as "Pie", is still a full-size tap target. A dish's photo is part of its
+	   link, left of the name, so tapping it opens the recipe too. At 40 px it's shorter than the
+	   row's 44 px controls, so the row keeps its height (MEA-269). */
 	.name a {
 		min-width: var(--tap);
+		gap: 0.5rem;
 	}
 
 	select {

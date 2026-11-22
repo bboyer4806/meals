@@ -348,14 +348,14 @@ describe('reading dinners', () => {
 		]);
 		expect(getDinners(householdId, TODAY, TOMORROW).map((d) => d.dishes)).toEqual([
 			[
-				{ dishId: tacos, name: 'Tacos', role: 'main', archived: false },
-				{ dishId: salad, name: 'Salad', role: 'side', archived: false },
-				{ dishId: rice, name: 'Rice', role: 'side', archived: false },
-				{ dishId: cake, name: 'Pound cake', role: 'dessert', archived: false }
+				{ dishId: tacos, name: 'Tacos', role: 'main', archived: false, photoKey: null },
+				{ dishId: salad, name: 'Salad', role: 'side', archived: false, photoKey: null },
+				{ dishId: rice, name: 'Rice', role: 'side', archived: false, photoKey: null },
+				{ dishId: cake, name: 'Pound cake', role: 'dessert', archived: false, photoKey: null }
 			],
 			[
-				{ dishId: rice, name: 'Rice', role: 'main', archived: false },
-				{ dishId: soup, name: 'Soup', role: 'other', archived: false }
+				{ dishId: rice, name: 'Rice', role: 'main', archived: false, photoKey: null },
+				{ dishId: soup, name: 'Soup', role: 'other', archived: false, photoKey: null }
 			]
 		]);
 	});
@@ -364,9 +364,39 @@ describe('reading dinners', () => {
 		makeDinner(householdId, TODAY, { dishes: [[tacos, 'main'], [rice, 'side']] });
 		setDishArchived(householdId, rice, true, NOW);
 		expect(dinnerOn(householdId, TODAY)?.dishes).toEqual([
-			{ dishId: tacos, name: 'Tacos', role: 'main', archived: false },
-			{ dishId: rice, name: 'Rice', role: 'side', archived: true }
+			{ dishId: tacos, name: 'Tacos', role: 'main', archived: false, photoKey: null },
+			{ dishId: rice, name: 'Rice', role: 'side', archived: true, photoKey: null }
 		]);
+	});
+
+	it("gives each dish its recipe photo, or none, on each of a date's dinners (MEA-269)", () => {
+		const soupPhoto = 'a'.repeat(32);
+		const piePhoto = 'b'.repeat(32);
+		const stewPhoto = 'c'.repeat(32);
+		const soup = makeDish(householdId, recipe('Soup'), NOW, soupPhoto);
+		const pie = makeDish(householdId, recipe('Pie'), NOW, piePhoto);
+		makeDinner(householdId, TODAY, { dishes: [[soup, 'main'], [rice, 'side']] });
+		makeDinner(householdId, TODAY, { dishes: [[pie, 'dessert'], [tacos, 'main'], [soup, 'side']] });
+		const stew = makeDish(otherId, recipe('Stew'), NOW, stewPhoto);
+		makeDinner(otherId, TODAY, { dishes: [[stew, 'main']] });
+
+		const photos = (household: number) =>
+			getDay(household, TODAY).map((dinner) =>
+				dinner.dishes.map(({ name, photoKey }) => ({ name, photoKey }))
+			);
+		expect(photos(householdId)).toEqual([
+			[
+				{ name: 'Soup', photoKey: soupPhoto },
+				{ name: 'Rice', photoKey: null }
+			],
+			[
+				{ name: 'Tacos', photoKey: null },
+				{ name: 'Soup', photoKey: soupPhoto },
+				{ name: 'Pie', photoKey: piePhoto }
+			]
+		]);
+		// Another household's photo stays on its own dinner (4.5).
+		expect(photos(otherId)).toEqual([[{ name: 'Stew', photoKey: stewPhoto }]]);
 	});
 
 	it('gives null for an unplanned date', () => {
@@ -574,8 +604,8 @@ describe('restoring and adding a dish', () => {
 		restoreAndAdd(TODAY, rice, 'side', LATER);
 		expect(getDish(householdId, rice).archivedAt).toBeNull();
 		expect(dinnerOn(householdId, TODAY)?.dishes).toEqual([
-			{ dishId: tacos, name: 'Tacos', role: 'main', archived: false },
-			{ dishId: rice, name: 'Rice', role: 'side', archived: false }
+			{ dishId: tacos, name: 'Tacos', role: 'main', archived: false, photoKey: null },
+			{ dishId: rice, name: 'Rice', role: 'side', archived: false, photoKey: null }
 		]);
 		expect(row(TODAY)?.updatedAt).toBe(LATER);
 	});
@@ -918,7 +948,7 @@ describe('moving a dinner (2.2.2)', () => {
 			restaurantName: null,
 			note: 'Picnic',
 			servings: 6,
-			dishes: [{ dishId: salad, name: 'Salad', role: 'side', archived: false }]
+			dishes: [{ dishId: salad, name: 'Salad', role: 'side', archived: false, photoKey: null }]
 		});
 		expect(row(TOMORROW)).toMatchObject({ createdAt: NOW, updatedAt: LATER });
 	});
@@ -1121,10 +1151,10 @@ describe('copying a dinner', () => {
 			note: null,
 			servings: 3,
 			dishes: [
-				{ dishId: tacos, name: 'Tacos', role: 'main', archived: false },
-				{ dishId: salad, name: 'Salad', role: 'side', archived: false },
-				{ dishId: cake, name: 'Pound cake', role: 'dessert', archived: false },
-				{ dishId: rice, name: 'Rice', role: 'other', archived: false }
+				{ dishId: tacos, name: 'Tacos', role: 'main', archived: false, photoKey: null },
+				{ dishId: salad, name: 'Salad', role: 'side', archived: false, photoKey: null },
+				{ dishId: cake, name: 'Pound cake', role: 'dessert', archived: false, photoKey: null },
+				{ dishId: rice, name: 'Rice', role: 'other', archived: false, photoKey: null }
 			]
 		});
 		expect(row(TODAY)).toMatchObject({ createdAt: NOW, updatedAt: NOW });

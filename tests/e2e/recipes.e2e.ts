@@ -153,7 +153,7 @@ test('creates a recipe with every field on a phone, with a photo', async ({ page
 	addItem(db, person.householdId, 'Powdered sugar');
 	const jpeg = await makeJpeg(page, { width: 2000, height: 1500 });
 
-	await page.goto('/recipes');
+	await open(page, '/recipes');
 	await page.getByRole('link', { name: 'New recipe' }).click();
 	await expect(page).toHaveURL(/\/recipes\/new$/);
 	await expect(page.getByRole('heading', { name: 'New recipe', level: 1 })).toBeVisible();
@@ -336,7 +336,7 @@ test('keeps everything typed when the name is taken, and offers to restore an ar
 	});
 	const jpeg = await makeJpeg(page, { width: 900, height: 900, hue: 50 });
 
-	await page.goto(`/recipes/${lemonId}/edit`);
+	await open(page, `/recipes/${lemonId}/edit`);
 	await expect(page.getByRole('heading', { name: 'Edit recipe' })).toBeVisible();
 	await expect(ingredientRow(page, 1).getByLabel('Amount')).toHaveValue('1/2');
 	await page.getByLabel('Name', { exact: true }).fill('pound cake');
@@ -389,7 +389,7 @@ test('keeps everything typed when the name is taken, and offers to restore an ar
 	expect(await loadedWidth(page.locator('img.photo'))).toBe(900);
 
 	// Back to the editor to take up the offer this time.
-	await page.goto(`/recipes/${lemonId}/edit`);
+	await open(page, `/recipes/${lemonId}/edit`);
 	await page.getByLabel('Name', { exact: true }).fill('Banana Bread');
 	await page.getByRole('button', { name: 'Save' }).click();
 	await expect(problem).toHaveText('An archived recipe is called Banana Bread.');
@@ -434,7 +434,7 @@ test('asks before restoring archived items a recipe names, restoring only those 
 	const preview = page.getByRole('group', { name: 'Photo' }).locator('img');
 	const jpeg = await makeJpeg(page, { width: 800, height: 600, hue: 30 });
 
-	await page.goto('/recipes/new');
+	await open(page, '/recipes/new');
 	await page.getByLabel('Name', { exact: true }).fill('Chai');
 	await photoInput(page).setInputFiles({ name: 'chai.jpg', mimeType: 'image/jpeg', buffer: jpeg });
 	await expectPreview(page);
@@ -492,7 +492,7 @@ test('asks before restoring archived items a recipe names, restoring only those 
 	expect(archivedAt(nutmeg)).toBeNull();
 
 	// Restored, the add bar suggests it again.
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	const add = page.getByRole('form', { name: 'Add to the list' });
 	await add.getByRole('combobox', { name: 'Item' }).fill('carda');
 	await expect(page.getByRole('option', { name: 'Cardamom' })).toBeVisible();
@@ -582,7 +582,7 @@ test('asks before leaving the editor with changes, and leaves it behind once sav
 }) => {
 	const name = page.getByLabel('Name', { exact: true });
 	const tab = (label: string) => page.getByRole('navigation', { name: 'Main' }).getByText(label);
-	await page.goto('/recipes');
+	await open(page, '/recipes');
 	await page.getByRole('link', { name: 'New recipe' }).click();
 	await expect(name).toBeVisible();
 	// Nothing typed yet, so nothing to ask. Blank rows and an empty heading aren't typing.
@@ -625,7 +625,7 @@ test('goes back to the recipe after saving an edit, so Back leaves it in one ste
 	person
 }) => {
 	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', steps: 'Whisk.' });
-	await page.goto('/recipes');
+	await open(page, '/recipes');
 	await page.getByRole('link', { name: /^Omelet/ }).click();
 	await page.getByRole('button', { name: 'More servings' }).click();
 	await page.getByRole('link', { name: 'Edit' }).click();
@@ -644,7 +644,7 @@ test('goes back to the recipe on Cancel, at its servings, so Back leaves it in o
 	person
 }) => {
 	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', steps: 'Whisk.' });
-	await page.goto('/recipes');
+	await open(page, '/recipes');
 	await page.getByRole('link', { name: /^Omelet/ }).click();
 	await page.getByRole('button', { name: 'More servings' }).click();
 	await page.getByRole('link', { name: 'Edit' }).click();
@@ -1511,7 +1511,7 @@ test('sorts recipes by rating, kept with the search, tag and archived switch', a
 	await page.goto('/recipes?sort=newest');
 	await expect(sort).toHaveValue('name');
 	await expect(names).toHaveText(['Apple pie', 'Brownies', 'Chili']);
-	await page.goto('/recipes?sort=rating');
+	await open(page, '/recipes?sort=rating');
 	await page.getByRole('link', { name: 'Recipes', exact: true }).click();
 	await expect(page).toHaveURL(/\/recipes$/);
 	await expect(sort).toHaveValue('name');
@@ -1537,7 +1537,7 @@ test('lets someone leave while a save is on its way, and stays where they went',
 	await slow(page, (url) => url.pathname === '/recipes/new' && url.search === '?/save', 800);
 	// The page they go to is still loading when the save finishes.
 	await slow(page, (url) => url.pathname === '/groceries/__data.json', 2000);
-	await page.goto('/recipes/new');
+	await open(page, '/recipes/new');
 	await page.getByLabel('Name', { exact: true }).fill('Ricotta toast');
 	await page.getByRole('button', { name: 'Save' }).click();
 	await expect(page.getByRole('button', { name: 'Saving…' })).toBeVisible();
@@ -1563,7 +1563,7 @@ test('shows the saved recipe after going back to it while it saved', async ({
 	person
 }) => {
 	const dishId = addRecipe(db, person.householdId, { name: 'Omelet', steps: 'Whisk.' });
-	await page.goto('/recipes');
+	await open(page, '/recipes');
 	await page.getByRole('link', { name: /^Omelet/ }).click();
 	await page.getByRole('link', { name: 'Edit' }).click();
 	await page.getByLabel('Name', { exact: true }).fill('Cheese omelet');
@@ -1613,7 +1613,7 @@ test("opens each recipe's own values when history jumps from one editor to anoth
 }) => {
 	const waffles = addRecipe(db, person.householdId, { name: 'Waffles', steps: 'Mix.\nBake.' });
 	const pancakes = addRecipe(db, person.householdId, { name: 'Pancakes', steps: 'Mix.\nFry.' });
-	await page.goto(`/recipes/${waffles}`);
+	await open(page, `/recipes/${waffles}`);
 	await page.getByRole('link', { name: 'Edit' }).click();
 	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Waffles');
 	await page.getByRole('navigation', { name: 'Main' }).getByText('Recipes').click();
@@ -1634,7 +1634,7 @@ test("opens each recipe's own values when history jumps from one editor to anoth
 });
 
 test('keeps Save busy until the saved recipe opens', async ({ page, db, person }) => {
-	await page.goto('/recipes/new');
+	await open(page, '/recipes/new');
 	await page.getByLabel('Name', { exact: true }).fill('Toast');
 	// The recipe page loads slowly after the save has gone through.
 	await slow(page, (url) => /^\/recipes\/\d+\/__data\.json$/.test(url.pathname), 2000);
@@ -1655,7 +1655,7 @@ test('restores once, and leaves someone where they went if they leave meanwhile'
 }) => {
 	const bananaId = addRecipe(db, person.householdId, { name: 'Banana bread', archived: true });
 	await slow(page, (url) => url.pathname === `/recipes/${bananaId}` && url.search === '?/restore', 1500);
-	await page.goto('/recipes/new');
+	await open(page, '/recipes/new');
 	await page.getByLabel('Name', { exact: true }).fill('banana bread');
 	await page.getByRole('button', { name: 'Save' }).click();
 	await expect(page.getByRole('alert')).toHaveText('An archived recipe is called banana bread.');
@@ -1692,7 +1692,7 @@ test("doesn't let Save be tapped before the page's script has started", async ({
 
 test('shows item suggestions above the tab bar', async ({ page, db, person }) => {
 	addItem(db, person.householdId, 'Sugar');
-	await page.goto('/recipes/new');
+	await open(page, '/recipes/new');
 	const item = ingredientRow(page, 1).getByRole('combobox', { name: 'Item' });
 	// Scrolled so the field ends 20px above the tab bar. Its first suggestion starts 9px below the
 	// field (a gap, then the list's border and padding), so it crosses the tab bar's top edge.
@@ -1724,7 +1724,7 @@ test('replaces and removes a photo', async ({ page, db, person }) => {
 		photoKey: firstKey,
 		ingredients: [{ item: 'Eggs', amount: 6 }]
 	});
-	await page.goto(`/recipes/${dishId}`);
+	await open(page, `/recipes/${dishId}`);
 	expect(await loadedWidth(page.locator('img.photo'))).toBe(1000);
 
 	await page.getByRole('link', { name: 'Edit' }).click();
@@ -1796,7 +1796,7 @@ test('scales the amounts with the servings control and warns on steps with amoun
 	const warnings = page.getByText("Amounts in this step aren't scaled.");
 	const servings = page.getByRole('status');
 
-	await page.goto('/recipes');
+	await open(page, '/recipes');
 	await page.getByRole('link', { name: /^Scaling test/ }).click();
 	await expect(servings).toHaveText('2 servings');
 	// As entered at the recipe's own servings, and no warnings.
@@ -1875,7 +1875,7 @@ test('leaves the recipe in one step back after changing the servings', async ({
 	person
 }) => {
 	addRecipe(db, person.householdId, scaled);
-	await page.goto('/recipes');
+	await open(page, '/recipes');
 	await page.getByRole('link', { name: /^Scaling test/ }).click();
 	await page.getByRole('button', { name: 'More servings' }).click();
 	await page.getByRole('button', { name: 'More servings' }).click();
@@ -1887,13 +1887,13 @@ test('leaves the recipe in one step back after changing the servings', async ({
 
 test('keeps focus on the servings control at its limits', async ({ page, db, person }) => {
 	const dishId = addRecipe(db, person.householdId, scaled);
-	await page.goto(`/recipes/${dishId}`);
+	await open(page, `/recipes/${dishId}`);
 	await page.getByRole('button', { name: 'Fewer servings' }).press('Enter');
 	await expect(page.getByRole('status')).toHaveText('1 serving');
 	await expect(page.getByRole('button', { name: 'Fewer servings' })).toBeDisabled();
 	await expect(page.getByRole('button', { name: 'More servings' })).toBeFocused();
 
-	await page.goto(`/recipes/${dishId}?servings=99`);
+	await open(page, `/recipes/${dishId}?servings=99`);
 	await page.getByRole('button', { name: 'More servings' }).press('Enter');
 	await expect(page.getByRole('status')).toHaveText('100 servings');
 	await expect(page.getByRole('button', { name: 'Fewer servings' })).toBeFocused();
@@ -1950,7 +1950,7 @@ test('goes back to the plain Recipes list, however the recipe was opened', async
 	const tacos = page.getByRole('link', { name: /Tacos/ });
 
 	// From a searched list, Back opens the list without the search.
-	await page.goto('/recipes?q=pound&tag=Dessert');
+	await open(page, '/recipes?q=pound&tag=Dessert');
 	await expect(tacos).toHaveCount(0);
 	await page.getByRole('link', { name: /Pound cake/ }).click();
 	await expect(page.getByRole('heading', { name: 'Pound cake', level: 1 })).toBeVisible();
@@ -1959,7 +1959,7 @@ test('goes back to the plain Recipes list, however the recipe was opened', async
 	await expect(tacos).toBeVisible();
 
 	// From a dinner's dish link, Back opens Recipes, not the dinner.
-	await page.goto(`/menu/${date}`);
+	await open(page, `/menu/${date}`);
 	await page.getByRole('link', { name: 'Pound cake' }).click();
 	await expect(page.getByRole('heading', { name: 'Pound cake', level: 1 })).toBeVisible();
 	await back.click();
@@ -2023,7 +2023,7 @@ test('checks off ingredients and steps while cooking, and keeps the screen on', 
 		);
 
 	const dishId = addRecipe(db, person.householdId, cookable);
-	await page.goto(`/recipes/${dishId}?servings=8`);
+	await open(page, `/recipes/${dishId}?servings=8`);
 	await page.getByRole('link', { name: 'Cook' }).click();
 	await expect(page).toHaveURL(new RegExp(`/recipes/${dishId}/cook\\?servings=8$`));
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Pound cake · 8 servings');
@@ -2081,7 +2081,7 @@ test('cooks without the Wake Lock API, and says the screen may turn off', async 
 		delete (Navigator.prototype as { wakeLock?: unknown }).wakeLock;
 	});
 	const dishId = addRecipe(db, person.householdId, cookable);
-	await page.goto(`/recipes/${dishId}/cook`);
+	await open(page, `/recipes/${dishId}/cook`);
 	expect(await page.evaluate(() => 'wakeLock' in navigator)).toBe(false);
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Pound cake · 4 servings');
 	await expect(
@@ -2104,7 +2104,7 @@ test('says so when the browser refuses to keep the screen on', async ({ page, db
 		});
 	});
 	const dishId = addRecipe(db, person.householdId, cookable);
-	await page.goto(`/recipes/${dishId}/cook`);
+	await open(page, `/recipes/${dishId}/cook`);
 	await expect(page.getByText('The screen may turn off while you cook.')).toBeVisible();
 	const cream = checkOff(page, /^1\. Cream/);
 	await cream.line.tap();
@@ -2119,7 +2119,7 @@ test('goes back to the recipe from cooking, so Back leaves the recipe in one ste
 	const dishId = addRecipe(db, person.householdId, cookable);
 	const recipe = new RegExp(`/recipes/${dishId}\\?servings=5$`);
 	const back = page.getByRole('link', { name: 'Back to recipe' });
-	await page.goto('/recipes');
+	await open(page, '/recipes');
 	await page.getByRole('link', { name: /^Pound cake/ }).click();
 	await page.getByRole('button', { name: 'More servings' }).click();
 	await page.getByRole('link', { name: 'Cook' }).click();
@@ -2164,7 +2164,7 @@ test('finds recipes by name and tag, and archives and restores one', async ({
 	});
 	const names = page.locator('.recipes .name');
 
-	await page.goto('/recipes');
+	await open(page, '/recipes');
 	await expect(names).toHaveText(['Chili', 'Lemon bars', 'Pound cake', 'Tacos']);
 	await expect(page.getByRole('link', { name: /^Chili/ })).toContainText('45 min · Dinner');
 	// Only the recipe with no ingredients and no steps says so.
@@ -2206,7 +2206,7 @@ test('finds recipes by name and tag, and archives and restores one', async ({
 	await expect(page.getByRole('link', { name: 'Cook' })).toHaveCount(0);
 
 	// Archive asks first, then the recipe leaves the list.
-	await page.goto('/recipes');
+	await open(page, '/recipes');
 	await page.getByRole('link', { name: /^Chili/ }).click();
 	await page.getByRole('button', { name: 'Archive' }).click();
 	const dialog = page.getByRole('dialog');

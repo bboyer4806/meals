@@ -563,7 +563,7 @@ describe('default dishes', () => {
 		const result = addDinnerDish(householdId, '2026-10-05', null, { name: 'tacos' }, 'main', LATER);
 		expect(result).toEqual({ kind: 'added' });
 		expect(getDay(householdId, '2026-10-05')[0]?.dishes).toEqual([
-			{ dishId: id('Tacos'), name: 'Tacos', role: 'main', archived: false }
+			{ dishId: id('Tacos'), name: 'Tacos', role: 'main', archived: false, photoKey: null }
 		]);
 		// A recipe written for one, and another archived (6.10).
 		updateDish(householdId, id('Chili'), recipe('Chili', { steps: 'Simmer.' }), 'keep', [], LATER);

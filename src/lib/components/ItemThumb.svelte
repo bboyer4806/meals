@@ -1,6 +1,7 @@
 <script lang="ts">
-	// An item's image beside its name throughout Groceries (design 7, Item images). An item
-	// without one shows nothing here, so it looks as it always has.
+	// An item's image beside its name throughout Groceries (design 7, Item images), and a dish's
+	// recipe photo beside its name on a dinner (design 7, Dinner; MEA-269). One without a photo
+	// shows nothing here, so it looks as it always has.
 	let { photoKey, size }: { photoKey: string | null | undefined; size: number } = $props();
 </script>
 

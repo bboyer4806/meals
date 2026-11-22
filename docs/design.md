@@ -176,7 +176,9 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
 `.github/workflows/deploy.yml` on every push to `main` (E4). Changes:
 
 1. **Checks before deploying.** A check job runs the type check, unit tests and
-   end-to-end tests on pull requests and on pushes to `main`. It builds the Docker image and
+   end-to-end tests on pull requests and on pushes to `main`. First it fails unless
+   `npm run db:generate` finds no schema changes, which catches a change to the schema that
+   has no migration in `drizzle/` (MEA-121). It builds the Docker image and
    runs the end-to-end tests against it, run as production runs it with an empty `DATA_DIR`,
    so a mistake in the image, such as a lower `BODY_SIZE_LIMIT`, fails them (MEA-105). On
    `main`, a push job then pushes that same image, and the deploy job needs the push, so code
@@ -571,7 +573,8 @@ and proposals at it, so revoking it deletes them too.
    address carries only which of these it is, as `?error=cancelled`, `failed` or `unverified`,
    so the page never shows text from its address. Someone already signed in, as after Back to
    Google, goes on to Meals instead.
-2. A known Google account is signed in, and its email and name are refreshed.
+2. A known Google account is signed in, and its email and name are refreshed. Signing in never
+   changes its household, so an account without one goes to the setup page.
 3. An unknown account is matched by email against its invites:
    - One invite, to a household: the account joins that household (E5).
    - Invites from more than one household, an invite for a new household, or the
@@ -583,22 +586,30 @@ and proposals at it, so revoking it deletes them too.
    The setup page asks someone signed in without a household which household to join
    (MEA-112). It lists each household that invited them, by name, with Join, and for someone
    with an invite for a new household, or the admin, the form to set one up (household name,
-   usual servings, time zone). Nobody else can set up a household. Joining or setting up a
-   household uses up every invite for their email, from any household. Join on an invite that
-   was cancelled after the page opened says "That invite was cancelled." and shows the
-   invites as they are now. When none is left, the page says there's no invite waiting for
-   their address, with Use another account.
+   usual servings, time zone). Nobody else can set up a household. Invites from several
+   households can wait there at once, and the person joins none of them, not even the first to
+   invite them, until they choose one with Join. Joining or setting up a household uses up
+   every invite for their email: each household's, and the admin's for a new household. Join
+   on an invite that was cancelled after the page opened says "That invite was cancelled." and
+   shows the invites as they are now. When none is left, the page says there's no invite
+   waiting for their address, with Use another account.
 4. Members (all equal; E2) can invite by email, cancel invites, and remove other
    members. Each household's invites stand on their own, so another household's invite to
    the same email never stops one (MEA-112). Inviting fails if the email already belongs to
    a member of any household, if the household already invited it, or if the household
-   already has 20 invites waiting, the most it can have at a time. An invite to someone
-   signed in without a household waits for them on the setup page. A removed member's
-   account and sessions are deleted, and they can be invited again.
-5. The admin invites new households from the Admin page, up to 20 waiting at a time. An
-   invite for a new household lasts until its household is set up. Admin also lists
-   households, each with its members' emails and the emails it invited (MEA-112), and the
-   last backup date. The admin is also a normal member of their own household.
+   already has 20 invites waiting, the most it can have at a time. An account belongs to one
+   household at most, so someone already in one can't be invited to another. Someone signed
+   in without a household isn't a member yet, so they can be invited, and the invite waits for
+   them on the setup page until they join or set up a household, even when it's their only
+   one. A removed member's account and sessions are deleted, and they can be invited again.
+5. The admin invites new households from the Admin page, up to 20 waiting at a time. The
+   admin's invite fails, as a member's does, if the email already belongs to a member of any
+   household or already has an invite for a new household. Someone signed in without a
+   household isn't refused for having an account: the setup page then offers them the form to
+   set one up, along with any households that invited them. An invite for a new household isn't
+   used up at sign-in: it waits until they set up a household or join one. Admin also lists
+   households, each with its members' emails and the emails it invited (MEA-112), and the last
+   backup date. The admin is also a normal member of their own household.
 6. An invite or member that's already gone counts as done (MEA-69). Cancel on an invite that
    was used or cancelled after the page opened, on the Household or Admin page, and Remove on
    a member someone else removed meanwhile, show the page as it is now (6.11). A member removed
@@ -1645,7 +1656,11 @@ it, so any of them can be tapped with the keyboard open. Scrolling the page by h
 person leaves it; only those changes move it (MEA-265). Scrolled under the header or the tab bar
 afterwards, they pass beneath it, so a tap there does what it says (MEA-143). Once a dish is
 added, the field is empty and ready for the next. Each dish links to its
-recipe at this dinner's servings. Eating out has a Restaurant field, with "Where to go" as its
+recipe at this dinner's servings. A dish whose recipe has a photo shows its thumbnail, a 40 px
+square, left of its name as part of that link, so tapping it opens the recipe too; a dish without
+one shows its name alone, with no space kept for a photo (MEA-269). The page shows the photo each
+recipe has when its data loads, so one added, replaced or removed shows once the day reloads
+(6.11). Eating out has a Restaurant field, with "Where to go" as its
 hint, in place of servings and dishes (MEA-58; 6.9). Actions: Copy a dinner, Add to party list on
 a dinner with dishes (6.15), and Clear. A date
 with more than one dinner shows them all on its one page, in the order they were added, each with its own label
@@ -1898,7 +1913,7 @@ ingredients.
 | Two households invite the same person                            | Each invite stands on its own, and the person chooses which household to join when they sign in (6.1, MEA-112).                                    |
 | "Today" is wrong late at night                                   | The household's time zone decides the date.                                                                                                         |
 | The server's disk fails                                          | Everything is lost (Q13). Moving backups off the server is in section 12.                                                                          |
-| A deploy runs migrations while the old version is still serving  | For a few seconds the old version may show errors. Acceptable at this size.                                                                        |
+| A deploy runs migrations while the old version is still serving  | New migrations keep the old version working, and anything that would break it waits for a later deploy (MEA-117).                                   |
 
 ## 12. Not in v1
 

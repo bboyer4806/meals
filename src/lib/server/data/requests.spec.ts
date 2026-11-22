@@ -862,7 +862,9 @@ describe('promoteDishRequest', () => {
 				restaurantName: null,
 				note: 'Extra cheese',
 				servings: 4,
-				dishes: [{ dishId: lasagna, name: 'Lasagna', role: 'main', archived: false }]
+				dishes: [
+					{ dishId: lasagna, name: 'Lasagna', role: 'main', archived: false, photoKey: null }
+				]
 			}
 		]);
 		expect(listRequests(householdId)).toEqual([]);

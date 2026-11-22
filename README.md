@@ -257,6 +257,15 @@ recipes had photos have no `photos` folder, so skip the two photos lines for tho
 
 ## Rolling back
 
+Going back to older code doesn't take the database back with it. Migrations only run forward:
+deploying an older image, or reverting a change in `main`, even one that added a migration, leaves
+every migration that has already run in the database. Only restoring a copy made before a migration
+undoes it. New migrations must keep the release before them working while a deploy switches over
+([AGENTS.md](AGENTS.md#database)), but that doesn't make going back safe: by then the newer release
+may have saved data the older one can't handle, and releases further back have no such promise. So
+whether the older version can run on the database as it is now is a separate question, which the
+steps below answer.
+
 Each image is tagged with its full commit hash, so going back to an older version means deploying
 its image again. First check whether a migration landed since that version: in a clone of this
 repo, list the changes to `drizzle/` from its commit to the one running now.

@@ -60,7 +60,7 @@ test('orders and receives a store, then suggests that store next time', async ({
 }) => {
 	const walmartId = addStore(db, person.householdId, 'Walmart');
 	addStore(db, person.householdId, 'Aldi');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 
 	await addAndWait(page, { name: 'Milk', quantity: '2', unit: 'gal', store: 'Walmart' });
 	await addItem(page, { name: 'Eggs', quantity: '1', unit: 'dozen', store: 'Walmart' });
@@ -97,7 +97,7 @@ test('marks only the lines the question counted, and says how many changed', asy
 	person
 }) => {
 	const walmartId = addStore(db, person.householdId, 'Walmart');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Milk', store: 'Walmart' });
 	await addAndWait(page, { name: 'Bread', store: 'Walmart' });
 	const walmart = group(page, 'Walmart');
@@ -135,7 +135,7 @@ test('marks only the lines the question counted, and says how many changed', asy
 });
 
 test('offers to update a line already on the list', async ({ page, person: _ }) => {
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Butter', quantity: '2', unit: 'lb' });
 	// "lbs" is "lb", so the prompt suggests the sum in the line's unit (design 6.4, MEA-93).
 	await addItem(page, { name: 'butter', quantity: '1', unit: 'lbs' });
@@ -156,7 +156,7 @@ test('keeps the next item typed while the previous one is still saving', async (
 	page,
 	person: _
 }) => {
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await page.route(
 		(url) => url.search === '?/add',
 		async (route) => {
@@ -179,7 +179,7 @@ test('asks for a store when checking off a line without one, and can undo', asyn
 	person
 }) => {
 	addStore(db, person.householdId, 'Aldi');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addItem(page, { name: 'Paper towels', quantity: '6', unit: 'rolls' });
 
 	await group(page, 'No store').getByRole('button', { name: 'Mark received: Paper towels' }).click();
@@ -199,7 +199,7 @@ test('asks for a store when checking off a line without one, and can undo', asyn
 
 test('splits off what arrived when an order comes up short', async ({ page, db, person }) => {
 	addStore(db, person.householdId, 'Walmart');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addItem(page, { name: 'Yogurt', quantity: '3', unit: 'cups', store: 'Walmart' });
 	const walmart = group(page, 'Walmart');
 
@@ -251,7 +251,7 @@ test('fills in the unit and store when the typed name matches an item', async ({
 	person
 }) => {
 	const aldi = addStore(db, person.householdId, 'Aldi');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Chicken breast', quantity: '2', unit: 'lb', store: 'Aldi' });
 	await group(page, 'Aldi').getByRole('button', { name: 'Mark received: Chicken breast' }).click();
 	await expect(group(page, 'Aldi').getByRole('heading', { name: 'Received today' })).toBeVisible();
@@ -273,7 +273,7 @@ test('fills in the unit and store when the typed name matches an item', async ({
 });
 
 test('offers to add a name that matches no item as a new item', async ({ page, person: _ }) => {
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Milk' });
 	const item = addForm(page).getByRole('combobox', { name: 'Item' });
 	// A partial name shows the matching item and the offer to add a new one.
@@ -292,7 +292,7 @@ test('offers to add a name that matches no item as a new item', async ({ page, p
 });
 
 test('shows a prompt error inside the prompt', async ({ page, person: _ }) => {
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Coffee', quantity: '1', unit: 'bag' });
 	await addItem(page, { name: 'Coffee', quantity: '1', unit: 'bag' });
 	const dialog = page.getByRole('dialog');
@@ -307,7 +307,7 @@ test('saves the sheet edits with Mark ordered, and starts fresh when reopened', 
 	person
 }) => {
 	addStore(db, person.householdId, 'Aldi');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Bread', quantity: '2', store: 'Aldi' });
 	const aldi = group(page, 'Aldi');
 
@@ -331,7 +331,7 @@ test('saves the sheet edits with Mark ordered, and starts fresh when reopened', 
 
 test('records Got fewer when Enter is pressed in the amount', async ({ page, db, person }) => {
 	addStore(db, person.householdId, 'Walmart');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Yogurt', quantity: '3', unit: 'cups', store: 'Walmart' });
 	const walmart = group(page, 'Walmart');
 	await walmart.getByRole('button', { name: /^Yogurt/ }).click();
@@ -346,7 +346,7 @@ test('records Got fewer when Enter is pressed in the amount', async ({ page, db,
 
 test('shows a Got fewer error beside the amount', async ({ page, db, person }) => {
 	addStore(db, person.householdId, 'Walmart');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Yogurt', quantity: '3', unit: 'cups', store: 'Walmart' });
 	await group(page, 'Walmart').getByRole('button', { name: /^Yogurt/ }).click();
 	const dialog = page.getByRole('dialog');
@@ -359,7 +359,7 @@ test('shows a Got fewer error beside the amount', async ({ page, db, person }) =
 
 test('keeps working for a line whose store was archived', async ({ page, db, person }) => {
 	const costco = addStore(db, person.householdId, 'Costco');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Bread', quantity: '2', store: 'Costco' });
 	db.prepare('update stores set archived_at = 1 where id = ?').run(costco);
 	await page.reload();
@@ -377,7 +377,7 @@ test('shows a failed check-off next to its line and refreshes the list', async (
 	person
 }) => {
 	addStore(db, person.householdId, 'Aldi');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Milk', store: 'Aldi' });
 	// Someone else checks it off first.
 	db.prepare(
@@ -394,7 +394,7 @@ test('asks the duplicate question fresh each time, and clears an old add error',
 	page,
 	person: _
 }) => {
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Coffee', quantity: '1', unit: 'bag' });
 	await addItem(page, { name: 'Coffee', quantity: '0', unit: 'bag' });
 	await expect(addForm(page).getByRole('alert')).toHaveText('Enter a quantity above 0');
@@ -419,7 +419,7 @@ test('says so when someone else deleted the line, and stays on the list', async 
 	person
 }) => {
 	addStore(db, person.householdId, 'Aldi');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Milk', store: 'Aldi' });
 	await addAndWait(page, { name: 'Eggs', store: 'Aldi' });
 	const aldi = group(page, 'Aldi');
@@ -442,7 +442,7 @@ test("keeps the list, an open sheet and what was typed when an action can't reac
 	person
 }) => {
 	addStore(db, person.householdId, 'Aldi');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Bread', store: 'Aldi' });
 	await addAndWait(page, { name: 'Milk', store: 'Aldi' });
 	const aldi = group(page, 'Aldi');
@@ -496,7 +496,7 @@ test('says something went wrong when the server breaks, and keeps the list (MEA-
 	person
 }) => {
 	addStore(db, person.householdId, 'Aldi');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Bread', store: 'Aldi' });
 	const aldi = group(page, 'Aldi');
 	const check = aldi.getByRole('button', { name: 'Mark received: Bread' });
@@ -525,7 +525,7 @@ test('says something went wrong when the server breaks, and keeps the list (MEA-
 
 test("saves the sheet edits with Didn't come and Got fewer", async ({ page, db, person }) => {
 	addStore(db, person.householdId, 'Walmart');
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Yogurt', quantity: '3', unit: 'cups', store: 'Walmart' });
 	const walmart = group(page, 'Walmart');
 	const dialog = page.getByRole('dialog');
@@ -623,7 +623,7 @@ test('shows the current list after going Back from a page outside the app', asyn
 });
 
 test('shows the sign-in page after going Back from signing out', async ({ page, person: _ }) => {
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await page.getByText('More', { exact: true }).click();
 	await page.getByRole('button', { name: 'Sign out' }).click();
 	await expect(page).toHaveURL(/\/login$/);
@@ -643,7 +643,7 @@ test('goes back to Groceries from Grocery History and Items, opened from Groceri
 		['Grocery History', /\/groceries\/history$/],
 		['Items', /\/groceries\/items$/]
 	] as const) {
-		await page.goto('/groceries');
+		await open(page, '/groceries');
 		await page.getByRole('main').getByRole('link', { name, exact: true }).click();
 		await expect(page).toHaveURL(url);
 		await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
