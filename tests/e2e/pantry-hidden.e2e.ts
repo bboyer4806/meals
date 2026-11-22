@@ -1,4 +1,4 @@
-import { addDays, addDinner, addItem, addRecipe, expect, test, today } from './fixtures.ts';
+import { addDays, addDinner, addItem, addRecipe, expect, open, test, today } from './fixtures.ts';
 
 // The pantry check is hidden for now (design 6.8): nothing leads to it, its page and actions
 // are gone, and a check already started stays stored as it was.
@@ -67,7 +67,7 @@ test('has no way to reach the pantry check, and keeps a check already started', 
 	expect(stored()).toEqual(before);
 
 	// No entry on the week, in the More menu or on a recipe.
-	await page.goto('/menu');
+	await open(page, '/menu');
 	await expect(page.getByRole('heading', { name: 'Menu', level: 1 })).toBeVisible();
 	await expect(page.getByText(/pantry/i)).toHaveCount(0);
 	await page.getByText('More', { exact: true }).click();
