@@ -45,6 +45,26 @@ jobs:
 
       # No dependency needs its install script (see the Dockerfile).
       - run: npm ci --ignore-scripts
+
+      # Tests and production build their databases from the migrations in drizzle/, so every
+      # change to schema.ts needs its migration committed there (MEA-121). drizzle-kit writes a
+      # migration for any change that has none. It also exits 0 without writing anything when it
+      # stops early, such as when it would ask whether a column was renamed, which needs a
+      # terminal, so the step also fails unless it says there are no schema changes.
+      - name: Check drizzle/ migrations match schema.ts
+        run: |
+          npm run db:generate -- --name ci-schema-check 2>&1 | tee "$RUNNER_TEMP/db-generate.log"
+          changes=$(git status --porcelain --untracked-files=all -- drizzle)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            echo "::error::src/lib/server/db/schema.ts has changes that no migration in drizzle/ has, so drizzle-kit generated the files listed above. Run 'npm run db:generate -- --name <what-changed>' and commit the new and changed files in drizzle/ (AGENTS.md, Database)."
+            exit 1
+          fi
+          if ! grep -q 'No schema changes, nothing to migrate' "$RUNNER_TEMP/db-generate.log"; then
+            echo "::error::drizzle-kit stopped before checking that drizzle/ matches src/lib/server/db/schema.ts; its output above says why. Run 'npm run db:generate -- --name <what-changed>', answer any questions it asks, and commit the new and changed files in drizzle/ (AGENTS.md, Database)."
+            exit 1
+          fi
+
       - run: npm run check
       - run: npm test
 

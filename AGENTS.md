@@ -18,11 +18,13 @@ Manual development needs a Google OAuth client. Start with `npm run dev`.
 Run the checks from `.github/workflows/deploy.yml`:
 
 ```sh
-npm run check      # types
-npm test           # unit and database tests (Vitest)
-npm run test:e2e   # browser tests (Playwright), including a production build
+npm run db:generate -- --name <what-changed>   # migrations match the schema (Database)
+npm run check                                  # types
+npm test                                       # unit and database tests (Vitest)
+npm run test:e2e                               # browser tests (Playwright), including a production build
 ```
 
+CI fails unless `npm run db:generate` finds no schema changes, so commit any migration it generates.
 CI runs the browser tests against the Docker image it builds, which `E2E_IMAGE` selects
 (`playwright.config.ts`). On Linux with Docker, run them that way, as README's
 [Checks](README.md#checks) shows; elsewhere, run them as above and report the image run as blocked.
@@ -88,7 +90,7 @@ in the pull request how the previous release keeps working.
 ## Database
 
 Change `src/lib/server/db/schema.ts`, then run `npm run db:generate -- --name <what-changed>`
-and commit the new files in `drizzle/`. Never edit generated migrations by hand. A data change
+and commit the new and changed files in `drizzle/`. Never edit generated migrations by hand. A data change
 the schema can't express goes in a custom migration: run `npm run db:generate -- --custom --name
 <what-changed>` and write its SQL in the empty file it makes, matching names with `fold()`. A new
 column needs its own migration before one that rebuilds its table (such as making a column
