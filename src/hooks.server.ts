@@ -1,6 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { accessSync, constants, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
+import { inspect } from 'node:util';
+import type { RequestEvent } from '@sveltejs/kit';
+import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 import { discardExpiredImages } from '#lib/server/ai/proposals.ts';
 import { checkBodySize } from '#lib/server/body-size.ts';
 import { config, loadConfig } from '#lib/server/config.ts';
@@ -105,4 +108,38 @@ function setSecurityHeaders(headers: Headers): void {
 	) {
 		headers.set('content-security-policy', "frame-ancestors 'none'");
 	}
+}
+
+/**
+ * Logs an error Meals didn't expect with an id, which the error page shows so someone can say
+ * which error they saw (4.5). Errors it expects keep SvelteKit's handling, with no id and no log:
+ * those thrown with error(), such as a 400, 403 or 404, and SvelteKit's own, such as a 404 for an
+ * address that matches no page.
+ */
+export const handleError: HandleServerError = ({ kind, error, event }) => {
+	if (kind !== 'unknown') return;
+	const id = randomUUID();
+	const status = 500;
+	console.error(`${errorContext(id, status, event)}\n${inspect(error)}`);
+	// SvelteKit adds its message, "Internal Error", so nothing from the error reaches the page.
+	return { status, id };
+};
+
+/**
+ * Where an unexpected error happened, for the log. Never the query, which can carry sign-in
+ * codes, nor the body, cookies or the person's email (4.5).
+ */
+function errorContext(id: string, status: number, event: RequestEvent): string {
+	// Undefined for an error before handle reads the session, and null without one.
+	const { user } = event.locals;
+	return [
+		`Unexpected error ${id}`,
+		`time=${new Date().toISOString()}`,
+		`method=${event.request.method}`,
+		`path=${event.url.pathname}`,
+		`route=${event.route.id ?? 'none'}`,
+		`status=${status}`,
+		`user=${user?.id ?? 'none'}`,
+		`household=${user?.householdId ?? 'none'}`
+	].join(' ');
 }
