@@ -40,6 +40,7 @@ type Tool = {
 	description: string;
 	readOnly: boolean;
 	inputSchema: object;
+	/** The tool's result, or a promise of it. */
 	call: (args: unknown, context: McpContext) => unknown;
 };
 
@@ -141,7 +142,7 @@ const TOOLS: Tool[] = [
 		name: 'list_items',
 		title: 'List items',
 		description:
-			"A household's catalog of items, active or archived: notes, usual store and when and where each was last bought.",
+			"A household's catalog of items, active or archived: notes, image (photoKey, null for none), usual store and when and where each was last bought.",
 		readOnly: true,
 		input: inHousehold.extend({ archived: z.boolean().default(false), search }),
 		run: ({ householdId, archived, search }) => ({
@@ -173,7 +174,7 @@ const TOOLS: Tool[] = [
 		name: 'list_recipes',
 		title: 'List recipes',
 		description:
-			"A household's recipes by name, active or archived, with tags, times, ratings and whether they've been tried.",
+			"A household's recipes by name, active or archived, with tags, times, image (photoKey, null for none), ratings and whether they've been tried.",
 		readOnly: true,
 		input: inHousehold.extend({
 			archived: z.boolean().default(false),
@@ -258,12 +259,15 @@ const TOOLS: Tool[] = [
 			'all together, or none. Each is checked now, and one that can’t be made is refused with why.',
 			'Returns a link for the admin. A change to a record takes all of its fields. save_dinner',
 			'plans a date or changes a dinner with exactly the dishes listed, by recipe name; a new name',
-			'adds a recipe with no details.'
+			'adds a recipe with no details. set_recipe_image and set_item_image give a recipe or an item',
+			'the image at an https link to the image itself, not the page it’s on. Meals downloads and',
+			'resizes it now, so the admin sees the image that approving gives it, and replace must be',
+			'true to replace an image it has. Up to 10 images at a time.'
 		].join(' '),
 		readOnly: false,
 		input: proposalInput,
-		run: (input, { connectionId, origin, now }) =>
-			proposalView(proposeChanges(connectionId, input, now), origin)
+		run: async (input, { connectionId, origin, now }) =>
+			proposalView(await proposeChanges(connectionId, input, now), origin)
 	}),
 	tool({
 		name: 'get_proposal',
@@ -309,12 +313,12 @@ function toolError(e: unknown): string {
 	return 'Something went wrong in Meals. Try again later.';
 }
 
-function callTool(params: unknown, context: McpContext): unknown {
+async function callTool(params: unknown, context: McpContext): Promise<unknown> {
 	const { name, arguments: args } = (params ?? {}) as { name?: unknown; arguments?: unknown };
 	const found = TOOLS.find((candidate) => candidate.name === name);
 	if (!found) throw new RpcError(-32602, `Unknown tool: ${String(name)}`);
 	try {
-		const result = forAssistant(found.call(args ?? {}, context));
+		const result = forAssistant(await found.call(args ?? {}, context));
 		return { content: [{ type: 'text', text: JSON.stringify(result) }] };
 	} catch (e) {
 		return { content: [{ type: 'text', text: toolError(e) }], isError: true };
@@ -370,7 +374,10 @@ export function rpcError(id: RpcId, code: number, message: string): RpcResponse 
  * Answers one JSON-RPC message from an MCP client, or null for a notification or a response,
  * which get no answer. Batches aren't taken, as MCP since 2025-06-18 has none.
  */
-export function handleMessage(message: unknown, context: McpContext): RpcResponse | null {
+export async function handleMessage(
+	message: unknown,
+	context: McpContext
+): Promise<RpcResponse | null> {
 	if (typeof message !== 'object' || message === null || Array.isArray(message)) {
 		return rpcError(null, -32600, 'Send one JSON-RPC message at a time');
 	}
@@ -389,7 +396,7 @@ export function handleMessage(message: unknown, context: McpContext): RpcRespons
 			case 'tools/list':
 				return { jsonrpc: '2.0', id, result: { tools: listTools() } };
 			case 'tools/call':
-				return { jsonrpc: '2.0', id, result: callTool(params, context) };
+				return { jsonrpc: '2.0', id, result: await callTool(params, context) };
 			default:
 				return rpcError(id, -32601, `Method not found: ${method}`);
 		}

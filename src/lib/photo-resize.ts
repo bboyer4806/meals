@@ -1,8 +1,11 @@
 // Recipe photos are resized on the phone before upload (design 2.3), so uploads stay small and
-// the server never decodes an image (photos.ts only checks and stores them). Browser only.
+// the server decodes no image people send (photos.ts only checks and stores them). Browser only,
+// but for the sizes, which the server resizes an AI assistant's image to as well (design 6.17).
 
-const PHOTO = { longestSide: 1600, quality: 0.85 };
-const THUMB = { longestSide: 400, quality: 0.8 };
+/** The size a photo is stored at, and its JPEG quality. */
+export const PHOTO = { longestSide: 1600, quality: 0.85 };
+/** The size its thumbnail is stored at, and its JPEG quality. */
+export const THUMB = { longestSide: 400, quality: 0.8 };
 
 const UNREADABLE = "This photo couldn't be read. Try a JPEG or PNG.";
 

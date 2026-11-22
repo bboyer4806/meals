@@ -13,6 +13,7 @@ import https from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isHttpError } from '@sveltejs/kit';
+import sharp, { type Color } from 'sharp';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from './config.ts';
 import { setDishArchived, updateDish } from './data/dishes.ts';
@@ -22,8 +23,12 @@ import {
 	discardPhoto,
 	fetchImage,
 	householdOwnsPhoto,
+	MAX_IMAGE_PIXELS,
+	NO_IMAGE,
+	parsePhotoFile,
 	PHOTO_MAX_BYTES,
 	photoPath,
+	saveImageFromLink,
 	savePhoto,
 	THUMB_MAX_BYTES
 } from './photos.ts';
@@ -66,12 +71,13 @@ function file(bytes: number[]): File {
 	return new File([new Uint8Array(bytes)], 'photo.jpg', { type: 'image/jpeg' });
 }
 
-async function expectRefused(saving: Promise<string>): Promise<void> {
+async function expectRefused(saving: Promise<string>, message?: string): Promise<void> {
 	const thrown = await saving.then(
 		() => null,
 		(e: unknown) => e
 	);
 	expect(isHttpError(thrown, 400), `expected HTTP 400, got ${String(thrown)}`).toBe(true);
+	if (message !== undefined && isHttpError(thrown)) expect(thrown.body.message).toBe(message);
 }
 
 function storedFiles(): string[] {
@@ -307,5 +313,143 @@ describe('fetchImage', () => {
 			/^localhost is at (127\.0\.0\.1|::1), a private address$/
 		);
 		expect(requested).toEqual([LINK, 'http://localhost:5173/milk.png']);
+	});
+});
+
+describe('parsePhotoFile', () => {
+	it('names a photo or its thumbnail, and nothing else', () => {
+		expect(parsePhotoFile(`${KEY}.jpg`)).toEqual({ key: KEY, size: 'full' });
+		expect(parsePhotoFile(`${KEY}-thumb.jpg`)).toEqual({ key: KEY, size: 'thumb' });
+		for (const name of ['../meals.db', `${KEY}.png`, `${KEY.toUpperCase()}.jpg`, `x${KEY}.jpg`]) {
+			expect(parsePhotoFile(name), name).toBeNull();
+		}
+	});
+});
+
+describe('saveImageFromLink (design 6.17)', () => {
+	const LINK = 'https://recipes.example/pie.jpg';
+
+	/** A picture of one color, in the format sharp writes it as. */
+	function picture(
+		width: number,
+		height: number,
+		format: 'jpeg' | 'png' | 'gif' | 'webp',
+		background: Color = '#c84'
+	): Promise<Buffer> {
+		const channels = format === 'jpeg' ? 3 : 4;
+		return sharp({ create: { width, height, channels, background } }).toFormat(format).toBuffer();
+	}
+
+	async function stored(key: string, size: 'full' | 'thumb') {
+		const { width, height, format } = await sharp(readFileSync(photoPath(key, size))).metadata();
+		return { width, height, format };
+	}
+
+	/** Keeps the log of refused images out of the test output. */
+	function quietly() {
+		return vi.spyOn(console, 'error').mockImplementation(() => {});
+	}
+
+	it('stores a large image resized as the phone resizes a photo, with its thumbnail', async () => {
+		servePages({ [LINK]: { status: 200, body: await picture(3200, 2000, 'jpeg') } });
+		const key = await saveImageFromLink(new URL(LINK));
+		expect(storedFiles()).toEqual([`${key}-thumb.jpg`, `${key}.jpg`]);
+		expect(await stored(key, 'full')).toEqual({ width: 1600, height: 1000, format: 'jpeg' });
+		expect(await stored(key, 'thumb')).toEqual({ width: 400, height: 250, format: 'jpeg' });
+	});
+
+	it.each(['png', 'gif', 'webp'] as const)('takes a %s and stores it as a JPEG', async (format) => {
+		servePages({ [LINK]: { status: 200, body: await picture(300, 600, format) } });
+		const key = await saveImageFromLink(new URL(LINK));
+		// Never enlarged.
+		expect(await stored(key, 'full')).toEqual({ width: 300, height: 600, format: 'jpeg' });
+		expect(await stored(key, 'thumb')).toEqual({ width: 200, height: 400, format: 'jpeg' });
+	});
+
+	it('turns a photo upright and puts what is transparent on white', async () => {
+		// A camera held sideways: stored 400 x 200, shown turned a quarter turn.
+		const sideways = await sharp({ create: { width: 400, height: 200, channels: 3, background: '#c84' } })
+			.jpeg()
+			.withMetadata({ orientation: 6 })
+			.toBuffer();
+		servePages({ [LINK]: { status: 200, body: sideways } });
+		expect(await stored(await saveImageFromLink(new URL(LINK)), 'full')).toMatchObject({
+			width: 200,
+			height: 400
+		});
+
+		const clear = await picture(10, 10, 'png', { r: 0, g: 0, b: 0, alpha: 0 });
+		servePages({ [LINK]: { status: 200, body: clear } });
+		const key = await saveImageFromLink(new URL(LINK));
+		const [red, green, blue] = await sharp(readFileSync(photoPath(key, 'full'))).raw().toBuffer();
+		expect([red, green, blue]).toEqual([255, 255, 255]);
+	});
+
+	it('takes an image of up to 25 megapixels and refuses a larger one, storing nothing', async () => {
+		expect(MAX_IMAGE_PIXELS).toBe(25_000_000);
+		servePages({ [LINK]: { status: 200, body: await picture(5000, 5000, 'jpeg') } });
+		const key = await saveImageFromLink(new URL(LINK));
+		expect(await stored(key, 'full')).toMatchObject({ width: 1600, height: 1600 });
+
+		rmSync(join(dataDir, 'photos'), { recursive: true });
+		servePages({ [LINK]: { status: 200, body: await picture(5001, 5000, 'jpeg') } });
+		await expectRefused(
+			saveImageFromLink(new URL(LINK)),
+			'That image is over 25 megapixels. Try a smaller one.'
+		);
+		expect(storedFiles()).toEqual([]);
+	});
+
+	it("refuses a link that doesn't lead to an image, as Items does, storing nothing", async () => {
+		const logged = quietly();
+		servePages({
+			'https://recipes.example/pie': { status: 200, body: '<!doctype html><img src="pie.jpg">' },
+			'https://recipes.example/gone.jpg': { status: 404 },
+			'https://recipes.example/pie.svg': {
+				status: 200,
+				body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>'
+			}
+		});
+		for (const link of [
+			'https://recipes.example/pie',
+			'https://recipes.example/gone.jpg',
+			'https://recipes.example/pie.svg',
+			'https://169.254.169.254/latest/meta-data',
+			'https://localhost:5173/pie.jpg'
+		]) {
+			await expectRefused(saveImageFromLink(new URL(link)), NO_IMAGE);
+		}
+		expect(logged).toHaveBeenCalledTimes(5);
+		expect(storedFiles()).toEqual([]);
+	});
+
+	it("refuses an image that can't be read, storing nothing", async () => {
+		quietly();
+		const noise = { type: 'gaussian', mean: 128, sigma: 30 } as const;
+		const whole = await sharp({
+			create: { width: 800, height: 600, channels: 3, background: '#000', noise }
+		})
+			.jpeg()
+			.toBuffer();
+		const cutShort = whole.subarray(0, Math.floor(whole.length / 2));
+		const scrambled = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(100, 7)]);
+		for (const body of [cutShort, scrambled]) {
+			servePages({ [LINK]: { status: 200, body } });
+			await expectRefused(
+				saveImageFromLink(new URL(LINK)),
+				"That image couldn't be read. Try another one."
+			);
+		}
+		expect(storedFiles()).toEqual([]);
+	});
+
+	it('decodes no other kind of image, such as a TIFF or an SVG', async () => {
+		const tiff = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#000' } })
+			.tiff()
+			.toBuffer();
+		const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>');
+		for (const image of [tiff, svg]) {
+			await expect(sharp(image).metadata()).rejects.toThrow('unsupported image format');
+		}
 	});
 });

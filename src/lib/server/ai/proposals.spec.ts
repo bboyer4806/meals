@@ -1,14 +1,33 @@
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { isHttpError } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import sharp from 'sharp';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { revokeConnection } from '../auth/oauth.ts';
+import { loadConfig } from '../config.ts';
+import { getDish, setDishPhoto } from '../data/dishes.ts';
 import { getHousehold } from '../data/households.ts';
+import { createItem, getItem, setItemPhoto } from '../data/items.ts';
 import { addNeed, getLine, listActiveLines, updateLine } from '../data/needs.ts';
 import { createStore, listStores } from '../data/stores.ts';
 import { db } from '../db/index.ts';
 import { aiConnections, aiProposals } from '../db/schema.ts';
-import { expectHttpError, freshDb, makeHousehold } from '../testing.ts';
+import { photoPath, savePhoto } from '../photos.ts';
+import {
+	expectHttpError,
+	freshDb,
+	ingredient,
+	makeDish,
+	makeHousehold,
+	recipe,
+	servePages,
+	TEST_ENV
+} from '../testing.ts';
 import {
 	approveProposal,
+	discardExpiredImages,
 	getProposal,
 	listProposals,
 	proposalInput,
@@ -20,9 +39,13 @@ import {
 let connectionId: number;
 let one: number;
 let two: number;
+let dataDir: string;
 
 beforeEach(() => {
 	freshDb();
+	// Where proposed images are stored, as the server's settings say (hooks.server.ts).
+	dataDir = mkdtempSync(join(tmpdir(), 'meals-proposals-'));
+	loadConfig({ ...TEST_ENV, DATA_DIR: dataDir });
 	const admin = makeHousehold();
 	one = admin.householdId;
 	two = makeHousehold().householdId;
@@ -40,8 +63,23 @@ beforeEach(() => {
 		.get().id;
 });
 
+afterEach(() => {
+	rmSync(dataDir, { recursive: true, force: true });
+	vi.restoreAllMocks();
+});
+
 function propose(changes: object[], now = 0) {
 	return proposeChanges(connectionId, proposalInput.parse({ summary: 'Weekly shop', changes }), now);
+}
+
+/** Why proposing was refused (400). */
+async function refusal(proposing: Promise<unknown>): Promise<string> {
+	const thrown = await proposing.then(
+		() => null,
+		(e: unknown) => e
+	);
+	if (!isHttpError(thrown, 400)) throw new Error(`expected HTTP 400, got ${String(thrown)}`);
+	return thrown.body.message;
 }
 
 const addMilk = (householdId: number) => ({
@@ -66,9 +104,9 @@ function lines(householdId: number) {
 }
 
 describe('proposing', () => {
-	it('saves what each change shows, for any households, and changes nothing yet', () => {
+	it('saves what each change shows, for any households, and changes nothing yet', async () => {
 		const nameOfTwo = getHousehold(two).name;
-		const proposal = propose([addMilk(one), rename(two, 'The Smiths')], 1000);
+		const proposal = await propose([addMilk(one), rename(two, 'The Smiths')], 1000);
 		expect(proposal).toMatchObject({
 			connectionId,
 			platform: 'claude',
@@ -88,16 +126,11 @@ describe('proposing', () => {
 		expect(getHousehold(two).name).toBe(nameOfTwo);
 	});
 
-	it('refuses changes that can’t be made, saying which and why, and saves nothing', () => {
+	it('refuses changes that can’t be made, saying which and why, and saves nothing', async () => {
 		// The second Milk is the duplicate the add bar would warn about.
-		expectHttpError(() => propose([addMilk(one), addMilk(one)]), 400);
-		try {
-			propose([addMilk(one), addMilk(one)]);
-		} catch (e) {
-			expect((e as { body: { message: string } }).body.message).toBe(
-				'Change 2 (add_grocery_line): Milk is already on the grocery list (1, To order).'
-			);
-		}
+		expect(await refusal(propose([addMilk(one), addMilk(one)]))).toBe(
+			'Change 2 (add_grocery_line): Milk is already on the grocery list (1, To order).'
+		);
 		expect(lines(one)).toEqual([]);
 		expect(db().select().from(aiProposals).all()).toEqual([]);
 	});
@@ -118,8 +151,8 @@ describe('proposing', () => {
 });
 
 describe('approving (design 6.17)', () => {
-	it('makes every change, in every household, once', () => {
-		const proposal = propose([addMilk(one), rename(two, 'The Smiths')]);
+	it('makes every change, in every household, once', async () => {
+		const proposal = await propose([addMilk(one), rename(two, 'The Smiths')]);
 		expect(approveProposal(proposal.id, proposal.hash, 2000)).toEqual({
 			kind: 'approved',
 			householdIds: [one, two]
@@ -133,9 +166,9 @@ describe('approving (design 6.17)', () => {
 		expect(lines(one)).toHaveLength(1);
 	});
 
-	it('makes none of the changes when one fails, and fails the proposal for good', () => {
+	it('makes none of the changes when one fails, and fails the proposal for good', async () => {
 		const nameOfOne = getHousehold(one).name;
-		const proposal = propose([
+		const proposal = await propose([
 			rename(one, 'Renamed'),
 			addMilk(two),
 			{ operation: 'create_store', householdId: two, name: 'Costco' }
@@ -159,10 +192,10 @@ describe('approving (design 6.17)', () => {
 		expectHttpError(() => rejectProposal(proposal.id, proposal.hash, 3000), 400);
 	});
 
-	it('fails when a record it changes was changed after it was proposed', () => {
+	it('fails when a record it changes was changed after it was proposed', async () => {
 		addNeed(one, { itemName: 'Eggs', quantity: 1, unit: null, store: 'none', resolution: 'none' }, 0);
 		const [line] = lines(one);
-		const proposal = propose([
+		const proposal = await propose([
 			{
 				operation: 'update_grocery_line',
 				householdId: one,
@@ -182,8 +215,8 @@ describe('approving (design 6.17)', () => {
 		expect(getLine(one, line!.id).quantity).toBe(12);
 	});
 
-	it('refuses another version of the proposal, an expired one or a rejected one', () => {
-		const proposal = propose([addMilk(one)], 0);
+	it('refuses another version of the proposal, an expired one or a rejected one', async () => {
+		const proposal = await propose([addMilk(one)], 0);
 		expectHttpError(() => approveProposal(proposal.id, 'f'.repeat(64), 1000), 400);
 
 		// Its content is never changed, so a changed one isn't the one the page showed.
@@ -203,20 +236,298 @@ describe('approving (design 6.17)', () => {
 		expectHttpError(() => approveProposal(proposal.id + 1, proposal.hash, 2000), 404);
 	});
 
-	it('goes with its connection when that is revoked', () => {
-		const proposal = propose([addMilk(one)]);
+	it('goes with its connection when that is revoked', async () => {
+		const proposal = await propose([addMilk(one)]);
 		revokeConnection(connectionId);
 		expectHttpError(() => getProposal(proposal.id, 0), 404);
 		expectHttpError(() => approveProposal(proposal.id, proposal.hash, 0), 404);
 	});
 });
 
-it('lists the newest proposals first', () => {
-	const first = propose([addMilk(one)], 0);
-	const second = propose([rename(one, 'Home'), rename(two, 'Away')], 10);
+it('lists the newest proposals first', async () => {
+	const first = await propose([addMilk(one)], 0);
+	const second = await propose([rename(one, 'Home'), rename(two, 'Away')], 10);
 	rejectProposal(first.id, first.hash, 20);
 	expect(listProposals(30, 10)).toEqual([
 		{ id: second.id, platform: 'claude', summary: 'Weekly shop', changeCount: 2, status: 'pending', createdAt: 10 },
 		{ id: first.id, platform: 'claude', summary: 'Weekly shop', changeCount: 1, status: 'rejected', createdAt: 0 }
 	]);
+});
+
+describe('images (MEA-276)', () => {
+	const PIE = 'https://recipes.example/pie.png';
+	const MILK = 'https://shop.example/milk.jpg';
+
+	/** A picture of one color, which the links in `pages` answer with. */
+	function picture(color: string, format: 'png' | 'jpeg' = 'png'): Promise<Buffer> {
+		return sharp({ create: { width: 900, height: 600, channels: 3, background: color } })
+			.toFormat(format)
+			.toBuffer();
+	}
+
+	async function serveImages(links: string[]) {
+		const pages = Object.fromEntries(
+			await Promise.all(links.map(async (link) => [link, { status: 200, body: await picture('#c84') }]))
+		);
+		return servePages(pages);
+	}
+
+	function storedKeys(): string[] {
+		const dir = join(dataDir, 'photos');
+		const files = existsSync(dir) ? readdirSync(dir) : [];
+		return [...new Set(files.map((file) => file.slice(0, 32)))].sort();
+	}
+
+	/** An image already stored, as one picked in Meals is. */
+	async function existingImage(): Promise<string> {
+		const bytes = await picture('#365', 'jpeg');
+		return savePhoto(new File([new Uint8Array(bytes)], 'photo.jpg'), new File([new Uint8Array(bytes)], 'thumb.jpg'));
+	}
+
+	const recipeImage = (householdId: number, recipeId: number, imageUrl = PIE, replace = false) => ({
+		operation: 'set_recipe_image',
+		householdId,
+		recipeId,
+		imageUrl,
+		replace
+	});
+
+	const itemImage = (householdId: number, itemId: number, imageUrl = MILK, replace = false) => ({
+		operation: 'set_item_image',
+		householdId,
+		itemId,
+		imageUrl,
+		replace
+	});
+
+	/** The keys of the images a proposal proposes, in the order of its changes. */
+	function proposedKeys(proposal: { changes: { proposed: { photoKey?: string }[] }[] }): string[] {
+		return proposal.changes.flatMap((change) =>
+			change.proposed.flatMap(({ photoKey }) => (photoKey === undefined ? [] : [photoKey]))
+		);
+	}
+
+	it('stores each image when proposed, and gives it to its record only when approved', async () => {
+		await serveImages([PIE, MILK]);
+		const pie = makeDish(one, recipe('Apple pie', { steps: 'Bake', ingredients: [ingredient('Apples', 6)] }));
+		const milk = createItem(two, 'Milk', 0).id;
+		const oldMilk = await existingImage();
+		setItemPhoto(two, milk, oldMilk);
+		const pieBefore = getDish(one, pie);
+		const milkBefore = getItem(two, milk);
+
+		const proposal = await propose([recipeImage(one, pie), itemImage(two, milk, MILK, true)]);
+		const [pieImage, milkImage] = proposedKeys(proposal);
+		expect(proposal.changes).toEqual([
+			{
+				title: 'Add an image to a recipe',
+				householdId: one,
+				householdName: getHousehold(one).name,
+				record: `Recipe ${pie}`,
+				current: [
+					{ name: 'Name', value: 'Apple pie' },
+					{ name: 'Image', value: 'None' }
+				],
+				proposed: [{ name: 'Image', value: PIE, photoKey: pieImage }]
+			},
+			{
+				title: "Replace an item's image",
+				householdId: two,
+				householdName: getHousehold(two).name,
+				record: `Item ${milk}`,
+				current: [
+					{ name: 'Name', value: 'Milk' },
+					{ name: 'Image', value: 'An image', photoKey: oldMilk }
+				],
+				proposed: [{ name: 'Image', value: MILK, photoKey: milkImage }]
+			}
+		]);
+		// Stored as Meals stores any photo, ready for the page to show.
+		expect(storedKeys()).toEqual([pieImage, milkImage, oldMilk].sort());
+		expect(getDish(one, pie).photoKey).toBeNull();
+		expect(getItem(two, milk).photoKey).toBe(oldMilk);
+
+		expect(approveProposal(proposal.id, proposal.hash, 2000)).toEqual({
+			kind: 'approved',
+			householdIds: [one, two]
+		});
+		// Only the image changes: the recipe's details and the item's name and notes stay.
+		expect(getDish(one, pie)).toEqual({ ...pieBefore, photoKey: pieImage });
+		expect(getItem(two, milk)).toEqual({ ...milkBefore, photoKey: milkImage });
+		// The image it replaced goes; the approved ones stay.
+		expect(storedKeys()).toEqual([pieImage, milkImage].sort());
+	});
+
+	it('gives the record the image the admin saw, without fetching its link again', async () => {
+		const requested = await serveImages([PIE]);
+		const pie = makeDish(one, recipe('Apple pie'));
+		const proposal = await propose([recipeImage(one, pie)]);
+		const [shown] = proposedKeys(proposal);
+		const bytes = readFileSync(photoPath(shown!, 'full'));
+
+		// The link answers with another picture now.
+		servePages({ [PIE]: { status: 200, body: await picture('#123') } });
+		approveProposal(proposal.id, proposal.hash, 2000);
+		expect(getDish(one, pie).photoKey).toBe(shown);
+		expect(readFileSync(photoPath(shown!, 'full'))).toEqual(bytes);
+		expect(requested).toEqual([PIE]);
+	});
+
+	it('replaces an image only when the change says to, keeping it and storing nothing', async () => {
+		await serveImages([MILK]);
+		const milk = createItem(one, 'Milk', 0).id;
+		const oldMilk = await existingImage();
+		setItemPhoto(one, milk, oldMilk);
+		expect(await refusal(propose([itemImage(one, milk)]))).toBe(
+			`Change 1 (set_item_image): Item ${milk} already has an image. Send replace: true to replace it.`
+		);
+		expect(getItem(one, milk).photoKey).toBe(oldMilk);
+		expect(storedKeys()).toEqual([oldMilk]);
+		expect(db().select().from(aiProposals).all()).toEqual([]);
+	});
+
+	it("refuses a link that doesn't lead to an image, saying which change, and keeps nothing", async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		await serveImages([PIE]);
+		const pie = makeDish(one, recipe('Apple pie'));
+		const milk = createItem(one, 'Milk', 0).id;
+		for (const link of ['https://shop.example/milk', 'https://10.0.0.5/milk.jpg']) {
+			expect(await refusal(propose([addMilk(one), recipeImage(one, pie), itemImage(one, milk, link)]))).toBe(
+				"Change 3 (set_item_image): Couldn't get an image from that link. Use the image's own link, not the page it's on."
+			);
+		}
+		expect(storedKeys()).toEqual([]);
+		expect(lines(one)).toEqual([]);
+		expect(getDish(one, pie).photoKey).toBeNull();
+		expect(db().select().from(aiProposals).all()).toEqual([]);
+	});
+
+	it('deletes the images it stored when another change is refused', async () => {
+		await serveImages([PIE]);
+		const pie = makeDish(one, recipe('Apple pie'));
+		expect(await refusal(propose([recipeImage(one, pie), addMilk(one), addMilk(one)]))).toBe(
+			'Change 3 (add_grocery_line): Milk is already on the grocery list (1, To order).'
+		);
+		expect(await refusal(propose([recipeImage(one, pie + 1)]))).toBe(
+			`Change 1 (set_recipe_image): Recipe ${pie + 1} wasn't found`
+		);
+		expect(storedKeys()).toEqual([]);
+	});
+
+	it('takes only https links, and up to 10 images at a time', () => {
+		const parse = (changes: object[]) =>
+			proposalInput.safeParse({ summary: 'Photos', changes }).error?.issues.map((issue) => issue.message);
+		expect(parse([recipeImage(one, 1, 'http://recipes.example/pie.png')])).toEqual([
+			'Send a link that starts with https://'
+		]);
+		expect(parse([recipeImage(one, 1, `https://recipes.example/${'a'.repeat(2000)}.png`)])).toEqual([
+			'Keep the link under 2000 characters'
+		]);
+		const images = (count: number) => Array.from({ length: count }, (_, index) => recipeImage(one, index + 1));
+		expect(parse(images(10))).toBeUndefined();
+		expect(parse(images(11))).toEqual(['Propose up to 10 images at a time']);
+	});
+
+	it('needs replace for a second image for a record in the same proposal', async () => {
+		const second = 'https://recipes.example/pie-2.png';
+		await serveImages([PIE, second]);
+		const pie = makeDish(one, recipe('Apple pie'));
+		expect(await refusal(propose([recipeImage(one, pie), recipeImage(one, pie, second)]))).toBe(
+			`Change 2 (set_recipe_image): Recipe ${pie} already has an image. Send replace: true to replace it.`
+		);
+		expect(storedKeys()).toEqual([]);
+
+		const proposal = await propose([recipeImage(one, pie), recipeImage(one, pie, second, true)]);
+		const [, last] = proposedKeys(proposal);
+		approveProposal(proposal.id, proposal.hash, 2000);
+		expect(getDish(one, pie).photoKey).toBe(last);
+		expect(storedKeys()).toEqual([last]);
+	});
+
+	it('deletes the proposed images when rejected, keeping the current ones', async () => {
+		await serveImages([MILK]);
+		const milk = createItem(one, 'Milk', 0).id;
+		const oldMilk = await existingImage();
+		setItemPhoto(one, milk, oldMilk);
+		const proposal = await propose([itemImage(one, milk, MILK, true)]);
+		expect(storedKeys()).toHaveLength(2);
+
+		rejectProposal(proposal.id, proposal.hash, 2000);
+		expect(getItem(one, milk).photoKey).toBe(oldMilk);
+		expect(storedKeys()).toEqual([oldMilk]);
+	});
+
+	it('changes no record when approving fails, keeping the current images', async () => {
+		await serveImages([PIE, MILK]);
+		const pie = makeDish(one, recipe('Apple pie'));
+		const oldPie = await existingImage();
+		setDishPhoto(one, pie, oldPie);
+		const milk = createItem(two, 'Milk', 0).id;
+		const proposal = await propose([
+			recipeImage(one, pie, PIE, true),
+			itemImage(two, milk),
+			{ operation: 'create_store', householdId: two, name: 'Costco' }
+		]);
+		createStore(two, 'Costco');
+
+		expect(approveProposal(proposal.id, proposal.hash, 2000)).toEqual({
+			kind: 'failed',
+			error: 'Change 3 (create_store): A store is already called Costco.'
+		});
+		expect(getDish(one, pie).photoKey).toBe(oldPie);
+		expect(getItem(two, milk).photoKey).toBeNull();
+		expect(storedKeys()).toEqual([oldPie]);
+	});
+
+	it('fails when the image was changed in Meals after it was proposed', async () => {
+		await serveImages([MILK]);
+		const milk = createItem(one, 'Milk', 0).id;
+		const proposal = await propose([itemImage(one, milk)]);
+		// Someone gives the item an image on Items meanwhile.
+		const picked = await existingImage();
+		setItemPhoto(one, milk, picked);
+
+		expect(approveProposal(proposal.id, proposal.hash, 2000)).toEqual({
+			kind: 'failed',
+			error: `Change 1 (set_item_image): Item ${milk} changed after this was proposed.`
+		});
+		expect(getItem(one, milk).photoKey).toBe(picked);
+		expect(storedKeys()).toEqual([picked]);
+	});
+
+	it('deletes the images of a proposal a minute after it expires, keeping the current ones', async () => {
+		await serveImages([MILK]);
+		const milk = createItem(one, 'Milk', 0).id;
+		const oldMilk = await existingImage();
+		setItemPhoto(one, milk, oldMilk);
+		const proposal = await propose([itemImage(one, milk, MILK, true)], 0);
+		const [proposed] = proposedKeys(proposal);
+
+		discardExpiredImages(PROPOSAL_LIFETIME + 59_999);
+		expect(storedKeys()).toEqual([oldMilk, proposed].sort());
+		discardExpiredImages(PROPOSAL_LIFETIME + 60_000);
+		expect(storedKeys()).toEqual([oldMilk]);
+		expect(getItem(one, milk).photoKey).toBe(oldMilk);
+
+		// The next proposal does the same, as the app does when it starts.
+		const later = await propose([itemImage(one, milk, MILK, true)], 0);
+		await propose([addMilk(two)], PROPOSAL_LIFETIME + 60_000);
+		expect(storedKeys()).toEqual([oldMilk]);
+		expect(getProposal(later.id, PROPOSAL_LIFETIME + 60_000).status).toBe('expired');
+	});
+
+	it("deletes its proposals' images when the connection is revoked, but the approved ones", async () => {
+		const second = 'https://recipes.example/pie-2.png';
+		await serveImages([PIE, second]);
+		const pie = makeDish(one, recipe('Apple pie'));
+		const tart = makeDish(one, recipe('Tart'));
+		const approved = await propose([recipeImage(one, pie)]);
+		approveProposal(approved.id, approved.hash, 1000);
+		await propose([recipeImage(one, tart, second)]);
+		expect(storedKeys()).toHaveLength(2);
+
+		revokeConnection(connectionId);
+		expect(storedKeys()).toEqual(proposedKeys(approved));
+		expect(getDish(one, pie).photoKey).toBe(proposedKeys(approved)[0]);
+	});
 });

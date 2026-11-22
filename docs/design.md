@@ -166,6 +166,7 @@ Backups:
 | Queries and migrations | Drizzle ORM and drizzle-kit                                                            | Typed queries. Migrations are SQL files kept in the repo.          |
 | Sign-in                | Google OAuth with PKCE in about 60 lines of our own code; sessions in our own table     | Small, and no auth framework to learn (Q8). The `arctic` library first planned here is deprecated on npm. |
 | Form validation        | Zod                                                                                    | Form input is untrusted, so it's checked when it arrives.          |
+| Images                 | sharp (libvips), with only its JPEG, PNG, GIF and WebP decoders                        | Resizes an image an AI assistant proposes, which no phone resizes (6.17). Photos people pick are still resized on the phone (2.3). |
 | Styles                 | Plain CSS with variables; fonts self-hosted through Fontsource                         | No CSS framework and no requests to other sites.                   |
 | Tests                  | Vitest and Playwright                                                                  | See section 10.                                                    |
 | Runtime                | Node 26 (the current long-term support version) in the `node:26-slim` Docker image, pinned by digest (4.2) |                                                                    |
@@ -202,7 +203,8 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
    dependencies, build output, migrations, the standard items' photos (6.14), the default dishes'
    photos (6.19) and the backup script). It installs with
    `npm ci --ignore-scripts`, since no dependency needs its install script (better-sqlite3
-   ships prebuilt binaries). It runs as the `node` user and exposes port 3000. In Phase 2 it
+   ships prebuilt binaries, and sharp installs its own, with libvips, as packages). It runs as the
+   `node` user and exposes port 3000. In Phase 2 it
    also sets `BODY_SIZE_LIMIT=5M` so the app accepts photo uploads (adapter-node's default is
    512 KB). Both stages start from `node:26-slim` pinned by digest, so the base image changes
    only in a pull request, which CI tests; Dependabot proposes each new one (MEA-105).
@@ -246,6 +248,9 @@ No `ORIGIN` setting is needed: in SvelteKit 3, adapter-node builds the app's ori
 /data/backups/<YYYY-MM-DD>/photos/          nightly snapshot of the photos
 /data/backups/pre-migrate-<time>/meals.db   copy of the database before a deploy's migrations
 ```
+
+The photos folder also holds the images AI assistants propose, stored as any photo is from when
+they're proposed until approving gives them to a record or they're deleted (6.17).
 
 During a deploy, Dokku runs the old and new containers on the same database for a short time.
 Every write transaction takes SQLite's write lock when it begins, so the two take turns
@@ -295,7 +300,9 @@ lost, so is everything. Moving backups off the server later is a small change.
   asked for a request and who rated a recipe, so neither can be another household's member
   (MEA-70).
 - **Photos** of recipes and **images** of items are served through a route that checks the photo
-  belongs to one of the signed-in household's recipes or items, archived or not.
+  belongs to one of the signed-in household's recipes or items, archived or not. An AI assistant's
+  proposal shows the admin its images through a route of its own, which serves only the images
+  that proposal shows (6.17).
 - **Sessions** use a random token in an `httpOnly`, `Secure`, `SameSite=Lax` cookie, and
   only a SHA-256 hash of the token is stored. Sessions last 30 days and are extended when
   used. Signing out deletes the session, and each sign-in deletes every expired one.
@@ -382,7 +389,12 @@ lost, so is everything. Moving backups off the server later is a small change.
   the most the editor takes and follows its JSON-LD no more than 32 deep, so a page built to be slow
   can't hold up the server or run it out of stack (MEA-84; 7, Import from a link). An image link's
   answer goes back to the page's script as data, and only when it starts as a JPEG, PNG, GIF or WebP
-  does. The phone decodes and resizes it, so the server never decodes an image (MEA-50).
+  does. The phone decodes and resizes it, so the server decodes no image people send (MEA-50).
+- **An AI assistant's image** (MEA-276, 6.17) is fetched as an image link is, from an https link
+  only, and has no phone to resize it, so the server decodes it with sharp. Sharp's other decoders,
+  such as SVG's and TIFF's, are turned off, so only a JPEG, PNG, GIF or WebP is ever decoded, and
+  only one of up to 25 megapixels, so a small file can't decode to fill the server's memory.
+  Proposing fetches and resizes a proposal's images one at a time, for the same reason.
 
 ### 4.6 Code layout
 
@@ -413,8 +425,8 @@ src/lib/server/
   standard-items.ts       the items every household's catalog starts with (6.13)
   standard-images.ts      give items their standard images (6.14)
   default-dish-photos.ts  give the default dishes their photos (6.19)
-  photos.ts               save, delete and serve photos and item images, and get the image
-                          an image link points at
+  photos.ts               save, delete and serve photos and item images, get the image an image
+                          link points at, and resize and store an AI assistant's (6.17)
   jira.ts                 create a feedback ticket in Jira and attach its screenshot
   email.ts                send an email, as HTML with a plain-text version, through Resend
   grocery-email.ts        the grocery list email's subject, HTML and text (6.16)
@@ -547,7 +559,8 @@ then), `last_used_at`.
 given for.
 
 **ai_proposals** (changes an assistant proposed; 6.17): `connection_id`, `content` (the changes and
-what the confirmation page shows of each, as JSON, never changed), `status` (`pending`,
+what the confirmation page shows of each, as JSON, never changed; an image change also has the key
+of the image stored for it), `status` (`pending`,
 `approved`, `rejected` or `failed`), `error` (why a failed one failed), `created_at`, `expires_at`
 (24 hours later), `decided_at`.
 
@@ -1189,26 +1202,56 @@ assistant can connect, and nobody but the admin can connect one.
   these kinds and no others: changing the household's settings; adding, renaming, archiving or
   restoring a store; renaming an item or changing its notes, archiving or restoring it; adding a
   grocery line, changing one (amount, store and note) or deleting one; adding a recipe, changing one
-  (every field but the photo, which stays) or archiving or restoring one; planning a date or
-  changing a dinner (type, label, restaurant, servings, note and exactly the dishes listed, by
-  recipe name, where a new name adds a recipe with no details, as on the menu) or clearing one;
-  and completing or removing a request. Each is checked with the rules of the form that makes it in
+  (every field but the photo, which stays) or archiving or restoring one; giving a recipe or an
+  item an image (Images, below); planning a date or changing a dinner (type, label, restaurant,
+  servings, note and exactly the dishes listed, by recipe name, where a new name adds a recipe with
+  no details, as on the menu) or clearing one; and completing or removing a request. Each is
+  checked with the rules of the form that makes it in
   Meals and made through the same data-layer function, so it keeps every rule those keep (6.2 to
   6.12). A change to a record takes all its fields, so leaving one out never empties it. Nothing
   else can change: there's no SQL, no change to the database's tables, and nothing about sign-in,
   sessions, members or invites. Proposing makes the changes and undoes them, so a change that
   can't be made is refused right away, saying which change and why, and nothing is saved.
+- **Images** (MEA-276). `set_recipe_image` and `set_item_image` give an existing recipe or item the
+  image at a link: the image's own link, as Items takes one (7, Item images), but starting with
+  https://, and never the page it's on. A proposal has up to 10 of them. Proposing fetches each, one
+  at a time, as Items' Image link does (4.5): a JPEG, PNG, GIF or WebP of up to 5 MB and 25
+  megapixels. The server resizes it as the phone resizes a photo (2.3): upright, with transparent
+  parts on white, at most 1600 px on its longest side with a 400 px thumbnail, both JPEGs. It's
+  stored as any photo is (4.4) before the proposal is saved, so the page shows the image that
+  approving gives the record, and the link is never fetched again, even if it later leads to
+  another image. A link that leads to no such image refuses the change as Items does: "Couldn't
+  get an image from that link. Use the image's own link, not the page it's on." So does an image
+  that can't be read ("That image couldn't be read. Try another one."), or one of more than 25
+  megapixels ("That image is over 25 megapixels. Try a smaller one."). A record with an image keeps
+  it unless the change says `replace`, and is otherwise refused ("Item 12 already has an image.
+  Send replace: true to replace it."), including an image an earlier change of the same proposal
+  gives it.
+  Approving changes the record's image and nothing else: its name, recipe, notes and the rest stay,
+  and so does every other record. The assistant finds the recipes and items without an image by
+  their empty `photoKey`. No change only removes an image, and nothing searches for, makes or
+  uploads one: the assistant gives the link.
+- **Images that aren't used** are deleted, so a proposal never leaves its images behind. An image
+  stored for a proposal goes once nothing can give it to a record: when proposing is refused, when
+  the proposal is rejected or fails, a minute after it expires (when the app next starts, or the
+  next proposal is made), and when its connection is revoked. Approving deletes the image each
+  approved one replaced, once the transaction has committed. An image a recipe or an item has is
+  never deleted this way.
 - **Approving.** A proposal is saved whole and never changed, and the assistant gets a link to it,
   `/ai/proposals/<id>`, to give the admin. Its page, open only to the admin as the connection page
   is, lists every change with its household, the record it changes as it was when proposed (Now)
-  and what it saves (Proposed), or the new record (New). Approve makes all the changes in one
+  and what it saves (Proposed), or the new record (New). While it waits, an image change shows the
+  record's image now, if it has one, and the proposed image above its link, each whole, as the
+  record would get it; only the admin can open them, and only from that proposal. Once it's
+  decided, the page lists the changes without their images. Approve makes all the changes in one
   transaction with recording the approval, so they all happen, once, or none does. Reject changes
   nothing but the proposal. Both send back the SHA-256 of the proposal the page showed, which must
   match. A proposal can't be approved once it's approved, rejected or failed, or 24 hours after it
   was proposed (expired). Approving fails, changing nothing, when a record a change names isn't as
-  the page showed it anymore, or the data layer refuses a change; the proposal then fails for good,
-  with why, and the assistant can propose again. New items get their standard images afterward, as
-  after any save (6.14). `get_proposal` tells the assistant what happened to its own proposals.
+  the page showed it anymore, its image included, or the data layer refuses a change; the proposal
+  then fails for good, with why, and the assistant can propose again. New items get their standard
+  images afterward, as after any save (6.14). `get_proposal` tells the assistant what happened to
+  its own proposals.
 - **Errors.** A tool that can't do what was asked says why: the field, the change and the reason.
   An unexpected failure is logged, and the assistant is told only that something went wrong, so no
   query, stack or secret leaves the server.
@@ -1305,7 +1348,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | What's new       | `/whats-new`                         | See below.                                                                                                                           |
 | Admin            | `/admin`                             | Invite households, list households with their members and invites, last backup date, send a test email, AI assistants. See below.   |
 | Connect an assistant | `/oauth/authorize`               | "Connect ChatGPT to Meals?" (or Claude): what it will be able to do, Allow and Deny. Admin only (6.17).                             |
-| Proposed changes | `/ai/proposals/[id]`                 | An AI assistant's proposal: each change with its household, Now and Proposed, and Approve and Reject while it waits. Admin only (6.17). |
+| Proposed changes | `/ai/proposals/[id]`                 | An AI assistant's proposal: each change with its household, Now and Proposed, and Approve and Reject while it waits, with the images an image change would replace and give. Admin only (6.17). |
 
 **Feedback.** Every screen after household setup, from Grocery list to Admin, has a round "Send
 feedback" button with a speech-bubble icon at the bottom right, just above the tab bar. Pages
@@ -1958,8 +2001,9 @@ ingredients.
 - Planning a party beyond its shopping: tasks, invitations, guests or headcount, a party apart from
   a dinner, repeating party dates, budgets and costs (MEA-247). A party's dinner puts its
   ingredients on a party list (6.15, MEA-268), but no dinner puts them straight on the grocery list.
-- AI assistants other than ChatGPT and Claude, and assistants proposing changes to party lists,
-  ratings, members or invites, or adding requests (6.17).
+- AI assistants other than ChatGPT and Claude; assistants proposing changes to party lists,
+  ratings, members or invites, adding requests, or removing an image without giving another; and
+  assistants searching for, making or uploading an image rather than giving its link (6.17).
 - Reports beyond the five on Reports: reports people make, other date ranges or filters, exporting
   or sharing them, and forecasts or suggested meal plans (MEA-14).
 - Decided against: store integrations (Q15), offline use (Q10), live updates (Q11),

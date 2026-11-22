@@ -32,6 +32,7 @@ import {
 	listDishTags,
 	rateDish,
 	setDishArchived,
+	setDishPhoto,
 	setDishTried,
 	updateDish,
 	type DishSummary,
@@ -706,6 +707,22 @@ describe('archiving and photos', () => {
 		expect(saveWith({ photoKey: null })).toEqual({ kind: 'saved', id, replacedPhotoKey: KEY_B });
 		expect(getDish(householdId, id).photoKey).toBeNull();
 		expect(timestamps(id)).toEqual([NOW, LATER]);
+	});
+
+	it('sets only the photo for an AI assistant, returning the key whose files can go (6.17)', () => {
+		const id = makeDish(householdId, recipe('Soup', { steps: 'Simmer', ingredients: [ingredient('Leeks', 2)] }), NOW);
+		const before = getDish(householdId, id);
+		expect(setDishPhoto(householdId, id, KEY_A)).toBeNull();
+		expect(getDish(householdId, id)).toEqual({ ...before, photoKey: KEY_A });
+		expect(setDishPhoto(householdId, id, KEY_B)).toBe(KEY_A);
+		expect(setDishPhoto(householdId, id, KEY_B)).toBeNull();
+		expect(getDish(householdId, id).photoKey).toBe(KEY_B);
+		// Nothing else about it changes, not even when it was last saved.
+		expect(timestamps(id)).toEqual([NOW, NOW]);
+
+		const other = makeHousehold().householdId;
+		expectHttpError(() => setDishPhoto(other, id, null), 404);
+		expect(getDish(householdId, id).photoKey).toBe(KEY_B);
 	});
 });
 

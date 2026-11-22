@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { inspect } from 'node:util';
 import type { RequestEvent } from '@sveltejs/kit';
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
+import { discardExpiredImages } from '#lib/server/ai/proposals.ts';
 import { checkBodySize } from '#lib/server/body-size.ts';
 import { config, loadConfig } from '#lib/server/config.ts';
 import {
@@ -46,6 +47,8 @@ export const init: ServerInit = async () => {
 	// Households whose dishes haven't had the default dishes' photos get them, once each: every
 	// household when the photos came, and one the version a deploy replaces set up (design 6.19).
 	await assignAllDefaultDishPhotos(now);
+	// Images AI assistants proposed that expired without the admin approving them (design 6.17).
+	discardExpiredImages(now);
 };
 
 /**
