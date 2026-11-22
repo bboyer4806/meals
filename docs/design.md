@@ -338,6 +338,18 @@ lost, so is everything. Moving backups off the server later is a small change.
   the server, Dokku's nginx adds `strict-transport-security: max-age=15724800; includeSubdomains`
   to every response, its default for an app with a certificate, so a browser that has been here
   goes straight to https for the next 6 months.
+- **Unexpected errors** (MEA-118). An error Meals doesn't expect, such as a query that fails, is
+  logged with an id made for it (a random UUID), the time in UTC, the request's method and path,
+  its route, the status (500), and the signed-in person's and household's ids when there are any,
+  then the error's message and stack, with those of any error that caused it. The log leaves out the
+  query string, which can carry a sign-in code, the body, cookies and the person's email. The error
+  page says "Error ID: " and the id below its message, so someone can say which error they saw, and
+  nothing about the error itself, such as its message or stack, reaches the page. An error in an
+  endpoint, such as `/photos`, or in `hooks.server.ts` before a page is made, is logged the same
+  way, and a JSON answer has the id, but SvelteKit's plain error page for it shows only the status
+  and message. A form a page sends itself keeps its own message, without the id (6.11). Errors Meals
+  expects, such as a 400, 403 or 404, are neither logged nor given an id. Errors go nowhere else: no
+  ticket, email or monitoring service.
 - **Admin** is only the `ADMIN_EMAIL` account. On Admin it sees household names, member emails
   and the emails each household invited (MEA-112), not household data. Through ChatGPT or
   Claude, once it connects them, it reads every household's data and changes what it approves
