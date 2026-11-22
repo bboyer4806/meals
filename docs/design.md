@@ -180,7 +180,10 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
    `npm run db:generate` finds no schema changes, which catches a change to the schema that
    has no migration in `drizzle/` (MEA-121). It builds the Docker image and
    runs the end-to-end tests against it, run as production runs it with an empty `DATA_DIR`,
-   so a mistake in the image, such as a lower `BODY_SIZE_LIMIT`, fails them (MEA-105). On
+   so a mistake in the image, such as a lower `BODY_SIZE_LIMIT`, fails them (MEA-105). Whether
+   they pass or fail, it keeps what they leave in `test-results/`, the traces of tests that
+   failed and the screenshots `tests/e2e/screens.e2e.ts` saves, as the run's
+   `playwright-test-results` artifact for 7 days (MEA-122). On
    `main`, a push job then pushes that same image, and the deploy job needs the push, so code
    that fails never deploys, and the image that deploys is the one tested.
 2. **One-time server setup.** The server limits which commands the deploy key can run, so

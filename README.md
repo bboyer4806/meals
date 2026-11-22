@@ -41,6 +41,10 @@ docker build --build-arg COMMIT=e2e-commit --tag meals-e2e .
 E2E_IMAGE=meals-e2e npm run test:e2e
 ```
 
+Each CI run keeps the browser tests' `test-results/` for 7 days as the `playwright-test-results`
+artifact on its page in Actions: the traces of tests that failed, which
+`npx playwright show-trace <trace.zip>` opens, and the screenshots `tests/e2e/screens.e2e.ts` saves.
+
 ## Settings
 
 The app reads these when it starts and refuses to start if one is missing. Building the image
