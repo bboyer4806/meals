@@ -1644,7 +1644,11 @@ it, so any of them can be tapped with the keyboard open. Scrolling the page by h
 person leaves it; only those changes move it (MEA-265). Scrolled under the header or the tab bar
 afterwards, they pass beneath it, so a tap there does what it says (MEA-143). Once a dish is
 added, the field is empty and ready for the next. Each dish links to its
-recipe at this dinner's servings. Eating out has a Restaurant field, with "Where to go" as its
+recipe at this dinner's servings. A dish whose recipe has a photo shows its thumbnail, a 40 px
+square, left of its name as part of that link, so tapping it opens the recipe too; a dish without
+one shows its name alone, with no space kept for a photo (MEA-269). The page shows the photo each
+recipe has when its data loads, so one added, replaced or removed shows once the day reloads
+(6.11). Eating out has a Restaurant field, with "Where to go" as its
 hint, in place of servings and dishes (MEA-58; 6.9). Actions: Copy a dinner, Add to party list on
 a dinner with dishes (6.15), and Clear. A date
 with more than one dinner shows them all on its one page, in the order they were added, each with its own label
