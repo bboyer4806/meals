@@ -10,15 +10,16 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { createSession } from '#lib/server/auth/session.ts';
+import type { RequestEvent } from '@sveltejs/kit';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { createSession, type SessionUser } from '#lib/server/auth/session.ts';
 import { loadConfig } from '#lib/server/config.ts';
 import { listDishes } from '#lib/server/data/dishes.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
 import { listCatalog } from '#lib/server/data/items.ts';
 import { openDb } from '#lib/server/db/index.ts';
 import { TEST_ENV, freshDb, makeHousehold } from '#lib/server/testing.ts';
-import { handle, init } from './hooks.server.ts';
+import { handle, handleError, init } from './hooks.server.ts';
 
 // Real files unless a test says otherwise.
 vi.mock('node:fs', async (importOriginal) => {
@@ -156,4 +157,135 @@ it('over https, takes the session only from the __Host-session cookie (MEA-83)',
 	// Another dev.boyersoftware.com app can set a cookie with the plain name for Meals.
 	expect(await signedIn({ session: token })).toBeNull();
 	expect(await signedIn({ '__Host-session': token })).toMatchObject({ id: userId });
+});
+
+describe('handleError (design 4.5, MEA-118)', () => {
+	const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+	const robin: SessionUser = {
+		id: 7,
+		householdId: 3,
+		email: 'robin@example.com',
+		name: 'Robin',
+		isAdmin: false
+	};
+	let logged: MockInstance<typeof console.error>;
+
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-11-22T15:04:05.123Z'));
+		logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		logged.mockRestore();
+		vi.useRealTimers();
+	});
+
+	/** The parts of a request's event that handleError reads, as SvelteKit makes them. */
+	function eventFor(request: Request, routeId: string | null, locals: Partial<App.Locals>) {
+		const event = { request, url: new URL(request.url), route: { id: routeId }, locals };
+		return event as unknown as RequestEvent;
+	}
+
+	/** Everything one console.error call logged. */
+	function log(call = 0): string {
+		const args = logged.mock.calls[call];
+		if (!args) throw new Error(`Nothing was logged for call ${call}`);
+		return args.join(' ');
+	}
+
+	it('logs an unexpected error with an id, and gives the error page only that id', async () => {
+		// A request with what must stay out of the log: a sign-in code in the query, the session
+		// cookie, an access token and a form.
+		const request = new Request(
+			'https://meals.dev.boyersoftware.com/recipes/12/edit?code=sign-in-code',
+			{
+				method: 'POST',
+				headers: { cookie: '__Host-session=session-token', authorization: 'Bearer access-token' },
+				body: 'name=Pumpkin+pie'
+			}
+		);
+		const thrown = new Error('database disk image is malformed', {
+			cause: new Error('SQLITE_CORRUPT')
+		});
+
+		const result = await handleError({
+			kind: 'unknown',
+			error: thrown,
+			event: eventFor(request, '/(app)/recipes/[id]/edit', { user: robin })
+		});
+
+		expect(logged).toHaveBeenCalledOnce();
+		const [context, ...details] = log().split('\n');
+		const id = /^Unexpected error (\S+) /.exec(context!)?.[1];
+		expect(id).toMatch(UUID);
+		expect(context).toBe(
+			`Unexpected error ${id} time=2026-11-22T15:04:05.123Z method=POST path=/recipes/12/edit` +
+				' route=/(app)/recipes/[id]/edit status=500 user=7 household=3'
+		);
+		// The error's message and stack, and its cause's.
+		const stack = details.join('\n');
+		expect(stack).toMatch(
+			/^Error: database disk image is malformed\n\s+at .*hooks\.server\.spec\.ts/
+		);
+		expect(stack).toContain('[cause]: Error: SQLITE_CORRUPT');
+		const leftOut = /robin@example\.com|sign-in-code|session-token|access-token|Pumpkin/;
+		expect(log()).not.toMatch(leftOut);
+		// The id the log has, and nothing from the error: SvelteKit adds "Internal Error".
+		expect(result).toEqual({ status: 500, id });
+	});
+
+	it('gives each unexpected error its own id', async () => {
+		const request = new Request('https://meals.dev.boyersoftware.com/menu');
+		const event = eventFor(request, '/(app)/menu', { user: robin });
+
+		const first = await handleError({ kind: 'unknown', error: new Error('One'), event });
+		const second = await handleError({ kind: 'unknown', error: new Error('Two'), event });
+
+		expect(first).toEqual({ status: 500, id: expect.stringMatching(UUID) });
+		expect(second).toEqual({ status: 500, id: expect.stringMatching(UUID) });
+		expect(second).not.toEqual(first);
+	});
+
+	it('logs an unexpected error without a household or a session, or before handle reads it', async () => {
+		const request = new Request('https://meals.dev.boyersoftware.com/nowhere');
+		const cases: [Partial<App.Locals>, string][] = [
+			// Signed in, but not yet in a household (6.1).
+			[{ user: { ...robin, householdId: null } }, 'user=7 household=none'],
+			// Not signed in.
+			[{ user: null }, 'user=none household=none'],
+			// Before handle reads the session, when locals has no user yet.
+			[{}, 'user=none household=none']
+		];
+
+		for (const [index, [locals, who]] of cases.entries()) {
+			const result = await handleError({
+				kind: 'unknown',
+				error: new Error('Boom'),
+				event: eventFor(request, null, locals)
+			});
+
+			expect(result).toEqual({ status: 500, id: expect.stringMatching(UUID) });
+			expect(log(index).split('\n')[0]).toMatch(
+				new RegExp(` method=GET path=/nowhere route=none status=500 ${who}$`)
+			);
+		}
+	});
+
+	it('leaves errors Meals expects as SvelteKit has them, with no id and no log', async () => {
+		const event = eventFor(
+			new Request('https://meals.dev.boyersoftware.com/recipes/999999'),
+			'/(app)/recipes/[id]',
+			{ user: robin }
+		);
+
+		// Thrown with error(), and SvelteKit's own for an address that matches no page.
+		for (const status of [400, 403, 404]) {
+			const error = { status, message: 'A message for people' };
+			expect(await handleError({ kind: 'app', error, event })).toBeUndefined();
+		}
+		const notFound = { status: 404, message: 'Not Found' };
+		expect(await handleError({ kind: 'framework', error: notFound, event })).toBeUndefined();
+		expect(logged).not.toHaveBeenCalled();
+	});
 });
