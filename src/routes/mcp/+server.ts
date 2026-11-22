@@ -35,7 +35,11 @@ export async function POST({ request, url }) {
 	} catch {
 		return json(rpcError(null, -32700, 'Parse error'), { status: 400 });
 	}
-	const answer = handleMessage(message, { connectionId: connection.id, origin: url.origin, now });
+	const answer = await handleMessage(message, {
+		connectionId: connection.id,
+		origin: url.origin,
+		now
+	});
 	return answer === null ? new Response(null, { status: 202 }) : json(answer);
 }
 

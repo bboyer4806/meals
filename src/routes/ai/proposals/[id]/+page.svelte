@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import FormError from '#lib/components/FormError.svelte';
+	import type { Field } from '#lib/server/ai/operations.ts';
 
 	let { data, form } = $props();
 
@@ -15,6 +16,26 @@
 <svelte:head>
 	<title>Changes from {data.platform} · Meals</title>
 </svelte:head>
+
+<!-- An image shows only while the proposal waits: deciding it deletes the images it leaves unused
+	(design 6.17). -->
+{#snippet fieldList(fields: Field[], imageLabel: string)}
+	<dl>
+		{#each fields as field (field.name)}
+			<dt>{field.name}</dt>
+			<dd>
+				{#if field.photoKey !== undefined && proposal.status === 'pending'}
+					<img
+						class="image"
+						src="/ai/proposals/{proposal.id}/photos/{field.photoKey}.jpg"
+						alt={imageLabel}
+					/>
+				{/if}
+				{field.value}
+			</dd>
+		{/each}
+	</dl>
+{/snippet}
 
 <main class="page">
 	<h1>Changes from {data.platform}</h1>
@@ -54,21 +75,11 @@
 				</p>
 				{#if change.current.length > 0}
 					<h3>Now</h3>
-					<dl>
-						{#each change.current as field (field.name)}
-							<dt>{field.name}</dt>
-							<dd>{field.value}</dd>
-						{/each}
-					</dl>
+					{@render fieldList(change.current, 'The image now')}
 				{/if}
 				{#if change.proposed.length > 0}
 					<h3>{change.current.length > 0 ? 'Proposed' : 'New'}</h3>
-					<dl>
-						{#each change.proposed as field (field.name)}
-							<dt>{field.name}</dt>
-							<dd>{field.value}</dd>
-						{/each}
-					</dl>
+					{@render fieldList(change.proposed, 'The proposed image')}
 				{/if}
 			</li>
 		{/each}
@@ -121,6 +132,16 @@
 		margin: 0 0 0.5rem;
 		white-space: pre-line;
 		overflow-wrap: anywhere;
+	}
+
+	/* The whole image, as approving gives it to the record, at most a phone screen's width. */
+	.image {
+		display: block;
+		max-width: 100%;
+		max-height: 24rem;
+		margin: 0.25rem 0;
+		border-radius: var(--radius);
+		border: 1px solid var(--border);
 	}
 
 	.outcome {

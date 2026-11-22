@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { getDay } from '../data/dinners.ts';
 import { findDishByName, getDish } from '../data/dishes.ts';
 import { getHousehold } from '../data/households.ts';
-import { createItem, getItem, setItemArchived } from '../data/items.ts';
+import { createItem, getItem, setItemArchived, setItemPhoto } from '../data/items.ts';
 import { addNeed, getLine, listActiveLines, markReceived } from '../data/needs.ts';
 import {
 	addRequest,
@@ -27,8 +27,12 @@ import { changeSchema, planChange } from './operations.ts';
 
 beforeEach(freshDb);
 
+// The image an image change's link led to, as proposing stores it (prepareChange).
+const STORED = 'abcdef0123456789abcdef0123456789';
+
 function plan(input: unknown) {
-	return planChange(changeSchema.parse(input));
+	const change = changeSchema.parse(input);
+	return planChange('imageUrl' in change ? { ...change, photoKey: STORED } : change);
 }
 
 /** Looks the change up and makes it, as approving a proposal does. */
@@ -294,6 +298,73 @@ describe('recipes', () => {
 		const soup = makeDish(householdId, recipe('Soup'));
 		make({ operation: 'set_recipe_archived', householdId, recipeId: soup, archived: true });
 		expect(getDish(householdId, soup).archivedAt).toBe(1000);
+	});
+});
+
+describe('images (MEA-276)', () => {
+	const LINK = 'https://recipes.example/soup.jpg';
+	const OLD = '0123456789abcdef0123456789abcdef';
+
+	it('gives a recipe an image, and changes nothing else about it', () => {
+		const { householdId } = makeHousehold();
+		const soup = makeDish(householdId, recipe('Soup', { steps: 'Simmer', ingredients: [ingredient('Leeks', 2)] }));
+		const before = getDish(householdId, soup);
+		const change = { operation: 'set_recipe_image', householdId, recipeId: soup, imageUrl: ` ${LINK} `, replace: false };
+		expect(make(change)).toMatchObject({
+			title: 'Add an image to a recipe',
+			record: `Recipe ${soup}`,
+			current: [
+				{ name: 'Name', value: 'Soup' },
+				{ name: 'Image', value: 'None' }
+			],
+			proposed: [{ name: 'Image', value: LINK, photoKey: STORED }]
+		});
+		expect(getDish(householdId, soup)).toEqual({ ...before, photoKey: STORED });
+	});
+
+	it("replaces an item's image only when the change says to", () => {
+		const { householdId } = makeHousehold();
+		const milk = createItem(householdId, 'Milk', 0);
+		setItemPhoto(householdId, milk.id, OLD);
+		const change = { operation: 'set_item_image', householdId, itemId: milk.id, imageUrl: LINK, replace: false };
+		expect(refusal(change)).toBe(`Item ${milk.id} already has an image. Send replace: true to replace it.`);
+		expect(getItem(householdId, milk.id).photoKey).toBe(OLD);
+
+		const replaced = make({ ...change, replace: true });
+		expect(replaced).toMatchObject({
+			title: "Replace an item's image",
+			current: [
+				{ name: 'Name', value: 'Milk' },
+				{ name: 'Image', value: 'An image', photoKey: OLD }
+			]
+		});
+		expect(getItem(householdId, milk.id)).toEqual({ ...milk, photoKey: STORED });
+	});
+
+	it("never reaches another household's records", () => {
+		const one = makeHousehold();
+		const two = makeHousehold();
+		const soup = makeDish(two.householdId, recipe('Soup'));
+		const eggs = createItem(two.householdId, 'Eggs', 0);
+		const image = { imageUrl: LINK, replace: true, householdId: one.householdId };
+		expect(refusal({ ...image, operation: 'set_recipe_image', recipeId: soup })).toBe(`Recipe ${soup} wasn't found`);
+		expect(refusal({ ...image, operation: 'set_item_image', itemId: eggs.id })).toBe(`Item ${eggs.id} wasn't found`);
+		expect(getDish(two.householdId, soup).photoKey).toBeNull();
+		expect(getItem(two.householdId, eggs.id).photoKey).toBeNull();
+	});
+
+	it("takes only the image's own https link, of up to 2000 characters", () => {
+		const change = (imageUrl: string) => ({ operation: 'set_item_image', householdId: 1, itemId: 1, imageUrl, replace: false });
+		for (const link of ['http://shop.example/milk.jpg', 'ftp://shop.example/milk.jpg', 'milk.jpg', '']) {
+			expect(problems(change(link)), link).toEqual(['Send a link that starts with https://']);
+		}
+		expect(problems(change(`https://shop.example/${'m'.repeat(2000)}.jpg`))).toEqual([
+			'Keep the link under 2000 characters'
+		]);
+		expect(problems({ ...change(LINK), replace: undefined })).toHaveLength(1);
+		// What proposing stores for it is Meals's own, never the assistant's.
+		const sent = changeSchema.parse({ ...change(LINK), photoKey: OLD });
+		expect(sent).not.toHaveProperty('photoKey');
 	});
 });
 

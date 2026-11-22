@@ -202,6 +202,23 @@ export function setDishPhotoIfNone(householdId: number, dishId: number, photoKey
 }
 
 /**
+ * Sets or clears the dish's photo and changes nothing else about it, as an AI assistant's image
+ * does (design 6.17). Returns the previous key, so the caller can delete its files, or null when
+ * there was none or it didn't change.
+ */
+export function setDishPhoto(
+	householdId: number,
+	dishId: number,
+	photoKey: string | null
+): string | null {
+	return transaction(() => {
+		const previous = findDish(householdId, dishId).photoKey;
+		db().update(dishes).set({ photoKey }).where(eq(dishes.id, dishId)).run();
+		return previous === photoKey ? null : previous;
+	});
+}
+
+/**
  * A dish made by name, from a dinner or a request, has the usual servings and no recipe yet, so
  * Recipes labels it "No recipe" (2.3, 6.12). Returns its id.
  */

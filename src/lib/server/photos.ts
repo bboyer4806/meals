@@ -1,9 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { rmSync } from 'node:fs';
-import { mkdir, open, readFile } from 'node:fs/promises';
+import { mkdir, open, readFile, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
+import sharp from 'sharp';
+import { PHOTO, THUMB } from '../photo-resize.ts';
 import { config } from './config.ts';
 import { db } from './db/index.ts';
 import { dishes, items } from './db/schema.ts';
@@ -11,7 +14,8 @@ import { fetchLink } from './fetch-link.ts';
 
 // Recipe photos and item images are files in $DATA_DIR/photos: <key>.jpg and <key>-thumb.jpg
 // (design 4.4). The phone resizes them before upload (photo-resize.ts), so the server only checks
-// and stores them. A file is never written twice: a new photo gets a new key. The nightly backup
+// and stores them. Only an image an AI assistant proposes is resized here, to the same sizes
+// (design 6.17). A file is never written twice: a new photo gets a new key. The nightly backup
 // hard-links these files, so changing one in place would change it in the older backups too.
 
 export const PHOTO_MAX_BYTES = 3_000_000;
@@ -119,6 +123,47 @@ export function householdOwnsPhoto(householdId: number, key: string): boolean {
 	return dish !== undefined || item !== undefined;
 }
 
+// <key>.jpg or <key>-thumb.jpg, and nothing else. SvelteKit decodes a route's parameter, so
+// "..%2Fmeals.db" arrives as "../meals.db".
+const FILE_NAME = /^([0-9a-f]{32})(-thumb)?\.jpg$/;
+
+/** The photo a file name in a photo's address names, or null for any other name. */
+export function parsePhotoFile(name: string): { key: string; size: 'full' | 'thumb' } | null {
+	const match = FILE_NAME.exec(name);
+	if (!match) return null;
+	return { key: match[1]!, size: match[2] ? 'thumb' : 'full' };
+}
+
+/**
+ * The photo's file as a long-lived private JPEG, for a route that has checked who may see it.
+ * Not found when its file is gone, as after a restore that skipped the photos.
+ */
+export async function photoResponse(key: string, size: 'full' | 'thumb'): Promise<Response> {
+	let file: FileHandle;
+	try {
+		file = await open(photoPath(key, size));
+	} catch (e) {
+		if ((e as NodeJS.ErrnoException).code === 'ENOENT') error(404, 'Not found');
+		throw e;
+	}
+	try {
+		const { size: bytes } = await file.stat();
+		// The stream closes the file when it ends or the request is cancelled.
+		const body = Readable.toWeb(file.createReadStream()) as ReadableStream<Uint8Array>;
+		return new Response(body, {
+			headers: {
+				'content-type': 'image/jpeg',
+				'content-length': String(bytes),
+				// A changed photo gets a new key, so a browser never needs to ask again.
+				'cache-control': 'private, max-age=31536000, immutable'
+			}
+		});
+	} catch (e) {
+		await file.close();
+		throw e;
+	}
+}
+
 const IMAGE_HEADERS = {
 	accept: 'image/jpeg,image/png,image/webp,image/gif',
 	'user-agent': 'Mozilla/5.0 (compatible; Meals item image)'
@@ -146,4 +191,77 @@ export async function fetchImage(link: URL): Promise<Uint8Array> {
 	// A copy of its own: a small Buffer can be part of a larger shared one, which sending it to
 	// the browser would send whole.
 	return new Uint8Array(body);
+}
+
+/** What an image link says when it doesn't lead to an image (design 7, Item images; 6.17). */
+export const NO_IMAGE =
+	"Couldn't get an image from that link. Use the image's own link, not the page it's on.";
+
+// An AI assistant's image is the only one the server decodes (design 4.5), and only as one of the
+// kinds of image fetchImage takes. libvips's other loaders, such as SVG's, never run.
+sharp.block({ operation: ['VipsForeignLoad'] });
+sharp.unblock({
+	operation: [
+		'VipsForeignLoadJpegBuffer',
+		'VipsForeignLoadPngBuffer',
+		'VipsForeignLoadNsgifBuffer',
+		'VipsForeignLoadWebpBuffer'
+	]
+});
+
+/** The most pixels an image the server resizes may have, so one can't fill its memory (4.5). */
+export const MAX_IMAGE_PIXELS = 25_000_000;
+
+/** What sharp gives, or a refusal (400) when it can't read the image. */
+async function readable<T>(reading: Promise<T>): Promise<T> {
+	try {
+		return await reading;
+	} catch (e) {
+		console.error("Couldn't read an image:", e);
+		error(400, "That image couldn't be read. Try another one.");
+	}
+}
+
+/**
+ * The image as a JPEG at most `size.longestSide` px on its longest side, as the phone makes one
+ * (photo-resize.ts): upright, on white where it's transparent, and never enlarged.
+ */
+function resized(image: Uint8Array, size: { longestSide: number; quality: number }): Promise<Buffer> {
+	return (
+		sharp(image)
+			// Turned upright by the camera's orientation tag, which the new JPEG won't have.
+			.rotate()
+			// JPEG has no transparency, and transparent parts would turn black.
+			.flatten({ background: '#ffffff' })
+			.resize(size.longestSide, size.longestSide, { fit: 'inside', withoutEnlargement: true })
+			.jpeg({ quality: Math.round(size.quality * 100) })
+			.toBuffer()
+	);
+}
+
+/**
+ * Stores the image a link points at, resized as the phone resizes a photo (photo-resize.ts), and
+ * returns its new key, for an AI assistant's proposal (design 6.17). Refused (400) when fetchImage
+ * can't get it, when it can't be read or is over MAX_IMAGE_PIXELS, or when savePhoto refuses it.
+ */
+export async function saveImageFromLink(link: URL): Promise<string> {
+	let image: Uint8Array;
+	try {
+		image = await fetchImage(link);
+	} catch (e) {
+		console.error(`Couldn't get an image from ${link.href}:`, e);
+		error(400, NO_IMAGE);
+	}
+	const { width, height } = await readable(sharp(image).metadata());
+	if (width * height > MAX_IMAGE_PIXELS) {
+		error(400, `That image is over ${MAX_IMAGE_PIXELS / 1_000_000} megapixels. Try a smaller one.`);
+	}
+	const photo = await readable(resized(image, PHOTO));
+	// From the resized photo rather than the original, as the phone makes it.
+	const thumb = await resized(photo, THUMB);
+	// As files, as savePhoto takes an upload, each copied out of a Buffer that may be shared.
+	return savePhoto(
+		new File([new Uint8Array(photo)], 'photo.jpg', { type: 'image/jpeg' }),
+		new File([new Uint8Array(thumb)], 'thumb.jpg', { type: 'image/jpeg' })
+	);
 }

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { error } from '@sveltejs/kit';
 import { and, desc, eq, isNotNull, isNull, lte } from 'drizzle-orm';
 import { z } from 'zod';
+import { connectionImages, discardUnusedImages } from '../ai/proposals.ts';
 import { db, transaction } from '../db/index.ts';
 import { aiConnections, aiTokens, users, type AiPlatform } from '../db/schema.ts';
 import { randomToken } from './google.ts';
@@ -460,8 +461,14 @@ export function listConnections(): ConnectionSummary[] {
 
 /**
  * Deletes the connection with its tokens, so the assistant can't use Meals anymore, and its
- * proposals, so none of them can be approved (design 6.17). One already revoked counts as revoked.
+ * proposals, so none of them can be approved, then the images they proposed that no record has
+ * (design 6.17). One already revoked counts as revoked.
  */
 export function revokeConnection(connectionId: number): void {
-	db().delete(aiConnections).where(eq(aiConnections.id, connectionId)).run();
+	const images = transaction(() => {
+		const images = connectionImages(connectionId);
+		db().delete(aiConnections).where(eq(aiConnections.id, connectionId)).run();
+		return images;
+	});
+	discardUnusedImages(images);
 }

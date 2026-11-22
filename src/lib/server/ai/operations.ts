@@ -30,12 +30,19 @@ import {
 	findDishByName,
 	getDish,
 	setDishArchived,
+	setDishPhoto,
 	updateDish,
 	type DishInput,
 	type DishSaveResult
 } from '../data/dishes.ts';
 import { getHousehold, updateHousehold } from '../data/households.ts';
-import { getItem, setItemArchived, updateItem, type ItemNameResult } from '../data/items.ts';
+import {
+	getItem,
+	setItemArchived,
+	setItemPhoto,
+	updateItem,
+	type ItemNameResult
+} from '../data/items.ts';
 import { addNeed, deleteLine, getLine, updateLine, type GroceryLine } from '../data/needs.ts';
 import { completeRequest, listRequests, removeRequest } from '../data/requests.ts';
 import {
@@ -46,14 +53,18 @@ import {
 	type StoreNameResult
 } from '../data/stores.ts';
 import { householdSettings, id, nameField, optionalText, quantity, sentName } from '../forms.ts';
+import { saveImageFromLink } from '../photos.ts';
 import { readRows, recipeDetailFields, type RecipeRow } from '../recipe-form.ts';
 
 // The changes an AI assistant can propose (design 6.17). Each is checked with the same rules as
 // the form that makes it, and made only through the data layer's own functions, so it keeps every
 // rule they keep. There's no other way to change anything.
 
-/** A field of a record as the confirmation page shows it. */
-export type Field = { name: string; value: string };
+/**
+ * A field of a record as the confirmation page shows it. An image's also has its key (photos.ts),
+ * and the page shows the image itself.
+ */
+export type Field = { name: string; value: string; photoKey?: string };
 
 /** What the confirmation page shows of a change (design 6.17). */
 export type ChangePreview = {
@@ -617,6 +628,99 @@ function planSetRecipeArchived(change: z.output<typeof setRecipeArchivedChange>)
 	};
 }
 
+// Images (MEA-276)
+
+// Checked as an image link on Items is (design 7, Item images), but https only.
+const imageUrl = z
+	.string()
+	.trim()
+	.max(2000, 'Keep the link under 2000 characters')
+	.pipe(z.url({ protocol: /^https$/, error: 'Send a link that starts with https://' }))
+	.describe("The image's own https link, to a JPEG, PNG, GIF or WebP, not the page it's on");
+
+function replace(record: 'recipe' | 'item') {
+	return z
+		.boolean()
+		.describe(`true replaces the ${record}'s image; false adds one only to a ${record} without one`);
+}
+
+const setRecipeImageChange = z.object({
+	operation: z.literal('set_recipe_image'),
+	householdId,
+	recipeId,
+	imageUrl,
+	replace: replace('recipe')
+});
+
+const setItemImageChange = z.object({
+	operation: z.literal('set_item_image'),
+	householdId,
+	itemId,
+	imageUrl,
+	replace: replace('item')
+});
+
+/** An image change as a proposal keeps it, with the image its link led to (prepareChange). */
+type Staged<T> = T & { photoKey: string };
+type SetRecipeImageChange = Staged<z.output<typeof setRecipeImageChange>>;
+type SetItemImageChange = Staged<z.output<typeof setItemImageChange>>;
+
+function imageField(photoKey: string | null): Field {
+	return photoKey === null
+		? { name: 'Image', value: 'None' }
+		: { name: 'Image', value: 'An image', photoKey };
+}
+
+/**
+ * Gives the record the change's image with `setPhoto`, which returns the image it replaced, and
+ * refuses to replace one unless the change says to (design 6.17). The refusal undoes it with the
+ * rest of the proposal's changes, since they're made in one transaction.
+ */
+function giveImage(
+	record: string,
+	change: { replace: boolean },
+	setPhoto: () => string | null
+): void {
+	const replaced = setPhoto();
+	if (replaced !== null && !change.replace) {
+		error(400, `${record} already has an image. Send replace: true to replace it.`);
+	}
+}
+
+function planSetRecipeImage(change: SetRecipeImageChange): PlannedChange {
+	const household = inHousehold(change.householdId);
+	const record = `Recipe ${change.recipeId}`;
+	const recipe = lookUp(record, () => getDish(change.householdId, change.recipeId));
+	return {
+		title: recipe.photoKey === null ? 'Add an image to a recipe' : "Replace a recipe's image",
+		...household,
+		record,
+		current: [{ name: 'Name', value: recipe.name }, imageField(recipe.photoKey)],
+		proposed: [{ name: 'Image', value: change.imageUrl, photoKey: change.photoKey }],
+		apply: () =>
+			giveImage(record, change, () =>
+				setDishPhoto(change.householdId, change.recipeId, change.photoKey)
+			)
+	};
+}
+
+function planSetItemImage(change: SetItemImageChange): PlannedChange {
+	const household = inHousehold(change.householdId);
+	const record = `Item ${change.itemId}`;
+	const item = lookUp(record, () => getItem(change.householdId, change.itemId));
+	return {
+		title: item.photoKey === null ? 'Add an image to an item' : "Replace an item's image",
+		...household,
+		record,
+		current: [{ name: 'Name', value: item.name }, imageField(item.photoKey)],
+		proposed: [{ name: 'Image', value: change.imageUrl, photoKey: change.photoKey }],
+		apply: () =>
+			giveImage(record, change, () =>
+				setItemPhoto(change.householdId, change.itemId, change.photoKey)
+			)
+	};
+}
+
 // Dinners
 
 const DATE_LABEL = new Intl.DateTimeFormat('en-US', {
@@ -835,13 +939,42 @@ export const changeSchema = z.discriminatedUnion('operation', [
 	createRecipeChange,
 	updateRecipeChange,
 	setRecipeArchivedChange,
+	setRecipeImageChange,
+	setItemImageChange,
 	saveDinnerChange,
 	clearDinnerChange,
 	completeRequestChange,
 	removeRequestChange
 ]);
 
-export type Change = z.output<typeof changeSchema>;
+/** A change as an assistant sends it. */
+export type ChangeInput = z.output<typeof changeSchema>;
+
+type ImageChangeInput = Extract<ChangeInput, { operation: 'set_recipe_image' | 'set_item_image' }>;
+
+/** Whether the change gives a recipe or an item an image (MEA-276). */
+export function isImageChange(change: ChangeInput): change is ImageChangeInput {
+	return change.operation === 'set_recipe_image' || change.operation === 'set_item_image';
+}
+
+/**
+ * A change as a proposal keeps it. An image change also has the image its link led to, stored
+ * before it was proposed, so the image approved is the one the admin saw.
+ */
+export type Change =
+	| Exclude<ChangeInput, ImageChangeInput>
+	| SetRecipeImageChange
+	| SetItemImageChange;
+
+/**
+ * The change as a proposal keeps it: an image change gets the image its link points at, resized
+ * and stored as a photo (photos.ts) for the admin to see before approving it. Refused (400) as
+ * saveImageFromLink says. Nothing else changes.
+ */
+export async function prepareChange(change: ChangeInput): Promise<Change> {
+	if (!isImageChange(change)) return change;
+	return { ...change, photoKey: await saveImageFromLink(new URL(change.imageUrl)) };
+}
 
 /**
  * Looks the change up in the database as it is now. Not found (404) when a record it names isn't
@@ -873,6 +1006,10 @@ export function planChange(change: Change): PlannedChange {
 			return planUpdateRecipe(change);
 		case 'set_recipe_archived':
 			return planSetRecipeArchived(change);
+		case 'set_recipe_image':
+			return planSetRecipeImage(change);
+		case 'set_item_image':
+			return planSetItemImage(change);
 		case 'save_dinner':
 			return planSaveDinner(change);
 		case 'clear_dinner':

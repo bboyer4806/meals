@@ -6,7 +6,7 @@ import { getHousehold } from '#lib/server/data/households.ts';
 import { getItem, listCatalog, setItemArchived } from '#lib/server/data/items.ts';
 import { id, parseForm } from '#lib/server/forms.ts';
 import { saveItem } from '#lib/server/item-form.ts';
-import { fetchImage } from '#lib/server/photos.ts';
+import { fetchImage, NO_IMAGE } from '#lib/server/photos.ts';
 
 export function load({ locals, url }) {
 	const user = requireHousehold(locals);
@@ -50,9 +50,6 @@ const imageForm = z.object({
 			z.url({ protocol: /^https?$/, error: 'Enter a link that starts with http:// or https://' })
 		)
 });
-
-const NO_IMAGE =
-	"Couldn't get an image from that link. Use the image's own link, not the page it's on.";
 
 export const actions = {
 	// The name, notes and image, saved together.

@@ -5,9 +5,9 @@
 FROM node:26-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS build
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
-# Dependencies don't need install scripts: better-sqlite3 ships prebuilt binaries, and esbuild
-# installs its binary as a regular package. Skipping them also keeps dependency code out of the
-# build step.
+# Dependencies don't need install scripts: better-sqlite3 ships prebuilt binaries, and esbuild and
+# sharp install theirs (sharp's with libvips) as regular packages. Skipping them also keeps
+# dependency code out of the build step.
 RUN npm ci --ignore-scripts
 COPY . .
 # The commit being built, which /healthz answers with (deploy.yml passes it, vite.config.ts reads
