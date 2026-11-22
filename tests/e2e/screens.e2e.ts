@@ -65,7 +65,7 @@ test('screens', async ({ page, db, person }) => {
 	const shot = (name: string) =>
 		page.screenshot({ path: `test-results/screens/${name}.png`, fullPage: true });
 
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await shot('groceries');
 	await page.emulateMedia({ colorScheme: 'dark' });
 	await shot('groceries-dark');
@@ -79,7 +79,7 @@ test('screens', async ({ page, db, person }) => {
 	await page.keyboard.press('Escape');
 	await page.getByText('More', { exact: true }).click();
 	await shot('more');
-	await page.goto('/groceries/items');
+	await open(page, '/groceries/items');
 	await shot('items');
 	await page.getByRole('button', { name: /^Milk/ }).click();
 	await shot('item-sheet');
@@ -182,7 +182,7 @@ test('recipe screens', async ({ page, db, person }) => {
 	await shot('recipe');
 	await page.goto(`/recipes/${cakeId}/edit`);
 	await shot('recipe-editor');
-	await page.goto(`/recipes/${cakeId}/cook?servings=12`);
+	await open(page, `/recipes/${cakeId}/cook?servings=12`);
 	await page.getByRole('checkbox', { name: /Butter, softened/ }).tap();
 	await page.getByRole('checkbox', { name: /^1\. Heat the oven/ }).tap();
 	await shot('cooking');
@@ -302,7 +302,7 @@ test('menu screens', async ({ page, db, person }) => {
 	await page.emulateMedia({ colorScheme: 'light' });
 	await page.goto('/menu');
 	await shot('menu');
-	await page.goto(`/menu/${addDays(sunday, 5)}`);
+	await open(page, `/menu/${addDays(sunday, 5)}`);
 	await shot('dinner');
 	// A sheet as a phone shows it, over the screen, once it has slid up.
 	await page.getByRole('button', { name: 'Copy a dinner' }).click();

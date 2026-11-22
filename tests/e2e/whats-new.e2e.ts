@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, signInAs, test } from './fixtures.ts';
+import { expect, open, signInAs, test } from './fixtures.ts';
 
 // What's new (design 7). 1.18 was released on 2026-11-21, four days after 1.17.
 
@@ -17,7 +17,7 @@ const link = (page: Page) =>
 	page.getByRole('navigation', { name: 'More' }).getByRole('link', { name: /^What's new/ });
 
 test('lists the releases from More, newest first', async ({ page, person: _ }) => {
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await more(page).click();
 	await expect(page.getByRole('navigation', { name: 'More' }).getByRole('link')).toHaveText([
 		'Items',
@@ -209,7 +209,7 @@ test("shows a dot until What's new is opened, on every device", async ({
 	baseURL
 }) => {
 	setCreatedAt(db, person.userId, Date.UTC(2026, 9, 1, 17));
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await expect(more(page).locator('.dot')).toBeVisible();
 	await expect(more(page).getByText('new', { exact: true })).toHaveClass('visually-hidden');
 	await more(page).click();
@@ -229,7 +229,7 @@ test("shows a dot until What's new is opened, on every device", async ({
 	await page.reload();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await more(page).click();
 	await expect(link(page)).toHaveAccessibleName("What's new");
 
@@ -266,7 +266,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 			).lastInsertRowid
 	);
 
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await expect(more(page).locator('.dot')).toBeVisible();
 	await more(page).click();
 	await link(page).click();
@@ -290,7 +290,7 @@ test('shows no dot to someone who joined after the newest release', async ({
 	person
 }) => {
 	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 21, 17));
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
 	await more(page).click();

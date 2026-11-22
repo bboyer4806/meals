@@ -341,7 +341,7 @@ test('plans a week with all four dinner types, with dishes and roles', async ({
 	const [sun, mon, tue, wed] = week as [string, string, string, string];
 
 	// The Menu tab opens this week, with nothing planned yet and today highlighted.
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Menu' }).click();
 	await expect(page).toHaveURL(/\/menu$/);
 	await expect(page.getByRole('heading', { name: 'Menu', level: 1 })).toBeVisible();
@@ -716,7 +716,7 @@ test("opens each dish's recipe at the servings shown, and asks before leaving wi
 	await servings.fill('4');
 
 	// An unsaved note keeps the person on the page when they say so, however they leave.
-	await page.goto(`/menu?week=${date}`);
+	await open(page, `/menu?week=${date}`);
 	await day(page, date).click();
 	const note = page.getByLabel('Note', { exact: true });
 	await note.fill('Use the good butter');
@@ -3563,7 +3563,7 @@ test('removes a request for everyone, keeping its recipe', async ({ page, db, pe
 		const dishId = addRecipe(db, person.householdId, { name });
 		insert.run(person.householdId, person.userId, name, dishId, at);
 	}
-	await page.goto('/menu');
+	await open(page, '/menu');
 	const section = requestsSection(page);
 	await expect(section.getByRole('listitem')).toHaveText([/^Gumbo/, /^Chili/]);
 	await section.getByRole('button', { name: 'Remove Gumbo' }).click();

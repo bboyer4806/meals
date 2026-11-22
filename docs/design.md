@@ -176,7 +176,9 @@ The app stays a single container on Dokku at meals.dev.boyersoftware.com, deploy
 `.github/workflows/deploy.yml` on every push to `main` (E4). Changes:
 
 1. **Checks before deploying.** A check job runs the type check, unit tests and
-   end-to-end tests on pull requests and on pushes to `main`. It builds the Docker image and
+   end-to-end tests on pull requests and on pushes to `main`. First it fails unless
+   `npm run db:generate` finds no schema changes, which catches a change to the schema that
+   has no migration in `drizzle/` (MEA-121). It builds the Docker image and
    runs the end-to-end tests against it, run as production runs it with an empty `DATA_DIR`,
    so a mistake in the image, such as a lower `BODY_SIZE_LIMIT`, fails them (MEA-105). On
    `main`, a push job then pushes that same image, and the deploy job needs the push, so code
@@ -1921,7 +1923,7 @@ ingredients.
 | Two households invite the same person                            | Each invite stands on its own, and the person chooses which household to join when they sign in (6.1, MEA-112).                                    |
 | "Today" is wrong late at night                                   | The household's time zone decides the date.                                                                                                         |
 | The server's disk fails                                          | Everything is lost (Q13). Moving backups off the server is in section 12.                                                                          |
-| A deploy runs migrations while the old version is still serving  | For a few seconds the old version may show errors. Acceptable at this size.                                                                        |
+| A deploy runs migrations while the old version is still serving  | New migrations keep the old version working, and anything that would break it waits for a later deploy (MEA-117).                                   |
 
 ## 12. Not in v1
 

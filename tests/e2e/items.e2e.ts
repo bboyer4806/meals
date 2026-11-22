@@ -16,13 +16,13 @@ import {
 } from './fixtures.ts';
 
 test('renames and archives an item, and asks before adding it again', async ({ page, person: _ }) => {
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	const add = page.getByRole('form', { name: 'Add to the list' });
 	await add.getByRole('combobox', { name: 'Item' }).fill('Dish soap');
 	await add.getByRole('button', { name: 'Add' }).click();
 	await expect(page.getByRole('button', { name: /^Dish soap/ })).toBeVisible();
 
-	await page.goto('/groceries/items');
+	await open(page, '/groceries/items');
 	const dialog = page.getByRole('dialog');
 	// Edits abandoned with the close button don't come back.
 	await page.getByRole('button', { name: /^Dish soap/ }).click();
@@ -42,7 +42,7 @@ test('renames and archives an item, and asks before adding it again', async ({ p
 	await expect(page.getByText('No items.')).toBeVisible();
 
 	// The line on the list keeps working; adding the archived name again asks first.
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await expect(page.getByRole('button', { name: /^Dawn dish soap/ })).toBeVisible();
 	await add.getByRole('combobox', { name: 'Item' }).fill('dawn dish soap');
 	await add.getByRole('button', { name: 'Add' }).click();
@@ -86,7 +86,7 @@ test("keeps an item's Always have when it's saved, without showing it", async ({
 }) => {
 	// The pantry check is hidden (design 6.8), so the Items page leaves Always have as stored.
 	const salt = addItem(db, person.householdId, 'Salt', { alwaysHave: true });
-	await page.goto('/groceries/items');
+	await open(page, '/groceries/items');
 	const row = page.getByRole('button', { name: /^Salt/ });
 	await expect(row).not.toContainText('Always have');
 
@@ -123,7 +123,7 @@ test.describe('on a phone in another time zone', () => {
 		await page.goto('/groceries/items');
 		const row = page.getByRole('button', { name: /^Milk/ });
 		await expect(row).toContainText('Aldi · last bought Fri, Mar 14, 2025 at Aldi');
-		await page.goto('/groceries');
+		await open(page, '/groceries');
 		await page.getByRole('link', { name: 'Items', exact: true }).click();
 		await expect(page).toHaveURL(/\/groceries\/items$/);
 		await expect(row).toContainText('Aldi · last bought Fri, Mar 14, 2025 at Aldi');
@@ -268,7 +268,7 @@ test('adds an image from the device and shows it beside the item throughout Groc
 
 	// On the list, in the add bar's suggestions and in History.
 	const src = `/photos/${key}-thumb.jpg`;
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	const line = page.getByRole('button', { name: /^Milk/ });
 	await expectBeside(line.locator('img'), line.getByText('Milk', { exact: true }), 40);
 	await expect(page.getByRole('button', { name: /^Eggs/ }).locator('img')).toHaveCount(0);

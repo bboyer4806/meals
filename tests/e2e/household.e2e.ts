@@ -23,7 +23,7 @@ test('sets up a household on first sign-in', async ({ page, db, context, baseURL
 	const { userId } = addNewcomer(db, { startInvite: true });
 	await signInAs(db, context, baseURL, userId);
 
-	await page.goto('/groceries');
+	await open(page, '/groceries');
 	await expect(page).toHaveURL(/\/setup$/);
 	await page.getByLabel('Household name').fill('The Robins');
 	await page.getByLabel('Usual number of servings').fill('3');
@@ -393,7 +393,7 @@ test('says where the admin test email went, and stays on Admin', async ({
 });
 
 test('shows the privacy page to anyone, linked from the sign-in page', async ({ page }) => {
-	await page.goto('/login');
+	await open(page, '/login');
 	await page.getByRole('link', { name: 'Privacy' }).click();
 	await expect(page).toHaveURL(/\/privacy$/);
 	await expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible();
