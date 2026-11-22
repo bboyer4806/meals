@@ -559,7 +559,8 @@ and proposals at it, so revoking it deletes them too.
    address carries only which of these it is, as `?error=cancelled`, `failed` or `unverified`,
    so the page never shows text from its address. Someone already signed in, as after Back to
    Google, goes on to Meals instead.
-2. A known Google account is signed in, and its email and name are refreshed.
+2. A known Google account is signed in, and its email and name are refreshed. Signing in never
+   changes its household, so an account without one goes to the setup page.
 3. An unknown account is matched by email against its invites:
    - One invite, to a household: the account joins that household (E5).
    - Invites from more than one household, an invite for a new household, or the
@@ -571,22 +572,30 @@ and proposals at it, so revoking it deletes them too.
    The setup page asks someone signed in without a household which household to join
    (MEA-112). It lists each household that invited them, by name, with Join, and for someone
    with an invite for a new household, or the admin, the form to set one up (household name,
-   usual servings, time zone). Nobody else can set up a household. Joining or setting up a
-   household uses up every invite for their email, from any household. Join on an invite that
-   was cancelled after the page opened says "That invite was cancelled." and shows the
-   invites as they are now. When none is left, the page says there's no invite waiting for
-   their address, with Use another account.
+   usual servings, time zone). Nobody else can set up a household. Invites from several
+   households can wait there at once, and the person joins none of them, not even the first to
+   invite them, until they choose one with Join. Joining or setting up a household uses up
+   every invite for their email: each household's, and the admin's for a new household. Join
+   on an invite that was cancelled after the page opened says "That invite was cancelled." and
+   shows the invites as they are now. When none is left, the page says there's no invite
+   waiting for their address, with Use another account.
 4. Members (all equal; E2) can invite by email, cancel invites, and remove other
    members. Each household's invites stand on their own, so another household's invite to
    the same email never stops one (MEA-112). Inviting fails if the email already belongs to
    a member of any household, if the household already invited it, or if the household
-   already has 20 invites waiting, the most it can have at a time. An invite to someone
-   signed in without a household waits for them on the setup page. A removed member's
-   account and sessions are deleted, and they can be invited again.
-5. The admin invites new households from the Admin page, up to 20 waiting at a time. An
-   invite for a new household lasts until its household is set up. Admin also lists
-   households, each with its members' emails and the emails it invited (MEA-112), and the
-   last backup date. The admin is also a normal member of their own household.
+   already has 20 invites waiting, the most it can have at a time. An account belongs to one
+   household at most, so someone already in one can't be invited to another. Someone signed
+   in without a household isn't a member yet, so they can be invited, and the invite waits for
+   them on the setup page until they join or set up a household, even when it's their only
+   one. A removed member's account and sessions are deleted, and they can be invited again.
+5. The admin invites new households from the Admin page, up to 20 waiting at a time. The
+   admin's invite fails, as a member's does, if the email already belongs to a member of any
+   household or already has an invite for a new household. Someone signed in without a
+   household isn't refused for having an account: the setup page then offers them the form to
+   set one up, along with any households that invited them. An invite for a new household isn't
+   used up at sign-in: it waits until they set up a household or join one. Admin also lists
+   households, each with its members' emails and the emails it invited (MEA-112), and the last
+   backup date. The admin is also a normal member of their own household.
 6. An invite or member that's already gone counts as done (MEA-69). Cancel on an invite that
    was used or cancelled after the page opened, on the Household or Admin page, and Remove on
    a member someone else removed meanwhile, show the page as it is now (6.11). A member removed
