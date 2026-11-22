@@ -1886,7 +1886,7 @@ ingredients.
 | Two households invite the same person                            | Each invite stands on its own, and the person chooses which household to join when they sign in (6.1, MEA-112).                                    |
 | "Today" is wrong late at night                                   | The household's time zone decides the date.                                                                                                         |
 | The server's disk fails                                          | Everything is lost (Q13). Moving backups off the server is in section 12.                                                                          |
-| A deploy runs migrations while the old version is still serving  | For a few seconds the old version may show errors. Acceptable at this size.                                                                        |
+| A deploy runs migrations while the old version is still serving  | New migrations keep the old version working, and anything that would break it waits for a later deploy (MEA-117).                                   |
 
 ## 12. Not in v1
 
