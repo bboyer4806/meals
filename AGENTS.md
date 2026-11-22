@@ -34,6 +34,11 @@ sessions directly; it needs no real Google sign-in or test-only authentication e
 Its startup command uses `rm -rf` and `mkdir`; on Windows, add Git for Windows' `usr/bin`
 to the test process's `PATH`. Keep real data out of `.e2e-data`.
 
+If your change adds a migration, check it against the previous release ([Database](#database))
+before you push. Find where `origin/main` reads and writes each table and column it changes, for
+example with `git grep <name> origin/main`, and confirm each still works after the migration. Say
+in the pull request how the previous release keeps working.
+
 ## The design is the source of truth
 
 - Read the relevant section of `docs/design.md` before changing the behavior it describes.
@@ -90,6 +95,24 @@ column needs its own migration before one that rebuilds its table (such as makin
 optional or adding a check), since drizzle-kit's rebuild copies the new column from the old
 table and fails. The app applies migrations when it starts. Use the existing `transaction()` helper in
 `src/lib/server/db/index.ts` for grouped writes; its immediate lock handles overlapping deploys.
+
+Every new migration must keep the previous release working: the version live when your change
+deploys, normally `main` before your change. That version keeps serving on the migrated database
+until the deploy switches over (design 4.4), or until a later deploy if the new version fails to
+start after migrating. Older versions needn't keep working, and existing migrations stay as they
+are (MEA-117).
+
+- Add new tables, columns and other structures before removing or changing anything the previous
+  release uses. A new column allows NULL or has a default, since the previous release's inserts
+  leave it out, and a new constraint, unique index or trigger accepts every write the previous
+  release makes.
+- Convert data only into values the previous release can still read and handle correctly.
+  Migration 0014, which turned What's new's saved dates into versions, is the kind to avoid
+  (MEA-63).
+- Remove, rename or change something the previous release uses, or convert data into a form it
+  can't handle, only in a later release, once a release that works with the result has deployed
+  (its Deploy run on `main` succeeded). Until then your code works with both forms, including rows
+  the previous release writes after your migration has run.
 
 ## Tests
 
