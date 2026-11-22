@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, open, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.18 was released on 2026-11-21, four days after 1.17.
+// What's new (design 7). 1.19 was released on 2026-11-22, one day after 1.18.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -29,8 +29,8 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.18', '1.17', '1.16', '1.15', '1.14', '1.13', '1.12', '1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
-	const [v118, v117, v116, v115, v114, v113, v112, v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.19', '1.18', '1.17', '1.16', '1.15', '1.14', '1.13', '1.12', '1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
+	const [v119, v118, v117, v116, v115, v114, v113, v112, v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
 		page.locator('section').nth(2),
@@ -48,8 +48,18 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 		page.locator('section').nth(14),
 		page.locator('section').nth(15),
 		page.locator('section').nth(16),
-		page.locator('section').nth(17)
+		page.locator('section').nth(17),
+		page.locator('section').nth(18)
 	];
+	await expect(v119.getByText('Released November 22, 2026')).toBeVisible();
+	await expect(v119.getByRole('listitem')).toHaveText([
+		"The Menu now crosses off the dates of days that have passed, in your household's time zone. Their dinners stay as they were, and you can still open and change them.",
+		"On a day's page on the Menu, a dish whose recipe has a photo now shows it beside its name. Tap the photo to open the recipe.",
+		'After you save a dinner, the Menu now scrolls to show Saved on that dinner, even on a day with several dinners or a long note.',
+		"Inviting someone on Household now emails them your household's name and a link to sign in with Google using the address you entered, so you no longer have to tell them yourself. The site admin's invites to start a household send an email too. If an email can't be sent, the invite is still saved, and Meals says so.",
+		'A connected AI assistant, ChatGPT or Claude, can now propose a photo for a recipe or a grocery item from a link to the image. The admin sees the current and proposed photos before approving, and nothing changes unless they approve.',
+		'When a page fails with an unexpected error, it now shows an Error ID. Include it when you report the problem.'
+	]);
 	await expect(v118.getByText('Released November 21, 2026')).toBeVisible();
 	await expect(v118.getByRole('listitem')).toHaveText([
 		"On More, tap Reports to see your household's habits: Most Frequently Planned Dishes, Most Frequently Purchased Groceries, Most Popular Restaurants, Dinner Breakdown, and Forgotten Favorites, the dishes you've often planned but not lately. Choose Last 30 days, Last 90 days, Last 12 months or All time, and tap a dish to open its recipe or an item to open it on Items.",
@@ -249,14 +259,14 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	browser,
 	baseURL
 }) => {
-	// Two members of the household who joined before 1.18 and have seen 1.17, released four days before.
+	// Two members of the household who joined before 1.19 and have seen 1.18, released one day before.
 	const joined = Date.UTC(2026, 9, 1, 17);
 	setCreatedAt(db, person.userId, joined);
-	db.prepare("update users set whats_new_seen = '1.17' where id = ?").run(person.userId);
+	db.prepare("update users set whats_new_seen = '1.18' where id = ?").run(person.userId);
 	const memberId = Number(
 		db
 			.prepare(
-				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.17')"
+				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.18')"
 			)
 			.run(
 				person.householdId,
@@ -272,7 +282,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	await link(page).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
-	expect(seen(db, person.userId)).toBe('1.18');
+	expect(seen(db, person.userId)).toBe('1.19');
 
 	// Opening it cleared only their own dot.
 	const other = await browser.newContext();
@@ -280,7 +290,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	const phone = await other.newPage();
 	await phone.goto('/groceries');
 	await expect(more(phone).locator('.dot')).toBeVisible();
-	expect(seen(db, memberId)).toBe('1.17');
+	expect(seen(db, memberId)).toBe('1.18');
 	await other.close();
 });
 
@@ -289,7 +299,7 @@ test('shows no dot to someone who joined after the newest release', async ({
 	db,
 	person
 }) => {
-	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 21, 17));
+	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 22, 17));
 	await open(page, '/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
