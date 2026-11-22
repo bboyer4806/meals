@@ -273,6 +273,27 @@ function weekNotes(page: Page) {
 	);
 }
 
+/**
+ * The text crossed off on each of the days. A line through an element runs through everything in
+ * it, so every element on a day counts, the day's own included.
+ */
+function crossedOff(days: Locator) {
+	return days.evaluateAll((rows) =>
+		rows.map((row) =>
+			[row, ...row.querySelectorAll('*')]
+				.filter((element) => getComputedStyle(element).textDecorationLine.includes('line-through'))
+				.map((element) => element.textContent)
+		)
+	);
+}
+
+/** What `crossedOff` gives for the week from `sunday` when today is `now`: each date before it. */
+function pastDates(sunday: string, now = today()): string[][] {
+	return Array.from({ length: 7 }, (_, index) => addDays(sunday, index)).map((date) =>
+		date < now ? [dayLabel(date)] : []
+	);
+}
+
 /** Makes requests that match take a while, as on a slow phone connection. */
 async function slow(page: Page, matches: (url: URL) => boolean, ms: number) {
 	await page.route(matches, async (route) => {
@@ -561,6 +582,98 @@ test('shows the week of any date, and turns away dates that do not exist', async
 		const response = await page.goto(path);
 		expect(response?.status(), path).toBe(404);
 	}
+});
+
+// Each date before today, in the household's time zone, is crossed off, and nothing else on its
+// day is (design 7, Menu; MEA-270).
+test('crosses off each date before today, on every week, and leaves the dinners as they are', async ({
+	page,
+	db,
+	person
+}) => {
+	const tacos = addRecipe(db, person.householdId, { name: 'Chicken tacos' });
+	const now = today();
+	const sunday = sundayOf(now);
+	const yesterday = addDays(now, -1);
+	addDinner(db, person.householdId, yesterday, { note: 'Taco night', dishes: [[tacos, 'main']] });
+	addDinner(db, person.householdId, now, { type: 'leftovers', note: 'Tacos again' });
+	addDinner(db, person.householdId, addDays(now, 1), {
+		type: 'eat_out',
+		restaurantName: 'Pizza Palace'
+	});
+	const weeks = page.getByRole('navigation', { name: 'Weeks' });
+	const days = page.locator('a.day');
+
+	// This week, the dates before today are crossed off, but not today, which still says Today,
+	// or the dates after it.
+	await page.goto('/menu');
+	await expect.poll(() => crossedOff(days)).toEqual(pastDates(sunday));
+	await expect(day(page, now).locator('.today-badge')).toHaveText('Today');
+
+	// Every date the week before is crossed off, and none the week after.
+	await weeks.getByRole('link', { name: 'Previous' }).click();
+	await expect.poll(() => crossedOff(days)).toEqual(pastDates(addDays(sunday, -7)));
+	await weeks.getByRole('link', { name: 'This week' }).click();
+	await expect.poll(() => crossedOff(days)).toEqual(pastDates(sunday));
+	await weeks.getByRole('link', { name: 'Next' }).click();
+	await expect.poll(() => crossedOff(days)).toEqual(pastDates(addDays(sunday, 7)));
+
+	// Yesterday's dinner reads as it did, and opens to be changed as before.
+	await page.goto(`/menu?week=${yesterday}`);
+	await expect(day(page, yesterday).locator('.names')).toHaveText('Chicken tacos');
+	await expect(day(page, yesterday).locator('.note')).toHaveText('Taco night');
+	await day(page, yesterday).click();
+	await expect(page).toHaveURL(new RegExp(`/menu/${yesterday}$`));
+	await page.getByLabel('Note', { exact: true }).fill('Taco night with friends');
+	await saveToWeek(page, yesterday);
+	await expect(day(page, yesterday).locator('.note')).toHaveText('Taco night with friends');
+	await expect.poll(() => crossedOff(days)).toEqual(pastDates(sundayOf(yesterday)));
+
+	// The same dates are crossed off on a computer as on a phone, and neither scrolls sideways.
+	expect(await sideways(page)).toBe(0);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await expect.poll(() => crossedOff(days)).toEqual(pastDates(sundayOf(yesterday)));
+	expect(await sideways(page)).toBe(0);
+});
+
+test.describe('on a phone a day behind the household', () => {
+	// Pago Pago is 25 hours behind Kiritimati, so its date is always a day or two before the date
+	// there, whatever the time.
+	test.use({ timezoneId: 'Pacific/Pago_Pago' });
+
+	test("crosses off the dates before today in the household's time zone, not the phone's", async ({
+		page,
+		db,
+		person
+	}) => {
+		db.prepare("update households set time_zone = 'Pacific/Kiritimati' where id = ?").run(
+			person.householdId
+		);
+		const now = today('Pacific/Kiritimati');
+		const phoneDate = today('Pacific/Pago_Pago');
+		const weeks = page.getByRole('navigation', { name: 'Weeks' });
+		const days = page.locator('a.day');
+
+		// The phone's date has passed where the household is, so it's crossed off, as the server
+		// shows its week and as the phone shows it after going there within the app.
+		await page.goto(`/menu?week=${phoneDate}`);
+		await expect(day(page, phoneDate).locator('.date')).toHaveCSS(
+			'text-decoration-line',
+			'line-through'
+		);
+		await expect.poll(() => crossedOff(days)).toEqual(pastDates(sundayOf(phoneDate), now));
+		await weeks.getByRole('link', { name: 'Previous' }).click();
+		await expect
+			.poll(() => crossedOff(days))
+			.toEqual(pastDates(addDays(sundayOf(phoneDate), -7), now));
+		await weeks.getByRole('link', { name: 'Next' }).click();
+		await expect.poll(() => crossedOff(days)).toEqual(pastDates(sundayOf(phoneDate), now));
+
+		// Today where the household is isn't crossed off, and says Today.
+		await weeks.getByRole('link', { name: 'This week' }).click();
+		await expect(day(page, now).locator('.today-badge')).toHaveText('Today');
+		await expect.poll(() => crossedOff(days)).toEqual(pastDates(sundayOf(now), now));
+	});
 });
 
 // The week shows each dinner's whole note (design 7, Menu; MEA-59).
@@ -5761,6 +5874,8 @@ test.describe('swiping between weeks', () => {
 		await finger.move(-100);
 		await expect.poll(() => offset(wednesday, start)).toBe(-100);
 		await expect(nextWeek).toHaveText(weekDays(next, { [nextTue]: 'Pizza' }));
+		// None of its dates has come yet, so none is crossed off (MEA-270).
+		expect(await crossedOff(nextWeek)).toEqual(pastDates(next));
 		await expect(nextWeek.first()).toBeInViewport();
 		await expect(previousWeek.first()).not.toBeInViewport();
 		// Only the days move, and the page doesn't scroll sideways.
@@ -5771,6 +5886,8 @@ test.describe('swiping between weeks', () => {
 		await finger.move(200);
 		await expect.poll(() => offset(wednesday, start)).toBe(100);
 		await expect(previousWeek).toHaveText(weekDays(previous, { [previousThu]: 'Soup' }));
+		// Each of its dates has passed, so each is crossed off (MEA-270).
+		expect(await crossedOff(previousWeek)).toEqual(pastDates(previous));
 		await expect(previousWeek.first()).toBeInViewport();
 		await expect(nextWeek.first()).not.toBeInViewport();
 		expect(await Promise.all(unmoved.map((section) => section.boundingBox()))).toEqual(boxes);

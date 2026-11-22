@@ -459,12 +459,13 @@
 	<input type="hidden" name="dinnerId" value={move.dinnerId} />
 </form>
 
-<!-- A day's date, with Today, and its dinners or "Not planned". -->
+<!-- A day's date, with Today, and its dinners or "Not planned". A date before today, in the
+     household's time zone, is crossed off (MEA-270); YYYY-MM-DD dates compare as text. -->
 {#snippet dayDetails(day: (typeof data.days)[number])}
 	{@const { dinners } = day}
 	{@const only = dinners.length === 1 ? dinners[0] : undefined}
 	<span class="when">
-		<span class="date">{formatDateLabel(day.date)}</span>
+		<span class="date" class:past={day.date < data.today}>{formatDateLabel(day.date)}</span>
 		{#if day.date === data.today}<span class="today-badge">Today</span>{/if}
 		<!-- A day's only dinner is its row; with more, each dinner has its own line (6.9). -->
 		{@render savedStatus(only !== undefined && saved === String(only.id))}
@@ -821,6 +822,11 @@
 		font-family: var(--font-heading);
 		font-size: 1.15rem;
 		font-weight: 600;
+	}
+
+	/* Only the date: the day's dinners show as they are (design 7, Menu; MEA-270). */
+	.date.past {
+		text-decoration: line-through;
 	}
 
 	.today-badge {
