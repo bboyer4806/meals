@@ -15,7 +15,7 @@ export type Release = {
 export const RELEASES: [Release, ...Release[]] = [
 	{
 		version: '1.19',
-		released: '2026-11-22',
+		released: '2026-11-23',
 		lines: [
 			"The Menu now crosses off the dates of days that have passed, in your household's time zone. Their dinners stay as they were, and you can still open and change them.",
 			"On a day's page on the Menu, a dish whose recipe has a photo now shows it beside its name. Tap the photo to open the recipe.",
