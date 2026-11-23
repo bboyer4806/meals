@@ -14,6 +14,18 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.19',
+		released: '2026-11-22',
+		lines: [
+			"The Menu now crosses off the dates of days that have passed, in your household's time zone. Their dinners stay as they were, and you can still open and change them.",
+			"On a day's page on the Menu, a dish whose recipe has a photo now shows it beside its name. Tap the photo to open the recipe.",
+			'After you save a dinner, the Menu now scrolls to show Saved on that dinner, even on a day with several dinners or a long note.',
+			"Inviting someone on Household now emails them your household's name and a link to sign in with Google using the address you entered, so you no longer have to tell them yourself. The site admin's invites to start a household send an email too. If an email can't be sent, the invite is still saved, and Meals says so.",
+			'A connected AI assistant, ChatGPT or Claude, can now propose a photo for a recipe or a grocery item from a link to the image. The admin sees the current and proposed photos before approving, and nothing changes unless they approve.',
+			'When a page fails with an unexpected error, it now shows an Error ID. Include it when you report the problem.'
+		]
+	},
+	{
 		version: '1.18',
 		released: '2026-11-21',
 		lines: [
