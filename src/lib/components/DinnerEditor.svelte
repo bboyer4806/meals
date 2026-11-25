@@ -22,7 +22,14 @@
 	import { tick } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
-	import { DINNER_TYPES, DINNER_TYPE_LABELS, NO_DISHES, hasDishes, type DinnerType } from '../menu.ts';
+	import {
+		DINNER_TYPES,
+		DINNER_TYPE_LABELS,
+		NO_DISHES,
+		hasDishes,
+		type DinnerType,
+		type Unkept
+	} from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
 	import AddToPartyList from './AddToPartyList.svelte';
 	import ConfirmButton from './ConfirmButton.svelte';
@@ -134,16 +141,26 @@
 	}
 
 	/**
-	 * Asks before something drops what's typed here, a dish name not added included. True when
-	 * nothing is lost or it's agreed.
+	 * What leaving would lose here, a dish name not added included, which the person hasn't agreed
+	 * to lose, or null. The page asks about it once for all the date's dinners (MEA-126).
 	 */
-	export function confirmLeave(): boolean {
-		return details?.confirmLeave() ?? true;
+	export function losing(): Unkept | null {
+		return details?.losing() ?? null;
 	}
 
-	/** Takes back confirmLeave's agreement when what it was for didn't happen. */
+	/** The person agreed to lose what's typed here, so going on with it doesn't ask again. */
+	export function agreeToLose(): void {
+		details?.agreeToLose();
+	}
+
+	/** Takes back agreeToLose when what it was for didn't happen. */
 	export function keepAsking(): void {
 		details?.keepAsking();
+	}
+
+	/** The person is going elsewhere, so a save on its way leaves them there. */
+	export function leaving(): void {
+		details?.leaving();
 	}
 
 	/** Shows the saved dinner again in the details form, dropping what was typed. */

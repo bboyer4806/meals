@@ -4,6 +4,7 @@ import {
 	daysBetween,
 	hasDishes,
 	isDate,
+	leaveQuestion,
 	partyListNameFor,
 	weekDates,
 	weekStart
@@ -73,5 +74,39 @@ describe('party lists', () => {
 	it("start a dinner's new list with its label, or Party without one, and its date (6.15)", () => {
 		expect(partyListNameFor(null, '2026-12-05')).toBe('Party Sat Dec 5');
 		expect(partyListNameFor('Adults', '2027-01-03')).toBe('Adults Sun Jan 3');
+	});
+});
+
+describe('leaving a date', () => {
+	it('asks without saving, or names a dish typed, when no dinner has a label (MEA-127)', () => {
+		const unsaved = { label: null, unsaved: 'note', dish: '' } as const;
+		expect(leaveQuestion([unsaved])).toBe('Leave without saving? What you typed may be lost.');
+		expect(leaveQuestion([{ ...unsaved, unsaved: 'changes', dish: 'Garlic bread' }])).toBe(
+			'Leave without adding Garlic bread? What you typed may be lost.'
+		);
+		// Forms kept for dinners someone cleared, on a date with none left (MEA-256).
+		expect(
+			leaveQuestion([
+				{ ...unsaved, dish: 'Garlic bread' },
+				unsaved,
+				{ ...unsaved, unsaved: null, dish: 'Salsa' }
+			])
+		).toBe('Leave without adding Garlic bread and Salsa? What you typed may be lost.');
+	});
+
+	it('names each dinner with something typed on a date with more than one (MEA-126)', () => {
+		expect(leaveQuestion([{ label: 'Adults', unsaved: 'note', dish: '' }])).toBe(
+			"Adults has a note you haven't saved. Leave anyway?"
+		);
+		expect(
+			leaveQuestion([
+				{ label: 'Kids', unsaved: 'changes', dish: '' },
+				{ label: 'Adults', unsaved: null, dish: 'Garlic bread' },
+				{ label: 'Guests', unsaved: 'note', dish: 'Salsa' }
+			])
+		).toBe(
+			"Kids has changes you haven't saved. Adults has Garlic bread you haven't added. " +
+				"Guests has a note you haven't saved and Salsa you haven't added. Leave anyway?"
+		);
 	});
 });

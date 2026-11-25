@@ -6,7 +6,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
-	import { beforeNavigate, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import {
 		DINNER_LABEL_MAX,
 		DINNER_NOTE_MAX,
@@ -14,7 +14,8 @@
 		appendNote,
 		hasDishes,
 		hasRestaurant,
-		type DinnerType
+		type DinnerType,
+		type Unkept
 	} from '../menu.ts';
 	import { MAX_SERVINGS } from '../recipe-view.ts';
 	import type { Dinner } from '../server/data/dinners.ts';
@@ -147,27 +148,31 @@
 		return typed === null && typedDish === '' ? null : JSON.stringify([typed, typedDish]);
 	}
 
-	// "May", since Back or Forward brings back what was typed (MEA-240).
-	const LEAVE = 'Leave without saving? What you typed may be lost.';
 	// What the person agreed to lose, so going on with it doesn't ask again.
 	let dropped: string | null = null;
 
 	/**
-	 * Asks before something drops what's typed here or in the dish field, as moving the dinner
-	 * does. True when nothing is lost or the person agreed.
+	 * What leaving would lose here or in the dish field, which the person hasn't agreed to lose,
+	 * or null. The date's page asks about it once for all its dinners (MEA-126).
 	 */
-	export function confirmLeave(): boolean {
+	export function losing(): Unkept | null {
 		const typed = unkept();
-		if (typed === null || typed === dropped) return true;
-		// A dish is named, since right after Save, "without saving" would seem not to apply (MEA-127).
-		const question =
-			typedDish === '' ? LEAVE : `Leave without adding ${typedDish}? What you typed may be lost.`;
-		if (!confirm(question)) return false;
-		dropped = typed;
-		return true;
+		if (typed === null || typed === dropped) return null;
+		const fields = Object.keys(typedFields());
+		const noteOnly = fields.length === 1 && fields[0] === 'note';
+		return {
+			label: labeled ? dinner.label : null,
+			unsaved: fields.length === 0 ? null : noteOnly ? 'note' : 'changes',
+			dish: typedDish
+		};
 	}
 
-	/** Takes back confirmLeave's agreement when what it was for didn't happen. */
+	/** The person agreed to lose what's typed here, so going on with it doesn't ask again. */
+	export function agreeToLose(): void {
+		dropped = unkept();
+	}
+
+	/** Takes back agreeToLose when what it was for didn't happen. */
 	export function keepAsking(): void {
 		dropped = null;
 	}
@@ -223,16 +228,10 @@
 	// Set when the person goes elsewhere while a save is on its way, so the save leaves them there.
 	let leftWhileBusy = false;
 
-	beforeNavigate((navigation) => {
-		if (navigation.type !== 'leave') {
-			if (!confirmLeave()) return navigation.cancel();
-			if (busy) leftWhileBusy = true;
-			return;
-		}
-		// Closing the tab or leaving the site: the browser asks.
-		const typed = unkept();
-		if (typed !== null && typed !== dropped) navigation.cancel();
-	});
+	/** The person is going elsewhere, so a save on its way leaves them there. */
+	export function leaving(): void {
+		if (busy) leftWhileBusy = true;
+	}
 
 	let busy = $state(false);
 	let problem = $state('');
