@@ -153,6 +153,21 @@ async function keyboard(page: Page, height: number) {
 }
 
 /**
+ * Moves the visual viewport `down` pixels down the window, or back to its top with 0, as a phone's
+ * browser can while the keyboard is open, to show a focused field it would cover (MEA-277).
+ */
+async function pan(page: Page, down: number) {
+	await page.evaluate((down) => {
+		const viewport = window.visualViewport!;
+		Reflect.deleteProperty(viewport, 'offsetTop');
+		if (down > 0) {
+			Object.defineProperty(viewport, 'offsetTop', { configurable: true, value: down });
+		}
+		viewport.dispatchEvent(new Event('scroll'));
+	}, down);
+}
+
+/**
  * The dish field is clear of the header, and its suggestions end just above `limit` on the screen,
  * with the role and Add between them, in place and uncovered (MEA-238, MEA-265).
  */
@@ -3959,6 +3974,88 @@ test('shows the dish suggestions in the request sheet under the field, with Note
 	await expect(section.getByText('For Sunday, please')).toBeVisible();
 });
 
+test('keeps the dish request sheet above a phone keyboard as it opens, moves, changes size and closes, so Request is tapped with it open (MEA-277)', async ({
+	page,
+	db,
+	person
+}) => {
+	// The size of the phone in the feedback.
+	const screenHeight = 843;
+	await page.setViewportSize({ width: 448, height: screenHeight });
+	await open(page, '/menu');
+	await openRequestSheet(page);
+	const sheet = requestSheet(page);
+	const dish = sheet.getByRole('combobox', { name: 'Dish' });
+	const note = sheet.getByLabel('Note (optional)');
+	const request = sheet.getByRole('button', { name: 'Request', exact: true });
+	await slidUp(sheet);
+	const usual = await edges(sheet);
+	expect(usual.bottom).toBe(screenHeight);
+	await dish.fill('Shrimp boil');
+	await sheet.getByRole('option', { name: 'Add “Shrimp boil” as a new dish' }).tap();
+	await expect(sheet.getByRole('listbox')).toHaveCount(0);
+
+	/** The sheet is open, with what was typed, and Request shows above `limit`, uncovered. */
+	async function expectRequestShownAbove(limit: number, typedNote: string) {
+		await expect(sheet).toBeVisible();
+		await expect(dish).toHaveValue('Shrimp boil');
+		await expect(note).toHaveValue(typedNote);
+		expect((await edges(request)).bottom).toBeLessThan(limit);
+		expect(await uncovered(request)).toBe(true);
+	}
+
+	// The keyboard opens over the bottom of the screen, so the sheet moves up to just above it, as
+	// tall as before, and Note is tapped and typed in with the keyboard still open.
+	await keyboard(page, 330);
+	expect(await edges(sheet)).toEqual({ top: usual.top - 330, bottom: screenHeight - 330 });
+	await expectRequestShownAbove(screenHeight - 330, '');
+	await note.tap();
+	await note.fill('For Sunday, please');
+	await expectRequestShownAbove(screenHeight - 330, 'For Sunday, please');
+
+	// The browser moves the part of the window on screen down, as it can to show a focused field,
+	// and the sheet goes with it, still just above the keyboard. It comes back as that does.
+	await pan(page, 100);
+	expect(await edges(sheet)).toEqual({ top: usual.top - 230, bottom: screenHeight - 230 });
+	await expectRequestShownAbove(screenHeight - 230, 'For Sunday, please');
+	await pan(page, 0);
+	expect(await edges(sheet)).toEqual({ top: usual.top - 330, bottom: screenHeight - 330 });
+
+	// With even less room, Note, being typed in, would be under the end of the shorter sheet, so
+	// the sheet scrolls just far enough to show it above the keyboard.
+	await keyboard(page, 643);
+	const shown = await edges(note);
+	expect(screenHeight - 643 - shown.bottom).toBeGreaterThan(0);
+	expect(screenHeight - 643 - shown.bottom).toBeLessThan(16);
+	expect(shown.top).toBeGreaterThan((await edges(sheet)).top);
+	expect(await uncovered(note)).toBe(true);
+	await expect(note).toBeFocused();
+	await expect(note).toHaveValue('For Sunday, please');
+
+	// Once the keyboard closes, the sheet is back at the bottom of the screen, as it was.
+	await keyboard(page, 0);
+	expect(await edges(sheet)).toEqual(usual);
+	await expectRequestShownAbove(screenHeight, 'For Sunday, please');
+
+	// A taller keyboard, as on a shorter phone, leaves less room than the sheet needs. It takes most
+	// of that room, under a gap at the top of the screen, and what's in it scrolls, so Request is
+	// scrolled to and tapped with the keyboard open.
+	const keyboardTop = screenHeight - 543;
+	await keyboard(page, 543);
+	const tight = await edges(sheet);
+	expect(tight.bottom).toBe(keyboardTop);
+	expect(tight.top).toBeGreaterThan(0);
+	expect(await sheet.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+	await sheet.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+	await expectRequestShownAbove(keyboardTop, 'For Sunday, please');
+	await request.tap();
+	await expect(sheet).toHaveCount(0);
+	const section = requestsSection(page);
+	await expect(section.getByRole('link', { name: 'Shrimp boil' })).toBeVisible();
+	await expect(section.getByText('For Sunday, please')).toBeVisible();
+	expect(dishCount(db, person.householdId)).toBe(1);
+});
+
 test.describe('the dish request sheet on a computer', () => {
 	test.use({ isMobile: false, hasTouch: false, viewport: { width: 1280, height: 800 } });
 
@@ -4010,6 +4107,23 @@ test.describe('the dish request sheet on a computer', () => {
 			`/recipes/${rice}`
 		);
 		await expect(section.getByText('For Sunday, please')).toBeVisible();
+	});
+
+	test('centers the sheet in the window, or in the room above a keyboard on the screen (MEA-277)', async ({
+		page,
+		person: _
+	}) => {
+		await open(page, '/menu');
+		await openRequestSheet(page);
+		const middle = async () => {
+			const { top, bottom } = await edges(requestSheet(page));
+			return (top + bottom) / 2;
+		};
+		expect(await middle()).toBeCloseTo(400, 0);
+		await keyboard(page, 300);
+		expect(await middle()).toBeCloseTo(250, 0);
+		await keyboard(page, 0);
+		expect(await middle()).toBeCloseTo(400, 0);
 	});
 });
 
