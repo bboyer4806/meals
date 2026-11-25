@@ -55,7 +55,9 @@
 				sheetError = problem;
 				return;
 			}
-			await update({ reset: false });
+			// Landing on the action's address would drop ?q= and ?archived= and show every active
+			// item instead (design 7, Items; MEA-131).
+			await update({ navigate: false, reset: false });
 			if (result.type === 'success') open = false;
 		};
 	};

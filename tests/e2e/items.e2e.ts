@@ -103,6 +103,54 @@ test("keeps an item's Always have when it's saved, without showing it", async ({
 	});
 });
 
+test('keeps the search and the archived list after saving, archiving and restoring (MEA-131)', async ({
+	page,
+	db,
+	person
+}) => {
+	for (const name of ['Apples', 'Coffee', 'Decaf coffee']) addItem(db, person.householdId, name);
+	for (const name of ['Bay leaves', 'Saffron']) {
+		const itemId = addItem(db, person.householdId, name);
+		db.prepare('update items set archived_at = ? where id = ?').run(Date.now(), itemId);
+	}
+	const search = page.getByLabel('Search items');
+	const names = page.locator('.list .name');
+	const dialog = page.getByRole('dialog');
+
+	await open(page, '/groceries/items');
+	await search.fill('coff');
+	await expect(page).toHaveURL('/groceries/items?q=coff');
+	await expect(names).toHaveText(['Coffee', 'Decaf coffee']);
+
+	await page.getByRole('button', { name: /^Coffee/ }).click();
+	await dialog.getByLabel('Notes').fill('Whole bean');
+	await dialog.getByRole('button', { name: 'Save' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByRole('button', { name: /^Coffee\s*Whole bean/ })).toBeVisible();
+	await expect(names).toHaveText(['Coffee', 'Decaf coffee']);
+	await expect(search).toHaveValue('coff');
+	await expect(page).toHaveURL('/groceries/items?q=coff');
+
+	await page.getByRole('button', { name: /^Decaf coffee/ }).click();
+	await dialog.getByRole('button', { name: 'Archive' }).click();
+	await dialog.last().getByRole('button', { name: 'Archive' }).click();
+	await expect(names).toHaveText(['Coffee']);
+	await expect(page).toHaveURL('/groceries/items?q=coff');
+
+	// Each restore stays on the archived list, for the next one.
+	await page.getByRole('link', { name: 'Show archived items' }).click();
+	await expect(names).toHaveText(['Bay leaves', 'Decaf coffee', 'Saffron']);
+	await page.getByRole('button', { name: /^Saffron/ }).click();
+	await dialog.getByRole('button', { name: 'Restore' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(names).toHaveText(['Bay leaves', 'Decaf coffee']);
+	await page.getByRole('button', { name: /^Bay leaves/ }).click();
+	await dialog.getByRole('button', { name: 'Restore' }).click();
+	await expect(names).toHaveText(['Decaf coffee']);
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Archived items');
+	await expect(page).toHaveURL('/groceries/items?archived=1');
+});
+
 test.describe('on a phone in another time zone', () => {
 	test.use({ timezoneId: 'Asia/Tokyo' });
 
@@ -446,6 +494,8 @@ test('keeps the image of an archived item, and shows it once restored', async ({
 	await itemRow(page, 'Milk').click();
 	await expect(imageGroup(page).locator('img')).toHaveAttribute('src', `/photos/${key}-thumb.jpg`);
 	await sheet(page).getByRole('button', { name: 'Restore' }).click();
+	await expect(page.getByText('No items.')).toBeVisible();
+	await page.getByRole('link', { name: 'Show active items' }).click();
 	await expect(page.getByRole('heading', { name: 'Items', exact: true })).toBeVisible();
 	await expect(thumb).toHaveAttribute('src', `/photos/${key}-thumb.jpg`);
 	expect(imageKey(db, milk)).toBe(key);
