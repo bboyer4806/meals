@@ -42,7 +42,16 @@
 {/each}
 
 {#if data.more}
-	<a class="button" href="?q={encodeURIComponent(data.search)}&show={data.more}">Show older</a>
+	<!-- The older lines go below, keeping the reader's place, and Back leaves History rather than
+	     stepping through each page. reset="false" is SvelteKit 3's noscroll (section 7, MEA-137). -->
+	<a
+		class="button"
+		href={data.search
+			? `?q=${encodeURIComponent(data.search)}&show=${data.more}`
+			: `?show=${data.more}`}
+		data-sveltekit-replacestate
+		data-sveltekit-reset="false">Show older</a
+	>
 {/if}
 
 <style>
