@@ -1527,12 +1527,21 @@ The file must be UTF-8, as CSV UTF-8 saves it. One that isn't, such as one Excel
 (Comma delimited), which is windows-1252, imports nothing and says "Save the file as CSV UTF-8,
 then import it again." rather than garbling its é, ° and ½ (MEA-71). Another encoding isn't
 guessed, since a wrong guess would garble them without a word.
+After any of these problems, the page empties the file field and says "Nothing was imported. Fix
+these problems, then choose the file again.", since Chromium won't send a file again once it has
+changed, as when it was fixed and saved over, and other browsers may send it as it was (MEA-129).
+An import that breaks on the server says "Something went wrong. Please try again." One that gets
+no answer says "Couldn't reach Meals. Check your connection and try again." (6.11), unless the
+file can't be read anymore: Chromium's request fails the same way when the file changed after it
+was sent, so the page says "The file changed after you chose it. Choose it again." and empties
+the field (MEA-129). Otherwise the file stays for another try.
 A file with no problems whose recipe names are already in
 Recipes (ignoring case, archived included) first lists those recipes, archived ones marked so,
 each with Skip (selected to start), Replace and Rename. Skip leaves the file's recipe out.
 Replace swaps the existing recipe's details for the file's, keeping its name, photo, Tried,
 ratings, dinners and archived state. Rename imports the file's recipe under a name typed there, which no
-recipe or other row may have. The chosen file stays in the form and is sent again with the
+recipe or other row may have; a name that breaks this is a problem, listed with "Fix these
+problems, then import again." The chosen file stays in the form and is sent again with the
 choices; nothing is kept between the two. The file is read first. Then, in one transaction, so
 nothing changes in between, its names are checked against the household's recipes and items,
 read once at the start, and its recipes are saved all at once (MEA-89). Recipes then says what

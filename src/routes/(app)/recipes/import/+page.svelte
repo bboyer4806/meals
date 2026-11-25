@@ -4,18 +4,31 @@
 	import { goto } from '$app/navigation';
 	import { returnOnClick } from '#lib/return-to.ts';
 	import type { Duplicate, DuplicateChoice } from '#lib/server/recipe-import.ts';
+	import { UNREACHABLE, WENT_WRONG } from '#lib/submit.ts';
 
 	// Import recipes (design 7). The chosen file stays in the form, so after the duplicate
-	// choices it's sent again with them. Nothing is kept on the server in between.
+	// choices it's sent again with them. Nothing is kept on the server in between. After problems
+	// with the file, the fixed file is chosen again (MEA-129).
 
-	/** The import's answer: its problems, the duplicates to choose for, or what it imported. */
-	type Outcome = { problems?: string[]; duplicates?: Duplicate[]; summary?: string };
+	/**
+	 * The import's answer: its problems, the duplicates to choose for, or what it imported. For an
+	 * import that got an error, `error` says why it wasn't done.
+	 */
+	type Outcome = {
+		problems?: string[];
+		duplicates?: Duplicate[];
+		summary?: string;
+		error?: string;
+	};
+
+	const CHANGED = 'The file changed after you chose it. Choose it again.';
 
 	let outcome = $state<Outcome | null>(null);
 	let choices = $state<Record<number, DuplicateChoice>>({});
 	let names = $state<Record<number, string>>({});
 	let importing = $state(false);
 	let messageElement = $state<HTMLElement>();
+	let fileInput: HTMLInputElement;
 
 	// Sending the file again needs the page's script, so Import waits for it.
 	let ready = $state(false);
@@ -31,10 +44,36 @@
 		messageElement?.focus();
 	}
 
+	/**
+	 * Whether the file can still be read. Chromium can't read one that changed after it was
+	 * chosen, as when it was fixed and saved over (MEA-129).
+	 */
+	async function readable(file: File): Promise<boolean> {
+		try {
+			await file.slice(0, 1).arrayBuffer();
+			return true;
+		} catch (error) {
+			// What reading throws for a file that changed or went after it was chosen.
+			if (error instanceof DOMException) return false;
+			throw error;
+		}
+	}
+
+	/**
+	 * Why an import that got an error wasn't done (6.11). An error with a status is one Meals
+	 * answered with. Without an answer, the connection dropped, or Chromium wouldn't send the
+	 * file: once it has sent a file, it won't send it again after it changes, and the request
+	 * fails as if the connection had dropped (MEA-129).
+	 */
+	async function errorMessage(status: number | undefined, file: File): Promise<string> {
+		if (status !== undefined) return WENT_WRONG;
+		return (await readable(file)) ? UNREACHABLE : CHANGED;
+	}
+
 	const submit: SubmitFunction<Outcome, Outcome> = ({ cancel }) => {
 		if (importing) return cancel();
 		importing = true;
-		return async ({ result, update }) => {
+		return async ({ formData, result, update }) => {
 			if (result.type === 'redirect') return update();
 			if (result.type === 'success' && result.data?.summary !== undefined) {
 				// Recipes says what was imported. It goes as navigation state, not in the address,
@@ -46,14 +85,17 @@
 					refreshAll: true
 				});
 			}
+			const next: Outcome =
+				result.type === 'error'
+					? { error: await errorMessage(result.status, formData.get('file') as File) }
+					: (result.data as Outcome);
 			importing = false;
-			if (result.type === 'success' || result.type === 'failure') {
-				await show(result.data as Outcome);
-			} else {
-				await show({
-					problems: ["The file couldn't be imported. Check your connection and try again."]
-				});
-			}
+			// Problems with the file are fixed in it, and the file chosen again: Chromium won't send
+			// it again once it has changed, and other browsers may send it as it was (MEA-129).
+			// Problems that come with duplicates are with the names typed for Rename, so the file
+			// stays, to be sent again with the choices. A file that changed is chosen again too.
+			if ((next.problems && !next.duplicates) || next.error === CHANGED) fileInput.value = '';
+			await show(next);
 		};
 	};
 </script>
@@ -74,10 +116,17 @@
 <p><a class="link-tap" href="/recipes/import/template" download>Download template</a></p>
 
 <form method="POST" action="?/import" enctype="multipart/form-data" use:enhance={submit}>
-	{#if outcome?.problems && outcome.problems.length > 0}
+	{#if outcome?.error}
+		<div class="card problems" role="alert">
+			<p tabindex="-1" bind:this={messageElement}>{outcome.error}</p>
+		</div>
+	{:else if outcome?.problems && outcome.problems.length > 0}
 		<div class="card problems" role="alert">
 			<p tabindex="-1" bind:this={messageElement}>
-				<strong>Nothing was imported.</strong> Fix these problems, then import again.
+				<strong>Nothing was imported.</strong>
+				{outcome.duplicates
+					? 'Fix these problems, then import again.'
+					: 'Fix these problems, then choose the file again.'}
 			</p>
 			<ul>
 				{#each outcome.problems as problem (problem)}
@@ -96,6 +145,7 @@
 			type="file"
 			accept=".csv,text/csv"
 			required
+			bind:this={fileInput}
 			onchange={() => (outcome = null)}
 		/>
 	</div>
@@ -183,12 +233,12 @@
 	}
 
 	.problems p {
-		margin: 0 0 0.5rem;
+		margin: 0;
 		scroll-margin-top: 6rem;
 	}
 
 	.problems ul {
-		margin: 0;
+		margin: 0.5rem 0 0;
 		padding-left: 1.25rem;
 	}
 
