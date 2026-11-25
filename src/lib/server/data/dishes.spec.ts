@@ -1245,7 +1245,9 @@ describe('ratings', () => {
 
 describe('households', () => {
 	it("never shows or changes another household's dishes", () => {
-		const id = makeDish(householdId, recipe('Pound cake', { tags: ['Dessert'] }));
+		const butter = ingredient('Butter', 1, 'cup');
+		const id = makeDish(householdId, recipe('Pound cake', { tags: ['Dessert'], ingredients: [butter] }));
+		rateDish(householdId, id, userId, 4);
 		const other = makeHousehold();
 		const all = { search: '', tags: [], archived: false, sort: 'name' as const };
 		expect(listDishes(other.householdId, all)).toEqual([]);
@@ -1271,12 +1273,20 @@ describe('households', () => {
 		expectHttpError(() => setDishTried(other.householdId, id, true), 404);
 		expectHttpError(() => rateDish(other.householdId, id, other.userId, 5), 404);
 		expectHttpError(() => rateDish(other.householdId, id, other.userId, null), 404);
+		// Not even naming the member of this household whose rating it is (4.5).
+		expectHttpError(() => rateDish(other.householdId, id, userId, null), 404);
 		expect(getDish(householdId, id)).toMatchObject({
 			name: 'Pound cake',
 			tried: false,
 			archivedAt: null,
-			photoKey: null
+			photoKey: null,
+			rating: { average: 4, count: 1 },
+			tags: ['Dessert'],
+			ingredients: [{ itemName: 'Butter', amount: 1, unit: 'cup' }]
 		});
+		setDishArchived(householdId, id, true, NOW);
+		expectHttpError(() => setDishArchived(other.householdId, id, false, LATER), 404);
+		expect(getDish(householdId, id).archivedAt).toBe(NOW);
 		expectHttpError(() => getDish(householdId, id + 1000), 404);
 	});
 

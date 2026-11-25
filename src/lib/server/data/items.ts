@@ -190,7 +190,11 @@ export function setItemPhoto(
 ): string | null {
 	return transaction(() => {
 		const previous = getItem(householdId, itemId).photoKey;
-		db().update(items).set({ photoKey }).where(eq(items.id, itemId)).run();
+		db()
+			.update(items)
+			.set({ photoKey })
+			.where(and(eq(items.id, itemId), eq(items.householdId, householdId)))
+			.run();
 		return previous === photoKey ? null : previous;
 	});
 }
@@ -241,7 +245,7 @@ export function setStandardImage(
 		db()
 			.update(items)
 			.set(takes ? { photoKey, standardImageCheckedAt: now } : { standardImageCheckedAt: now })
-			.where(eq(items.id, itemId))
+			.where(and(eq(items.id, itemId), eq(items.householdId, householdId)))
 			.run();
 		return takes;
 	});

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { DishRole } from '../../menu.ts';
 import { foldCase, normalizeName } from '../../text.ts';
 import { db } from '../db/index.ts';
-import { items, partyAllocations } from '../db/schema.ts';
+import { groceryNeeds, items, partyAllocations, partyItems, partyLists } from '../db/schema.ts';
 import {
 	expectHttpError,
 	freshDb,
@@ -182,6 +182,49 @@ describe('party lists', () => {
 				})
 				.run()
 		).toThrow(/FOREIGN KEY/);
+	});
+});
+
+describe("another household's party list", () => {
+	/** The household's party lists, their things and allocations, and its lines, as stored. */
+	function rowsOf(household: number) {
+		return {
+			lists: db().select().from(partyLists).where(eq(partyLists.householdId, household)).all(),
+			things: db().select().from(partyItems).where(eq(partyItems.householdId, household)).all(),
+			allocations: db()
+				.select()
+				.from(partyAllocations)
+				.where(eq(partyAllocations.householdId, household))
+				.all(),
+			lines: db().select().from(groceryNeeds).where(eq(groceryNeeds.householdId, household)).all()
+		};
+	}
+
+	it("can't be renamed, changed, checked off or deleted, and stays as it was (4.5)", () => {
+		const other = makeHousehold(TZ).householdId;
+		const list = createPartyList(other, 'Cookout', NOON);
+		addPartyItem(other, list, { itemName: 'Chips', quantity: 2, unit: 'bags' }, NOON);
+		addPartyItem(other, list, { itemName: 'Soda', quantity: 6, unit: null }, NOON);
+		const [chips, soda] = getPartyList(other, list).items;
+		if (!chips || !soda) throw new Error('Expected Chips and Soda');
+		addToGroceries(other, list, [chips.id], NOON);
+		markBought(other, list, soda.id, undefined, NOON);
+		const [line] = listActiveLines(other, TZ, NOON);
+		if (!line) throw new Error('Expected the line for the chips');
+		const before = rowsOf(other);
+
+		expectHttpError(() => renamePartyList(householdId, list, 'Mine'), 404);
+		expectHttpError(() => setPartyItemQuantity(householdId, list, chips.id, 1, NOON), 404);
+		expectHttpError(() => markBought(householdId, list, chips.id, walmart, NOON), 404);
+		expectHttpError(() => unmarkBought(householdId, list, soda.id, NOON), 404);
+		expectHttpError(() => removePartyItem(householdId, list, chips.id), 404);
+		expectHttpError(() => deletePartyList(householdId, list), 404);
+		// Nor through its line on Groceries, which holds the chips' allocation (6.15).
+		const changes = { quantity: 1, unit: null, storeId: null, note: null };
+		expectHttpError(() => updateLine(householdId, line.id, changes), 404);
+		expectHttpError(() => markGotFewer(householdId, line.id, 1, walmart, NOON), 404);
+		expectHttpError(() => deleteLine(householdId, line.id), 404);
+		expect(rowsOf(other)).toEqual(before);
 	});
 });
 

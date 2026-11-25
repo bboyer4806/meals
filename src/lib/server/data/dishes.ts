@@ -196,7 +196,11 @@ export function dishesWithoutPhoto(householdId: number, names: readonly string[]
 export function setDishPhotoIfNone(householdId: number, dishId: number, photoKey: string): boolean {
 	return transaction(() => {
 		if (findDish(householdId, dishId).photoKey !== null) return false;
-		db().update(dishes).set({ photoKey }).where(eq(dishes.id, dishId)).run();
+		db()
+			.update(dishes)
+			.set({ photoKey })
+			.where(and(eq(dishes.id, dishId), eq(dishes.householdId, householdId)))
+			.run();
 		return true;
 	});
 }
@@ -213,7 +217,11 @@ export function setDishPhoto(
 ): string | null {
 	return transaction(() => {
 		const previous = findDish(householdId, dishId).photoKey;
-		db().update(dishes).set({ photoKey }).where(eq(dishes.id, dishId)).run();
+		db()
+			.update(dishes)
+			.set({ photoKey })
+			.where(and(eq(dishes.id, dishId), eq(dishes.householdId, householdId)))
+			.run();
 		return previous === photoKey ? null : previous;
 	});
 }
@@ -287,14 +295,26 @@ function dishFields(input: DishInput, photo: PhotoChange) {
 }
 
 /** Writes an existing dish's new fields and removes its tags and ingredients, for new ones. */
-function rewriteDish(dishId: number, input: DishInput, photo: PhotoChange, now: number): void {
+function rewriteDish(
+	householdId: number,
+	dishId: number,
+	input: DishInput,
+	photo: PhotoChange,
+	now: number
+): void {
 	db()
 		.update(dishes)
 		.set({ ...dishFields(input, photo), updatedAt: now })
-		.where(eq(dishes.id, dishId))
+		.where(and(eq(dishes.id, dishId), eq(dishes.householdId, householdId)))
 		.run();
-	db().delete(dishTags).where(eq(dishTags.dishId, dishId)).run();
-	db().delete(dishIngredients).where(eq(dishIngredients.dishId, dishId)).run();
+	db()
+		.delete(dishTags)
+		.where(and(eq(dishTags.dishId, dishId), eq(dishTags.householdId, householdId)))
+		.run();
+	db()
+		.delete(dishIngredients)
+		.where(and(eq(dishIngredients.dishId, dishId), eq(dishIngredients.householdId, householdId)))
+		.run();
 }
 
 /**
@@ -367,7 +387,7 @@ function save(
 			.get().id;
 	} else {
 		id = dishId;
-		rewriteDish(id, input, photo, now);
+		rewriteDish(householdId, id, input, photo, now);
 	}
 
 	const tags = tagRows(householdId, id, input.tags);
@@ -497,7 +517,7 @@ export function importDishes(
 		for (const { dishId, input } of recipes) {
 			if (dishId === null) continue;
 			findDish(householdId, dishId);
-			rewriteDish(dishId, input, 'keep', now);
+			rewriteDish(householdId, dishId, input, 'keep', now);
 		}
 		const newInputs = recipes.filter(({ dishId }) => dishId === null).map(({ input }) => input);
 		const added = addDishes(householdId, newInputs, now);
@@ -527,14 +547,18 @@ export function setDishArchived(
 	db()
 		.update(dishes)
 		.set({ archivedAt: archived ? now : null })
-		.where(eq(dishes.id, dishId))
+		.where(and(eq(dishes.id, dishId), eq(dishes.householdId, householdId)))
 		.run();
 }
 
 /** Shared by the household; the last change wins (section 7, "Recipe"; 6.11). */
 export function setDishTried(householdId: number, dishId: number, tried: boolean): void {
 	findDish(householdId, dishId);
-	db().update(dishes).set({ tried }).where(eq(dishes.id, dishId)).run();
+	db()
+		.update(dishes)
+		.set({ tried })
+		.where(and(eq(dishes.id, dishId), eq(dishes.householdId, householdId)))
+		.run();
 }
 
 /**
@@ -553,7 +577,13 @@ export function rateDish(
 		if (stars === null) {
 			db()
 				.delete(dishRatings)
-				.where(and(eq(dishRatings.dishId, dishId), eq(dishRatings.userId, userId)))
+				.where(
+					and(
+						eq(dishRatings.dishId, dishId),
+						eq(dishRatings.userId, userId),
+						eq(dishRatings.householdId, householdId)
+					)
+				)
 				.run();
 		} else {
 			db()

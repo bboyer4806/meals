@@ -15,6 +15,8 @@ import {
 } from '../testing.ts';
 import {
 	addDinnerDish,
+	addEatingOut,
+	addRequestedDish,
 	clearDinner,
 	copyDinner,
 	dishSuggestions,
@@ -1281,6 +1283,81 @@ describe('copying a dinner', () => {
 	it('refuses a date that is not one', () => {
 		expectHttpError(() => copyOnto('2026-9-30', potluck, NOW), 400);
 		expect(db().select().from(dinners).all()).toHaveLength(1);
+	});
+});
+
+describe("another household's dinner", () => {
+	let lasagna: number;
+	let theirs: number;
+
+	beforeEach(() => {
+		lasagna = makeDish(otherId, recipe('Lasagna'));
+		const bread = makeDish(otherId, recipe('Bread'));
+		const dishes: [number, DishRole][] = [
+			[lasagna, 'main'],
+			[bread, 'side']
+		];
+		theirs = makeDinner(otherId, TODAY, { note: 'Theirs', servings: 2, dishes }, NOW);
+		makeDinner(householdId, TODAY, { dishes: [[tacos, 'main']] }, NOW);
+	});
+
+	/** The other household's dinners and their dishes, as stored. */
+	function theirMenu() {
+		return {
+			dinners: db().select().from(dinners).where(eq(dinners.householdId, otherId)).all(),
+			dishes: db().select().from(dinnerDishes).where(eq(dinnerDishes.householdId, otherId)).all()
+		};
+	}
+
+	it("can't be changed by its id, and stays as it was (4.5)", () => {
+		const before = theirMenu();
+		const fields = {
+			label: 'Late',
+			type: 'eat_out' as const,
+			restaurantName: 'Diner',
+			note: 'Ours',
+			servings: 5
+		};
+		const requested = { dishId: rice, note: 'Please' };
+		makeDinner(householdId, '2026-10-01', { dishes: [[rice, 'main']] });
+
+		// The date's dinner here isn't the one these name, so they're refused as a page showing the
+		// date otherwise would be (6.11).
+		expectHttpError(() => saveDinner(householdId, TODAY, theirs, fields, LATER), 400);
+		expectHttpError(() => clearDinner(householdId, TODAY, theirs, LATER), 400);
+		expectHttpError(() => moveDinners(householdId, TODAY, TOMORROW, theirs, LATER), 400);
+		expectHttpError(() => copyDinner(householdId, TODAY, theirs, [rice], LATER), 400);
+		expectHttpError(
+			() => addDinnerDish(householdId, TODAY, theirs, { id: rice }, 'side', LATER),
+			400
+		);
+		expectHttpError(
+			() => restoreAndAddDinnerDish(householdId, TODAY, theirs, rice, 'side', LATER),
+			400
+		);
+		expectHttpError(
+			() => addRequestedDish(householdId, TODAY, { dinnerId: theirs }, requested, LATER),
+			400
+		);
+		expectHttpError(
+			() => setDinnerDishRole(householdId, TODAY, theirs, lasagna, 'side', LATER),
+			404
+		);
+		expectHttpError(() => removeDinnerDish(householdId, TODAY, theirs, lasagna, LATER), 404);
+		expect(theirMenu()).toEqual(before);
+	});
+
+	it('stays as it was when this household adds dinners on its date (4.5)', () => {
+		const before = theirMenu();
+		addDinner(householdId, TODAY, { first: 'Early', added: 'Late' }, LATER);
+		const eatingOut = { restaurantName: 'Diner', note: null };
+		addEatingOut(householdId, TODAY, { first: null, added: 'Out' }, eatingOut, LATER);
+		expect(getDay(householdId, TODAY).map((dinner) => dinner.label)).toEqual([
+			'Early',
+			'Late',
+			'Out'
+		]);
+		expect(theirMenu()).toEqual(before);
 	});
 });
 
