@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
@@ -6,6 +7,27 @@
 	import { keepPage, problemIn } from '#lib/submit.ts';
 
 	let { data, form } = $props();
+
+	/** The household's settings as they're saved. */
+	function savedSettings() {
+		const { name, defaultServings, timeZone } = data.household;
+		return { name, defaultServings, timeZone };
+	}
+
+	// The settings fields are bound to state here, copied from the page's data once and again only
+	// after a successful Save, so what's typed survives the data reloading when someone comes back
+	// to the tab or adds a store (Q11, MEA-130), as in the recipe editor. (A field with value={...}
+	// instead is set back to what's saved whenever the data reloads.) The servings field puts a
+	// number back in, or null when it's emptied.
+	let settings = $state<{ name: string; defaultServings: number | null; timeZone: string }>(
+		untrack(savedSettings)
+	);
+
+	// Once saved, the fields show the settings as saved, such as the name without extra spaces.
+	const saveSettings: SubmitFunction = () => async ({ result, update }) => {
+		await update({ reset: false });
+		if (result.type === 'success') settings = savedSettings();
+	};
 
 	const activeStores = $derived(data.stores.filter((store) => store.archivedAt === null));
 	const archivedStores = $derived(data.stores.filter((store) => store.archivedAt !== null));
@@ -47,13 +69,13 @@
 	<form
 		method="POST"
 		action="?/settings"
-		use:enhance={send('settings', () => ({ update }) => update({ reset: false }))}
+		use:enhance={send('settings', saveSettings)}
 	>
 		{#if messageFor('settings')?.error}<p class="error" role="alert">{form?.error}</p>{/if}
 		{#if messageFor('settings')?.message}<p role="status">{form?.message}</p>{/if}
 		<div class="field">
 			<label for="name">Household name</label>
-			<input id="name" name="name" required maxlength="60" value={data.household.name} />
+			<input id="name" name="name" required maxlength="60" bind:value={settings.name} />
 		</div>
 		<div class="field">
 			<label for="defaultServings">Usual number of servings</label>
@@ -65,12 +87,12 @@
 				min="1"
 				max="50"
 				required
-				value={data.household.defaultServings}
+				bind:value={settings.defaultServings}
 			/>
 		</div>
 		<div class="field">
 			<label for="timeZone">Time zone</label>
-			<TimeZoneSelect timeZones={data.timeZones} value={data.household.timeZone} />
+			<TimeZoneSelect timeZones={data.timeZones} bind:value={settings.timeZone} />
 		</div>
 		<button class="primary">Save</button>
 	</form>
