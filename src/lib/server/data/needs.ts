@@ -13,7 +13,14 @@ import {
 	stores,
 	type NeedStatus
 } from '../db/schema.ts';
-import { createItem, findItemByName, getItem, setDefaultStore, type Item } from './items.ts';
+import {
+	createItem,
+	findItemByName,
+	getItem,
+	setDefaultStore,
+	setItemArchived,
+	type Item
+} from './items.ts';
 import { getStore, requireActiveStore } from './stores.ts';
 
 // The rules in this file are design sections 6.2 to 6.4, and how grocery lines keep the party
@@ -76,19 +83,31 @@ function allocationsOn(needId: number): LineAllocation[] {
  * unit the line's no longer converts to comes off it, and when they come to more than the line,
  * the oldest keep theirs and the newest give way.
  */
-function fitAllocations(needId: number, quantity: number, unit: string | null): void {
+function fitAllocations(
+	householdId: number,
+	needId: number,
+	quantity: number,
+	unit: string | null
+): void {
 	let room = quantity;
 	for (const allocation of allocationsOn(needId)) {
 		const factor = conversionFactor(allocation.partyUnit, unit);
 		if (factor === undefined || room <= TOLERANCE) {
-			db().delete(partyAllocations).where(eq(partyAllocations.id, allocation.id)).run();
+			db()
+				.delete(partyAllocations)
+				.where(
+					and(eq(partyAllocations.id, allocation.id), eq(partyAllocations.householdId, householdId))
+				)
+				.run();
 		} else if (allocation.quantity * factor <= room + TOLERANCE) {
 			room -= allocation.quantity * factor;
 		} else {
 			db()
 				.update(partyAllocations)
 				.set({ quantity: room / factor })
-				.where(eq(partyAllocations.id, allocation.id))
+				.where(
+					and(eq(partyAllocations.id, allocation.id), eq(partyAllocations.householdId, householdId))
+				)
 				.run();
 			room = 0;
 		}
@@ -115,7 +134,9 @@ function receiveAllocations(
 			db()
 				.update(partyAllocations)
 				.set({ needId: receivedId })
-				.where(eq(partyAllocations.id, allocation.id))
+				.where(
+					and(eq(partyAllocations.id, allocation.id), eq(partyAllocations.householdId, householdId))
+				)
 				.run();
 			left -= share;
 		} else {
@@ -127,7 +148,9 @@ function receiveAllocations(
 			db()
 				.update(partyAllocations)
 				.set({ quantity: allocation.quantity - part })
-				.where(eq(partyAllocations.id, allocation.id))
+				.where(
+					and(eq(partyAllocations.id, allocation.id), eq(partyAllocations.householdId, householdId))
+				)
 				.run();
 			left = 0;
 		}
@@ -268,7 +291,7 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 		let item = findItemByName(householdId, name);
 		if (item && item.archivedAt !== null) {
 			if (input.resolution !== 'restore') return { kind: 'archived', itemName: item.name };
-			db().update(items).set({ archivedAt: null }).where(eq(items.id, item.id)).run();
+			setItemArchived(householdId, item.id, false, now);
 		}
 		item ??= createItem(householdId, name, now);
 
@@ -289,9 +312,9 @@ export function addNeed(householdId: number, input: AddInput, now: number): AddR
 				db()
 					.update(groceryNeeds)
 					.set({ quantity: input.quantity, unit: input.unit })
-					.where(eq(groceryNeeds.id, toOrder.id))
+					.where(and(eq(groceryNeeds.id, toOrder.id), eq(groceryNeeds.householdId, householdId)))
 					.run();
-				fitAllocations(toOrder.id, input.quantity, input.unit);
+				fitAllocations(householdId, toOrder.id, input.quantity, input.unit);
 				return { kind: 'updated' };
 			}
 			// The same unit, however it's spelled, suggests the sum in the line's unit (6.4, MEA-93).
@@ -380,7 +403,7 @@ export function markOrdered(
 		db()
 			.update(groceryNeeds)
 			.set({ status: 'ordered', storeId: store, orderedAt: now })
-			.where(eq(groceryNeeds.id, needId))
+			.where(and(eq(groceryNeeds.id, needId), eq(groceryNeeds.householdId, householdId)))
 			.run();
 		setDefaultStore(householdId, line.itemId, store);
 	});
@@ -404,7 +427,7 @@ export function markReceived(
 				receivedAt: now,
 				...replacedByReceiving(householdId, line)
 			})
-			.where(eq(groceryNeeds.id, needId))
+			.where(and(eq(groceryNeeds.id, needId), eq(groceryNeeds.householdId, householdId)))
 			.run();
 		if (line.status === 'to_order') setDefaultStore(householdId, line.itemId, store);
 	});
@@ -479,7 +502,7 @@ export function markDidntCome(householdId: number, needId: number): void {
 	db()
 		.update(groceryNeeds)
 		.set({ status: 'to_order', orderedAt: null })
-		.where(eq(groceryNeeds.id, needId))
+		.where(and(eq(groceryNeeds.id, needId), eq(groceryNeeds.householdId, householdId)))
 		.run();
 }
 
@@ -533,7 +556,7 @@ export function markGotFewer(
 				status: 'to_order',
 				orderedAt: null
 			})
-			.where(eq(groceryNeeds.id, needId))
+			.where(and(eq(groceryNeeds.id, needId), eq(groceryNeeds.householdId, householdId)))
 			.run();
 		if (line.status === 'to_order') setDefaultStore(householdId, line.itemId, store);
 	});
@@ -573,7 +596,7 @@ export function undoReceived(
 				storeBeforeReceived: null,
 				defaultStoreBeforeReceived: null
 			})
-			.where(eq(groceryNeeds.id, needId))
+			.where(and(eq(groceryNeeds.id, needId), eq(groceryNeeds.householdId, householdId)))
 			.run();
 		// Only receiving a line that was To Order changed the default store (6.3).
 		const defaultStoreId = getItem(householdId, line.itemId).defaultStoreId;
@@ -600,8 +623,12 @@ export function updateLine(householdId: number, needId: number, changes: LineCha
 		if (changes.storeId !== null && changes.storeId !== line.storeId) {
 			requireActiveStore(householdId, changes.storeId);
 		}
-		db().update(groceryNeeds).set(changes).where(eq(groceryNeeds.id, needId)).run();
-		fitAllocations(needId, changes.quantity, changes.unit);
+		db()
+			.update(groceryNeeds)
+			.set(changes)
+			.where(and(eq(groceryNeeds.id, needId), eq(groceryNeeds.householdId, householdId)))
+			.run();
+		fitAllocations(householdId, needId, changes.quantity, changes.unit);
 	});
 }
 
@@ -622,5 +649,8 @@ export function withLineChanges(
 export function deleteLine(householdId: number, needId: number): void {
 	const line = getLine(householdId, needId);
 	if (line.status === 'received') error(400, 'Received lines are kept as history');
-	db().delete(groceryNeeds).where(eq(groceryNeeds.id, needId)).run();
+	db()
+		.delete(groceryNeeds)
+		.where(and(eq(groceryNeeds.id, needId), eq(groceryNeeds.householdId, householdId)))
+		.run();
 }

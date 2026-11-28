@@ -21,7 +21,7 @@ import { MAX_SERVINGS } from '../../recipe-view.ts';
 import { foldCase, normalizeName } from '../../text.ts';
 import { db, transaction } from '../db/index.ts';
 import { dinnerDishes, dinners, dishes } from '../db/schema.ts';
-import { findDishByName, insertDish } from './dishes.ts';
+import { findDishByName, insertDish, setDishArchived } from './dishes.ts';
 import { getHousehold } from './households.ts';
 
 // The menu: a date's dinners (up to 5, labeled when there's more than one), their dishes and
@@ -175,8 +175,12 @@ function insertDinner(householdId: number, date: string, type: DinnerType, now: 
 		.get().id;
 }
 
-function touch(dinnerId: number, now: number): void {
-	db().update(dinners).set({ updatedAt: now }).where(eq(dinners.id, dinnerId)).run();
+function touch(householdId: number, dinnerId: number, now: number): void {
+	db()
+		.update(dinners)
+		.set({ updatedAt: now })
+		.where(and(eq(dinners.id, dinnerId), eq(dinners.householdId, householdId)))
+		.run();
 }
 
 /** Dishes on the dinners that `where` picks, in the order they were added. */
@@ -309,10 +313,13 @@ export function saveDinner(
 				servings: fields.servings,
 				updatedAt: now
 			})
-			.where(eq(dinners.id, dinner.id))
+			.where(and(eq(dinners.id, dinner.id), eq(dinners.householdId, householdId)))
 			.run();
 		if (!hasDishes(fields.type)) {
-			db().delete(dinnerDishes).where(eq(dinnerDishes.dinnerId, dinner.id)).run();
+			db()
+				.delete(dinnerDishes)
+				.where(and(eq(dinnerDishes.dinnerId, dinner.id), eq(dinnerDishes.householdId, householdId)))
+				.run();
 		}
 		return dinner.id;
 	});
@@ -342,12 +349,20 @@ export function addDinner(
 		const first = day[0];
 		if (day.length === 1 && first) {
 			const label = checkLabel(labels.first, count, []);
-			db().update(dinners).set({ label, updatedAt: now }).where(eq(dinners.id, first.id)).run();
+			db()
+				.update(dinners)
+				.set({ label, updatedAt: now })
+				.where(and(eq(dinners.id, first.id), eq(dinners.householdId, householdId)))
+				.run();
 		}
 		const others = dinnersOn(householdId, date).map((other) => other.label);
 		const label = checkLabel(labels.added, count, others);
 		const dinnerId = insertDinner(householdId, date, 'cook', now);
-		db().update(dinners).set({ label }).where(eq(dinners.id, dinnerId)).run();
+		db()
+			.update(dinners)
+			.set({ label })
+			.where(and(eq(dinners.id, dinnerId), eq(dinners.householdId, householdId)))
+			.run();
 		return dinnerId;
 	});
 }
@@ -386,7 +401,7 @@ export function addEatingOut(
 		db()
 			.update(dinners)
 			.set({ type: 'eat_out', restaurantName: fields.restaurantName, note: fields.note })
-			.where(eq(dinners.id, dinnerId))
+			.where(and(eq(dinners.id, dinnerId), eq(dinners.householdId, householdId)))
 			.run();
 		return dinnerId;
 	});
@@ -444,7 +459,7 @@ function insertDinnerDish(
 ): number {
 	const dinnerId = dinner?.id ?? insertDinner(householdId, date, 'cook', now);
 	db().insert(dinnerDishes).values({ householdId, dinnerId, dishId, role }).run();
-	touch(dinnerId, now);
+	touch(householdId, dinnerId, now);
 	return dinnerId;
 }
 
@@ -504,9 +519,7 @@ export function restoreAndAddDinnerDish(
 	transaction(() => {
 		const found = findDish(householdId, dishId);
 		const dinner = dinnerForDish(householdId, date, dinnerId, found);
-		if (found.archivedAt !== null) {
-			db().update(dishes).set({ archivedAt: null }).where(eq(dishes.id, found.id)).run();
-		}
+		if (found.archivedAt !== null) setDishArchived(householdId, found.id, false, now);
 		insertDinnerDish(householdId, date, dinner, found.id, role, now);
 	});
 }
@@ -578,7 +591,13 @@ export function addRequestedDish(
 		}
 		const role = defaultRole(dinner?.dishes.length ?? 0);
 		const dinnerId = insertDinnerDish(householdId, date, dinner, dish.id, role, now);
-		if (note !== null) db().update(dinners).set({ note }).where(eq(dinners.id, dinnerId)).run();
+		if (note !== null) {
+			db()
+				.update(dinners)
+				.set({ note })
+				.where(and(eq(dinners.id, dinnerId), eq(dinners.householdId, householdId)))
+				.run();
+		}
 		return dinnerId;
 	});
 }
@@ -596,10 +615,16 @@ export function setDinnerDishRole(
 		const result = db()
 			.update(dinnerDishes)
 			.set({ role })
-			.where(and(eq(dinnerDishes.dinnerId, dinner.id), eq(dinnerDishes.dishId, dishId)))
+			.where(
+				and(
+					eq(dinnerDishes.dinnerId, dinner.id),
+					eq(dinnerDishes.dishId, dishId),
+					eq(dinnerDishes.householdId, householdId)
+				)
+			)
 			.run();
 		if (result.changes === 0) error(404, 'Not found');
-		touch(dinner.id, now);
+		touch(householdId, dinner.id, now);
 	});
 }
 
@@ -614,10 +639,16 @@ export function removeDinnerDish(
 		const dinner = requireDinner(householdId, date, dinnerId);
 		const result = db()
 			.delete(dinnerDishes)
-			.where(and(eq(dinnerDishes.dinnerId, dinner.id), eq(dinnerDishes.dishId, dishId)))
+			.where(
+				and(
+					eq(dinnerDishes.dinnerId, dinner.id),
+					eq(dinnerDishes.dishId, dishId),
+					eq(dinnerDishes.householdId, householdId)
+				)
+			)
 			.run();
 		if (result.changes === 0) error(404, 'Not found');
-		touch(dinner.id, now);
+		touch(householdId, dinner.id, now);
 	});
 }
 
@@ -635,14 +666,17 @@ export function clearDinner(
 		const dinner = shownDinner(householdId, date, dinnerId);
 		if (!dinner) return;
 		// Its dinner_dishes go with it (on delete cascade).
-		db().delete(dinners).where(eq(dinners.id, dinner.id)).run();
+		db()
+			.delete(dinners)
+			.where(and(eq(dinners.id, dinner.id), eq(dinners.householdId, householdId)))
+			.run();
 		const day = dinnersOn(householdId, date);
 		const last = day[0];
 		if (day.length === 1 && last) {
 			db()
 				.update(dinners)
 				.set({ label: null, updatedAt: now })
-				.where(eq(dinners.id, last.id))
+				.where(and(eq(dinners.id, last.id), eq(dinners.householdId, householdId)))
 				.run();
 		}
 	});
@@ -667,7 +701,11 @@ export function moveDinners(
 		const moving = dinnersOn(householdId, from).map((dinner) => dinner.id);
 		const other = dinnersOn(householdId, to).map((dinner) => dinner.id);
 		const moveTo = (ids: number[], date: string) =>
-			db().update(dinners).set({ date, updatedAt: now }).where(inArray(dinners.id, ids)).run();
+			db()
+				.update(dinners)
+				.set({ date, updatedAt: now })
+				.where(and(inArray(dinners.id, ids), eq(dinners.householdId, householdId)))
+				.run();
 		moveTo(moving, to);
 		moveTo(other, from);
 	});
@@ -782,14 +820,17 @@ export function copyDinner(
 		let targetId: number;
 		if (target) {
 			targetId = target.id;
-			db().delete(dinnerDishes).where(eq(dinnerDishes.dinnerId, targetId)).run();
+			db()
+				.delete(dinnerDishes)
+				.where(and(eq(dinnerDishes.dinnerId, targetId), eq(dinnerDishes.householdId, householdId)))
+				.run();
 		} else {
 			targetId = insertDinner(householdId, date, source.type, now);
 		}
 		db()
 			.update(dinners)
 			.set({ type: source.type, restaurantName: null, updatedAt: now })
-			.where(eq(dinners.id, targetId))
+			.where(and(eq(dinners.id, targetId), eq(dinners.householdId, householdId)))
 			.run();
 		// Inserted in display order, so the copy lists them the same way.
 		const rows = source.dishes
