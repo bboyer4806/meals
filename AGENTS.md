@@ -30,7 +30,10 @@ CI runs the browser tests against the Docker image it builds, which `E2E_IMAGE` 
 [Checks](README.md#checks) shows; elsewhere, run them as above and report the image run as blocked.
 Fix regressions caused by your change; report unrelated baseline failures and blocked checks.
 Install browser-test Chromium with `npx playwright install chromium`, or set
-`PW_CHROMIUM_PATH` to an existing compatible Chromium (see `playwright.config.ts`).
+`PW_CHROMIUM_PATH` (see `playwright.config.ts`) to an existing compatible Chromium headless
+shell executable (`chrome-headless-shell`), the build CI runs the browser tests in. Don't use
+the full Chromium build (`chrome`): it can fail week-swipe tests in `tests/e2e/menu.e2e.ts`
+that pass in CI, misleading failures your change didn't cause.
 The browser suite recreates disposable `.e2e-data`, supplies test OAuth settings and creates
 sessions directly; it needs no real Google sign-in or test-only authentication endpoint.
 Its startup command uses `rm -rf` and `mkdir`; on Windows, add Git for Windows' `usr/bin`
