@@ -3,6 +3,11 @@
 
 	// A panel that slides up from the bottom on phones and is centered on wider screens.
 	// Its content stays in the page while closed, so buttons inside a form still submit it.
+	// It keeps to the part of the window on screen, the visual viewport. A phone's keyboard
+	// covers the bottom of the window, shortening the visual viewport, and leaves the page under
+	// it, so the sheet sits just above the keyboard and takes only the room above it, with what
+	// doesn't fit scrolling. Its buttons can then be tapped with the keyboard open (design 8,
+	// MEA-277).
 	let {
 		open = $bindable(false),
 		title,
@@ -15,6 +20,40 @@
 	$effect(() => {
 		if (open && !dialog.open) dialog.showModal();
 		if (!open && dialog.open) dialog.close();
+	});
+
+	// The pixels left between the field being typed in and a phone's keyboard, as ItemInput leaves
+	// between the dish suggestions and the keyboard (MEA-265).
+	const KEYBOARD_GAP = 8;
+
+	/**
+	 * Gives the sheet the visual viewport's top and height, measured from the top of the window.
+	 * A sheet made shorter no longer shows what's at its bottom, so it then scrolls just far enough
+	 * to show the field being typed in, if that's where the field is.
+	 */
+	function fit() {
+		const viewport = window.visualViewport!;
+		dialog.style.setProperty('--visible-top', `${viewport.offsetTop}px`);
+		dialog.style.setProperty('--visible-height', `${viewport.height}px`);
+		const field = document.activeElement;
+		if (field === null || !dialog.contains(field)) return;
+		const hidden =
+			field.getBoundingClientRect().bottom + KEYBOARD_GAP - dialog.getBoundingClientRect().bottom;
+		if (hidden > 0) dialog.scrollTop += hidden;
+	}
+
+	// As the sheet opens, and while it's open, as the keyboard opens, closes or changes size, and as
+	// the browser moves the visual viewport within the window, such as to show a focused field.
+	$effect(() => {
+		if (!open) return;
+		fit();
+		const viewport = window.visualViewport!;
+		viewport.addEventListener('resize', fit);
+		viewport.addEventListener('scroll', fit);
+		return () => {
+			viewport.removeEventListener('resize', fit);
+			viewport.removeEventListener('scroll', fit);
+		};
 	});
 </script>
 
@@ -39,13 +78,16 @@
 </dialog>
 
 <style>
+	/* In the visual viewport, as fit measures it, and no taller than 88% of it (MEA-277). */
 	dialog {
 		border: none;
 		padding: 0;
+		top: var(--visible-top);
+		bottom: calc(100% - var(--visible-top) - var(--visible-height));
 		margin: auto auto 0;
 		width: 100%;
 		max-width: 40rem;
-		max-height: 88vh;
+		max-height: calc(0.88 * var(--visible-height));
 		border-radius: 18px 18px 0 0;
 		background: var(--surface);
 		color: var(--text);

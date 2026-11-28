@@ -194,7 +194,11 @@ export function renamePartyList(householdId: number, listId: number, name: strin
 	transaction(() => {
 		requireList(householdId, listId);
 		requireUnusedName(householdId, name, listId);
-		db().update(partyLists).set({ name }).where(eq(partyLists.id, listId)).run();
+		db()
+			.update(partyLists)
+			.set({ name })
+			.where(and(eq(partyLists.id, listId), eq(partyLists.householdId, householdId)))
+			.run();
 	});
 }
 
@@ -441,7 +445,7 @@ function allocate(
 		db()
 			.update(groceryNeeds)
 			.set({ quantity: line.quantity + quantity * shareFactor(thing.unit, line.unit) })
-			.where(eq(groceryNeeds.id, line.id))
+			.where(and(eq(groceryNeeds.id, line.id), eq(groceryNeeds.householdId, householdId)))
 			.run();
 		needId = line.id;
 	} else {
@@ -467,25 +471,30 @@ function allocate(
  * Takes parts of open allocations, in the party item's unit, off their lines: a line is deleted
  * once nothing's left of it, and an allocation once nothing's left of it (6.15).
  */
-function release(parts: [allocation: Allocation, part: number][]): void {
+function release(householdId: number, parts: [allocation: Allocation, part: number][]): void {
 	const left = new Map<number, number>();
 	for (const [allocation, part] of parts) {
 		const quantity = left.get(allocation.needId) ?? allocation.lineQuantity;
 		const share = part * shareFactor(allocation.partyUnit, allocation.lineUnit);
 		left.set(allocation.needId, quantity - share);
+		const isAllocation = and(
+			eq(partyAllocations.id, allocation.id),
+			eq(partyAllocations.householdId, householdId)
+		);
 		if (allocation.quantity - part <= TOLERANCE) {
-			db().delete(partyAllocations).where(eq(partyAllocations.id, allocation.id)).run();
+			db().delete(partyAllocations).where(isAllocation).run();
 		} else {
 			db()
 				.update(partyAllocations)
 				.set({ quantity: allocation.quantity - part })
-				.where(eq(partyAllocations.id, allocation.id))
+				.where(isAllocation)
 				.run();
 		}
 	}
 	for (const [needId, quantity] of left) {
-		if (quantity <= TOLERANCE) db().delete(groceryNeeds).where(eq(groceryNeeds.id, needId)).run();
-		else db().update(groceryNeeds).set({ quantity }).where(eq(groceryNeeds.id, needId)).run();
+		const isLine = and(eq(groceryNeeds.id, needId), eq(groceryNeeds.householdId, householdId));
+		if (quantity <= TOLERANCE) db().delete(groceryNeeds).where(isLine).run();
+		else db().update(groceryNeeds).set({ quantity }).where(isLine).run();
 	}
 }
 
@@ -504,7 +513,11 @@ export function setPartyItemQuantity(
 	transaction(() => {
 		const row = getPartyItemRow(householdId, listId, partyItemId);
 		const thing = partyItem(row);
-		db().update(partyItems).set({ quantity }).where(eq(partyItems.id, partyItemId)).run();
+		db()
+			.update(partyItems)
+			.set({ quantity })
+			.where(and(eq(partyItems.id, partyItemId), eq(partyItems.householdId, householdId)))
+			.run();
 		if (thing.onGroceries <= TOLERANCE) return;
 		const target = Math.min(
 			Math.max(thing.onGroceries + quantity - thing.quantity, 0),
@@ -522,7 +535,7 @@ export function setPartyItemQuantity(
 				parts.push([allocation, part]);
 				excess -= part;
 			}
-			release(parts);
+			release(householdId, parts);
 		}
 	});
 }
@@ -530,7 +543,7 @@ export function setPartyItemQuantity(
 /** Takes what's on Groceries for these party items off Groceries. What was received stays. */
 function releaseAll(householdId: number, where: SQL): void {
 	const open = allocations(householdId, where, false);
-	release(open.map((allocation) => [allocation, allocation.quantity]));
+	release(householdId, open.map((allocation) => [allocation, allocation.quantity]));
 }
 
 /** Takes something off its party list, and what's on Groceries for it off Groceries (6.15). */
@@ -538,7 +551,10 @@ export function removePartyItem(householdId: number, listId: number, partyItemId
 	transaction(() => {
 		getPartyItemRow(householdId, listId, partyItemId);
 		releaseAll(householdId, eq(partyAllocations.partyItemId, partyItemId));
-		db().delete(partyItems).where(eq(partyItems.id, partyItemId)).run();
+		db()
+			.delete(partyItems)
+			.where(and(eq(partyItems.id, partyItemId), eq(partyItems.householdId, householdId)))
+			.run();
 	});
 }
 
@@ -547,7 +563,10 @@ export function deletePartyList(householdId: number, listId: number): void {
 	transaction(() => {
 		requireList(householdId, listId);
 		releaseAll(householdId, eq(partyItems.partyListId, listId));
-		db().delete(partyLists).where(eq(partyLists.id, listId)).run();
+		db()
+			.delete(partyLists)
+			.where(and(eq(partyLists.id, listId), eq(partyLists.householdId, householdId)))
+			.run();
 	});
 }
 
@@ -604,7 +623,7 @@ function receivePart(
 		db()
 			.update(groceryNeeds)
 			.set({ status: 'received', storeId: store, receivedAt: now, ...replaced })
-			.where(eq(groceryNeeds.id, line.id))
+			.where(and(eq(groceryNeeds.id, line.id), eq(groceryNeeds.householdId, householdId)))
 			.run();
 	} else {
 		const received = db()
@@ -624,11 +643,20 @@ function receivePart(
 			})
 			.returning({ id: groceryNeeds.id })
 			.get();
-		db().update(groceryNeeds).set({ quantity: line.quantity - part }).where(eq(groceryNeeds.id, line.id)).run();
+		db()
+			.update(groceryNeeds)
+			.set({ quantity: line.quantity - part })
+			.where(and(eq(groceryNeeds.id, line.id), eq(groceryNeeds.householdId, householdId)))
+			.run();
 		db()
 			.update(partyAllocations)
 			.set({ needId: received.id })
-			.where(inArray(partyAllocations.id, parts.map((allocation) => allocation.id)))
+			.where(
+				and(
+					inArray(partyAllocations.id, parts.map((allocation) => allocation.id)),
+					eq(partyAllocations.householdId, householdId)
+				)
+			)
 			.run();
 	}
 	if (line.status === 'to_order') setDefaultStore(householdId, line.itemId, store);
@@ -656,7 +684,7 @@ export function markBought(
 		db()
 			.update(partyItems)
 			.set({ boughtQuantity: row.boughtQuantity + thing.toAdd })
-			.where(eq(partyItems.id, partyItemId))
+			.where(and(eq(partyItems.id, partyItemId), eq(partyItems.householdId, householdId)))
 			.run();
 	});
 }
@@ -673,7 +701,7 @@ function unreceivePart(householdId: number, line: GroceryLine, parts: Allocation
 		db()
 			.update(groceryNeeds)
 			.set({ status, receivedAt: null, storeBeforeReceived: null, defaultStoreBeforeReceived: null })
-			.where(eq(groceryNeeds.id, line.id))
+			.where(and(eq(groceryNeeds.id, line.id), eq(groceryNeeds.householdId, householdId)))
 			.run();
 		return;
 	}
@@ -692,11 +720,20 @@ function unreceivePart(householdId: number, line: GroceryLine, parts: Allocation
 		})
 		.returning({ id: groceryNeeds.id })
 		.get();
-	db().update(groceryNeeds).set({ quantity: line.quantity - part }).where(eq(groceryNeeds.id, line.id)).run();
+	db()
+		.update(groceryNeeds)
+		.set({ quantity: line.quantity - part })
+		.where(and(eq(groceryNeeds.id, line.id), eq(groceryNeeds.householdId, householdId)))
+		.run();
 	db()
 		.update(partyAllocations)
 		.set({ needId: back.id })
-		.where(inArray(partyAllocations.id, parts.map((allocation) => allocation.id)))
+		.where(
+			and(
+				inArray(partyAllocations.id, parts.map((allocation) => allocation.id)),
+				eq(partyAllocations.householdId, householdId)
+			)
+		)
 		.run();
 }
 
@@ -717,6 +754,10 @@ export function unmarkBought(
 		for (const [needId, parts] of Map.groupBy(received, (allocation) => allocation.needId)) {
 			unreceivePart(householdId, getLine(householdId, needId), parts, now);
 		}
-		db().update(partyItems).set({ boughtQuantity: 0 }).where(eq(partyItems.id, partyItemId)).run();
+		db()
+			.update(partyItems)
+			.set({ boughtQuantity: 0 })
+			.where(and(eq(partyItems.id, partyItemId), eq(partyItems.householdId, householdId)))
+			.run();
 	});
 }

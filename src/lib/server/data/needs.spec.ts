@@ -600,3 +600,42 @@ describe('listing', () => {
 		}
 	});
 });
+
+describe("another household's lines", () => {
+	/** The household's lines and items, as stored. */
+	function rowsOf(household: number) {
+		return {
+			lines: db().select().from(groceryNeeds).where(eq(groceryNeeds.householdId, household)).all(),
+			items: db().select().from(items).where(eq(items.householdId, household)).all()
+		};
+	}
+
+	it("can't be ordered, received, edited, undone or deleted, and stay as they were (4.5)", () => {
+		const other = makeHousehold(TZ).householdId;
+		const target = makeStore(other, 'Target');
+		for (const itemName of ['Eggs', 'Milk', 'Bread']) add(other, { itemName, quantity: 2, store: target });
+		const eggs = lineFor(other, 'Eggs').id;
+		const milk = lineFor(other, 'Milk').id;
+		const bread = lineFor(other, 'Bread').id;
+		markOrdered(other, milk, undefined, NOON);
+		markReceived(other, bread, undefined, NOON);
+		const before = rowsOf(other);
+
+		expectHttpError(() => markOrdered(householdId, eggs, undefined, NOON), 404);
+		expectHttpError(() => markReceived(householdId, eggs, undefined, NOON), 404);
+		expectHttpError(() => markGotFewer(householdId, eggs, 1, undefined, NOON), 404);
+		expectHttpError(() => markDidntCome(householdId, milk), 404);
+		expectHttpError(() => undoReceived(householdId, bread, TZ, NOON), 404);
+		const changes = { quantity: 5, unit: null, storeId: null, note: 'Ours' };
+		expectHttpError(() => updateLine(householdId, eggs, changes), 404);
+		expectHttpError(
+			() =>
+				withLineChanges(householdId, eggs, changes, () =>
+					markOrdered(householdId, eggs, undefined, NOON)
+				),
+			404
+		);
+		expectHttpError(() => deleteLine(householdId, eggs), 404);
+		expect(rowsOf(other)).toEqual(before);
+	});
+});

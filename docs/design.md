@@ -1335,7 +1335,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Invite-only      | `/not-invited`                       | Shown to an account without an invite, with the email it used.                                                                      |
 | Household setup  | `/setup`                             | After signing in without a household: the households that invited them, each with Join, and for a new household, name, usual servings and time zone (6.1). |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
-| Grocery History  | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item.                                                        |
+| Grocery History  | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item. Show older, under the newest 100, adds the next 100 below them, keeping the reader's place and the search, and adds no Back step (MEA-137). |
 | Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. Saving, archiving or restoring an item keeps the page's address, and with it the list's search and whether it shows archived items (MEA-131). A link to one item, such as from Reports, opens its sheet (see Reports below). |
 | Party lists      | `/groceries/parties`                 | "‹ Groceries", then New list and the household's party lists, each with how many of its things are bought (6.15). |
 | Party list       | `/groceries/parties/[id]`            | "‹ Party lists", the name with Edit, an add form, Add all to Groceries, and the things with their circles, amounts, what's bought and on Groceries, and Add to Groceries (6.15). Tapping a thing opens a sheet with its quantity, Save and Remove. |
@@ -1907,7 +1907,12 @@ Warmer and food-themed (Q39), following the phone's light or dark setting:
   everything else. Both are self-hosted.
 - Phone details: tap targets at least 44 px, edit sheets that slide up from the bottom,
   and nothing that depends on hovering. Dragging on an open sheet scrolls only the sheet,
-  and the page behind stays where it was (MEA-164).
+  and the page behind stays where it was (MEA-164). Sheets keep to the part of the screen a
+  phone's keyboard leaves: as it opens, changes size or closes, an open sheet moves to just
+  above it, or back to the bottom, and is at most 88% as tall as that part, with what doesn't
+  fit scrolling. When getting shorter would hide the field being typed in, the sheet scrolls
+  just far enough to show it. A sheet centered on a wider screen is centered in that part.
+  Buttons in a sheet can be tapped with the keyboard open, and what's typed stays (MEA-277).
 
 Colors and fonts are defined once as variables, so changes after you see the first
 deploy are quick.
