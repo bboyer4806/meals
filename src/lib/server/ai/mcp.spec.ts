@@ -22,6 +22,7 @@ import {
 	TEST_ENV
 } from '../testing.ts';
 import { handleMessage, type McpContext } from './mcp.ts';
+import { approveProposal, getProposal } from './proposals.ts';
 
 let context: McpContext;
 let one: { householdId: number; userId: number };
@@ -271,6 +272,54 @@ describe('proposing', () => {
 			});
 			expect(await refused('https://recipes.example/chili')).toEqual({
 				error: "Change 1 (set_recipe_image): Couldn't get an image from that link. Use the image's own link, not the page it's on."
+			});
+		} finally {
+			vi.restoreAllMocks();
+			rmSync(dataDir, { recursive: true, force: true });
+		}
+	});
+
+	it('proposes new items, which list_items lists with their images once approved (MEA-279)', async () => {
+		const answer = (await request('tools/list')) as { result: { tools: Record<string, unknown>[] } };
+		const propose = answer.result.tools.find((tool) => tool.name === 'propose_changes')!;
+		expect(propose.description).toContain('create_item adds an item to a household’s catalog');
+		expect(JSON.stringify(propose.inputSchema)).toContain('"const":"create_item"');
+
+		const dataDir = mkdtempSync(join(tmpdir(), 'meals-mcp-'));
+		loadConfig({ ...TEST_ENV, DATA_DIR: dataDir });
+		try {
+			const link = 'https://shop.example/lychees.png';
+			const picture = await sharp({ create: { width: 64, height: 48, channels: 3, background: '#d36' } })
+				.png()
+				.toBuffer();
+			servePages({ [link]: { status: 200, body: picture } });
+			const householdId = two.householdId;
+			const proposal = await call('propose_changes', {
+				summary: 'New fruit',
+				changes: [
+					{ operation: 'create_item', householdId, name: 'Lychees', notes: 'Fresh', imageUrl: link },
+					{ operation: 'create_item', householdId, name: 'Kumquats', notes: null, imageUrl: null }
+				]
+			});
+			const photoKey = proposal.changes[0].proposed[2].photoKey;
+			expect(proposal.changes).toMatchObject([
+				{ title: 'Add an item', householdId, record: null },
+				{ title: 'Add an item', householdId, record: null }
+			]);
+			expect(existsSync(photoPath(photoKey, 'thumb'))).toBe(true);
+			expect((await call('list_items', { householdId })).items).toEqual([]);
+
+			const { hash } = getProposal(proposal.proposalId, 0);
+			expect(approveProposal(proposal.proposalId, hash, 0)).toMatchObject({ kind: 'approved' });
+			expect((await call('list_items', { householdId })).items).toMatchObject([
+				{ name: 'Kumquats', notes: null, photoKey: null, lastBoughtAt: null },
+				{ name: 'Lychees', notes: 'Fresh', photoKey, lastBoughtAt: null }
+			]);
+			expect((await call('get_grocery_list', { householdId })).lines).toEqual([]);
+
+			const again = { operation: 'create_item', householdId, name: 'lychees', notes: null, imageUrl: null };
+			expect(await call('propose_changes', { summary: 'Again', changes: [again] })).toEqual({
+				error: 'Change 1 (create_item): An item is already called lychees.'
 			});
 		} finally {
 			vi.restoreAllMocks();

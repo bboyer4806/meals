@@ -495,6 +495,201 @@ test("refuses an image link Meals can't get an image from, saving nothing", asyn
 	expect(db.prepare('select photo_key from items where id = ?').pluck().get(eggs)).toBeNull();
 });
 
+// New items (MEA-279).
+
+type NewItem = {
+	name: string;
+	notes: string | null;
+	imageUrl: string | null;
+	photoKey: string | null;
+};
+
+/** A change adding an item to the household's catalog, as proposing saves it. */
+function newItem(db: Database.Database, householdId: number, item: NewItem): SavedChange {
+	const { name, notes, imageUrl, photoKey } = item;
+	return {
+		change: { operation: 'create_item', householdId, ...item },
+		preview: {
+			title: 'Add an item',
+			householdId,
+			householdName: householdName(db, householdId),
+			record: null,
+			current: [],
+			proposed: [
+				{ name: 'Name', value: name },
+				{ name: 'Notes', value: notes ?? 'None' },
+				imageUrl === null || photoKey === null
+					? { name: 'Image', value: 'None' }
+					: { name: 'Image', value: imageUrl, photoKey }
+			]
+		}
+	};
+}
+
+/** The household's items, with what a new item gets: its notes and image. */
+function catalog(db: Database.Database, householdId: number) {
+	return db
+		.prepare('select name, notes, photo_key as photoKey from items where household_id = ? order by name')
+		.all(householdId);
+}
+
+function groceryLines(db: Database.Database, householdId: number): number {
+	return db
+		.prepare('select count(*) from grocery_needs where household_id = ?')
+		.pluck()
+		.get(householdId) as number;
+}
+
+test('adds the new items Claude proposes to the catalog only, once the admin approves', async ({
+	page,
+	db,
+	context,
+	baseURL,
+	request
+}) => {
+	await signInAs(db, context, baseURL, adminId(db));
+	const other = addPerson(db);
+	const saffron = addItem(db, other.householdId, 'Saffron');
+	db.prepare('update items set archived_at = ? where id = ?').run(Date.now(), saffron);
+	const clientId = await register(request);
+	const { path, verifier } = authorization(clientId, baseURL);
+	await open(page, path);
+	const back = await allow(page);
+	const tokens = await request.post('/oauth/token', {
+		form: {
+			grant_type: 'authorization_code',
+			client_id: clientId,
+			code: back.searchParams.get('code') ?? '',
+			code_verifier: verifier,
+			redirect_uri: CLAUDE
+		}
+	});
+	const claude = mcp(request, (await tokens.json()).access_token);
+	const create = (name: string, notes: string | null) => ({
+		operation: 'create_item',
+		householdId: other.householdId,
+		name,
+		notes,
+		imageUrl: null
+	});
+
+	// A name an item has is refused, an archived item's included.
+	const refused = await claude.send('tools/call', {
+		name: 'propose_changes',
+		arguments: { summary: 'Saffron', changes: [create('saffron', null)] }
+	});
+	expect((await refused.json()).result).toEqual({
+		isError: true,
+		content: [
+			{
+				type: 'text',
+				text: 'Change 1 (create_item): An archived item is already called saffron. Restore it instead.'
+			}
+		]
+	});
+
+	const proposal = await claude.call('propose_changes', {
+		summary: 'Fruit for the catalog',
+		changes: [create('Lychees', 'Fresh, in season'), create('Kumquats', null)]
+	});
+	expect(proposal.status).toBe('pending');
+	await open(page, new URL(proposal.url).pathname);
+	const lychees = page.getByRole('listitem').filter({ hasText: 'Lychees' });
+	await expect(lychees.getByRole('heading', { name: 'Add an item' })).toBeVisible();
+	await expect(lychees.getByRole('heading', { name: 'New' })).toBeVisible();
+	await expect(lychees).toContainText(`(household ${other.householdId})`);
+	await expect(lychees).toContainText('Fresh, in season');
+	const kumquats = page.getByRole('listitem').filter({ hasText: 'Kumquats' });
+	await expect(kumquats).toContainText('Image');
+	await expect(kumquats.getByRole('img')).toHaveCount(0);
+	await page.getByRole('button', { name: 'Approve' }).click();
+	await expect(page.getByRole('status')).toContainText('The changes were made.');
+
+	const added = [
+		{ name: 'Kumquats', notes: null, photoKey: null },
+		{ name: 'Lychees', notes: 'Fresh, in season', photoKey: null }
+	];
+	expect(catalog(db, other.householdId)).toEqual([
+		...added,
+		{ name: 'Saffron', notes: null, photoKey: null }
+	]);
+	expect(groceryLines(db, other.householdId)).toBe(0);
+	const { items } = await claude.call('list_items', { householdId: other.householdId });
+	expect(items).toMatchObject(added);
+});
+
+test('shows the admin the new items a proposal would add with their images, which approving adds', async ({
+	page,
+	db,
+	context,
+	baseURL
+}) => {
+	const admin = adminId(db);
+	const other = addPerson(db);
+	const fruits = ['Dragon fruit', 'Kumquats', 'Lychees', 'Passion fruit', 'Starfruit'];
+	const added: { name: string; notes: string; imageUrl: string; photoKey: string }[] = [];
+	for (const [index, name] of fruits.entries()) {
+		const photoKey = await addImage(page, index * 60);
+		const imageUrl = `https://shop.example/fruit-${index}.jpg`;
+		added.push({ name, notes: `${name}, ripe`, imageUrl, photoKey });
+	}
+	const proposalId = addProposal(
+		db,
+		addConnection(db, admin),
+		added.map((item) => newItem(db, other.householdId, item))
+	);
+
+	// Only the admin can see or approve it.
+	await signInAs(db, context, baseURL, other.userId);
+	expect((await page.goto(`/ai/proposals/${proposalId}`))?.status()).toBe(404);
+	// With the hash the page would send, which the member can't see.
+	const content = db
+		.prepare('select content from ai_proposals where id = ?')
+		.pluck()
+		.get(proposalId) as string;
+	const approving = await page.request.post(`/ai/proposals/${proposalId}?/approve`, {
+		form: { hash: createHash('sha256').update(content).digest('hex') },
+		headers: { origin: baseURL ?? '' }
+	});
+	expect(approving.status()).toBe(404);
+	expect(catalog(db, other.householdId)).toEqual([]);
+
+	await context.clearCookies();
+	await signInAs(db, context, baseURL, admin);
+	await open(page, `/ai/proposals/${proposalId}`);
+	for (const { name, notes, imageUrl, photoKey } of added) {
+		const change = page.getByRole('listitem').filter({ hasText: name });
+		await expect(change.getByRole('heading', { name: 'Add an item' })).toBeVisible();
+		await expect(change).toContainText(`(household ${other.householdId})`);
+		await expect(change).toContainText(notes);
+		await expect(change).toContainText(imageUrl);
+		await expect(change.getByRole('img', { name: 'The proposed image' })).toHaveAttribute(
+			'src',
+			`/ai/proposals/${proposalId}/photos/${photoKey}.jpg`
+		);
+	}
+	// The whole image, as approving gives it to the item.
+	const dragonFruit = page.getByRole('listitem').filter({ hasText: 'Dragon fruit' });
+	expect(await loadedWidth(dragonFruit.getByRole('img', { name: 'The proposed image' }))).toBe(1200);
+
+	await page.getByRole('button', { name: 'Approve' }).click();
+	await expect(page.getByRole('status')).toContainText('The changes were made.');
+	expect(catalog(db, other.householdId)).toEqual(
+		added.map(({ name, notes, photoKey }) => ({ name, notes, photoKey }))
+	);
+	for (const { photoKey } of added) expect(existsSync(photoFile(photoKey, 'thumb'))).toBe(true);
+	expect(groceryLines(db, other.householdId)).toBe(0);
+
+	// The household sees them on Items, each with its image.
+	await context.clearCookies();
+	await signInAs(db, context, baseURL, other.userId);
+	await open(page, '/groceries/items');
+	for (const { name, photoKey } of added) {
+		const row = page.getByRole('button', { name: new RegExp(`^${name}`) });
+		await expect(row.locator('img')).toHaveAttribute('src', `/photos/${photoKey}-thumb.jpg`);
+	}
+});
+
 test('tells assistants how to connect', async ({ request, baseURL }) => {
 	const unauthorized = await request.post('/mcp', { data: { jsonrpc: '2.0', id: 1, method: 'ping' } });
 	expect(unauthorized.status()).toBe(401);

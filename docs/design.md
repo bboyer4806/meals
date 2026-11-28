@@ -559,8 +559,8 @@ then), `last_used_at`.
 given for.
 
 **ai_proposals** (changes an assistant proposed; 6.17): `connection_id`, `content` (the changes and
-what the confirmation page shows of each, as JSON, never changed; an image change also has the key
-of the image stored for it), `status` (`pending`,
+what the confirmation page shows of each, as JSON, never changed; an image change, and a new item
+with an image, also has the key of the image stored for it), `status` (`pending`,
 `approved`, `rejected` or `failed`), `error` (why a failed one failed), `created_at`, `expires_at`
 (24 hours later), `decided_at`.
 
@@ -1204,8 +1204,9 @@ assistant can connect, and nobody but the admin can connect one.
   (6.8), so its data isn't read. Times are given in ISO 8601.
 - **Proposing.** `propose_changes` takes a summary and up to 50 changes, each to one household, of
   these kinds and no others: changing the household's settings; adding, renaming, archiving or
-  restoring a store; renaming an item or changing its notes, archiving or restoring it; adding a
-  grocery line, changing one (amount, store and note) or deleting one; adding a recipe, changing one
+  restoring a store; adding an item to the catalog (New items, below), renaming an item or
+  changing its notes, archiving or restoring it; adding a grocery line, changing one (amount,
+  store and note) or deleting one; adding a recipe, changing one
   (every field but the photo, which stays) or archiving or restoring one; giving a recipe or an
   item an image (Images, below); planning a date or changing a dinner (type, label, restaurant,
   servings, note and exactly the dishes listed, by recipe name, where a new name adds a recipe with
@@ -1218,10 +1219,11 @@ assistant can connect, and nobody but the admin can connect one.
   can't be made is refused right away, saying which change and why, and nothing is saved.
 - **Images** (MEA-276). `set_recipe_image` and `set_item_image` give an existing recipe or item the
   image at a link: the image's own link, as Items takes one (7, Item images), but starting with
-  https://, and never the page it's on. A proposal has up to 10 of them. Proposing fetches each, one
-  at a time, as Items' Image link does (4.5): a JPEG, PNG, GIF or WebP of up to 5 MB and 25
-  megapixels. The server resizes it as the phone resizes a photo (2.3): upright, with transparent
-  parts on white, at most 1600 px on its longest side with a 400 px thumbnail, both JPEGs. It's
+  https://, and never the page it's on. A proposal has up to 10 images, new items' included (New
+  items, below). Proposing fetches each, one at a time, as Items' Image link does (4.5): a JPEG,
+  PNG, GIF or WebP of up to 5 MB and 25 megapixels. The server resizes it as the phone resizes a
+  photo (2.3): upright, with transparent parts on white, at most 1600 px on its longest side with
+  a 400 px thumbnail, both JPEGs. It's
   stored as any photo is (4.4) before the proposal is saved, so the page shows the image that
   approving gives the record, and the link is never fetched again, even if it later leads to
   another image. A link that leads to no such image refuses the change as Items does: "Couldn't
@@ -1235,6 +1237,18 @@ assistant can connect, and nobody but the admin can connect one.
   and so does every other record. The assistant finds the recipes and items without an image by
   their empty `photoKey`. No change only removes an image, and nothing searches for, makes or
   uploads one: the assistant gives the link.
+- **New items** (MEA-279). `create_item` adds an item to a household's catalog with a name, notes
+  or none, and an image or none, so an assistant can fill in the catalog without putting anything
+  on the grocery list. The name and notes are checked as Items checks them (7), and the image's
+  link as Images, above, says: the image is fetched, resized and stored when it's proposed, and
+  counts toward the proposal's 10. The name can't be one an item in the household has, matched
+  ignoring case as item names are (2.3), archived ones included, or one an earlier change of the
+  same proposal gives an item, as when it adds the same name twice. The change is then refused ("An
+  item is already called Kiwis." or "An archived item is already called Kiwis. Restore it
+  instead."), and approving fails if an item got the name after it was proposed. Approving adds the
+  item with that image and nothing else: no grocery line, recipe or grocery history. From then on
+  it's an ordinary item, on Items and in the add bar's suggestions, and `list_items` lists it with
+  its image's `photoKey`. `create_item` never changes, replaces or restores an item that's there.
 - **Images that aren't used** are deleted, so a proposal never leaves its images behind. An image
   stored for a proposal goes once nothing can give it to a record: when proposing is refused, when
   the proposal is rejected or fails, a minute after it expires (when the app next starts, or the
@@ -1243,19 +1257,19 @@ assistant can connect, and nobody but the admin can connect one.
   never deleted this way.
 - **Approving.** A proposal is saved whole and never changed, and the assistant gets a link to it,
   `/ai/proposals/<id>`, to give the admin. Its page, open only to the admin as the connection page
-  is, lists every change with its household, the record it changes as it was when proposed (Now)
-  and what it saves (Proposed), or the new record (New). While it waits, an image change shows the
-  record's image now, if it has one, and the proposed image above its link, each whole, as the
-  record would get it; only the admin can open them, and only from that proposal. Once it's
-  decided, the page lists the changes without their images. Approve makes all the changes in one
-  transaction with recording the approval, so they all happen, once, or none does. Reject changes
-  nothing but the proposal. Both send back the SHA-256 of the proposal the page showed, which must
-  match. A proposal can't be approved once it's approved, rejected or failed, or 24 hours after it
-  was proposed (expired). Approving fails, changing nothing, when a record a change names isn't as
-  the page showed it anymore, its image included, or the data layer refuses a change; the proposal
-  then fails for good, with why, and the assistant can propose again. New items get their standard
-  images afterward, as after any save (6.14). `get_proposal` tells the assistant what happened to
-  its own proposals.
+  is, lists every change with its household, the record it changes as it was when proposed (Now) and
+  what it saves (Proposed), or the new record (New). While it waits, an image change shows the
+  record's image now, if it has one, and the proposed image above its link, and a new item shows its
+  image above its link, each whole, as the record would get it; only the admin can open them, and
+  only from that proposal. Once it's decided, the page lists the changes without their images.
+  Approve makes all the changes in one transaction with recording the approval, so they all happen,
+  once, or none does. Reject changes nothing but the proposal. Both send back the SHA-256 of the
+  proposal the page showed, which must match. A proposal can't be approved once it's approved,
+  rejected or failed, or 24 hours after it was proposed (expired). Approving fails, changing
+  nothing, when a record a change names isn't as the page showed it anymore, its image included, or
+  the data layer refuses a change; the proposal then fails for good, with why, and the assistant can
+  propose again. New items get their standard images afterward, as after any save (6.14).
+  `get_proposal` tells the assistant what happened to its own proposals.
 - **Errors.** A tool that can't do what was asked says why: the field, the change and the reason.
   An unexpected failure is logged, and the assistant is told only that something went wrong, so no
   query, stack or secret leaves the server.

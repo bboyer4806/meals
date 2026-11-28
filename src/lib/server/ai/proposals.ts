@@ -7,9 +7,9 @@ import { aiConnections, aiProposals, type AiPlatform } from '../db/schema.ts';
 import { discardPhoto, householdOwnsPhoto } from '../photos.ts';
 import {
 	changeSchema,
-	isImageChange,
 	planChange,
 	prepareChange,
+	proposesImage,
 	type Change,
 	type ChangeInput,
 	type ChangePreview,
@@ -42,7 +42,7 @@ export const proposalInput = z.object({
 		.min(1, 'Propose at least one change')
 		.max(MAX_CHANGES, `Propose up to ${MAX_CHANGES} changes at a time`)
 		.refine(
-			(changes) => changes.filter(isImageChange).length <= MAX_IMAGES,
+			(changes) => changes.filter(proposesImage).length <= MAX_IMAGES,
 			`Propose up to ${MAX_IMAGES} images at a time`
 		)
 });
@@ -117,7 +117,9 @@ export function discardUnusedImages(images: ProposalImage[]): void {
 
 /** Deletes the images stored for changes that no proposal kept (prepareChange). */
 function discardStaged(changes: Change[]): void {
-	for (const change of changes) if ('photoKey' in change) discardPhoto(change.photoKey);
+	for (const change of changes) {
+		if ('photoKey' in change && change.photoKey !== null) discardPhoto(change.photoKey);
+	}
 }
 
 /**

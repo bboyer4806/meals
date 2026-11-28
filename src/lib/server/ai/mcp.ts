@@ -259,10 +259,12 @@ const TOOLS: Tool[] = [
 			'all together, or none. Each is checked now, and one that can’t be made is refused with why.',
 			'Returns a link for the admin. A change to a record takes all of its fields. save_dinner',
 			'plans a date or changes a dinner with exactly the dishes listed, by recipe name; a new name',
-			'adds a recipe with no details. set_recipe_image and set_item_image give a recipe or an item',
-			'the image at an https link to the image itself, not the page it’s on. Meals downloads and',
-			'resizes it now, so the admin sees the image that approving gives it, and replace must be',
-			'true to replace an image it has. Up to 10 images at a time.'
+			'adds a recipe with no details. create_item adds an item to a household’s catalog only, not',
+			'to the grocery list, with its notes and an image, or null for either; no item may already',
+			'have its name, archived ones included. set_recipe_image and set_item_image give an existing',
+			'recipe or item an image, and replace must be true to replace one it has. Each image is an',
+			'https link to the image itself, not the page it’s on, which Meals downloads and resizes now,',
+			'so the admin sees the image that approving gives. Up to 10 images at a time.'
 		].join(' '),
 		readOnly: false,
 		input: proposalInput,

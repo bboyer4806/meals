@@ -17,6 +17,7 @@ const LINK = 'https://shop.example/milk.png';
 
 let dataDir: string;
 let householdId: number;
+let connectionId: number;
 let proposalId: number;
 let current: string;
 let proposed: string;
@@ -35,7 +36,7 @@ beforeEach(async () => {
 	loadConfig({ ...TEST_ENV, DATA_DIR: dataDir });
 	const admin = makeHousehold();
 	({ householdId } = makeHousehold());
-	const connectionId = db()
+	connectionId = db()
 		.insert(aiConnections)
 		.values({
 			clientId: 'claude-client',
@@ -119,6 +120,25 @@ it('shows no other image, and nothing to anyone but the admin', async () => {
 		expect(isHttpError(error, 404), `${file} as ${as} for ${id}: ${String(error)}`).toBe(true);
 	}
 	expect(isRedirect(await thrown(get(`${proposed}.jpg`, null)))).toBe(true);
+});
+
+it("shows the admin a new item's image from its own proposal, and nobody else (MEA-279)", async () => {
+	const change = { operation: 'create_item', householdId, name: 'Lychees', notes: null, imageUrl: LINK };
+	const proposal = await proposeChanges(
+		connectionId,
+		proposalInput.parse({ summary: 'New fruit', changes: [change] }),
+		Date.now()
+	);
+	const key = proposal.changes[0]!.proposed[2]!.photoKey!;
+	const response = await get(`${key}.jpg`, 'admin', String(proposal.id));
+	expect(Buffer.from(await response.arrayBuffer())).toEqual(readFileSync(photoPath(key, 'full')));
+	for (const [as, id] of [
+		['member', proposal.id],
+		['admin', proposalId]
+	] as const) {
+		const error = await thrown(get(`${key}.jpg`, as, String(id)));
+		expect(isHttpError(error, 404), `as ${as} for ${id}: ${String(error)}`).toBe(true);
+	}
 });
 
 it('is not found once the image is gone, as after the proposal was rejected', async () => {

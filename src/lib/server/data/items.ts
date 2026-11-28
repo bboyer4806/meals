@@ -55,10 +55,16 @@ export function itemsByName(householdId: number): Map<string, Item> {
 	return new Map(rows.map((item) => [foldCase(item.name), item]));
 }
 
-export function createItem(householdId: number, name: string, now: number): Item {
+/** Adds an item with nothing filled in but its name, unless it's given notes and an image. */
+export function createItem(
+	householdId: number,
+	name: string,
+	now: number,
+	details?: { notes: string | null; photoKey: string | null }
+): Item {
 	return db()
 		.insert(items)
-		.values({ householdId, name, createdAt: now })
+		.values({ householdId, name, ...details, createdAt: now })
 		.returning(itemFields)
 		.get();
 }
@@ -160,6 +166,22 @@ export function listCatalog(householdId: number, archived: boolean, search: stri
 }
 
 export type ItemNameResult = { kind: 'saved' } | { kind: 'taken'; archived: boolean };
+
+/**
+ * Adds an item to the catalog with its notes and image, as an AI assistant proposes one (design
+ * 6.17), unless an item already has its name, archived ones included.
+ */
+export function addItem(
+	householdId: number,
+	item: { name: string; notes: string | null; photoKey: string | null },
+	now: number
+): ItemNameResult {
+	const existing = findItemByName(householdId, item.name);
+	if (existing) return { kind: 'taken', archived: existing.archivedAt !== null };
+	const { name, ...details } = item;
+	createItem(householdId, name, now, details);
+	return { kind: 'saved' };
+}
 
 export function updateItem(
 	householdId: number,

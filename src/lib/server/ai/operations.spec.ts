@@ -3,7 +3,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { getDay } from '../data/dinners.ts';
 import { findDishByName, getDish } from '../data/dishes.ts';
 import { getHousehold } from '../data/households.ts';
-import { createItem, getItem, setItemArchived, setItemPhoto } from '../data/items.ts';
+import {
+	createItem,
+	findItemByName,
+	getItem,
+	listCatalog,
+	setItemArchived,
+	setItemPhoto
+} from '../data/items.ts';
 import { addNeed, getLine, listActiveLines, markReceived } from '../data/needs.ts';
 import {
 	addRequest,
@@ -12,7 +19,8 @@ import {
 	listRequests
 } from '../data/requests.ts';
 import { getStore, listStores } from '../data/stores.ts';
-import { transaction } from '../db/index.ts';
+import { db, transaction } from '../db/index.ts';
+import { dishes, groceryNeeds } from '../db/schema.ts';
 import {
 	expectHttpError,
 	freshDb,
@@ -32,6 +40,9 @@ const STORED = 'abcdef0123456789abcdef0123456789';
 
 function plan(input: unknown) {
 	const change = changeSchema.parse(input);
+	if (change.operation === 'create_item') {
+		return planChange({ ...change, photoKey: change.imageUrl === null ? null : STORED });
+	}
 	return planChange('imageUrl' in change ? { ...change, photoKey: STORED } : change);
 }
 
@@ -161,6 +172,93 @@ describe('stores and items', () => {
 		const archive = { operation: 'set_item_archived', householdId: one.householdId, itemId: eggs.id, archived: true };
 		expect(refusal(archive)).toBe(`Item ${eggs.id} wasn't found`);
 		expect(getItem(two.householdId, eggs.id).archivedAt).toBeNull();
+	});
+});
+
+describe('new items (MEA-279)', () => {
+	const LINK = 'https://shop.example/kiwis.jpg';
+	const kiwis = (fields: object = {}) => ({
+		operation: 'create_item',
+		householdId: 1,
+		name: 'Kiwis',
+		notes: null,
+		imageUrl: null,
+		...fields
+	});
+
+	it('adds an item with its notes and image to the catalog, and nothing else', () => {
+		const { householdId } = makeHousehold();
+		const change = kiwis({ householdId, name: '  Gold   kiwis ', notes: ' Zespri ', imageUrl: ` ${LINK} ` });
+		expect(make(change)).toMatchObject({
+			title: 'Add an item',
+			householdId,
+			householdName: getHousehold(householdId).name,
+			record: null,
+			current: [],
+			proposed: [
+				{ name: 'Name', value: 'Gold kiwis' },
+				{ name: 'Notes', value: 'Zespri' },
+				{ name: 'Image', value: LINK, photoKey: STORED }
+			]
+		});
+		expect(findItemByName(householdId, 'GOLD KIWIS')).toMatchObject({
+			name: 'Gold kiwis',
+			notes: 'Zespri',
+			photoKey: STORED,
+			defaultStoreId: null,
+			archivedAt: null
+		});
+		// No grocery line, recipe or purchase.
+		expect(db().select().from(groceryNeeds).all()).toEqual([]);
+		expect(db().select().from(dishes).all()).toEqual([]);
+	});
+
+	it('adds an item without notes or an image', () => {
+		const { householdId } = makeHousehold();
+		expect(make(kiwis({ householdId })).proposed).toEqual([
+			{ name: 'Name', value: 'Kiwis' },
+			{ name: 'Notes', value: 'None' },
+			{ name: 'Image', value: 'None' }
+		]);
+		expect(findItemByName(householdId, 'Kiwis')).toMatchObject({ notes: null, photoKey: null });
+	});
+
+	it('refuses a name an item has, archived ones included, changing neither', () => {
+		const { householdId } = makeHousehold();
+		createItem(householdId, 'Kiwis', 0);
+		const saffron = createItem(householdId, 'Saffron', 0);
+		setItemArchived(householdId, saffron.id, true, 0);
+		expect(refusal(kiwis({ householdId, name: 'KIWIS', notes: 'Gold' }))).toBe('An item is already called KIWIS.');
+		expect(refusal(kiwis({ householdId, name: 'saffron', imageUrl: LINK }))).toBe(
+			'An archived item is already called saffron. Restore it instead.'
+		);
+		expect(listCatalog(householdId, false, '')).toMatchObject([{ name: 'Kiwis', notes: null }]);
+		expect(getItem(householdId, saffron.id)).toMatchObject({ name: 'Saffron', photoKey: null, archivedAt: 0 });
+	});
+
+	it("adds it to its own household, whatever another household's catalog has", () => {
+		const one = makeHousehold();
+		const two = makeHousehold();
+		createItem(two.householdId, 'Kiwis', 0);
+		make(kiwis({ householdId: one.householdId, notes: 'Ripe' }));
+		expect(findItemByName(one.householdId, 'Kiwis')?.notes).toBe('Ripe');
+		expect(findItemByName(two.householdId, 'Kiwis')?.notes).toBeNull();
+		expect(refusal(kiwis({ householdId: 999 }))).toBe("Household 999 wasn't found");
+	});
+
+	it("checks the name and notes as Items does, and the link as an image change's, needing each", () => {
+		expect(problems(kiwis({ name: '   ' }))).toEqual(['Enter a name']);
+		expect(problems(kiwis({ name: 'k'.repeat(81) }))).toEqual(['Keep a name under 80 characters']);
+		expect(problems(kiwis({ notes: 'n'.repeat(201) }))).toEqual(['Keep it under 200 characters']);
+		for (const link of ['http://shop.example/kiwis.jpg', 'kiwis.jpg', '']) {
+			expect(problems(kiwis({ imageUrl: link })), link).toEqual(['Send a link that starts with https://']);
+		}
+		const { notes: _, ...withoutNotes } = kiwis();
+		expect(problems(withoutNotes)).toHaveLength(1);
+		const { imageUrl: __, ...withoutImage } = kiwis();
+		expect(problems(withoutImage)).toHaveLength(1);
+		// What proposing stores for its image is Meals's own, never the assistant's.
+		expect(changeSchema.parse({ ...kiwis({ imageUrl: LINK }), photoKey: STORED })).not.toHaveProperty('photoKey');
 	});
 });
 

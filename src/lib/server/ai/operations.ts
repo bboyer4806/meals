@@ -37,6 +37,7 @@ import {
 } from '../data/dishes.ts';
 import { getHousehold, updateHousehold } from '../data/households.ts';
 import {
+	addItem,
 	getItem,
 	setItemArchived,
 	setItemPhoto,
@@ -84,6 +85,15 @@ export type ChangePreview = {
 export type PlannedChange = ChangePreview & { apply: (now: number) => void };
 
 const householdId = id.describe('The household, from list_households');
+
+// An image link (MEA-276), checked as an image link on Items is (design 7, Item images), but
+// https only.
+const imageUrl = z
+	.string()
+	.trim()
+	.max(2000, 'Keep the link under 2000 characters')
+	.pipe(z.url({ protocol: /^https$/, error: 'Send a link that starts with https://' }))
+	.describe("The image's own https link, to a JPEG, PNG, GIF or WebP, not the page it's on");
 
 /** Text that may be empty, sent as null. */
 function nullableText(max: number) {
@@ -232,6 +242,49 @@ function planSetStoreArchived(change: z.output<typeof setStoreArchivedChange>): 
 // Items
 
 const itemId = id.describe('The item, from list_items');
+// As Items checks an item's name and notes (item-form.ts).
+const itemName = nameField(80, 'a name');
+const itemNotes = nullableText(200).describe('Such as a brand or size, or null for none');
+
+// An item for the household's catalog, and only that: nothing goes on the grocery list, in a
+// recipe or in Grocery History (MEA-279).
+const createItemChange = z.object({
+	operation: z.literal('create_item'),
+	householdId,
+	name: itemName,
+	notes: itemNotes,
+	imageUrl: imageUrl
+		.nullable()
+		.describe(
+			"The image's own https link, to a JPEG, PNG, GIF or WebP, not the page it's on, or null for none"
+		)
+});
+
+/**
+ * A new item as a proposal keeps it, with the image its link led to, or null when it has none
+ * (prepareChange).
+ */
+type CreateItemChange = z.output<typeof createItemChange> & { photoKey: string | null };
+
+function planCreateItem(change: CreateItemChange): PlannedChange {
+	const { householdId, name, notes, imageUrl, photoKey } = change;
+	return {
+		title: 'Add an item',
+		...inHousehold(householdId),
+		record: null,
+		current: [],
+		proposed: [
+			{ name: 'Name', value: name },
+			{ name: 'Notes', value: shown(notes) },
+			imageUrl === null || photoKey === null
+				? imageField(null)
+				: { name: 'Image', value: imageUrl, photoKey }
+		],
+		// Checked when it's made, so a name another change of the proposal gives an item, or one an
+		// item got after it was proposed, refuses it.
+		apply: (now) => nameTaken('item', name, addItem(householdId, { name, notes, photoKey }, now))
+	};
+}
 
 function itemFields(householdId: number, id: number) {
 	const item = lookUp(`Item ${id}`, () => getItem(householdId, id));
@@ -249,8 +302,8 @@ const updateItemChange = z.object({
 	operation: z.literal('update_item'),
 	householdId,
 	itemId,
-	name: nameField(80, 'a name'),
-	notes: nullableText(200).describe('Such as a brand or size, or null for none')
+	name: itemName,
+	notes: itemNotes
 });
 
 function planUpdateItem(change: z.output<typeof updateItemChange>): PlannedChange {
@@ -630,14 +683,6 @@ function planSetRecipeArchived(change: z.output<typeof setRecipeArchivedChange>)
 
 // Images (MEA-276)
 
-// Checked as an image link on Items is (design 7, Item images), but https only.
-const imageUrl = z
-	.string()
-	.trim()
-	.max(2000, 'Keep the link under 2000 characters')
-	.pipe(z.url({ protocol: /^https$/, error: 'Send a link that starts with https://' }))
-	.describe("The image's own https link, to a JPEG, PNG, GIF or WebP, not the page it's on");
-
 function replace(record: 'recipe' | 'item') {
 	return z
 		.boolean()
@@ -931,6 +976,7 @@ export const changeSchema = z.discriminatedUnion('operation', [
 	createStoreChange,
 	renameStoreChange,
 	setStoreArchivedChange,
+	createItemChange,
 	updateItemChange,
 	setItemArchivedChange,
 	addGroceryLineChange,
@@ -950,30 +996,45 @@ export const changeSchema = z.discriminatedUnion('operation', [
 /** A change as an assistant sends it. */
 export type ChangeInput = z.output<typeof changeSchema>;
 
-type ImageChangeInput = Extract<ChangeInput, { operation: 'set_recipe_image' | 'set_item_image' }>;
+/** The changes that take an image link: image changes (MEA-276) and new items (MEA-279). */
+type ImageChangeInput = Extract<
+	ChangeInput,
+	{ operation: 'set_recipe_image' | 'set_item_image' | 'create_item' }
+>;
 
-/** Whether the change gives a recipe or an item an image (MEA-276). */
-export function isImageChange(change: ChangeInput): change is ImageChangeInput {
-	return change.operation === 'set_recipe_image' || change.operation === 'set_item_image';
+/** Whether the change gives a recipe or an item the image at a link, which proposing stores. */
+export function proposesImage(change: ChangeInput): boolean {
+	return 'imageUrl' in change && change.imageUrl !== null;
 }
 
 /**
- * A change as a proposal keeps it. An image change also has the image its link led to, stored
- * before it was proposed, so the image approved is the one the admin saw.
+ * A change as a proposal keeps it. A change with an image link also has the image it led to,
+ * stored before it was proposed, so the image approved is the one the admin saw.
  */
 export type Change =
 	| Exclude<ChangeInput, ImageChangeInput>
 	| SetRecipeImageChange
-	| SetItemImageChange;
+	| SetItemImageChange
+	| CreateItemChange;
 
 /**
- * The change as a proposal keeps it: an image change gets the image its link points at, resized
- * and stored as a photo (photos.ts) for the admin to see before approving it. Refused (400) as
- * saveImageFromLink says. Nothing else changes.
+ * The change as a proposal keeps it: a change with an image link gets the image it points at,
+ * resized and stored as a photo (photos.ts) for the admin to see before approving it. Refused
+ * (400) as saveImageFromLink says. Nothing else changes.
  */
 export async function prepareChange(change: ChangeInput): Promise<Change> {
-	if (!isImageChange(change)) return change;
-	return { ...change, photoKey: await saveImageFromLink(new URL(change.imageUrl)) };
+	switch (change.operation) {
+		case 'set_recipe_image':
+		case 'set_item_image':
+			return { ...change, photoKey: await saveImageFromLink(new URL(change.imageUrl)) };
+		case 'create_item': {
+			const { imageUrl } = change;
+			const photoKey = imageUrl === null ? null : await saveImageFromLink(new URL(imageUrl));
+			return { ...change, photoKey };
+		}
+		default:
+			return change;
+	}
 }
 
 /**
@@ -990,6 +1051,8 @@ export function planChange(change: Change): PlannedChange {
 			return planRenameStore(change);
 		case 'set_store_archived':
 			return planSetStoreArchived(change);
+		case 'create_item':
+			return planCreateItem(change);
 		case 'update_item':
 			return planUpdateItem(change);
 		case 'set_item_archived':
