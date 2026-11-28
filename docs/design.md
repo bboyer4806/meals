@@ -1436,6 +1436,10 @@ the group says how many lines it changed (6.2). A row's circle checks it off as 
 fills as soon as it's tapped, and until the check-off is saved, or the row says why it wasn't, the
 row's buttons are dimmed and can't be tapped. Undoing a received line empties its circle the same
 way, and picking a store under "Where did you get it?" dims the stores until it's done (MEA-133).
+When a tapped circle finds that someone else deleted its line, the list doesn't reload, so the row
+stays where it was, with its buttons dimmed, and says "This line is no longer on the list." The
+shopper sees why from where they tapped, however far down the list. The row goes when the list
+next reloads, as after another change or on coming back to the page (6.11, MEA-136).
 Add reads "Adding…" until the line is added or the add bar says why not. While any of the page's
 forms is on its way, sending it again, as with a second tap on a slow connection, does nothing:
 that goes for Add, the question about an item already on the list, Mark all and a line's sheet as

@@ -698,6 +698,48 @@ test('says so when someone else deleted the line, and stays on the list', async 
 	await expect(aldi.getByRole('button', { name: /^Eggs/ })).toBeVisible();
 });
 
+// The list used to reload without the line, and its row took the message with it (MEA-136).
+test('says so where it was tapped when a line was already deleted, until the list reloads', async ({
+	page,
+	db,
+	person
+}) => {
+	// A list longer than the screen, with Yogurt far down it.
+	const aldi = addStore(db, person.householdId, 'Aldi');
+	const addItemRow = db.prepare(
+		'insert into items (household_id, name, created_at) values (?, ?, 0)'
+	);
+	const addLine = db.prepare(
+		"insert into grocery_needs (household_id, item_id, quantity, store_id, status, created_at) values (?, ?, 1, ?, 'to_order', 0)"
+	);
+	const names = Array.from({ length: 30 }, (_, index) => `Item ${index + 10}`);
+	for (const name of [...names, 'Yogurt', 'Ziti']) {
+		addLine.run(person.householdId, addItemRow.run(person.householdId, name).lastInsertRowid, aldi);
+	}
+	await open(page, '/groceries');
+	db.prepare(
+		"delete from grocery_needs where item_id = (select id from items where household_id = ? and name = 'Yogurt')"
+	).run(person.householdId);
+
+	const check = page.getByRole('button', { name: 'Mark received: Yogurt' });
+	const yogurt = page.getByRole('listitem').filter({ has: check });
+	await check.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+	await check.click();
+	// Once the answer is in, the row is still where it was tapped, saying why, its buttons dimmed.
+	await expect(check.locator('.circle')).toHaveText('');
+	await expect(yogurt.getByRole('alert')).toHaveText('This line is no longer on the list.');
+	await expect(yogurt.getByRole('alert')).toBeInViewport();
+	await expect(check).toBeDisabled();
+	await expect(yogurt.getByRole('button', { name: /^Yogurt/ })).toBeDisabled();
+	await expect(page.getByRole('alert')).toHaveCount(1);
+
+	// The next change reloads the list, without Yogurt.
+	await page.getByRole('button', { name: 'Mark received: Ziti' }).click();
+	await expect(page.getByRole('button', { name: 'Undo received: Ziti' })).toBeVisible();
+	await expect(page.getByRole('button', { name: /Yogurt/ })).toHaveCount(0);
+	await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
 test("keeps the list, an open sheet and what was typed when an action can't reach Meals (MEA-111)", async ({
 	page,
 	db,
