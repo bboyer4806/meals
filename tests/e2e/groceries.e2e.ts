@@ -278,6 +278,53 @@ test('reads "Adding…" while an add is on its way, and sends it only once', asy
 	expect(lines).toEqual([1]);
 });
 
+// On a slow connection, someone adds an item and goes down the list before the add lands. The page
+// used to scroll back up and focus the item field, so a tap aimed at a line landed in the add bar
+// (design 7, Grocery list; MEA-135).
+test('keeps focus and the page where they are when a slow add finishes', async ({
+	page,
+	db,
+	person
+}) => {
+	// A list longer than the screen, with Yogurt at its end, so what's added comes after it.
+	const addItemRow = db.prepare(
+		'insert into items (household_id, name, created_at) values (?, ?, 0)'
+	);
+	const addLine = db.prepare(
+		"insert into grocery_needs (household_id, item_id, quantity, status, created_at) values (?, ?, 1, 'to_order', 0)"
+	);
+	const names = [...Array.from({ length: 40 }, (_, index) => `Item ${index + 10}`), 'Yogurt'];
+	for (const name of names) {
+		addLine.run(person.householdId, addItemRow.run(person.householdId, name).lastInsertRowid);
+	}
+	await open(page, '/groceries');
+	const add = await slowAction(page, '?/add');
+	const item = addForm(page).getByRole('combobox', { name: 'Item' });
+	const yogurt = page.getByRole('button', { name: 'Mark received: Yogurt' });
+	const scrollY = () => page.evaluate(() => window.scrollY);
+
+	// With focus still in the add bar, on Add, the item field takes it for the next item, and the
+	// page stays scrolled down.
+	await addItem(page, { name: 'Zucchini' });
+	await yogurt.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+	const scrolled = await scrollY();
+	expect(scrolled).toBeGreaterThan(0);
+	add.answer();
+	await expect(item).toHaveValue('');
+	await expect(item).toBeFocused();
+	expect(await scrollY()).toBe(scrolled);
+
+	// With focus gone on to a line, it stays there, and so does the line.
+	await addItem(page, { name: 'Ziti' });
+	await yogurt.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+	await yogurt.focus();
+	const where = await yogurt.boundingBox();
+	add.answer();
+	await expect(item).toHaveValue('');
+	await expect(yogurt).toBeFocused();
+	expect(await yogurt.boundingBox()).toEqual(where);
+});
+
 test('asks for a store when checking off a line without one, and can undo', async ({
 	page,
 	db,
