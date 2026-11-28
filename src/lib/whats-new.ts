@@ -14,6 +14,24 @@ export type Release = {
 /** Newest first. */
 export const RELEASES: [Release, ...Release[]] = [
 	{
+		version: '1.20',
+		released: '2026-11-28',
+		lines: [
+			"Sheets, such as Request a dish on the Menu, now stay above your phone's keyboard, so you can reach Request and the other buttons without closing the keyboard first.",
+			"On the grocery list, a line's circle now fills as soon as you tap it, and Add shows Adding… until it's saved. Tapping again before Meals answers does nothing, so on a slow connection a second tap no longer checks off the next line or doubles what you added.",
+			"When an Add on the grocery list finishes after you've scrolled down, the page now stays where you are instead of jumping back to the add bar.",
+			"On the grocery list, tapping a line someone else just deleted now leaves it in place, dimmed, and says it's no longer on the list, instead of making it vanish without a word. It goes the next time the list refreshes.",
+			'Store groups you collapse on the grocery list now load already collapsed, so the list no longer jumps as the page finishes loading. Each device remembers them in a cookie, now listed on the Privacy page. Groups collapsed before this release open once, so collapse them again.',
+			"On narrower phones, the grocery list's add bar now puts the store on its own row under quantity and unit, so you can read which store a new line goes to.",
+			"On Grocery History, Show older now adds the older lines below the ones you've read instead of jumping back to the top, and Back takes you straight out of Grocery History.",
+			'On Items, saving, archiving or restoring an item now keeps your search and the archived list you were looking at, instead of going back to the full list.',
+			"On a day with several dinners, leaving the page with typing you haven't saved now asks once and names each dinner it would lose, instead of asking for each one without saying which.",
+			'On Household, the name, usual servings and time zone you type now stay until you tap Save, even if you switch to another app or add a store first.',
+			'When Import recipes lists problems with your file, it now asks you to fix them and choose the file again, and the fixed file then imports. Import also no longer tells you to check your connection when something else went wrong.',
+			'A connected AI assistant, ChatGPT or Claude, can now propose new grocery items, with notes and a photo, to add to Items. The admin sees each one before approving, and nothing is added unless they approve.'
+		]
+	},
+	{
 		version: '1.19',
 		released: '2026-11-23',
 		lines: [

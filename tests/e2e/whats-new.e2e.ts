@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, open, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.19 was released on 2026-11-23, two days after 1.18.
+// What's new (design 7). 1.20 was released on 2026-11-28, five days after 1.19.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -29,8 +29,8 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 	await link(page).click();
 
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.19', '1.18', '1.17', '1.16', '1.15', '1.14', '1.13', '1.12', '1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
-	const [v119, v118, v117, v116, v115, v114, v113, v112, v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText(['1.20', '1.19', '1.18', '1.17', '1.16', '1.15', '1.14', '1.13', '1.12', '1.11', '1.10', '1.9', '1.8', '1.7', '1.6', '1.5', '1.4', '1.3', '1.2', '1.1']);
+	const [v120, v119, v118, v117, v116, v115, v114, v113, v112, v111, v110, v19, v18, v17, v16, v15, v14, v13, v12, v11] = [
 		page.locator('section').nth(0),
 		page.locator('section').nth(1),
 		page.locator('section').nth(2),
@@ -49,8 +49,24 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 		page.locator('section').nth(15),
 		page.locator('section').nth(16),
 		page.locator('section').nth(17),
-		page.locator('section').nth(18)
+		page.locator('section').nth(18),
+		page.locator('section').nth(19)
 	];
+	await expect(v120.getByText('Released November 28, 2026')).toBeVisible();
+	await expect(v120.getByRole('listitem')).toHaveText([
+		"Sheets, such as Request a dish on the Menu, now stay above your phone's keyboard, so you can reach Request and the other buttons without closing the keyboard first.",
+		"On the grocery list, a line's circle now fills as soon as you tap it, and Add shows Adding… until it's saved. Tapping again before Meals answers does nothing, so on a slow connection a second tap no longer checks off the next line or doubles what you added.",
+		"When an Add on the grocery list finishes after you've scrolled down, the page now stays where you are instead of jumping back to the add bar.",
+		"On the grocery list, tapping a line someone else just deleted now leaves it in place, dimmed, and says it's no longer on the list, instead of making it vanish without a word. It goes the next time the list refreshes.",
+		'Store groups you collapse on the grocery list now load already collapsed, so the list no longer jumps as the page finishes loading. Each device remembers them in a cookie, now listed on the Privacy page. Groups collapsed before this release open once, so collapse them again.',
+		"On narrower phones, the grocery list's add bar now puts the store on its own row under quantity and unit, so you can read which store a new line goes to.",
+		"On Grocery History, Show older now adds the older lines below the ones you've read instead of jumping back to the top, and Back takes you straight out of Grocery History.",
+		'On Items, saving, archiving or restoring an item now keeps your search and the archived list you were looking at, instead of going back to the full list.',
+		"On a day with several dinners, leaving the page with typing you haven't saved now asks once and names each dinner it would lose, instead of asking for each one without saying which.",
+		'On Household, the name, usual servings and time zone you type now stay until you tap Save, even if you switch to another app or add a store first.',
+		'When Import recipes lists problems with your file, it now asks you to fix them and choose the file again, and the fixed file then imports. Import also no longer tells you to check your connection when something else went wrong.',
+		'A connected AI assistant, ChatGPT or Claude, can now propose new grocery items, with notes and a photo, to add to Items. The admin sees each one before approving, and nothing is added unless they approve.'
+	]);
 	await expect(v119.getByText('Released November 23, 2026')).toBeVisible();
 	await expect(v119.getByRole('listitem')).toHaveText([
 		"The Menu now crosses off the dates of days that have passed, in your household's time zone. Their dinners stay as they were, and you can still open and change them.",
@@ -259,14 +275,14 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	browser,
 	baseURL
 }) => {
-	// Two members of the household who joined before 1.19 and have seen 1.18, released two days before.
+	// Two members of the household who joined before 1.20 and have seen 1.19, released five days before.
 	const joined = Date.UTC(2026, 9, 1, 17);
 	setCreatedAt(db, person.userId, joined);
-	db.prepare("update users set whats_new_seen = '1.18' where id = ?").run(person.userId);
+	db.prepare("update users set whats_new_seen = '1.19' where id = ?").run(person.userId);
 	const memberId = Number(
 		db
 			.prepare(
-				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.18')"
+				"insert into users (household_id, google_sub, email, name, created_at, tour_seen, whats_new_seen) values (?, ?, ?, 'Robin', ?, 0, '1.19')"
 			)
 			.run(
 				person.householdId,
@@ -282,7 +298,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	await link(page).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
-	expect(seen(db, person.userId)).toBe('1.19');
+	expect(seen(db, person.userId)).toBe('1.20');
 
 	// Opening it cleared only their own dot.
 	const other = await browser.newContext();
@@ -290,7 +306,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	const phone = await other.newPage();
 	await phone.goto('/groceries');
 	await expect(more(phone).locator('.dot')).toBeVisible();
-	expect(seen(db, memberId)).toBe('1.18');
+	expect(seen(db, memberId)).toBe('1.19');
 	await other.close();
 });
 
@@ -299,7 +315,7 @@ test('shows no dot to someone who joined after the newest release', async ({
 	db,
 	person
 }) => {
-	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 23, 17));
+	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 28, 17));
 	await open(page, '/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
