@@ -1412,7 +1412,10 @@ a tour.
 **Grocery list.** Beside the title, Items, Grocery History and Party lists open those screens; they
 go under it together on a screen too narrow for them (MEA-247). An add bar at the top: item (with
 suggestions), quantity, unit, store (filled from the default; tap to change) and Add. Below it, one group per store plus "No
-store". Groups can be collapsed, and the device remembers which ones are. Each group
+store". Groups can be collapsed, and the device remembers which ones are (MEA-134): a cookie
+keeps them, so the server sends them already closed, and the list doesn't move under someone
+who has started scrolling when the page's script starts. The page sets the cookie again whenever
+the list opens, since Safari keeps a cookie a page sets for at most 7 days. Each group
 lists its To Order lines, then Ordered, then Received today (struck through). Store
 groups have "Mark all ordered" and "Mark all received"; "No store" has neither. After either,
 the group says how many lines it changed (6.2). A row's circle checks it off as Received. It

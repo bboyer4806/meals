@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { COLLAPSED_COOKIE } from '#lib/groceries.ts';
 import { requireHousehold } from '#lib/server/auth/guards.ts';
 import { getHousehold } from '#lib/server/data/households.ts';
 import { listPickerItems } from '#lib/server/data/items.ts';
@@ -47,7 +48,7 @@ function group(key: string, storeId: number | null, name: string, lines: Grocery
 	};
 }
 
-export function load({ locals }) {
+export function load({ locals, cookies }) {
 	const user = requireHousehold(locals);
 	const household = getHousehold(user.householdId);
 	const stores = listStores(user.householdId);
@@ -64,6 +65,9 @@ export function load({ locals }) {
 
 	return {
 		groups,
+		// The keys of the groups collapsed on this device, which render closed (design 7, Grocery
+		// list; MEA-134).
+		collapsed: cookies.get(COLLAPSED_COOKIE)?.split('.') ?? [],
 		stores,
 		items: listPickerItems(user.householdId),
 		// The first-time tour lives here, since the layout can't have the action that ends it

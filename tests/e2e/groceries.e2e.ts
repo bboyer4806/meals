@@ -159,6 +159,58 @@ test('marks only the lines the question counted, and says how many changed', asy
 	expect(eggsStatus()).toBe('ordered');
 });
 
+// A cookie keeps the groups collapsed on this device, so the server sends them closed and the
+// list doesn't move once the page's script starts (design 7, Grocery list; MEA-134).
+test('sends the groups collapsed on this device closed', async ({
+	page,
+	context,
+	browser,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Walmart');
+	addStore(db, person.householdId, 'Aldi');
+	await open(page, '/groceries');
+	await addAndWait(page, { name: 'Milk', store: 'Walmart' });
+	await addAndWait(page, { name: 'Bread', store: 'Aldi' });
+	const walmart = group(page, 'Walmart');
+	const milk = walmart.getByRole('button', { name: /^Milk/ });
+	await expect(milk).toBeVisible();
+	// The page writes the cookie once a group has toggled, and the browser stores it a moment later.
+	const collapsedCookie = async () =>
+		(await context.cookies()).find((cookie) => cookie.name === 'collapsed_groups');
+
+	await walmart.getByRole('heading', { name: 'Walmart' }).click();
+	await expect(milk).toBeHidden();
+	await expect.poll(collapsedCookie).toBeDefined();
+
+	// A page whose script never runs shows the list as the server sent it.
+	const noScript = await browser.newContext({ javaScriptEnabled: false });
+	await noScript.addCookies(await context.cookies());
+	const sent = await noScript.newPage();
+	await sent.goto('/groceries');
+	await expect(group(sent, 'Walmart')).not.toHaveAttribute('open');
+	await expect(group(sent, 'Aldi')).toHaveAttribute('open');
+	await noScript.close();
+
+	// Opening the list sets the cookie again, since Safari keeps one the page sets for 7 days.
+	const cookie = await collapsedCookie();
+	if (!cookie) throw new Error('No cookie keeps the collapsed groups');
+	await context.addCookies([{ ...cookie, expires: Date.now() / 1000 + 60 }]);
+	await open(page, '/groceries');
+	await expect(milk).toBeHidden();
+	await expect
+		.poll(async () => (await collapsedCookie())?.expires)
+		.toBeGreaterThan(Date.now() / 1000 + 300 * 24 * 60 * 60);
+
+	// Opening the group again is remembered too.
+	await walmart.getByRole('heading', { name: 'Walmart' }).click();
+	await expect(milk).toBeVisible();
+	await expect.poll(collapsedCookie).toBeUndefined();
+	await open(page, '/groceries');
+	await expect(milk).toBeVisible();
+});
+
 test('offers to update a line already on the list', async ({ page, person: _ }) => {
 	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Butter', quantity: '2', unit: 'lb' });

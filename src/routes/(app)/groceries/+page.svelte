@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
@@ -8,7 +8,7 @@
 	import ItemThumb from '#lib/components/ItemThumb.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
 	import Tour from '#lib/components/Tour.svelte';
-	import { ALREADY_RECEIVED } from '#lib/groceries.ts';
+	import { ALREADY_RECEIVED, COLLAPSED_COOKIE } from '#lib/groceries.ts';
 	import { keepPage, problemIn } from '#lib/submit.ts';
 	import { foldCase, formatQuantity, normalizeName } from '#lib/text.ts';
 
@@ -254,26 +254,26 @@
 		return `Marked ${count} ${storeName} ${count === 1 ? 'item' : 'items'} as ${marked}.`;
 	}
 
-	// Collapsed groups are remembered on this device only.
+	// Collapsed groups are remembered on this device only, in a cookie, so the server renders them
+	// closed and the list doesn't move when the page's script starts (design 7, Grocery list;
+	// MEA-134).
 
-	const COLLAPSED_KEY = 'collapsedGroups';
-	let collapsed = $state<Record<string, boolean>>({});
+	const collapsed = new SvelteSet(untrack(() => data.collapsed));
 
-	$effect(() => {
-		try {
-			collapsed = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '{}');
-		} catch {
-			collapsed = {};
-		}
-	});
+	/** Keeps the collapsed groups in their cookie for a year, or deletes it when no group is. */
+	function remember() {
+		const keys = [...collapsed].join('.');
+		const maxAge = keys === '' ? 0 : 365 * 24 * 60 * 60;
+		document.cookie = `${COLLAPSED_COOKIE}=${keys}; path=/groceries; max-age=${maxAge}; samesite=lax`;
+	}
+
+	// Safari keeps a cookie the page sets for at most 7 days, so opening the list sets it again.
+	onMount(remember);
 
 	function toggle(key: string, open: boolean) {
-		collapsed[key] = !open;
-		try {
-			localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed));
-		} catch {
-			// Storage can be unavailable (private browsing); collapsing still works for now.
-		}
+		if (open) collapsed.delete(key);
+		else collapsed.add(key);
+		remember();
 	}
 </script>
 
@@ -351,7 +351,7 @@
 {#each data.groups as group (group.key)}
 	<details
 		class="group card"
-		open={!collapsed[group.key]}
+		open={!collapsed.has(group.key)}
 		ontoggle={(event) => toggle(group.key, event.currentTarget.open)}
 	>
 		<summary>
