@@ -1904,7 +1904,12 @@ Warmer and food-themed (Q39), following the phone's light or dark setting:
   everything else. Both are self-hosted.
 - Phone details: tap targets at least 44 px, edit sheets that slide up from the bottom,
   and nothing that depends on hovering. Dragging on an open sheet scrolls only the sheet,
-  and the page behind stays where it was (MEA-164).
+  and the page behind stays where it was (MEA-164). Sheets keep to the part of the screen a
+  phone's keyboard leaves: as it opens, changes size or closes, an open sheet moves to just
+  above it, or back to the bottom, and is at most 88% as tall as that part, with what doesn't
+  fit scrolling. When getting shorter would hide the field being typed in, the sheet scrolls
+  just far enough to show it. A sheet centered on a wider screen is centered in that part.
+  Buttons in a sheet can be tapped with the keyboard open, and what's typed stays (MEA-277).
 
 Colors and fonts are defined once as variables, so changes after you see the first
 deploy are quick.
