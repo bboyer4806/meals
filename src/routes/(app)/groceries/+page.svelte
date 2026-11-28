@@ -354,7 +354,7 @@
 			bind:value={itemName}
 		/>
 	</div>
-	<div class="row">
+	<div class="row wrap">
 		<label class="visually-hidden" for="quantity">Quantity</label>
 		<input
 			class="qty"
@@ -370,7 +370,7 @@
 		<label class="visually-hidden" for="unit">Unit</label>
 		<input class="unit" id="unit" name="unit" maxlength="20" placeholder="Unit" bind:value={unit} />
 		<label class="visually-hidden" for="store">Store</label>
-		<select class="grow" id="store" name="store" bind:value={store}>
+		<select class="store" id="store" name="store" bind:value={store}>
 			<option value="usual">Usual store</option>
 			{#each activeStores as option (option.id)}
 				<option value={String(option.id)}>{option.name}</option>
@@ -733,6 +733,15 @@
 	.unit {
 		width: 6rem;
 		flex: none;
+	}
+
+	/* Beside quantity and unit, the add bar's store is at least as wide as its longest choice.
+	   Where there isn't room for that, as on a 320 px phone, it goes under them, across the add
+	   bar, so the store a new line goes to can be read (design 7, Grocery list; MEA-138). */
+	.store {
+		flex: 1 1 auto;
+		width: auto;
+		min-width: 0;
 	}
 
 	.empty {
