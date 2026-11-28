@@ -1344,7 +1344,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Dinner           | `/menu/[date]`                       | See below.                                                                                                                           |
 | Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
 | Reports          | `/reports`                           | See below.                                                                                                                           |
-| Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
+| Household        | `/household`                         | Name, usual servings and time zone, where what's typed stays until Save, also when the page's data reloads (6.11, MEA-130); members; invites; stores. |
 | What's new       | `/whats-new`                         | See below.                                                                                                                           |
 | Admin            | `/admin`                             | Invite households, list households with their members and invites, last backup date, send a test email, AI assistants. See below.   |
 | Connect an assistant | `/oauth/authorize`               | "Connect ChatGPT to Meals?" (or Claude): what it will be able to do, Allow and Deny. Admin only (6.17).                             |

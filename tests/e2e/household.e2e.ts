@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import {
 	UNREACHABLE,
 	addInvite,
@@ -12,6 +13,13 @@ import {
 	signInAs,
 	test
 } from './fixtures.ts';
+
+/** Coming back to the tab or app, which reloads the page's data (Q11). */
+async function comeBack(page: Page) {
+	const reloaded = page.waitForResponse((response) => response.url().includes('/__data.json'));
+	await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+	await reloaded;
+}
 
 test('sends signed-out people to the sign-in page', async ({ page }) => {
 	await page.goto('/groceries');
@@ -120,6 +128,51 @@ test('asks someone invited by more than one household which to join (MEA-112)', 
 	const householdOf = db.prepare('select household_id from users where id = ?').pluck();
 	expect(householdOf.get(userId)).toBe(joneses);
 	expect(db.prepare('select count(*) from invites where email = ?').pluck().get(email)).toBe(0);
+});
+
+test('keeps typed settings through the page reloading until Save (MEA-130)', async ({
+	page,
+	db,
+	person
+}) => {
+	await open(page, '/household');
+	const name = page.getByLabel('Household name');
+	const servings = page.getByLabel('Usual number of servings');
+	const timeZone = page.getByLabel('Time zone');
+	await name.fill('The Robins');
+	await servings.fill('6');
+	await timeZone.selectOption('America/Denver');
+
+	// Checking a spelling in another app and coming back reloads the page's data.
+	await comeBack(page);
+	await expect(name).toHaveValue('The Robins');
+	await expect(servings).toHaveValue('6');
+	await expect(timeZone).toHaveValue('America/Denver');
+
+	// So does adding a store, also after someone else saved other settings meanwhile.
+	db.prepare(
+		'update households set name = ?, default_servings = 2, time_zone = ? where id = ?'
+	).run('The Jays', 'America/New_York', person.householdId);
+	await page.getByLabel('Store name').fill('Costco');
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(page.getByText('Costco', { exact: true })).toBeVisible();
+	await expect(name).toHaveValue('The Robins');
+	await expect(servings).toHaveValue('6');
+	await expect(timeZone).toHaveValue('America/Denver');
+
+	// Save keeps what was typed, the last save winning (6.11), and the fields show what was saved.
+	await name.fill('  The   Robins ');
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(page.getByRole('status')).toHaveText('Saved.');
+	const settings = db.prepare(
+		'select name, default_servings, time_zone from households where id = ?'
+	);
+	expect(settings.get(person.householdId)).toEqual({
+		name: 'The Robins',
+		default_servings: 6,
+		time_zone: 'America/Denver'
+	});
+	await expect(name).toHaveValue('The Robins');
 });
 
 test('manages stores and invites', async ({ page, db, person }) => {
