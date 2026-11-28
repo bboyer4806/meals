@@ -1440,9 +1440,10 @@ Add reads "Adding…" until the line is added or the add bar says why not. While
 forms is on its way, sending it again, as with a second tap on a slow connection, does nothing:
 that goes for Add, the question about an item already on the list, Mark all and a line's sheet as
 well as the circles, so nothing is added or changed twice. Once an Add is done, focus still in the
-add bar goes to the item field for the next item, without scrolling the page. Otherwise focus and
-the page stay where they are, so someone who scrolled down to tap a line while the Add was on its
-way taps that line, not the add bar (MEA-135).
+add bar goes to the item field for the next item, without scrolling the page, if the field shows on
+screen. If the add bar was scrolled away, nothing takes focus, so a phone doesn't open its keyboard
+over the list. Focus anywhere else stays where it is, and so does the page, so someone who
+scrolled down to tap a line while the Add was on its way taps that line, not the add bar (MEA-135).
 Tapping a row opens an edit sheet: quantity, unit, store, note, Mark ordered, Didn't come, Got
 fewer, and Delete. An item's notes (brand, size) show under its name, and its image, if it has
 one, beside it (Item images, below).

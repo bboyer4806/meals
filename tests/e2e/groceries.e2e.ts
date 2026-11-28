@@ -303,15 +303,22 @@ test('keeps focus and the page where they are when a slow add finishes', async (
 	const yogurt = page.getByRole('button', { name: 'Mark received: Yogurt' });
 	const scrollY = () => page.evaluate(() => window.scrollY);
 
-	// With focus still in the add bar, on Add, the item field takes it for the next item, and the
-	// page stays scrolled down.
+	// Still at the add bar, with focus left on Add, the item field takes it for the next item.
+	await addItem(page, { name: 'Zinfandel' });
+	add.answer();
+	await expect(item).toHaveValue('');
+	await expect(item).toBeFocused();
+	expect(await scrollY()).toBe(0);
+
+	// With the add bar scrolled away, nothing takes focus, so a phone's keyboard doesn't open over
+	// the list, and the page stays scrolled down.
 	await addItem(page, { name: 'Zucchini' });
 	await yogurt.evaluate((element) => element.scrollIntoView({ block: 'center' }));
 	const scrolled = await scrollY();
 	expect(scrolled).toBeGreaterThan(0);
 	add.answer();
 	await expect(item).toHaveValue('');
-	await expect(item).toBeFocused();
+	await expect(item).not.toBeFocused();
 	expect(await scrollY()).toBe(scrolled);
 
 	// With focus gone on to a line, it stays there, and so does the line.
