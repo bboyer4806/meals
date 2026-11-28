@@ -182,23 +182,22 @@
 		};
 	});
 
-	// One line's actions. Their errors show next to the line or in its sheet. A line that's gone
-	// from the list, as when someone else deleted it, has no row, so its error shows at the top of
-	// the list instead (6.11, MEA-136).
+	// One line's actions. Their errors show next to the line or in its sheet, not elsewhere.
 
 	type Where = number | 'sheet' | 'fewer' | 'picker';
 	let lineError = $state<{ where: Where; message: string } | null>(null);
 
-	/** Whether the line `id` is on the list as the page has it now. */
-	function onList(id: number) {
-		return data.groups.some((group) =>
-			[...group.toOrder, ...group.ordered, ...group.received].some((line) => line.id === id)
-		);
-	}
+	// What a line someone else deleted says.
+	const DELETED = 'This line is no longer on the list.';
+
+	// Lines whose circle found that someone else deleted them. The list doesn't reload then, so
+	// each keeps its row, dimmed and saying so where the shopper tapped, until the list next does
+	// (design 7, Grocery list; MEA-136).
+	const gone = new SvelteSet<number>();
 
 	function lineFailure(result: ActionResult): string | null {
 		// Someone else deleted the line.
-		if (result.type === 'error' && result.status === 404) return 'This line is no longer on the list.';
+		if (result.type === 'error' && result.status === 404) return DELETED;
 		return problemIn(result);
 	}
 
@@ -216,6 +215,12 @@
 					lineError = null;
 					await refreshAll();
 					pickOpen = false;
+					return;
+				}
+				if (message === DELETED && typeof where === 'number') {
+					// Not reloading the list, which would take the row away and the message with it.
+					lineError = null;
+					gone.add(where);
 					return;
 				}
 				if (message !== null) {
@@ -381,9 +386,6 @@
 {#if (form?.action === 'group' || form?.action === 'line') && form.error}
 	<p class="error" role="alert">{form.error}</p>
 {/if}
-{#if typeof lineError?.where === 'number' && !onList(lineError.where)}
-	<p class="error" role="alert">{lineError.message}</p>
-{/if}
 
 {#if data.groups.length === 0}
 	<p class="empty muted">Nothing on the list. Add something above.</p>
@@ -458,13 +460,15 @@
 {/each}
 
 {#snippet row(line: Line)}
-	<!-- While its circle's change is on its way, the circle shows it and the row's buttons wait. -->
+	<!-- While its circle's change is on its way, the circle shows it and the row's buttons wait. A
+	     line someone else deleted keeps its row with its buttons dimmed (MEA-136). -->
 	{@const busy = sending.has(line.status === 'received' ? `undo-${line.id}` : line.id)}
+	{@const disabled = busy || gone.has(line.id)}
 	<li class="line" class:done={line.status === 'received'}>
 		{#if line.status === 'received'}
 			<form method="POST" action="?/undoReceive" use:enhance={lineSubmit(line.id, `undo-${line.id}`)}>
 				<input type="hidden" name="id" value={line.id} />
-				<button class="check" aria-label="Undo received: {line.itemName}" disabled={busy}>
+				<button class="check" aria-label="Undo received: {line.itemName}" {disabled}>
 					{@render circle(!busy)}
 				</button>
 			</form>
@@ -472,7 +476,7 @@
 			<button
 				class="check"
 				aria-label="Mark received: {line.itemName}"
-				disabled={busy}
+				{disabled}
 				onclick={() => pickStore(line)}
 			>
 				{@render circle(busy)}
@@ -480,7 +484,7 @@
 		{:else}
 			<form method="POST" action="?/receive" use:enhance={checkOff(line.id)}>
 				<input type="hidden" name="id" value={line.id} />
-				<button class="check" aria-label="Mark received: {line.itemName}" disabled={busy}>
+				<button class="check" aria-label="Mark received: {line.itemName}" {disabled}>
 					{@render circle(busy)}
 				</button>
 			</form>
@@ -488,9 +492,11 @@
 		{#if line.status === 'received'}
 			<div class="body">{@render lineText(line)}</div>
 		{:else}
-			<button class="body" disabled={busy} onclick={() => edit(line)}>{@render lineText(line)}</button>
+			<button class="body" {disabled} onclick={() => edit(line)}>{@render lineText(line)}</button>
 		{/if}
-		{#if lineError?.where === line.id}
+		{#if gone.has(line.id)}
+			<p class="error line-error" role="alert">{DELETED}</p>
+		{:else if lineError?.where === line.id}
 			<p class="error line-error" role="alert">{lineError.message}</p>
 		{/if}
 	</li>
