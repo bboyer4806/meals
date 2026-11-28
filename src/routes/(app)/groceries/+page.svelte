@@ -63,6 +63,7 @@
 	let quantity = $state<number | null>(1);
 	let unit = $state('');
 	let store = $state('usual');
+	let addForm: HTMLFormElement;
 	let itemInput: HTMLElement;
 
 	// When the name matches an item, fill in the unit used last time and its store (design 6.4,
@@ -94,7 +95,31 @@
 		if (quantity === sent.quantity) quantity = 1;
 		if (unit === sent.unit && unit !== filledUnit) unit = '';
 		if (store === sent.store && store !== filledStore) store = 'usual';
-		itemInput.querySelector('input')?.focus();
+	}
+
+	/**
+	 * After an add, SvelteKit moves focus to the top of the page, as after any form that succeeds.
+	 * This puts it back by where it was as the answer came, without scrolling the page. Focus in
+	 * the add bar goes to the item field for the next item, but only while the field shows on
+	 * screen: focusing it opens a phone's keyboard, which would cover the list someone scrolled
+	 * down to. Focus anywhere else goes back where it was. On a slow connection, someone may have
+	 * scrolled down to tap a line meanwhile (design 7, Grocery list; MEA-135).
+	 */
+	function putFocusBack(focused: Element | null) {
+		if (!addForm.contains(focused)) {
+			if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
+			return;
+		}
+		const field = itemInput.querySelector('input')!;
+		if (onScreen(field)) field.focus({ preventScroll: true });
+	}
+
+	/** Whether all of `element` shows: in the window, and not under the header or the tab bar. */
+	function onScreen(element: Element) {
+		const box = element.getBoundingClientRect();
+		const x = (box.left + box.right) / 2;
+		// What's on top at the middle of its top and bottom edges, or nothing outside the window.
+		return [box.top + 1, box.bottom - 1].every((y) => document.elementFromPoint(x, y) === element);
 	}
 
 	type Prompt = Extract<NonNullable<typeof form>, { prompt: unknown }>['prompt'];
@@ -121,6 +146,8 @@
 	const submitAdd = send('add', () => {
 		const sent = { itemName, quantity, unit, store };
 		return async ({ result, update }) => {
+			// Where focus is as the answer comes, before update() moves it.
+			const focused = document.activeElement;
 			await update({ reset: false });
 			const asked = result.type === 'success' ? promptIn(result.data) : undefined;
 			if (asked) {
@@ -128,6 +155,7 @@
 				ask(asked);
 			} else if (result.type === 'success') {
 				clearIfUnchanged(sent);
+				putFocusBack(focused);
 			}
 		};
 	});
@@ -300,6 +328,7 @@
 	action="?/add"
 	use:enhance={submitAdd}
 	aria-label="Add to the list"
+	bind:this={addForm}
 >
 	<div bind:this={itemInput}>
 		<label class="visually-hidden" for="itemName">Item</label>
