@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
-import { addItem, addRecipe, expect, open, test } from './fixtures.ts';
+import { UNREACHABLE, addItem, addRecipe, dropActions, expect, open, test } from './fixtures.ts';
 
 // Import recipes (design 7): a CSV file of recipes, one per row, added from the Recipes page.
 
@@ -10,6 +10,18 @@ async function chooseFile(page: Page, csv: string) {
 		mimeType: 'text/csv',
 		buffer: Buffer.from(csv)
 	});
+}
+
+/**
+ * A CSV file on disk, as a spreadsheet saves it, for choosing by its path. It was last saved an
+ * hour ago, so saving over it changes its time even to the second, as Chromium compares it.
+ */
+function savedFile(csv: string): string {
+	const path = test.info().outputPath('recipes.csv');
+	writeFileSync(path, csv);
+	const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+	utimesSync(path, hourAgo, hourAgo);
+	return path;
 }
 
 function ingredientRow(page: Page, number: number) {
@@ -134,6 +146,7 @@ test('Skip, Replace and Rename a recipe already in Recipes', async ({ page, db, 
 	// A name that's taken is a problem, and the choices stay.
 	await duplicate(page, 'Toast').getByLabel('New name').fill('stew');
 	await page.getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByRole('alert')).toContainText('Fix these problems, then import again.');
 	await expect(page.getByRole('alert')).toContainText('Row 4: a recipe is already called stew.');
 	await expect(duplicate(page, 'Pound cake').getByLabel('Replace')).toBeChecked();
 
@@ -173,7 +186,9 @@ test('a file with a problem imports nothing and lists it by row', async ({ page,
 	await page.getByRole('button', { name: 'Import' }).click();
 
 	const alert = page.getByRole('alert');
-	await expect(alert).toContainText('Nothing was imported.');
+	await expect(alert).toContainText(
+		'Nothing was imported. Fix these problems, then choose the file again.'
+	);
 	await expect(alert.getByRole('listitem')).toHaveText([
 		'Row 3: Saffron is archived. Restore it on Items first.',
 		"Row 4: '2 cups' needs an item.",
@@ -182,6 +197,80 @@ test('a file with a problem imports nothing and lists it by row', async ({ page,
 
 	await open(page, '/recipes');
 	await expect(page.getByText('No recipes yet.')).toBeVisible();
+});
+
+test('after problems, the fixed file imports once chosen again (MEA-129)', async ({
+	page,
+	person: _signedIn
+}) => {
+	const file = savedFile('Recipe,Ingredients\nPound cake,2 cups\n');
+	await open(page, '/recipes/import');
+	await page.getByLabel('CSV file').setInputFiles(file);
+	await page.getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByRole('alert')).toContainText("Row 2: '2 cups' needs an item.");
+	// Chromium won't send the file again once it's saved over, so it's chosen again.
+	await expect(page.getByLabel('CSV file')).toHaveValue('');
+
+	writeFileSync(file, 'Recipe,Ingredients\nPound cake,2 cups flour\n');
+	await page.getByLabel('CSV file').setInputFiles(file);
+	await page.getByRole('button', { name: 'Import' }).click();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(page.getByRole('status')).toHaveText('Imported 1 recipe.');
+});
+
+test("a file changed after it was sent is chosen again, and the connection isn't blamed (MEA-129)", async ({
+	page,
+	db,
+	person
+}) => {
+	addRecipe(db, person.householdId, { name: 'Pound cake' });
+	const file = savedFile('Recipe\nPound cake\n');
+	await open(page, '/recipes/import');
+	await page.getByLabel('CSV file').setInputFiles(file);
+	await page.getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByText('These recipes are already in Recipes.')).toBeVisible();
+
+	// Renamed in the spreadsheet instead, and saved over. Chromium's request fails as it does
+	// without a connection.
+	writeFileSync(file, 'Recipe\nLemon pound cake\n');
+	await page.getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByRole('alert')).toHaveText(
+		'The file changed after you chose it. Choose it again.'
+	);
+	await expect(page.getByLabel('CSV file')).toHaveValue('');
+
+	await page.getByLabel('CSV file').setInputFiles(file);
+	await page.getByRole('button', { name: 'Import' }).click();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(page.getByRole('status')).toHaveText('Imported 1 recipe.');
+});
+
+test("says when Meals can't be reached or something went wrong there, keeping the file (MEA-129)", async ({
+	page,
+	person: _signedIn
+}) => {
+	await open(page, '/recipes/import');
+	await chooseFile(page, 'Recipe\nToast\n');
+	const reconnect = await dropActions(page);
+	await page.getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByRole('alert')).toHaveText(UNREACHABLE);
+	await reconnect();
+
+	// The action broke, and the server answers as SvelteKit does.
+	const importAction = (url: URL) => url.search === '?/import';
+	await page.route(importAction, (route) =>
+		route.fulfill({
+			status: 500,
+			json: { type: 'error', error: { status: 500, message: 'Internal Error' } }
+		})
+	);
+	await page.getByRole('button', { name: 'Import' }).click();
+	await expect(page.getByRole('alert')).toHaveText('Something went wrong. Please try again.');
+	await page.unroute(importAction);
+
+	await page.getByRole('button', { name: 'Import' }).click();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(page.getByRole('status')).toHaveText('Imported 1 recipe.');
 });
 
 test('a file with hundreds of extra columns imports, naming a few of them (MEA-81)', async ({

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { enhance, type ActionResult, type SubmitFunction } from '$app/forms';
 	import { refreshAll } from '$app/navigation';
 	import ConfirmButton from '#lib/components/ConfirmButton.svelte';
@@ -7,6 +8,7 @@
 	import ItemThumb from '#lib/components/ItemThumb.svelte';
 	import Sheet from '#lib/components/Sheet.svelte';
 	import Tour from '#lib/components/Tour.svelte';
+	import { ALREADY_RECEIVED } from '#lib/groceries.ts';
 	import { keepPage, problemIn } from '#lib/submit.ts';
 	import { foldCase, formatQuantity, normalizeName } from '#lib/text.ts';
 
@@ -20,13 +22,36 @@
 		return line.unit ? `${formatQuantity(line.quantity)} ${line.unit}` : formatQuantity(line.quantity);
 	}
 
+	// Changes on their way, by what sent them: 'add' for the add bar and its question, a store
+	// group's key for its Mark all, 'sheet' for a line's sheet, a line's id for checking it off,
+	// from its circle or "Where did you get it?", and `undo-<id>` for undoing that. Sending one
+	// again while it's on its way, as with a second tap on a slow connection, does nothing
+	// (design 7, Grocery list; MEA-133).
+	const sending = new SvelteSet<string | number>();
+
+	/** Sends a form as `submit` does, unless `key` already has a change on its way. */
+	function oneAtATime(key: string | number, submit: SubmitFunction): SubmitFunction {
+		return async (input) => {
+			if (sending.has(key)) return input.cancel();
+			sending.add(key);
+			const callback = await submit(input);
+			return async (options) => {
+				try {
+					await (callback ? callback(options) : options.update());
+				} finally {
+					sending.delete(key);
+				}
+			};
+		};
+	}
+
 	/**
 	 * Sends a form whose messages show as `action`'s: the add bar's, or a store's Mark all in its
 	 * group, named by the group's key. When it can't be done, its message shows there as the
 	 * server's would, and the page and what was typed stay (MEA-111).
 	 */
 	function send(action: string, submit?: SubmitFunction): SubmitFunction {
-		return keepPage((error) => (form = { action, error }), submit);
+		return oneAtATime(action, keepPage((error) => (form = { action, error }), submit));
 	}
 
 	// Add bar
@@ -108,8 +133,9 @@
 	});
 
 	// The prompt's own forms: errors show in the prompt, and success clears the add bar only
-	// where it still holds the item the prompt was about.
-	const submitPrompt: SubmitFunction = () => {
+	// where it still holds the item the prompt was about. Each is an add, so it waits for the
+	// add bar's, and the add bar for it.
+	const submitPrompt = oneAtATime('add', () => {
 		return async ({ result, update }) => {
 			const problem = problemIn(result);
 			if (problem !== null) {
@@ -126,7 +152,7 @@
 				if (promptSent) clearIfUnchanged(promptSent);
 			}
 		};
-	};
+	});
 
 	// One line's actions. Their errors show next to the line or in its sheet, not elsewhere.
 
@@ -139,10 +165,22 @@
 		return problemIn(result);
 	}
 
-	function lineSubmit(where: Where): SubmitFunction {
-		return () => {
+	/**
+	 * Sends a change to a line as `key` in `sending`, with its errors at `where`. `repeat` is for
+	 * checking off a line this page has checked off before.
+	 */
+	function lineSubmit(where: Where, key: string | number, repeat = false): SubmitFunction {
+		return oneAtATime(key, () => {
 			return async ({ result, update }) => {
 				const message = lineFailure(result);
+				if (repeat && message === ALREADY_RECEIVED) {
+					// The check-off before went through, though its answer never came, as when the
+					// connection dropped on the way back (6.11). So this one is done too (MEA-133).
+					lineError = null;
+					await refreshAll();
+					pickOpen = false;
+					return;
+				}
 				if (message !== null) {
 					lineError = { where, message };
 					// Someone else may have changed the line; show the list as it is now. Not when
@@ -158,6 +196,18 @@
 					pickOpen = false;
 				}
 			};
+		});
+	}
+
+	// Lines this page has sent a check-off for.
+	const checkedOff = new Set<number>();
+
+	/** Checks a line off, from its circle or, for a line without a store, "Where did you get it?". */
+	function checkOff(id: number, where: Where = id): SubmitFunction {
+		return (input) => {
+			const repeat = checkedOff.has(id);
+			checkedOff.add(id);
+			return lineSubmit(where, id, repeat)(input);
 		};
 	}
 
@@ -172,7 +222,11 @@
 
 	// An error from Got fewer shows beside its amount, and any other at the top of the sheet.
 	const submitSheet: SubmitFunction = (input) =>
-		lineSubmit(input.submitter === fewerSave ? 'fewer' : 'sheet')(input);
+		lineSubmit(input.submitter === fewerSave ? 'fewer' : 'sheet', 'sheet')(input);
+
+	// "Where did you get it?" checks off the line it was opened for, read as the form is sent,
+	// since the same form stays on the page from one line to the next.
+	const submitPicker: SubmitFunction = (input) => checkOff(picking!.id, 'picker')(input);
 
 	function edit(line: Line) {
 		editing = line;
@@ -282,7 +336,7 @@
 		</select>
 	</div>
 	<input type="hidden" name="resolution" value="none" />
-	<button class="primary">Add</button>
+	<button class="primary">{sending.has('add') ? 'Adding…' : 'Add'}</button>
 	{#if form?.action === 'add' && form.error}<p class="error" role="alert">{form.error}</p>{/if}
 </form>
 
@@ -363,35 +417,46 @@
 {/each}
 
 {#snippet row(line: Line)}
+	<!-- While its circle's change is on its way, the circle shows it and the row's buttons wait. -->
+	{@const busy = sending.has(line.status === 'received' ? `undo-${line.id}` : line.id)}
 	<li class="line" class:done={line.status === 'received'}>
 		{#if line.status === 'received'}
-			<form method="POST" action="?/undoReceive" use:enhance={lineSubmit(line.id)}>
+			<form method="POST" action="?/undoReceive" use:enhance={lineSubmit(line.id, `undo-${line.id}`)}>
 				<input type="hidden" name="id" value={line.id} />
-				<button class="check" aria-label="Undo received: {line.itemName}">
-					<span class="circle checked" aria-hidden="true">✓</span>
+				<button class="check" aria-label="Undo received: {line.itemName}" disabled={busy}>
+					{@render circle(!busy)}
 				</button>
 			</form>
 		{:else if line.storeId === null}
-			<button class="check" aria-label="Mark received: {line.itemName}" onclick={() => pickStore(line)}>
-				<span class="circle" aria-hidden="true"></span>
+			<button
+				class="check"
+				aria-label="Mark received: {line.itemName}"
+				disabled={busy}
+				onclick={() => pickStore(line)}
+			>
+				{@render circle(busy)}
 			</button>
 		{:else}
-			<form method="POST" action="?/receive" use:enhance={lineSubmit(line.id)}>
+			<form method="POST" action="?/receive" use:enhance={checkOff(line.id)}>
 				<input type="hidden" name="id" value={line.id} />
-				<button class="check" aria-label="Mark received: {line.itemName}">
-					<span class="circle" aria-hidden="true"></span>
+				<button class="check" aria-label="Mark received: {line.itemName}" disabled={busy}>
+					{@render circle(busy)}
 				</button>
 			</form>
 		{/if}
 		{#if line.status === 'received'}
 			<div class="body">{@render lineText(line)}</div>
 		{:else}
-			<button class="body" onclick={() => edit(line)}>{@render lineText(line)}</button>
+			<button class="body" disabled={busy} onclick={() => edit(line)}>{@render lineText(line)}</button>
 		{/if}
 		{#if lineError?.where === line.id}
 			<p class="error line-error" role="alert">{lineError.message}</p>
 		{/if}
 	</li>
+{/snippet}
+
+{#snippet circle(checked: boolean)}
+	<span class="circle" class:checked aria-hidden="true">{checked ? '✓' : ''}</span>
 {/snippet}
 
 {#snippet lineText(line: Line)}
@@ -486,10 +551,12 @@
 		{#if activeStores.length === 0}
 			<p>Add your stores on the <a class="link-tap" href="/household">Household</a> page first.</p>
 		{:else}
-			<form method="POST" action="?/receive" use:enhance={lineSubmit('picker')} class="stores">
+			<form method="POST" action="?/receive" use:enhance={submitPicker} class="stores">
 				<input type="hidden" name="id" value={picking.id} />
 				{#each activeStores as option (option.id)}
-					<button name="store" value={option.id}>{option.name}</button>
+					<button name="store" value={option.id} disabled={sending.has(picking.id)}>
+						{option.name}
+					</button>
 				{/each}
 			</form>
 		{/if}

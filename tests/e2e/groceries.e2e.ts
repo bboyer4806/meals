@@ -32,6 +32,31 @@ async function confirm(page: Page, button: string) {
 }
 
 /**
+ * Holds the page's requests for an action, such as '?/receive', as a slow connection would, until
+ * `answer()` lets those sent so far through. `sent` counts them.
+ */
+async function slowAction(page: Page, search: string) {
+	let open = () => {};
+	let gate = new Promise<void>((resolve) => (open = resolve));
+	const action = {
+		sent: 0,
+		answer() {
+			open();
+			gate = new Promise<void>((resolve) => (open = resolve));
+		}
+	};
+	await page.route(
+		(url) => url.search === search,
+		async (route) => {
+			action.sent += 1;
+			await gate;
+			await route.continue();
+		}
+	);
+	return action;
+}
+
+/**
  * A finger pressed, moved `down` pixels (negative is up) in steps across the middle of what's
  * there, then lifted. Real touch input, as a phone sends it; page.mouse would send a mouse pointer
  * even on the Pixel 7.
@@ -171,6 +196,34 @@ test('keeps the next item typed while the previous one is still saving', async (
 	await expect(item).toHaveValue('Sugar');
 	// The fields not touched since were cleared for the next item.
 	await expect(addForm(page).getByLabel('Unit')).toHaveValue('');
+});
+
+// A second Add before the first is answered would ask about the line the first one adds, and
+// Update would double it (MEA-133).
+test('reads "Adding…" while an add is on its way, and sends it only once', async ({
+	page,
+	db,
+	person
+}) => {
+	await open(page, '/groceries');
+	const add = await slowAction(page, '?/add');
+	await addItem(page, { name: 'Coffee', quantity: '1', unit: 'bag' });
+	const button = addForm(page).getByRole('button', { name: 'Adding…' });
+	await expect(button).toBeVisible();
+	await button.click();
+	await addForm(page).getByLabel('Unit').press('Enter');
+
+	add.answer();
+	await expect(addForm(page).getByRole('combobox', { name: 'Item' })).toHaveValue('');
+	await expect(addForm(page).getByRole('button', { name: 'Add', exact: true })).toBeVisible();
+	await expect(group(page, 'No store').getByRole('button', { name: /^Coffee\s*1 bag/ })).toBeVisible();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	expect(add.sent).toBe(1);
+	const lines = db
+		.prepare('select quantity from grocery_needs where household_id = ?')
+		.pluck()
+		.all(person.householdId);
+	expect(lines).toEqual([1]);
 });
 
 test('asks for a store when checking off a line without one, and can undo', async ({
@@ -388,6 +441,109 @@ test('shows a failed check-off next to its line and refreshes the list', async (
 	await aldi.getByRole('button', { name: 'Mark received: Milk' }).click();
 	await expect(aldi.getByRole('alert')).toHaveText('This line was already received');
 	await expect(aldi.getByRole('button', { name: 'Undo received: Milk' })).toBeVisible();
+});
+
+// On a slow connection a second tap used to show "already received", or check off the line that
+// moved under the finger (MEA-133).
+test('fills a circle as soon as it is tapped, and the row waits for the check-off', async ({
+	page,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Aldi');
+	await open(page, '/groceries');
+	await addAndWait(page, { name: 'Bread', store: 'Aldi' });
+	await addAndWait(page, { name: 'Milk', store: 'Aldi' });
+	const aldi = group(page, 'Aldi');
+	const receive = await slowAction(page, '?/receive');
+	const undo = await slowAction(page, '?/undoReceive');
+
+	const check = aldi.getByRole('button', { name: 'Mark received: Bread' });
+	await check.dblclick();
+	await expect(check.locator('.circle')).toHaveText('✓');
+	await expect(check).toBeDisabled();
+	await expect(aldi.getByRole('button', { name: /^Bread/ })).toBeDisabled();
+	await expect(aldi.getByRole('heading', { name: 'Received today' })).toHaveCount(0);
+
+	receive.answer();
+	const uncheck = aldi.getByRole('button', { name: 'Undo received: Bread' });
+	await expect(uncheck).toBeEnabled();
+	await expect(uncheck.locator('.circle')).toHaveText('✓');
+	await expect(aldi.getByRole('button', { name: 'Mark received: Milk' })).toBeEnabled();
+	await expect(aldi.getByRole('alert')).toHaveCount(0);
+	expect(receive.sent).toBe(1);
+
+	// Undoing empties the circle the same way.
+	await uncheck.dblclick();
+	await expect(uncheck.locator('.circle')).toHaveText('');
+	await expect(uncheck).toBeDisabled();
+	undo.answer();
+	await expect(check).toBeEnabled();
+	await expect(check.locator('.circle')).toHaveText('');
+	await expect(aldi.getByRole('heading', { name: 'Received today' })).toHaveCount(0);
+	expect(undo.sent).toBe(1);
+	const statuses = db
+		.prepare('select status from grocery_needs where household_id = ?')
+		.pluck()
+		.all(person.householdId);
+	expect(statuses).toEqual(['to_order', 'to_order']);
+});
+
+test('dims the stores under "Where did you get it?" until the check-off is saved', async ({
+	page,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Aldi');
+	addStore(db, person.householdId, 'Costco');
+	await open(page, '/groceries');
+	await addAndWait(page, { name: 'Paper towels' });
+	const receive = await slowAction(page, '?/receive');
+
+	const check = group(page, 'No store').getByRole('button', { name: 'Mark received: Paper towels' });
+	await check.click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'Aldi' }).dblclick();
+	await expect(dialog.getByRole('button', { name: 'Aldi' })).toBeDisabled();
+	await expect(dialog.getByRole('button', { name: 'Costco' })).toBeDisabled();
+	await expect(check.locator('.circle')).toHaveText('✓');
+
+	receive.answer();
+	await expect(dialog).toHaveCount(0);
+	await expect(
+		group(page, 'Aldi').getByRole('button', { name: 'Undo received: Paper towels' })
+	).toBeVisible();
+	expect(receive.sent).toBe(1);
+});
+
+// The first tap went through, but its answer was lost on the way back (design 6.11).
+test('counts a second tap as done when the first reached Meals but got no answer', async ({
+	page,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Aldi');
+	await open(page, '/groceries');
+	await addAndWait(page, { name: 'Bread', store: 'Aldi' });
+	const aldi = group(page, 'Aldi');
+	const receive = (url: URL) => url.search === '?/receive';
+	await page.route(receive, async (route) => {
+		await route.fetch();
+		await route.abort('internetdisconnected');
+	});
+
+	const check = aldi.getByRole('button', { name: 'Mark received: Bread' });
+	await check.click();
+	await expect(aldi.getByRole('alert')).toHaveText(UNREACHABLE);
+	await expect(check).toBeEnabled();
+	await expect(check.locator('.circle')).toHaveText('');
+	const status = db.prepare('select status from grocery_needs where household_id = ?').pluck();
+	expect(status.get(person.householdId)).toBe('received');
+
+	await page.unroute(receive);
+	await check.click();
+	await expect(aldi.getByRole('button', { name: 'Undo received: Bread' })).toBeVisible();
+	await expect(aldi.getByRole('alert')).toHaveCount(0);
 });
 
 test('asks the duplicate question fresh each time, and clears an old add error', async ({

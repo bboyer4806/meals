@@ -2,6 +2,8 @@
 // weeks, for the pages and the server alike. Dates are YYYY-MM-DD text in the household's time
 // zone (design 5), so the date math here works on calendar dates in UTC and never on instants.
 
+import { joinAnd } from './text.ts';
+
 export const DINNER_TYPES = ['cook', 'eat_out', 'going', 'leftovers'] as const;
 export type DinnerType = (typeof DINNER_TYPES)[number];
 
@@ -53,6 +55,37 @@ export const DINNER_NOTE_MAX = 2500;
 /** A request's note added to the end of a dinner's note, on a line of its own (6.12). */
 export function appendNote(note: string, added: string): string {
 	return note === '' ? added : `${note}\n${added}`;
+}
+
+/**
+ * What leaving a date's page would lose from one of its dinners (design 7, Dinner): the dinner's
+ * label on a date with more than one (6.9), or null; what Save would keep, the note alone or
+ * other changes; and a dish name typed and not added, as it would be added, or empty (MEA-127).
+ */
+export type Unkept = { label: string | null; unsaved: 'note' | 'changes' | null; dish: string };
+
+/**
+ * What leaving a date's page asks, once for all its dinners (design 7, Dinner). On a date with
+ * more than one dinner, it names each dinner with something typed, so after Save under one, the
+ * question doesn't seem to be about the dinner just saved (MEA-126). Otherwise it names a dish
+ * typed, since right after Save "without saving" would seem not to apply (MEA-127), and says
+ * "may", since Back or Forward brings back what was typed (MEA-240).
+ */
+export function leaveQuestion(unkept: Unkept[]): string {
+	if (!unkept.every((dinner): dinner is Unkept & { label: string } => dinner.label !== null)) {
+		const dishes = unkept.map((dinner) => dinner.dish).filter((dish) => dish !== '');
+		const leave =
+			dishes.length === 0 ? 'Leave without saving?' : `Leave without adding ${joinAnd(dishes)}?`;
+		return `${leave} What you typed may be lost.`;
+	}
+	const named = unkept.map(({ label, unsaved, dish }) => {
+		const what: string[] = [];
+		if (unsaved === 'note') what.push("a note you haven't saved");
+		if (unsaved === 'changes') what.push("changes you haven't saved");
+		if (dish !== '') what.push(`${dish} you haven't added`);
+		return `${label} has ${what.join(' and ')}.`;
+	});
+	return `${named.join(' ')} Leave anyway?`;
 }
 
 /**

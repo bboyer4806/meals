@@ -887,6 +887,10 @@ group for Mark all (MEA-111). An error page from something in between, such as a
 no answer. An unexpected error from Meals itself says "Something went wrong. Please try again."
 instead. Either way the page doesn't reload, since that needs the server too. Tried it goes back
 to what's saved, as the stars and Request still show it, so tapping it again tries again.
+Tapping a line's circle again, after an earlier tap on the page got no answer, finds the line
+already received if that tap did reach Meals. A check-off the page already sent for that line
+counts as done then: the list shows the line received, with no message (MEA-133). Otherwise, as
+when someone else checked it off first, the row says "This line was already received".
 
 ### 6.12 Requests
 
@@ -1332,7 +1336,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Household setup  | `/setup`                             | After signing in without a household: the households that invited them, each with Join, and for a new household, name, usual servings and time zone (6.1). |
 | Grocery list     | `/groceries`                         | See below.                                                                                                                           |
 | Grocery History  | `/groceries/history`                 | "‹ Groceries", then received lines by date, newest first, searchable by item. Show older, under the newest 100, adds the next 100 below them, keeping the reader's place and the search, and adds no Back step (MEA-137). |
-| Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. A link to one item, such as from Reports, opens its sheet (see Reports below). |
+| Items            | `/groceries/items`                   | "‹ Groceries", then the catalog: rename, notes, image, archive and restore. Shows each item's image, default store and when and where it was last bought. Saving, archiving or restoring an item keeps the page's address, and with it the list's search and whether it shows archived items (MEA-131). A link to one item, such as from Reports, opens its sheet (see Reports below). |
 | Party lists      | `/groceries/parties`                 | "‹ Groceries", then New list and the household's party lists, each with how many of its things are bought (6.15). |
 | Party list       | `/groceries/parties/[id]`            | "‹ Party lists", the name with Edit, an add form, Add all to Groceries, and the things with their circles, amounts, what's bought and on Groceries, and Add to Groceries (6.15). Tapping a thing opens a sheet with its quantity, Save and Remove. |
 | Recipes          | `/recipes`                           | Search by name, filter by tags, sort by name or rating, or group by when each was last on the Menu (see below), photo thumbnails, total time, the "No recipe" label, the household's rating ("★ 4.5 (2)") in the upper right of rated recipes, a "Tried" badge in the bottom right of tried recipes, Import and New recipe. |
@@ -1344,7 +1348,7 @@ that tap still goes to the page. Help sits in the header to the left of More.
 | Dinner           | `/menu/[date]`                       | See below.                                                                                                                           |
 | Pantry checklist | `/pantry`                            | Section 6.8. Hidden for now: nothing leads to it, and the page is not found.                                                         |
 | Reports          | `/reports`                           | See below.                                                                                                                           |
-| Household        | `/household`                         | Name, usual servings and time zone; members; invites; stores.                                                                        |
+| Household        | `/household`                         | Name, usual servings and time zone, where what's typed stays until Save, also when the page's data reloads (6.11, MEA-130); members; invites; stores. |
 | What's new       | `/whats-new`                         | See below.                                                                                                                           |
 | Admin            | `/admin`                             | Invite households, list households with their members and invites, last backup date, send a test email, AI assistants. See below.   |
 | Connect an assistant | `/oauth/authorize`               | "Connect ChatGPT to Meals?" (or Claude): what it will be able to do, Allow and Deny. Admin only (6.17).                             |
@@ -1411,7 +1415,14 @@ suggestions), quantity, unit, store (filled from the default; tap to change) and
 store". Groups can be collapsed, and the device remembers which ones are. Each group
 lists its To Order lines, then Ordered, then Received today (struck through). Store
 groups have "Mark all ordered" and "Mark all received"; "No store" has neither. After either,
-the group says how many lines it changed (6.2). A row's circle checks it off as Received.
+the group says how many lines it changed (6.2). A row's circle checks it off as Received. It
+fills as soon as it's tapped, and until the check-off is saved, or the row says why it wasn't, the
+row's buttons are dimmed and can't be tapped. Undoing a received line empties its circle the same
+way, and picking a store under "Where did you get it?" dims the stores until it's done (MEA-133).
+Add reads "Adding…" until the line is added or the add bar says why not. While any of the page's
+forms is on its way, sending it again, as with a second tap on a slow connection, does nothing:
+that goes for Add, the question about an item already on the list, Mark all and a line's sheet as
+well as the circles, so nothing is added or changed twice.
 Tapping a row opens an edit sheet: quantity, unit, store, note, Mark ordered, Didn't come, Got
 fewer, and Delete. An item's notes (brand, size) show under its name, and its image, if it has
 one, beside it (Item images, below).
@@ -1527,12 +1538,21 @@ The file must be UTF-8, as CSV UTF-8 saves it. One that isn't, such as one Excel
 (Comma delimited), which is windows-1252, imports nothing and says "Save the file as CSV UTF-8,
 then import it again." rather than garbling its é, ° and ½ (MEA-71). Another encoding isn't
 guessed, since a wrong guess would garble them without a word.
+After any of these problems, the page empties the file field and says "Nothing was imported. Fix
+these problems, then choose the file again.", since Chromium won't send a file again once it has
+changed, as when it was fixed and saved over, and other browsers may send it as it was (MEA-129).
+An import that breaks on the server says "Something went wrong. Please try again." One that gets
+no answer says "Couldn't reach Meals. Check your connection and try again." (6.11), unless the
+file can't be read anymore: Chromium's request fails the same way when the file changed after it
+was sent, so the page says "The file changed after you chose it. Choose it again." and empties
+the field (MEA-129). Otherwise the file stays for another try.
 A file with no problems whose recipe names are already in
 Recipes (ignoring case, archived included) first lists those recipes, archived ones marked so,
 each with Skip (selected to start), Replace and Rename. Skip leaves the file's recipe out.
 Replace swaps the existing recipe's details for the file's, keeping its name, photo, Tried,
 ratings, dinners and archived state. Rename imports the file's recipe under a name typed there, which no
-recipe or other row may have. The chosen file stays in the form and is sent again with the
+recipe or other row may have; a name that breaks this is a problem, listed with "Fix these
+problems, then import again." The chosen file stays in the form and is sent again with the
 choices; nothing is kept between the two. The file is read first. Then, in one transaction, so
 nothing changes in between, its names are checked against the household's recipes and items,
 read once at the start, and its recipes are saved all at once (MEA-89). Recipes then says what
@@ -1764,7 +1784,12 @@ dinner's own line goes to the middle of the screen, however tall the day is (MEA
 with something typed
 asks first: "Leave without saving? What you typed may be lost." A name in the dish field that
 isn't added counts, since Save doesn't add it, and the question names it: "Leave without adding
-Garlic bread?" (MEA-127). A dish on its way to the dinner doesn't. If someone cleared or moved the
+Garlic bread?" (MEA-127). A dish on its way to the dinner doesn't. It asks once for all the date's
+dinners. On a date with more than one, it names each dinner with something typed, by the label its
+heading shows, so after Save under one dinner, going to the week doesn't seem to ask about the
+dinner just saved: "Adults has a note you haven't saved. Leave anyway?" Typing in the servings, label
+or restaurant is "changes you haven't saved", and a dish name is "Garlic bread you haven't added"
+(MEA-126). If someone cleared or moved the
 dinner meanwhile, Save plans the date again when it has no dinner left, and the page stays to say
 so (6.11). When the page loads again in its tab, as when a phone drops the app in the background
 to free memory and coming back reloads it, what was typed in the servings, label, restaurant and

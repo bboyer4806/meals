@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import { dateIn } from '../../dates.ts';
+import { ALREADY_RECEIVED } from '../../groceries.ts';
 import { formatQuantity, normalizeName } from '../../text.ts';
 import { conversionFactor, sameUnit } from '../../units.ts';
 import { db, transaction } from '../db/index.ts';
@@ -393,7 +394,7 @@ export function markReceived(
 ): void {
 	transaction(() => {
 		const line = getLine(householdId, needId);
-		if (line.status === 'received') error(400, 'This line was already received');
+		if (line.status === 'received') error(400, ALREADY_RECEIVED);
 		const store = storeForStatusChange(householdId, line, storeId);
 		db()
 			.update(groceryNeeds)
@@ -496,7 +497,7 @@ export function markGotFewer(
 ): void {
 	transaction(() => {
 		const line = getLine(householdId, needId);
-		if (line.status === 'received') error(400, 'This line was already received');
+		if (line.status === 'received') error(400, ALREADY_RECEIVED);
 		if (!(receivedQuantity > 0 && receivedQuantity < line.quantity)) {
 			error(400, `Enter an amount less than ${formatQuantity(line.quantity)}`);
 		}
