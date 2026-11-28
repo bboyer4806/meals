@@ -1764,7 +1764,12 @@ dinner's own line goes to the middle of the screen, however tall the day is (MEA
 with something typed
 asks first: "Leave without saving? What you typed may be lost." A name in the dish field that
 isn't added counts, since Save doesn't add it, and the question names it: "Leave without adding
-Garlic bread?" (MEA-127). A dish on its way to the dinner doesn't. If someone cleared or moved the
+Garlic bread?" (MEA-127). A dish on its way to the dinner doesn't. It asks once for all the date's
+dinners. On a date with more than one, it names each dinner with something typed, by the label its
+heading shows, so after Save under one dinner, going to the week doesn't seem to ask about the
+dinner just saved: "Adults has a note you haven't saved. Leave anyway?" Typing in the servings, label
+or restaurant is "changes you haven't saved", and a dish name is "Garlic bread you haven't added"
+(MEA-126). If someone cleared or moved the
 dinner meanwhile, Save plans the date again when it has no dinner left, and the page stays to say
 so (6.11). When the page loads again in its tab, as when a phone drops the app in the background
 to free memory and coming back reloads it, what was typed in the servings, label, restaurant and

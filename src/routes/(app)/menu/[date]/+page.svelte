@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import { deserialize, type SubmitFunction } from '$app/forms';
-	import { goto } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import AddDinner from '#lib/components/AddDinner.svelte';
 	import DayRequests from '#lib/components/DayRequests.svelte';
 	import DinnerEditor, { type Editing, type Typing } from '#lib/components/DinnerEditor.svelte';
 	import MoveDinner from '#lib/components/MoveDinner.svelte';
 	import Snapshot from '#lib/components/Snapshot.svelte';
 	import { formatDateLabel } from '#lib/dates.ts';
-	import { MAX_DINNERS, hasDishes, weekStart } from '#lib/menu.ts';
+	import { MAX_DINNERS, hasDishes, leaveQuestion, weekStart } from '#lib/menu.ts';
 	import { normalizeName } from '#lib/text.ts';
 
 	// A date's dinners (design 7, Dinner; 6.9), each with its own editor, in the order they were
@@ -514,14 +514,34 @@
 		if (slot) editors[slot.key]?.addNote(note);
 	}
 
-	/** Moving opens the new date, so it asks about anything typed in any of the dinners. */
+	/**
+	 * Asks once about anything typed in the date's dinners that leaving would lose, naming each
+	 * dinner on a date with more than one (design 7, Dinner; MEA-126). Moving opens the new date,
+	 * so it asks too. False to stay.
+	 */
 	function canLeave(): boolean {
-		return slots.every((slot) => editors[slot.key]?.confirmLeave() ?? true);
+		const unkept = slots
+			.map((slot) => editors[slot.key]?.losing() ?? null)
+			.filter((lost) => lost !== null);
+		if (unkept.length === 0) return true;
+		if (!confirm(leaveQuestion(unkept))) return false;
+		for (const slot of slots) editors[slot.key]?.agreeToLose();
+		return true;
 	}
 
 	function keepAsking(): void {
 		for (const slot of slots) editors[slot.key]?.keepAsking();
 	}
+
+	beforeNavigate((navigation) => {
+		// Closing the tab or leaving the site: the browser asks.
+		if (navigation.type === 'leave') {
+			if (slots.some((slot) => editors[slot.key]?.losing())) navigation.cancel();
+			return;
+		}
+		if (!canLeave()) return navigation.cancel();
+		for (const slot of slots) editors[slot.key]?.leaving();
+	});
 </script>
 
 <svelte:head>

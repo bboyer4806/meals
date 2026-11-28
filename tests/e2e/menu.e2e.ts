@@ -2000,6 +2000,72 @@ test('goes to the week without asking about a picked dish still on its way at Sa
 	expect(questions).toEqual([]);
 });
 
+test('asks once before leaving a day with several dinners, naming each with something typed (MEA-126)', async ({
+	page,
+	db,
+	person
+}) => {
+	const date = addDays(today(), 1);
+	const kidsId = addDinner(db, person.householdId, date, { note: 'Early' });
+	const adultsId = addDinner(db, person.householdId, date, { note: 'After bedtime' });
+	labelDinner(db, kidsId, 'Kids');
+	labelDinner(db, adultsId, 'Adults');
+	const kids = page.getByRole('region', { name: 'Kids' });
+	const adults = page.getByRole('region', { name: 'Adults' });
+	const notes = () => dinnerRows(db, person.householdId, date).map((dinner) => dinner.note);
+	const questions: string[] = [];
+	const stay = (dialog: Dialog) => {
+		questions.push(dialog.message());
+		void dialog.dismiss();
+	};
+	page.on('dialog', stay);
+	const weekLink = page.getByRole('link', { name: /^‹ Week of/ });
+
+	// The week link asks once, naming both dinners.
+	await open(page, `/menu/${date}`);
+	await kids.getByLabel('Note', { exact: true }).fill('Early, with mac and cheese');
+	await adults.getByLabel('Note', { exact: true }).fill('After bedtime, table at 8');
+	await weekLink.click();
+	const both =
+		"Kids has a note you haven't saved. Adults has a note you haven't saved. Leave anyway?";
+	await expect.poll(() => questions).toEqual([both]);
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+
+	// Save under Kids saves its note, and going to the week asks about Adults alone, by name, so
+	// the question isn't taken for one about the save. Staying keeps the Adults note, unsaved.
+	await kids.getByRole('button', { name: 'Save' }).click();
+	const adultsNote = "Adults has a note you haven't saved. Leave anyway?";
+	await expect.poll(() => questions).toEqual([both, adultsNote]);
+	await expect(kids.getByRole('status')).toHaveText('Saved');
+	await expect(page).toHaveURL(new RegExp(`/menu/${date}$`));
+	await expect(adults.getByLabel('Note', { exact: true })).toHaveValue('After bedtime, table at 8');
+	expect(notes()).toEqual(['Early, with mac and cheese', 'After bedtime']);
+
+	// More than the note is "changes", and a dish typed and not added is named. Move asks once too.
+	await adults.getByRole('button', { name: 'More servings' }).click();
+	await adults.getByRole('combobox', { name: 'Add a dish' }).fill('Garlic bread');
+	await dateButton(page).click();
+	const sheet = page.getByRole('dialog', { name: 'Move to another date' });
+	await sheet.getByRole('button', { name: /^Move to / }).click();
+	const adultsAll =
+		"Adults has changes you haven't saved and Garlic bread you haven't added. Leave anyway?";
+	await expect.poll(() => questions).toEqual([both, adultsNote, adultsAll]);
+	await expect(sheet).toBeVisible();
+	await sheet.getByRole('button', { name: 'Cancel' }).click();
+
+	// Told to go, it goes without asking again, and without what was typed for Adults.
+	page.off('dialog', stay);
+	page.once('dialog', (dialog) => {
+		questions.push(dialog.message());
+		void dialog.accept();
+	});
+	await weekLink.click();
+	await expect(page).toHaveURL(new RegExp(`/menu\\?week=${sundayOf(date)}$`));
+	expect(questions).toEqual([both, adultsNote, adultsAll, adultsAll]);
+	expect(notes()).toEqual(['Early, with mac and cheese', 'After bedtime']);
+	expect(dinnerDishes(db, adultsId)).toEqual([]);
+});
+
 test('keeps a dish name typed, with nothing to save, when someone else clears the dinner (MEA-127)', async ({
 	page,
 	db,
