@@ -890,7 +890,10 @@ to what's saved, as the stars and Request still show it, so tapping it again tri
 Tapping a line's circle again, after an earlier tap on the page got no answer, finds the line
 already received if that tap did reach Meals. A check-off the page already sent for that line
 counts as done then: the list shows the line received, with no message (MEA-133). Otherwise, as
-when someone else checked it off first, the row says "This line was already received".
+when someone else checked it off first, the row says "This line was already received". When
+someone else deleted the line, the list refreshes without its row, so "This line is no longer on
+the list." shows at the top of the list, above the stores, as does any message for a line that's
+gone from the list (MEA-136).
 
 ### 6.12 Requests
 

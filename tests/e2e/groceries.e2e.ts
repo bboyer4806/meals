@@ -698,6 +698,28 @@ test('says so when someone else deleted the line, and stays on the list', async 
 	await expect(aldi.getByRole('button', { name: /^Eggs/ })).toBeVisible();
 });
 
+// The list refreshes without the line, and its row used to take the message with it (MEA-136).
+test('says so at the top of the list when a tapped line was already deleted', async ({
+	page,
+	db,
+	person
+}) => {
+	addStore(db, person.householdId, 'Aldi');
+	await open(page, '/groceries');
+	await addAndWait(page, { name: 'Milk', store: 'Aldi' });
+	await addAndWait(page, { name: 'Eggs', store: 'Aldi' });
+	db.prepare(
+		"delete from grocery_needs where item_id = (select id from items where household_id = ? and name = 'Milk')"
+	).run(person.householdId);
+
+	const aldi = group(page, 'Aldi');
+	await aldi.getByRole('button', { name: 'Mark received: Milk' }).click();
+	await expect(aldi.getByRole('button', { name: /Milk/ })).toHaveCount(0);
+	await expect(page.getByRole('alert')).toHaveText('This line is no longer on the list.');
+	await expect(aldi.getByRole('alert')).toHaveCount(0);
+	await expect(aldi.getByRole('button', { name: 'Mark received: Eggs' })).toBeVisible();
+});
+
 test("keeps the list, an open sheet and what was typed when an action can't reach Meals (MEA-111)", async ({
 	page,
 	db,

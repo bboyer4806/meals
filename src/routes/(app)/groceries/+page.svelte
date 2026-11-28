@@ -182,10 +182,19 @@
 		};
 	});
 
-	// One line's actions. Their errors show next to the line or in its sheet, not elsewhere.
+	// One line's actions. Their errors show next to the line or in its sheet. A line that's gone
+	// from the list, as when someone else deleted it, has no row, so its error shows at the top of
+	// the list instead (6.11, MEA-136).
 
 	type Where = number | 'sheet' | 'fewer' | 'picker';
 	let lineError = $state<{ where: Where; message: string } | null>(null);
+
+	/** Whether the line `id` is on the list as the page has it now. */
+	function onList(id: number) {
+		return data.groups.some((group) =>
+			[...group.toOrder, ...group.ordered, ...group.received].some((line) => line.id === id)
+		);
+	}
 
 	function lineFailure(result: ActionResult): string | null {
 		// Someone else deleted the line.
@@ -371,6 +380,9 @@
 
 {#if (form?.action === 'group' || form?.action === 'line') && form.error}
 	<p class="error" role="alert">{form.error}</p>
+{/if}
+{#if typeof lineError?.where === 'number' && !onList(lineError.where)}
+	<p class="error" role="alert">{lineError.message}</p>
 {/if}
 
 {#if data.groups.length === 0}
