@@ -431,6 +431,29 @@ test('fills in the unit and store when the typed name matches an item', async ({
 	await expect(form.getByLabel('Unit')).toHaveValue('family size');
 });
 
+test('puts the store under quantity and unit on a phone too narrow for it beside them', async ({
+	page,
+	person: _
+}) => {
+	await open(page, '/groceries');
+	const form = addForm(page);
+	const where = async (field: Locator) => (await field.boundingBox())!;
+	const item = form.getByRole('combobox', { name: 'Item' });
+	const quantity = form.getByLabel('Quantity');
+	const store = form.getByLabel('Store');
+
+	// On the Pixel 7 the tests run as, it shows whole beside them.
+	expect((await where(store)).y).toBe((await where(quantity)).y);
+
+	// Beside them on a 320 px phone, it would show only the first letter of a store's name, so it
+	// goes under them, across the add bar like the item field (MEA-138).
+	await page.setViewportSize({ width: 320, height: 640 });
+	const below = (await where(quantity)).y + (await where(quantity)).height;
+	expect((await where(store)).y).toBeGreaterThanOrEqual(below);
+	const across = await where(item);
+	expect(await where(store)).toMatchObject({ x: across.x, width: across.width });
+});
+
 test('offers to add a name that matches no item as a new item', async ({ page, person: _ }) => {
 	await open(page, '/groceries');
 	await addAndWait(page, { name: 'Milk' });

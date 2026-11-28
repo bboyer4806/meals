@@ -1425,8 +1425,10 @@ a tour.
 
 **Grocery list.** Beside the title, Items, Grocery History and Party lists open those screens; they
 go under it together on a screen too narrow for them (MEA-247). An add bar at the top: item (with
-suggestions), quantity, unit, store (filled from the default; tap to change) and Add. Below it, one group per store plus "No
-store". Groups can be collapsed, and the device remembers which ones are (MEA-134): a cookie
+suggestions), quantity, unit, store (filled from the default; tap to change) and Add. The store
+goes under quantity and unit, across the add bar, on a screen too narrow for it to show its
+longest choice whole beside them, such as a 320 px phone (MEA-138). Below the add bar, one group
+per store plus "No store". Groups can be collapsed, and the device remembers which ones are (MEA-134): a cookie
 keeps them, so the server sends them already closed, and the list doesn't move under someone
 who has started scrolling when the page's script starts. The page sets the cookie again whenever
 the list opens, since Safari keeps a cookie a page sets for at most 7 days. Each group
