@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, open, signInAs, test } from './fixtures.ts';
 
-// What's new (design 7). 1.19 was released on 2026-11-22, one day after 1.18.
+// What's new (design 7). 1.19 was released on 2026-11-23, two days after 1.18.
 
 function setCreatedAt(db: import('better-sqlite3').Database, userId: number, ms: number) {
 	db.prepare('update users set created_at = ? where id = ?').run(ms, userId);
@@ -51,7 +51,7 @@ test('lists the releases from More, newest first', async ({ page, person: _ }) =
 		page.locator('section').nth(17),
 		page.locator('section').nth(18)
 	];
-	await expect(v119.getByText('Released November 22, 2026')).toBeVisible();
+	await expect(v119.getByText('Released November 23, 2026')).toBeVisible();
 	await expect(v119.getByRole('listitem')).toHaveText([
 		"The Menu now crosses off the dates of days that have passed, in your household's time zone. Their dinners stay as they were, and you can still open and change them.",
 		"On a day's page on the Menu, a dish whose recipe has a photo now shows it beside its name. Tap the photo to open the recipe.",
@@ -259,7 +259,7 @@ test('shows a dot for a release newer than the one each person last saw', async 
 	browser,
 	baseURL
 }) => {
-	// Two members of the household who joined before 1.19 and have seen 1.18, released one day before.
+	// Two members of the household who joined before 1.19 and have seen 1.18, released two days before.
 	const joined = Date.UTC(2026, 9, 1, 17);
 	setCreatedAt(db, person.userId, joined);
 	db.prepare("update users set whats_new_seen = '1.18' where id = ?").run(person.userId);
@@ -299,7 +299,7 @@ test('shows no dot to someone who joined after the newest release', async ({
 	db,
 	person
 }) => {
-	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 22, 17));
+	setCreatedAt(db, person.userId, Date.UTC(2026, 10, 23, 17));
 	await open(page, '/groceries');
 	await expect(page.getByRole('heading', { name: 'Groceries', level: 1 })).toBeVisible();
 	await expect(more(page).locator('.dot')).toHaveCount(0);
