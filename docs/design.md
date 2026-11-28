@@ -887,6 +887,10 @@ group for Mark all (MEA-111). An error page from something in between, such as a
 no answer. An unexpected error from Meals itself says "Something went wrong. Please try again."
 instead. Either way the page doesn't reload, since that needs the server too. Tried it goes back
 to what's saved, as the stars and Request still show it, so tapping it again tries again.
+Tapping a line's circle again, after an earlier tap on the page got no answer, finds the line
+already received if that tap did reach Meals. A check-off the page already sent for that line
+counts as done then: the list shows the line received, with no message (MEA-133). Otherwise, as
+when someone else checked it off first, the row says "This line was already received".
 
 ### 6.12 Requests
 
@@ -1411,7 +1415,14 @@ suggestions), quantity, unit, store (filled from the default; tap to change) and
 store". Groups can be collapsed, and the device remembers which ones are. Each group
 lists its To Order lines, then Ordered, then Received today (struck through). Store
 groups have "Mark all ordered" and "Mark all received"; "No store" has neither. After either,
-the group says how many lines it changed (6.2). A row's circle checks it off as Received.
+the group says how many lines it changed (6.2). A row's circle checks it off as Received. It
+fills as soon as it's tapped, and until the check-off is saved, or the row says why it wasn't, the
+row's buttons are dimmed and can't be tapped. Undoing a received line empties its circle the same
+way, and picking a store under "Where did you get it?" dims the stores until it's done (MEA-133).
+Add reads "Adding…" until the line is added or the add bar says why not. While any of the page's
+forms is on its way, sending it again, as with a second tap on a slow connection, does nothing:
+that goes for Add, the question about an item already on the list, Mark all and a line's sheet as
+well as the circles, so nothing is added or changed twice.
 Tapping a row opens an edit sheet: quantity, unit, store, note, Mark ordered, Didn't come, Got
 fewer, and Delete. An item's notes (brand, size) show under its name, and its image, if it has
 one, beside it (Item images, below).
