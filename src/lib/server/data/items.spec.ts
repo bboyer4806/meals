@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { expectHttpError, freshDb, makeHousehold, makeStore } from '../testing.ts';
 import {
+	addItem,
 	createItem,
 	createItems,
 	findItemByName,
@@ -126,6 +127,38 @@ describe("another household's item", () => {
 		setItemArchived(other, theirs, true, NOON);
 		expectHttpError(() => setItemArchived(householdId, theirs, false, NOON), 404);
 		expect(getItem(other, theirs).archivedAt).toBe(NOON);
+	});
+});
+
+// An item an AI assistant proposes (design 6.17, MEA-279).
+describe('addItem', () => {
+	it('adds an item with its notes and image to the catalog, and nothing else', () => {
+		const kiwis = { name: 'Kiwis', notes: 'Gold', photoKey: KEY };
+		expect(addItem(householdId, kiwis, NOON)).toEqual({ kind: 'saved' });
+		expect(findItemByName(householdId, 'kiwis')).toEqual({
+			id: expect.any(Number),
+			...kiwis,
+			defaultStoreId: null,
+			archivedAt: null
+		});
+		expect(listCatalog(householdId, false, 'kiwi')).toMatchObject([
+			{ ...kiwis, lastBoughtAt: null }
+		]);
+		expect(listActiveLines(householdId, TZ, NOON)).toEqual([]);
+	});
+
+	it('refuses a name an item has, ignoring case, archived ones included', () => {
+		setItemArchived(householdId, milk, true, NOON);
+		createItem(householdId, 'Éclairs', 0);
+		const named = (name: string) => ({ name, notes: 'Taken', photoKey: KEY });
+		expect(addItem(householdId, named('MILK'), NOON)).toEqual({ kind: 'taken', archived: true });
+		expect(addItem(householdId, named('éclairs'), NOON)).toEqual({ kind: 'taken', archived: false });
+		expect(getItem(householdId, milk)).toMatchObject({ name: 'Milk', notes: null, photoKey: null });
+		expect(listCatalog(householdId, false, '').map((item) => item.name)).toEqual(['Éclairs']);
+
+		// Another household's names are its own.
+		const other = makeHousehold(TZ).householdId;
+		expect(addItem(other, named('Milk'), NOON)).toEqual({ kind: 'saved' });
 	});
 });
 

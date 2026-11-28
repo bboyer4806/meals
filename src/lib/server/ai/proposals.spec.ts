@@ -9,11 +9,17 @@ import { revokeConnection } from '../auth/oauth.ts';
 import { loadConfig } from '../config.ts';
 import { getDish, setDishPhoto } from '../data/dishes.ts';
 import { getHousehold } from '../data/households.ts';
-import { createItem, getItem, setItemPhoto } from '../data/items.ts';
+import {
+	createItem,
+	getItem,
+	listCatalog,
+	setItemArchived,
+	setItemPhoto
+} from '../data/items.ts';
 import { addNeed, getLine, listActiveLines, updateLine } from '../data/needs.ts';
 import { createStore, listStores } from '../data/stores.ts';
 import { db } from '../db/index.ts';
-import { aiConnections, aiProposals } from '../db/schema.ts';
+import { aiConnections, aiProposals, dishes, groceryNeeds } from '../db/schema.ts';
 import { photoPath, savePhoto } from '../photos.ts';
 import {
 	expectHttpError,
@@ -529,5 +535,153 @@ describe('images (MEA-276)', () => {
 		revokeConnection(connectionId);
 		expect(storedKeys()).toEqual(proposedKeys(approved));
 		expect(getDish(one, pie).photoKey).toBe(proposedKeys(approved)[0]);
+	});
+
+	describe('of new items (MEA-279)', () => {
+		// By name, as the catalog sorts them.
+		const FRUITS = ['Dragon fruit', 'Kumquats', 'Lychees', 'Passion fruit', 'Starfruit'];
+		const link = (name: string) => `https://shop.example/${name.toLowerCase().replaceAll(' ', '-')}.png`;
+
+		const newItem = (
+			householdId: number,
+			name: string,
+			imageUrl: string | null = link(name),
+			notes: string | null = null
+		) => ({ operation: 'create_item', householdId, name, notes, imageUrl });
+
+		/** The household's active items with these names, as list_items lists them. */
+		function catalog(householdId: number, names: string[]) {
+			return listCatalog(householdId, false, '').filter((item) => names.includes(item.name));
+		}
+
+		it('stores each image when proposed, and adds the items with them only when approved', async () => {
+			await serveImages(FRUITS.map(link));
+			const proposal = await propose(FRUITS.map((name) => newItem(one, name, link(name), `${name}, ripe`)));
+			const keys = proposedKeys(proposal);
+			expect(keys).toHaveLength(5);
+			expect(proposal.changes[0]).toEqual({
+				title: 'Add an item',
+				householdId: one,
+				householdName: getHousehold(one).name,
+				record: null,
+				current: [],
+				proposed: [
+					{ name: 'Name', value: 'Dragon fruit' },
+					{ name: 'Notes', value: 'Dragon fruit, ripe' },
+					{ name: 'Image', value: link('Dragon fruit'), photoKey: keys[0] }
+				]
+			});
+			expect(storedKeys()).toEqual(keys.toSorted());
+			expect(catalog(one, FRUITS)).toEqual([]);
+
+			expect(approveProposal(proposal.id, proposal.hash, 2000)).toEqual({
+				kind: 'approved',
+				householdIds: [one]
+			});
+			expect(catalog(one, FRUITS).map(({ name, notes, photoKey }) => ({ name, notes, photoKey }))).toEqual(
+				FRUITS.map((name, index) => ({ name, notes: `${name}, ripe`, photoKey: keys[index] }))
+			);
+			// The images the admin saw, kept; and nothing but the catalog changes.
+			expect(storedKeys()).toEqual(keys.toSorted());
+			expect(db().select().from(groceryNeeds).all()).toEqual([]);
+			expect(db().select().from(dishes).all()).toEqual([]);
+		});
+
+		it('adds an item without an image, storing none', async () => {
+			const proposal = await propose([newItem(one, 'Kumquats', null, 'Organic')]);
+			expect(proposal.changes[0]!.proposed).toEqual([
+				{ name: 'Name', value: 'Kumquats' },
+				{ name: 'Notes', value: 'Organic' },
+				{ name: 'Image', value: 'None' }
+			]);
+			approveProposal(proposal.id, proposal.hash, 2000);
+			expect(catalog(one, ['Kumquats'])).toMatchObject([{ notes: 'Organic', photoKey: null }]);
+			expect(storedKeys()).toEqual([]);
+		});
+
+		it('refuses a name an item has, archived ones included, or an earlier change gives one', async () => {
+			await serveImages(FRUITS.map(link));
+			setItemArchived(one, createItem(one, 'Kumquats', 0).id, true, 0);
+			expect(await refusal(propose([newItem(one, 'Lychees'), newItem(one, 'kumquats')]))).toBe(
+				'Change 2 (create_item): An archived item is already called kumquats. Restore it instead.'
+			);
+			const twice = [newItem(one, 'Lychees'), newItem(one, 'Starfruit'), newItem(one, 'LYCHEES', null)];
+			expect(await refusal(propose(twice))).toBe('Change 3 (create_item): An item is already called LYCHEES.');
+			// Adding Milk to the list adds the item first.
+			expect(await refusal(propose([addMilk(one), newItem(one, 'Milk', null)]))).toBe(
+				'Change 2 (create_item): An item is already called Milk.'
+			);
+			expect(catalog(one, ['Lychees', 'Starfruit', 'Milk'])).toEqual([]);
+			expect(storedKeys()).toEqual([]);
+			expect(db().select().from(aiProposals).all()).toEqual([]);
+		});
+
+		it('fails when an item got the name after it was proposed, adding none of the items', async () => {
+			await serveImages(FRUITS.map(link));
+			const proposal = await propose([newItem(one, 'Lychees'), newItem(two, 'Starfruit')]);
+			// Someone adds the item in Meals before the admin approves.
+			createItem(two, 'starfruit', 0);
+
+			expect(approveProposal(proposal.id, proposal.hash, 2000)).toEqual({
+				kind: 'failed',
+				error: 'Change 2 (create_item): An item is already called Starfruit.'
+			});
+			expect(catalog(one, ['Lychees'])).toEqual([]);
+			expect(catalog(two, ['starfruit'])).toMatchObject([{ photoKey: null }]);
+			expect(storedKeys()).toEqual([]);
+		});
+
+		it('adds none of the items when another change fails, and deletes their images', async () => {
+			await serveImages(FRUITS.map(link));
+			const proposal = await propose([
+				newItem(one, 'Lychees'),
+				newItem(one, 'Kumquats', null),
+				{ operation: 'create_store', householdId: two, name: 'Costco' }
+			]);
+			createStore(two, 'Costco');
+
+			expect(approveProposal(proposal.id, proposal.hash, 2000)).toEqual({
+				kind: 'failed',
+				error: 'Change 3 (create_store): A store is already called Costco.'
+			});
+			expect(catalog(one, ['Lychees', 'Kumquats'])).toEqual([]);
+			expect(storedKeys()).toEqual([]);
+		});
+
+		it("refuses a link that doesn't lead to an image, saying which change, and keeps nothing", async () => {
+			vi.spyOn(console, 'error').mockImplementation(() => {});
+			await serveImages([link('Lychees')]);
+			const notAnImage = newItem(one, 'Kumquats', 'https://shop.example/kumquats');
+			expect(await refusal(propose([newItem(one, 'Lychees'), notAnImage]))).toBe(
+				"Change 2 (create_item): Couldn't get an image from that link. Use the image's own link, not the page it's on."
+			);
+			expect(catalog(one, ['Lychees', 'Kumquats'])).toEqual([]);
+			expect(storedKeys()).toEqual([]);
+			expect(db().select().from(aiProposals).all()).toEqual([]);
+		});
+
+		it('adds nothing when rejected or expired, and deletes the images', async () => {
+			await serveImages([link('Lychees'), link('Starfruit')]);
+			const rejected = await propose([newItem(one, 'Lychees')], 0);
+			rejectProposal(rejected.id, rejected.hash, 1000);
+			const expired = await propose([newItem(one, 'Starfruit')], 0);
+			expectHttpError(() => approveProposal(expired.id, expired.hash, PROPOSAL_LIFETIME), 400);
+			discardExpiredImages(PROPOSAL_LIFETIME + 60_000);
+
+			expect(catalog(one, ['Lychees', 'Starfruit'])).toEqual([]);
+			expect(storedKeys()).toEqual([]);
+		});
+
+		it('counts their images toward the 10, but not new items without one', () => {
+			const parse = (changes: object[]) =>
+				proposalInput.safeParse({ summary: 'Fruit', changes }).error?.issues.map((issue) => issue.message);
+			const items = (prefix: string, count: number, imageUrl: string | null) =>
+				Array.from({ length: count }, (_, index) => newItem(one, `${prefix} ${index}`, imageUrl));
+			expect(parse([...items('Fruit', 9, PIE), recipeImage(one, 1)])).toBeUndefined();
+			expect(parse([...items('Fruit', 10, PIE), recipeImage(one, 1)])).toEqual([
+				'Propose up to 10 images at a time'
+			]);
+			expect(parse([...items('Fruit', 10, PIE), ...items('Nut', 5, null)])).toBeUndefined();
+		});
 	});
 });
